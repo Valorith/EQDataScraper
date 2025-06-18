@@ -1,5 +1,6 @@
 # EQDataScraper
 
+
 EQDataScraper is a small Python utility that retrieves spell information for every EverQuest class from the **Clumsy's World** Allakhazam clone. For each class the script builds a colour‑themed HTML page listing all spells at or above level 1.
 
 The script pulls data directly from `https://alla.clumsysworld.com/` by default, so an internet connection is required unless you provide pre-saved HTML files. Output files are named `<class>_spells.html` and are written to the project directory.
@@ -10,22 +11,33 @@ The script pulls data directly from `https://alla.clumsysworld.com/` by default,
 
 Install the dependencies with:
 
+This script retrieves spell data for each EverQuest class from the Clumsy's World Allakhazam clone. It generates one HTML file per class showing the spell table with a simple colour theme.
+
+By default the script fetches spell tables directly from the Clumsy's World site. If the
+site is unreachable you can provide a directory of HTML files using `--local-dir`.
+Each file should be named `<class>.html` (e.g. `bard.html`). A generic
+`sample_table.html` is provided for testing and will be used for any missing class file.
+
+## Usage
+
+Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
+
 ## Basic usage
 Execute the scraper once for all classes:
-
+Run once:
 ```bash
 python3 scrape_spells.py
 ```
-
 When finished you will find HTML files such as `bard_spells.html`, `cleric_spells.html` and so on in the repository folder. Open any of these files in your browser to view the results.
 
 ## Running continuously
 The script can run in a loop to keep your local files up‑to‑date. Use `--loop` together with an optional `--interval` (seconds) to control how often it runs. The example below scrapes every hour:
 
+Run continually every hour:
 ```bash
 python3 scrape_spells.py --loop --interval 3600
 ```
@@ -41,6 +53,7 @@ Press **Ctrl+C** to stop the loop.
 ## Example: using local files
 If your environment has no internet access you can still test the script by providing the supplied sample HTML table:
 
+Use local HTML files instead of fetching:
 ```bash
 python3 scrape_spells.py --local-dir samples
 ```
@@ -56,3 +69,10 @@ Colour themes for each class are defined in `scrape_spells.py` within the `CLASS
 
 ## License
 This project is provided as-is for personal use and education.
+
+Specify an alternate base URL:
+```bash
+python3 scrape_spells.py --base-url https://my-mirror.example.com/
+```
+
+Generated HTML files will appear in the project directory.
