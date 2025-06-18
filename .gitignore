@@ -1,0 +1,4 @@
+# Ignore generated HTML files and logs
+*_spells.html
+run.log
+__pycache__/
