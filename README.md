@@ -30,7 +30,7 @@ pip install -r requirements.txt
 Execute the scraper once for all classes:
 Run once:
 ```bash
-python3 scrape_spells.py
+python scrape_spells.py
 ```
 When finished you will find HTML files such as `bard_spells.html`, `cleric_spells.html` and so on in the repository folder. Open any of these files in your browser to view the results.
 
@@ -39,7 +39,7 @@ The script can run in a loop to keep your local files up‑to‑date. Use `--loo
 
 Run continually every hour:
 ```bash
-python3 scrape_spells.py --loop --interval 3600
+python scrape_spells.py --loop --interval 3600
 ```
 
 Press **Ctrl+C** to stop the loop.
@@ -55,7 +55,7 @@ If your environment has no internet access you can still test the script by prov
 
 Use local HTML files instead of fetching:
 ```bash
-python3 scrape_spells.py --local-dir samples
+python scrape_spells.py --local-dir samples
 ```
 
 The generated pages will contain the data from the files in `samples/`.
@@ -72,7 +72,7 @@ This project is provided as-is for personal use and education.
 
 Specify an alternate base URL:
 ```bash
-python3 scrape_spells.py --base-url https://my-mirror.example.com/
+python scrape_spells.py --base-url https://my-mirror.example.com/
 ```
 
 Generated HTML files will appear in the project directory.
