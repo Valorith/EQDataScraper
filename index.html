@@ -248,9 +248,6 @@
             position: relative;
         }
         
-        .class-icon.fallback {
-            font-family: 'Cinzel', serif;
-        }
         
         @keyframes float {
             0%, 100% { transform: translateY(0px) rotateY(0deg); }
@@ -328,125 +325,49 @@
     </style>
 </head>
 <body>
-    <div class="main-container">
+    <div id="app" class="main-container">
         <div class="hero-section">
             <h1 class="main-title">Clumsy's World</h1>
             <p class="main-subtitle">Class Information</p>
         </div>
-        
+
         <div class="classes-grid">
-            <a href="warrior_spells.html" class="class-card warrior">
+            <a v-for="cls in classes" :key="cls.slug" :href="cls.file" :class="['class-card', cls.slug]">
                 <div class="class-icon">
-                    <img src="icons/warrior.gif" alt="Warrior" onerror="this.src='https://wiki.heroesjourneyemu.com/classes-and-abilities/warrior.gif'; this.onerror=function(){this.style.display='none';};">
+                    <img :src="cls.icon" :alt="cls.name">
                 </div>
-                <div class="class-name">Warrior</div>
+                <div class="class-name">{{ cls.name }}</div>
             </a>
-            
-            <a href="cleric_spells.html" class="class-card cleric">
-                <div class="class-icon">
-                    <img src="icons/cleric.gif" alt="Cleric" onerror="this.src='https://wiki.heroesjourneyemu.com/cleric.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Cleric</div>
-            </a>
-            
-            <a href="paladin_spells.html" class="class-card paladin">
-                <div class="class-icon">
-                    <img src="icons/paladin.gif" alt="Paladin" onerror="this.src='https://wiki.heroesjourneyemu.com/paladin.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Paladin</div>
-            </a>
-            
-            <a href="ranger_spells.html" class="class-card ranger">
-                <div class="class-icon">
-                    <img src="icons/ranger.gif" alt="Ranger" onerror="this.src='https://wiki.heroesjourneyemu.com/ranger.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Ranger</div>
-            </a>
-            
-            <a href="shadowknight_spells.html" class="class-card shadowknight">
-                <div class="class-icon">
-                    <img src="icons/shadowknight.gif" alt="Shadow Knight" onerror="this.src='https://wiki.heroesjourneyemu.com/shadowknight.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Shadow Knight</div>
-            </a>
-            
-            <a href="druid_spells.html" class="class-card druid">
-                <div class="class-icon">
-                    <img src="icons/druid.gif" alt="Druid" onerror="this.src='https://wiki.heroesjourneyemu.com/druid.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Druid</div>
-            </a>
-            
-            <a href="monk_spells.html" class="class-card monk">
-                <div class="class-icon">
-                    <img src="icons/monk.gif" alt="Monk" onerror="this.src='https://wiki.heroesjourneyemu.com/monk.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Monk</div>
-            </a>
-            
-            <a href="bard_spells.html" class="class-card bard">
-                <div class="class-icon">
-                    <img src="icons/bard.gif" alt="Bard" onerror="this.src='https://wiki.heroesjourneyemu.com/bard.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Bard</div>
-            </a>
-            
-            <a href="rogue_spells.html" class="class-card rogue">
-                <div class="class-icon">
-                    <img src="icons/rogue.gif" alt="Rogue" onerror="this.src='https://wiki.heroesjourneyemu.com/classes-and-abilities/rogue.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Rogue</div>
-            </a>
-            
-            <a href="shaman_spells.html" class="class-card shaman">
-                <div class="class-icon">
-                    <img src="icons/shaman.gif" alt="Shaman" onerror="this.src='https://wiki.heroesjourneyemu.com/shaman.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Shaman</div>
-            </a>
-            
-            <a href="necromancer_spells.html" class="class-card necromancer">
-                <div class="class-icon">
-                    <img src="icons/necromancer.gif" alt="Necromancer" onerror="this.src='https://wiki.heroesjourneyemu.com/necromancer.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Necromancer</div>
-            </a>
-            
-            <a href="wizard_spells.html" class="class-card wizard">
-                <div class="class-icon">
-                    <img src="icons/wizard.gif" alt="Wizard" onerror="this.src='https://wiki.heroesjourneyemu.com/wizard.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Wizard</div>
-            </a>
-            
-            <a href="magician_spells.html" class="class-card magician">
-                <div class="class-icon">
-                    <img src="icons/magician.gif" alt="Magician" onerror="this.src='https://wiki.heroesjourneyemu.com/magician.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Magician</div>
-            </a>
-            
-            <a href="enchanter_spells.html" class="class-card enchanter">
-                <div class="class-icon">
-                    <img src="icons/enchanter.gif" alt="Enchanter" onerror="this.src='https://wiki.heroesjourneyemu.com/enchanter.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Enchanter</div>
-            </a>
-            
-            <a href="beastlord_spells.html" class="class-card beastlord">
-                <div class="class-icon">
-                    <img src="icons/beastlord.gif" alt="Beastlord" onerror="this.src='https://wiki.heroesjourneyemu.com/beastlord.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Beastlord</div>
-            </a>
-            
-            <a href="berserker_spells.html" class="class-card berserker">
-                <div class="class-icon">
-                    <img src="icons/berserker.gif" alt="Berserker" onerror="this.src='https://wiki.heroesjourneyemu.com/berserker.gif'; this.onerror=function(){this.style.display='none';};">
-                </div>
-                <div class="class-name">Berserker</div>
-            </a>
+
         </div>
+        <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+        <script>
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    classes: [
+                        { slug: 'warrior', name: 'Warrior', file: 'warrior_spells.html', icon: 'icons/warrior.gif' },
+                        { slug: 'cleric', name: 'Cleric', file: 'cleric_spells.html', icon: 'icons/cleric.gif' },
+                        { slug: 'paladin', name: 'Paladin', file: 'paladin_spells.html', icon: 'icons/paladin.gif' },
+                        { slug: 'ranger', name: 'Ranger', file: 'ranger_spells.html', icon: 'icons/ranger.gif' },
+                        { slug: 'shadowknight', name: 'Shadow Knight', file: 'shadowknight_spells.html', icon: 'icons/shadowknight.gif' },
+                        { slug: 'druid', name: 'Druid', file: 'druid_spells.html', icon: 'icons/druid.gif' },
+                        { slug: 'monk', name: 'Monk', file: 'monk_spells.html', icon: 'icons/monk.gif' },
+                        { slug: 'bard', name: 'Bard', file: 'bard_spells.html', icon: 'icons/bard.gif' },
+                        { slug: 'rogue', name: 'Rogue', file: 'rogue_spells.html', icon: 'icons/rogue.gif' },
+                        { slug: 'shaman', name: 'Shaman', file: 'shaman_spells.html', icon: 'icons/shaman.gif' },
+                        { slug: 'necromancer', name: 'Necromancer', file: 'necromancer_spells.html', icon: 'icons/necromancer.gif' },
+                        { slug: 'wizard', name: 'Wizard', file: 'wizard_spells.html', icon: 'icons/wizard.gif' },
+                        { slug: 'magician', name: 'Magician', file: 'magician_spells.html', icon: 'icons/magician.gif' },
+                        { slug: 'enchanter', name: 'Enchanter', file: 'enchanter_spells.html', icon: 'icons/enchanter.gif' },
+                        { slug: 'beastlord', name: 'Beastlord', file: 'beastlord_spells.html', icon: 'icons/beastlord.gif' },
+                        { slug: 'berserker', name: 'Berserker', file: 'berserker_spells.html', icon: 'icons/berserker.gif' }
+                    ]
+                };
+            }
+        }).mount('#app');
+        </script>
     </div>
 </body>
 </html>
