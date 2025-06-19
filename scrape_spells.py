@@ -879,7 +879,15 @@ def scrape_class(cls: str, base_url: str, local_dir: Optional[str]) -> pd.DataFr
     if local_dir:
         html = read_local_spell_html(cls, local_dir)
     if html is None:
+        print(f"Fetching {cls} from {base_url}")
         html = fetch_spell_html(CLASSES[cls], base_url=base_url)
+        
+        # Save raw HTML for debugging
+        temp_file = os.path.join(os.path.dirname(__file__), f"temp_{cls.lower()}.html")
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"Saved temp HTML to {temp_file}")
+    
     return parse_spell_table(html)
 
 
