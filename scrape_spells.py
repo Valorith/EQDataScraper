@@ -59,7 +59,7 @@ HTML_TEMPLATE = """
     <meta charset='utf-8'>
     <title>{{ cls }} Spells - Norrath Compendium</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&family=Crimson+Text:wght@400;600&display=swap');
         
         :root {
             --primary-color: {{ color }};
@@ -126,6 +126,18 @@ HTML_TEMPLATE = """
             transform: scale(0.98);
         }
         
+        .scroll-blur .level-section {
+            filter: blur(3px);
+            opacity: 0.7;
+            transform: scale(0.98);
+        }
+        
+        .scroll-blur .level-header {
+            filter: blur(3px);
+            opacity: 0.7;
+            transform: scale(0.98);
+        }
+        
         .hero-section {
             text-align: center;
             margin-bottom: 60px;
@@ -145,6 +157,56 @@ HTML_TEMPLATE = """
             border-radius: 50%;
             filter: blur(60px);
             z-index: -1;
+        }
+        
+        .home-button {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .home-button::before {
+            content: '';
+            width: 0;
+            height: 0;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-right: 8px solid white;
+            transition: all 0.3s ease;
+        }
+        
+        .home-button:hover {
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.95), var(--primary-color));
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+        
+        .home-button:hover::before {
+            border-right-color: #e8f4fd;
+            transform: translateX(-2px);
+        }
+        
+        .home-button:active {
+            transform: translateY(0) scale(1.02);
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.6);
         }
         
         .class-title {
@@ -291,6 +353,28 @@ HTML_TEMPLATE = """
             box-sizing: border-box;
             text-align: center;
             line-height: 1;
+        }
+        
+        .level-cell.disabled {
+            background: linear-gradient(135deg, rgba(100,100,100,0.15), rgba(80,80,80,0.08));
+            border: 1px solid rgba(100,100,100,0.2);
+            color: rgba(180, 180, 180, 0.6);
+            cursor: not-allowed;
+            opacity: 0.6;
+            font-weight: 400;
+        }
+        
+        .level-cell.disabled:hover {
+            transform: none;
+            background: linear-gradient(135deg, rgba(100,100,100,0.15), rgba(80,80,80,0.08));
+            border-color: rgba(100,100,100,0.2);
+            color: rgba(180, 180, 180, 0.6);
+            box-shadow: none;
+            text-shadow: none;
+        }
+        
+        .level-cell.disabled::before {
+            display: none;
         }
         
         .level-cell::before {
@@ -526,6 +610,7 @@ HTML_TEMPLATE = """
         .spell-body {
             padding: 25px;
             color: var(--text-dark);
+            font-family: 'Crimson Text', serif;
         }
         
         .spell-attributes {
@@ -543,6 +628,24 @@ HTML_TEMPLATE = """
             border-radius: 10px;
             border-left: 3px solid var(--primary-color);
             position: relative;
+            font-family: 'Crimson Text', serif;
+        }
+        
+        .attribute-label {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .attribute-value {
+            font-size: 1em;
+            font-weight: 400;
+            color: var(--text-dark);
+            font-family: 'Crimson Text', serif;
         }
         
         /* Target type color coding */
@@ -652,6 +755,7 @@ HTML_TEMPLATE = """
             .level-navigator { padding: 20px; }
             .level-header { flex-direction: column; gap: 15px; text-align: center; }
             .level-header-right { flex-direction: row; justify-content: center; }
+            .home-button { position: static; margin: 0 auto 20px auto; }
         }
         
         @media (max-width: 480px) {
@@ -664,6 +768,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="main-container">
         <div class="hero-section">
+            <a href="index.html" class="home-button">Home</a>
             <h1 class="class-title">{{ cls }}</h1>
             <p class="class-subtitle">Spell Compendium</p>
         </div>
@@ -712,7 +817,7 @@ HTML_TEMPLATE = """
             levelSections.forEach(section => {
                 const levelTitle = section.querySelector('.level-title');
                 if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level: (\\d+)/);
+                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
                     if (levelMatch) {
                         availableLevels.add(parseInt(levelMatch[1]));
                     }
@@ -732,7 +837,9 @@ HTML_TEMPLATE = """
                     cell.style.cursor = 'pointer';
                     cell.addEventListener('click', () => scrollToLevel(i));
                 } else {
-                    cell.style.cursor = 'default';
+                    cell.classList.add('disabled');
+                    cell.style.cursor = 'not-allowed';
+                    cell.title = `No spells available at level ${i}`;
                 }
                 
                 matrix.appendChild(cell);
@@ -763,7 +870,7 @@ HTML_TEMPLATE = """
             for (const section of levelSections) {
                 const levelTitle = section.querySelector('.level-title');
                 if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level: (\\d+)/);
+                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
                     if (levelMatch && parseInt(levelMatch[1]) === level) {
                         // Apply blur effect before scrolling
                         applyScrollBlur();
@@ -1023,7 +1130,7 @@ def parse_spell_table(html: str) -> pd.DataFrame:
                             len(cell_text) <= 50):  # Reasonable length range
                             
                             # Check if it looks like a target type
-                            lower_text = cell_text.lower()
+                            lower_text = cell_text.lower();
                             if (any(keyword in lower_text for keyword in [
                                 'target', 'self', 'group', 'area', 'caster', 'pet', 'undead', 
                                 'ward', 'corpse', 'object', 'teleport', 'summoned', 'beings',
@@ -1031,8 +1138,8 @@ def parse_spell_table(html: str) -> pd.DataFrame:
                             ]) or 
                             # Common short target types
                             cell_text in ['Single', 'Group', 'AoE', 'Self']):
-                                spell_data['Target Type'] = cell_text
-                                break
+                                spell_data['Target Type'] = cell_text;
+                                break;
                     
                     # Third pass: assign remaining long text as effects
                     for i, cell_text in enumerate(cell_texts):
@@ -1082,7 +1189,7 @@ def parse_spell_table(html: str) -> pd.DataFrame:
     # Sort by level then by name
     df['Level'] = pd.to_numeric(df['Level'], errors='coerce')
     df = df.sort_values(['Level', 'Name'])
-    return df
+    return df;
 
 
 def _hex_to_rgb(hex_color: str) -> str:
@@ -1183,7 +1290,7 @@ def generate_html(cls: str, df: pd.DataFrame) -> str:
             <div class="level-header">
                 <h2 class="level-title">Level {int(level)}</h2>
                 <div class="level-header-right">
-                    <span class="level-count">{len(group)}</span>
+                    <span class="level-count">{len(group)} {'Spell' if len(group) == 1 else 'Spells'}</span>
                     <button class="go-to-top-btn" onclick="scrollToTop()" title="Go to top of page">
                         Top
                     </button>
