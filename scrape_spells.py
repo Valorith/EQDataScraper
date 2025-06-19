@@ -751,3 +751,140 @@ def parse_spell_table(html: str) -> pd.DataFrame:
     # Sort by level then by name
     df['Level'] = pd.to_numeric(df['Level'], errors='coerce')
     df = df.sort_values(['Level', 'Name'])
+    return df
+
+
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convert #RRGGBB to "R, G, B" string."""
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 6:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return f"{r}, {g}, {b}"
+    return "0, 0, 0"
+
+
+def generate_html(cls: str, df: pd.DataFrame) -> str:
+    """Render HTML for a class using the global template."""
+    color = CLASS_COLORS.get(cls, '#cccccc')
+    color_rgb = _hex_to_rgb(color)
+
+    sections: List[str] = []
+    for level, group in df.groupby('Level'):
+        cards: List[str] = []
+        for _, row in group.iterrows():
+            attrs = []
+            if row['Skill']:
+                attrs.append(f'<div class="spell-attribute">{row["Skill"]}</div>')
+            if row['Mana']:
+                attrs.append(f'<div class="spell-attribute">Mana: {row["Mana"]}</div>')
+            if row['Target Type']:
+                attrs.append(
+                    f'<div class="spell-attribute">Target: {row["Target Type"]}</div>'
+                )
+
+            icon_html = (
+                f'<img class="spell-icon" src="{row["Icon"]}" alt="icon" />'
+                if row['Icon']
+                else ''
+            )
+
+            card = f"""
+            <div class="spell-card">
+                <div class="spell-header">
+                    <div class="spell-name">{row['Name']}</div>
+                    {icon_html}
+                    <div class="spell-level">Level {row['Level']}</div>
+                </div>
+                <div class="spell-body">
+                    <div class="spell-attributes">{''.join(attrs)}</div>
+                    <p>{row['Effect(s)']}</p>
+                    <div class="spell-id-container">
+                        <span>{row['Spell ID']}</span>
+                        <button class="copy-btn" onclick="copySpellId('{row['Spell ID']}')"></button>
+                    </div>
+                </div>
+            </div>
+            """
+            cards.append(card)
+
+        section = f"""
+        <section class="level-section">
+            <div class="level-header">
+                <h2 class="level-title">Level {int(level)}</h2>
+                <span class="level-count">{len(group)}</span>
+            </div>
+            <div class="spells-masonry">
+                {''.join(cards)}
+            </div>
+        </section>
+        """
+        sections.append(section)
+
+    template = Template(HTML_TEMPLATE)
+    html = template.render(
+        cls=cls,
+        color=color,
+        color_rgb=color_rgb,
+        content=''.join(sections),
+        total_spells=len(df),
+        max_level=int(df['Level'].max() if not df.empty else 0),
+        schools_count=df['Skill'].nunique(),
+    )
+    return html
+
+
+def scrape_class(cls: str, base_url: str, local_dir: Optional[str]) -> pd.DataFrame:
+    """Fetch, parse and return spell data for a single class."""
+    html = None
+    if local_dir:
+        html = read_local_spell_html(cls, local_dir)
+    if html is None:
+        html = fetch_spell_html(CLASSES[cls], base_url=base_url)
+    return parse_spell_table(html)
+
+
+def save_html(cls: str, html: str, output_dir: str = '.') -> None:
+    """Write HTML to disk."""
+    path = os.path.join(output_dir, f"{cls.lower()}_spells.html")
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(html)
+
+
+def scrape_all(base_url: str, local_dir: Optional[str]) -> None:
+    """Scrape spell data for all classes and write HTML files."""
+    for cls in CLASSES.keys():
+        try:
+            df = scrape_class(cls, base_url=base_url, local_dir=local_dir)
+            html = generate_html(cls, df)
+            save_html(cls, html)
+            print(f"Wrote {cls.lower()}_spells.html")
+        except Exception as exc:
+            print(f"Failed to scrape {cls}: {exc}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Scrape EverQuest spell data")
+    parser.add_argument('--loop', action='store_true', help='Run continuously')
+    parser.add_argument('--interval', type=int, default=3600, help='Seconds between runs when using --loop')
+    parser.add_argument('--base-url', default=BASE_URL, help='Base URL of the spell site')
+    parser.add_argument('--local-dir', default=None, help='Directory of local HTML files')
+    args = parser.parse_args()
+
+    def run_once():
+        scrape_all(base_url=args.base_url, local_dir=args.local_dir)
+
+    if args.loop:
+        try:
+            while True:
+                run_once()
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            pass
+    else:
+        run_once()
+
+
+if __name__ == '__main__':
+    main()
