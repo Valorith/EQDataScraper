@@ -74,13 +74,21 @@ HTML_TEMPLATE = """
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
+        html {
+            background: var(--bg-darker);
+            background-attachment: fixed;
+        }
+        
         body { 
             font-family: 'Inter', sans-serif;
             background: 
+                var(--bg-darker),
                 radial-gradient(circle at 20% 50%, rgba(var(--primary-rgb), 0.3) 0%, transparent 50%),
                 radial-gradient(circle at 80% 20%, rgba(var(--primary-rgb), 0.2) 0%, transparent 50%),
                 radial-gradient(circle at 40% 80%, rgba(var(--primary-rgb), 0.1) 0%, transparent 50%),
                 linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+            background-attachment: fixed;
+            background-size: 100% 100%;
             min-height: 100vh;
             color: var(--text-light);
             position: relative;
@@ -94,9 +102,12 @@ HTML_TEMPLATE = """
             left: 0;
             right: 0;
             bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="0.5" fill="rgba(255,255,255,0.03)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            background: 
+                var(--bg-darker),
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="0.5" fill="rgba(255,255,255,0.03)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
             pointer-events: none;
             z-index: 1;
+            will-change: transform;
         }
         
         .main-container {
@@ -105,12 +116,21 @@ HTML_TEMPLATE = """
             padding: 40px 20px;
             max-width: 1400px;
             margin: 0 auto;
+            background: transparent;
+        }
+        
+        /* Scroll blur effect */
+        .scroll-blur .spell-card {
+            filter: blur(3px);
+            opacity: 0.7;
+            transform: scale(0.98);
         }
         
         .hero-section {
             text-align: center;
             margin-bottom: 60px;
             position: relative;
+            background: transparent;
         }
         
         .hero-section::before {
@@ -209,10 +229,118 @@ HTML_TEMPLATE = """
             font-weight: 500;
         }
         
+        .level-navigator {
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 60px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .level-navigator::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.05), transparent);
+            pointer-events: none;
+        }
+        
+        .level-nav-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.8em;
+            font-weight: 600;
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 25px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .level-matrix {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 8px;
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .level-cell {
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            color: rgba(255, 255, 255, 0.7);
+            min-height: 40px;
+            max-height: 40px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            line-height: 1;
+        }
+        
+        .level-cell::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(var(--primary-rgb), 0.3), transparent);
+            transition: left 0.4s ease;
+        }
+        
+        .level-cell:hover::before {
+            left: 100%;
+        }
+        
+        .level-cell:hover {
+            transform: translateY(-2px) scale(1.05);
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.3), rgba(var(--primary-rgb), 0.15));
+            border-color: rgba(var(--primary-rgb), 0.6);
+            color: white;
+            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+        }
+        
+        .level-cell:active {
+            transform: translateY(0) scale(1.02);
+            box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.6);
+        }
+        
+        .level-cell.available {
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.1));
+            border-color: rgba(var(--primary-rgb), 0.4);
+            color: var(--text-light);
+            font-weight: 700;
+        }
+        
+        .level-cell.available:hover {
+            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
+            color: white;
+            transform: translateY(-3px) scale(1.08);
+            box-shadow: 0 12px 25px rgba(var(--primary-rgb), 0.5);
+        }
+        
         .level-section {
             margin-bottom: 80px;
             opacity: 0;
             animation: fadeInUp 0.8s ease-out forwards;
+            scroll-margin-top: 100px;
         }
         
         .level-section:nth-child(even) { animation-delay: 0.2s; }
@@ -249,6 +377,12 @@ HTML_TEMPLATE = """
             color: var(--primary-color);
         }
         
+        .level-header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
         .level-count {
             background: rgba(0, 0, 0, 0.8);
             color: white;
@@ -258,6 +392,69 @@ HTML_TEMPLATE = """
             font-size: 0.9em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
             border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .go-to-top-btn {
+            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 16px;
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .go-to-top-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .go-to-top-btn:hover::before {
+            left: 100%;
+        }
+        
+        .go-to-top-btn:hover {
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.95), var(--primary-color));
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+        
+        .go-to-top-btn:active {
+            transform: translateY(0) scale(1.02);
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.6);
+        }
+        
+        /* CSS arrow pointing up */
+        .go-to-top-btn::after {
+            content: '';
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 6px solid white;
+            transition: all 0.3s ease;
+        }
+        
+        .go-to-top-btn:hover::after {
+            border-bottom-color: #e8f4fd;
+            transform: translateY(-1px);
         }
         
         .spells-masonry {
@@ -451,6 +648,16 @@ HTML_TEMPLATE = """
             .stats-dashboard { grid-template-columns: 1fr; }
             .spells-masonry { grid-template-columns: 1fr; }
             .spell-attributes { grid-template-columns: 1fr; }
+            .level-matrix { grid-template-columns: repeat(5, 1fr); }
+            .level-navigator { padding: 20px; }
+            .level-header { flex-direction: column; gap: 15px; text-align: center; }
+            .level-header-right { flex-direction: row; justify-content: center; }
+        }
+        
+        @media (max-width: 480px) {
+            .level-matrix { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+            .level-cell { font-size: 0.8em; min-height: 35px; }
+            .go-to-top-btn { padding: 8px 12px; font-size: 0.8em; }
         }
     </style>
 </head>
@@ -476,6 +683,13 @@ HTML_TEMPLATE = """
             </div>
         </div>
         
+        <div class="level-navigator">
+            <h3 class="level-nav-title">Quick Level Navigation</h3>
+            <div class="level-matrix" id="levelMatrix">
+                <!-- Level cells will be populated by JavaScript -->
+            </div>
+        </div>
+        
         {{ content|safe }}
     </div>
     
@@ -485,6 +699,118 @@ HTML_TEMPLATE = """
     </div>
     
     <script>
+        let isScrolling = false;
+        let scrollTimeout;
+        
+        // Initialize level navigation matrix
+        function initializeLevelMatrix() {
+            const matrix = document.getElementById('levelMatrix');
+            const availableLevels = new Set();
+            
+            // Find all level sections on the page
+            const levelSections = document.querySelectorAll('.level-section');
+            levelSections.forEach(section => {
+                const levelTitle = section.querySelector('.level-title');
+                if (levelTitle) {
+                    const levelMatch = levelTitle.textContent.match(/Level: (\\d+)/);
+                    if (levelMatch) {
+                        availableLevels.add(parseInt(levelMatch[1]));
+                    }
+                }
+            });
+            
+            // Create 60 level cells (10x6 grid)
+            for (let i = 1; i <= 60; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'level-cell';
+                cell.textContent = String(i);
+                cell.setAttribute('data-level', String(i));
+                
+                // Mark available levels
+                if (availableLevels.has(i)) {
+                    cell.classList.add('available');
+                    cell.style.cursor = 'pointer';
+                    cell.addEventListener('click', () => scrollToLevel(i));
+                } else {
+                    cell.style.cursor = 'default';
+                }
+                
+                matrix.appendChild(cell);
+            }
+        }
+        
+        // Apply blur effect during scrolling
+        function applyScrollBlur() {
+            if (!isScrolling) {
+                isScrolling = true;
+                document.body.classList.add('scroll-blur');
+            }
+            
+            // Clear existing timeout
+            clearTimeout(scrollTimeout);
+            
+            // Remove blur after scrolling stops
+            scrollTimeout = setTimeout(() => {
+                isScrolling = false;
+                document.body.classList.remove('scroll-blur');
+            }, 150);
+        }
+        
+        // Scroll to a specific level section
+        function scrollToLevel(level) {
+            const levelSections = document.querySelectorAll('.level-section');
+            
+            for (const section of levelSections) {
+                const levelTitle = section.querySelector('.level-title');
+                if (levelTitle) {
+                    const levelMatch = levelTitle.textContent.match(/Level: (\\d+)/);
+                    if (levelMatch && parseInt(levelMatch[1]) === level) {
+                        // Apply blur effect before scrolling
+                        applyScrollBlur();
+                        
+                        section.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                        
+                        // Add a temporary highlight effect after blur clears
+                        setTimeout(() => {
+                            const levelHeader = section.querySelector('.level-header');
+                            if (levelHeader) {
+                                levelHeader.style.transform = 'scale(1.02)';
+                                levelHeader.style.boxShadow = '0 0 30px rgba(var(--primary-rgb), 0.6)';
+                                setTimeout(() => {
+                                    levelHeader.style.transform = '';
+                                    levelHeader.style.boxShadow = '';
+                                }, 1000);
+                            }
+                        }, 300);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Scroll to top of page
+        function scrollToTop() {
+            // Apply blur effect before scrolling
+            applyScrollBlur();
+            
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
+        // Listen for manual scrolling to also apply blur effect
+        let scrollTimer;
+        window.addEventListener('scroll', () => {
+            // Only apply blur if this is manual scrolling (not from our functions)
+            if (!isScrolling) {
+                applyScrollBlur();
+            }
+        });
+        
         function copySpellId(spellId) {
             // Copy to clipboard
             navigator.clipboard.writeText(spellId).then(function() {
@@ -516,6 +842,11 @@ HTML_TEMPLATE = """
                 }, 2000);
             });
         }
+        
+        // Initialize everything when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeLevelMatrix();
+        });
     </script>
 </body>
 </html>
@@ -570,7 +901,7 @@ def parse_spell_table(html: str) -> pd.DataFrame:
             level_match = [int(s) for s in level_text.split() if s.isdigit()]
             if not level_match:
                 continue
-            current_level = level_match[0]
+            current_level = level_match[0];
             
             # Find the parent element
             level_element = level_text.parent
@@ -851,7 +1182,12 @@ def generate_html(cls: str, df: pd.DataFrame) -> str:
         <section class="level-section">
             <div class="level-header">
                 <h2 class="level-title">Level {int(level)}</h2>
-                <span class="level-count">{len(group)}</span>
+                <div class="level-header-right">
+                    <span class="level-count">{len(group)}</span>
+                    <button class="go-to-top-btn" onclick="scrollToTop()" title="Go to top of page">
+                        Top
+                    </button>
+                </div>
             </div>
             <div class="spells-masonry">
                 {''.join(cards)}
@@ -933,5 +1269,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
     main()
