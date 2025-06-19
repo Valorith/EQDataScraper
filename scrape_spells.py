@@ -766,7 +766,7 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <div class="main-container">
+    <div id="app" class="main-container">
         <div class="hero-section">
             <a href="index.html" class="home-button">Home</a>
             <h1 class="class-title">{{ cls }}</h1>
@@ -802,158 +802,136 @@ HTML_TEMPLATE = """
     <div id="copyPopup" class="copy-popup">
         Spell ID copied to clipboard!
     </div>
-    
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script>
-        let isScrolling = false;
-        let scrollTimeout;
-        
-        // Initialize level navigation matrix
-        function initializeLevelMatrix() {
-            const matrix = document.getElementById('levelMatrix');
-            const availableLevels = new Set();
-            
-            // Find all level sections on the page
-            const levelSections = document.querySelectorAll('.level-section');
-            levelSections.forEach(section => {
-                const levelTitle = section.querySelector('.level-title');
-                if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
-                    if (levelMatch) {
-                        availableLevels.add(parseInt(levelMatch[1]));
-                    }
-                }
-            });
-            
-            // Create 60 level cells (10x6 grid)
-            for (let i = 1; i <= 60; i++) {
-                const cell = document.createElement('div');
-                cell.className = 'level-cell';
-                cell.textContent = String(i);
-                cell.setAttribute('data-level', String(i));
-                
-                // Mark available levels
-                if (availableLevels.has(i)) {
-                    cell.classList.add('available');
-                    cell.style.cursor = 'pointer';
-                    cell.addEventListener('click', () => scrollToLevel(i));
-                } else {
-                    cell.classList.add('disabled');
-                    cell.style.cursor = 'not-allowed';
-                    cell.title = `No spells available at level ${i}`;
-                }
-                
-                matrix.appendChild(cell);
-            }
-        }
-        
-        // Apply blur effect during scrolling
-        function applyScrollBlur() {
-            if (!isScrolling) {
-                isScrolling = true;
-                document.body.classList.add('scroll-blur');
-            }
-            
-            // Clear existing timeout
-            clearTimeout(scrollTimeout);
-            
-            // Remove blur after scrolling stops
-            scrollTimeout = setTimeout(() => {
-                isScrolling = false;
-                document.body.classList.remove('scroll-blur');
-            }, 150);
-        }
-        
-        // Scroll to a specific level section
-        function scrollToLevel(level) {
-            const levelSections = document.querySelectorAll('.level-section');
-            
-            for (const section of levelSections) {
-                const levelTitle = section.querySelector('.level-title');
-                if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
-                    if (levelMatch && parseInt(levelMatch[1]) === level) {
-                        // Apply blur effect before scrolling
-                        applyScrollBlur();
-                        
-                        section.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                        
-                        // Add a temporary highlight effect after blur clears
-                        setTimeout(() => {
-                            const levelHeader = section.querySelector('.level-header');
-                            if (levelHeader) {
-                                levelHeader.style.transform = 'scale(1.02)';
-                                levelHeader.style.boxShadow = '0 0 30px rgba(var(--primary-rgb), 0.6)';
-                                setTimeout(() => {
-                                    levelHeader.style.transform = '';
-                                    levelHeader.style.boxShadow = '';
-                                }, 1000);
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    isScrolling: false,
+                    scrollTimeout: null
+                };
+            },
+            methods: {
+                initializeLevelMatrix() {
+                    const matrix = document.getElementById('levelMatrix');
+                    const availableLevels = new Set();
+
+                    const levelSections = document.querySelectorAll('.level-section');
+                    levelSections.forEach(section => {
+                        const levelTitle = section.querySelector('.level-title');
+                        if (levelTitle) {
+                            const match = levelTitle.textContent.match(/Level (\\d+)/);
+                            if (match) {
+                                availableLevels.add(parseInt(match[1]));
                             }
-                        }, 300);
-                        break;
+                        }
+                    });
+
+                    for (let i = 1; i <= 60; i++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'level-cell';
+                        cell.textContent = String(i);
+                        cell.setAttribute('data-level', String(i));
+
+                        if (availableLevels.has(i)) {
+                            cell.classList.add('available');
+                            cell.style.cursor = 'pointer';
+                            cell.addEventListener('click', () => this.scrollToLevel(i));
+                        } else {
+                            cell.classList.add('disabled');
+                            cell.style.cursor = 'not-allowed';
+                            cell.title = `No spells available at level ${i}`;
+                        }
+
+                        matrix.appendChild(cell);
                     }
+                },
+                applyScrollBlur() {
+                    if (!this.isScrolling) {
+                        this.isScrolling = true;
+                        document.body.classList.add('scroll-blur');
+                    }
+
+                    clearTimeout(this.scrollTimeout);
+
+                    this.scrollTimeout = setTimeout(() => {
+                        this.isScrolling = false;
+                        document.body.classList.remove('scroll-blur');
+                    }, 150);
+                },
+                scrollToLevel(level) {
+                    const levelSections = document.querySelectorAll('.level-section');
+
+                    for (const section of levelSections) {
+                        const levelTitle = section.querySelector('.level-title');
+                        if (levelTitle) {
+                            const match = levelTitle.textContent.match(/Level (\\d+)/);
+                            if (match && parseInt(match[1]) === level) {
+                                this.applyScrollBlur();
+
+                                section.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'start'
+                                });
+
+                                setTimeout(() => {
+                                    const levelHeader = section.querySelector('.level-header');
+                                    if (levelHeader) {
+                                        levelHeader.style.transform = 'scale(1.02)';
+                                        levelHeader.style.boxShadow = '0 0 30px rgba(var(--primary-rgb), 0.6)';
+                                        setTimeout(() => {
+                                            levelHeader.style.transform = '';
+                                            levelHeader.style.boxShadow = '';
+                                        }, 1000);
+                                    }
+                                }, 300);
+                                break;
+                            }
+                        }
+                    }
+                },
+                scrollToTop() {
+                    this.applyScrollBlur();
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                },
+                copySpellId(spellId) {
+                    navigator.clipboard.writeText(spellId).then(() => {
+                        const popup = document.getElementById('copyPopup');
+                        popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
+                        popup.classList.add('show');
+                        setTimeout(() => {
+                            popup.classList.remove('show');
+                        }, 2000);
+                    }).catch(() => {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = spellId;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        const popup = document.getElementById('copyPopup');
+                        popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
+                        popup.classList.add('show');
+                        setTimeout(() => {
+                            popup.classList.remove('show');
+                        }, 2000);
+                    });
                 }
+            },
+            mounted() {
+                this.initializeLevelMatrix();
+                window.addEventListener('scroll', () => {
+                    if (!this.isScrolling) {
+                        this.applyScrollBlur();
+                    }
+                });
             }
-        }
-        
-        // Scroll to top of page
-        function scrollToTop() {
-            // Apply blur effect before scrolling
-            applyScrollBlur();
-            
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
-        }
-        
-        // Listen for manual scrolling to also apply blur effect
-        let scrollTimer;
-        window.addEventListener('scroll', () => {
-            // Only apply blur if this is manual scrolling (not from our functions)
-            if (!isScrolling) {
-                applyScrollBlur();
-            }
-        });
-        
-        function copySpellId(spellId) {
-            // Copy to clipboard
-            navigator.clipboard.writeText(spellId).then(function() {
-                // Show confirmation popup
-                const popup = document.getElementById('copyPopup');
-                popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
-                popup.classList.add('show');
-                
-                // Hide popup after 2 seconds
-                setTimeout(function() {
-                    popup.classList.remove('show');
-                }, 2000);
-            }).catch(function(err) {
-                // Fallback for older browsers
-                const textArea = document.createElement('textarea');
-                textArea.value = spellId;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
-                // Show confirmation popup
-                const popup = document.getElementById('copyPopup');
-                popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
-                popup.classList.add('show');
-                
-                setTimeout(function() {
-                    popup.classList.remove('show');
-                }, 2000);
-            });
-        }
-        
-        // Initialize everything when the page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeLevelMatrix();
-        });
+        }).mount('#app');
     </script>
 </body>
 </html>

@@ -10,6 +10,9 @@ The script pulls data directly from `https://alla.clumsysworld.com/` by default,
 - The packages listed in `requirements.txt`
 
 Install the dependencies with:
+```bash
+pip install -r requirements.txt
+```
 
 This script retrieves spell data for each EverQuest class from the Clumsy's World Allakhazam clone. It generates one HTML file per class showing the spell table with a simple colour theme.
 
@@ -20,19 +23,14 @@ Each file should be named `<class>.html` (e.g. `bard.html`). A generic
 
 ## Usage
 
-Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-
-## Basic usage
+### Basic usage
 Execute the scraper once for all classes:
-Run once:
 ```bash
 python scrape_spells.py
 ```
 When finished you will find HTML files such as `bard_spells.html`, `cleric_spells.html` and so on in the repository folder. Open any of these files in your browser to view the results.
+
+Alternatively open `index.html` in your browser to use the new Vue‑powered interface which links to every generated spell page. The individual spell pages themselves now also use Vue 3 for smooth navigation.
 
 ## Running continuously
 The script can run in a loop to keep your local files up‑to‑date. Use `--loop` together with an optional `--interval` (seconds) to control how often it runs. The example below scrapes every hour:
