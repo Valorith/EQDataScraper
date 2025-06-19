@@ -775,14 +775,58 @@ def generate_html(cls: str, df: pd.DataFrame) -> str:
         cards: List[str] = []
         for _, row in group.iterrows():
             attrs = []
-            if row['Skill']:
-                attrs.append(f'<div class="spell-attribute">{row["Skill"]}</div>')
+            
+            # Add Spell ID as the first attribute with copy button
+            if row['Spell ID']:
+                attrs.append(f'''
+                    <div class="spell-attribute">
+                        <span class="attribute-label">Spell ID:</span>
+                        <div class="spell-id-container">
+                            <span class="attribute-value">{row["Spell ID"]}</span>
+                            <button class="copy-btn" onclick="copySpellId('{row['Spell ID']}')" title="Copy Spell ID to clipboard"></button>
+                        </div>
+                    </div>
+                ''')
+            
+            # Add Mana as an attribute
             if row['Mana']:
-                attrs.append(f'<div class="spell-attribute">Mana: {row["Mana"]}</div>')
+                attrs.append(f'''
+                    <div class="spell-attribute">
+                        <span class="attribute-label">Mana Cost:</span>
+                        <span class="attribute-value">{row["Mana"]}</span>
+                    </div>
+                ''')
+            
+            # Add School as an attribute
+            if row['Skill']:
+                attrs.append(f'''
+                    <div class="spell-attribute">
+                        <span class="attribute-label">Spell School:</span>
+                        <span class="attribute-value">{row["Skill"]}</span>
+                    </div>
+                ''')
+            
+            # Add Target Type as an attribute with color coding
             if row['Target Type']:
-                attrs.append(
-                    f'<div class="spell-attribute">Target: {row["Target Type"]}</div>'
-                )
+                target_class = ""
+                target_type = row['Target Type']
+                if target_type in ['Self only', "Caster's pet"]:
+                    target_class = " target-self"
+                elif target_type in ['Single target', "Target's corpse", 'Summoned beings', 'Undead only']:
+                    target_class = " target-single"
+                elif target_type in ['Area of effect around the target']:
+                    target_class = " target-aoe-target"
+                elif target_type in ['Area of effect around the caster']:
+                    target_class = " target-aoe-caster"
+                elif target_type in ['Group', 'Group target', 'Group teleport']:
+                    target_class = " target-group"
+                
+                attrs.append(f'''
+                    <div class="spell-attribute{target_class}">
+                        <span class="attribute-label">Target Type:</span>
+                        <span class="attribute-value">{row["Target Type"]}</span>
+                    </div>
+                ''')
 
             icon_html = (
                 f'<img class="spell-icon" src="{row["Icon"]}" alt="icon" />'
@@ -795,15 +839,9 @@ def generate_html(cls: str, df: pd.DataFrame) -> str:
                 <div class="spell-header">
                     <div class="spell-name">{row['Name']}</div>
                     {icon_html}
-                    <div class="spell-level">Level {row['Level']}</div>
                 </div>
                 <div class="spell-body">
                     <div class="spell-attributes">{''.join(attrs)}</div>
-                    <p>{row['Effect(s)']}</p>
-                    <div class="spell-id-container">
-                        <span>{row['Spell ID']}</span>
-                        <button class="copy-btn" onclick="copySpellId('{row['Spell ID']}')"></button>
-                    </div>
                 </div>
             </div>
             """
@@ -887,4 +925,5 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+    main()
     main()
