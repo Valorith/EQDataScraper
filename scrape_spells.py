@@ -2,12 +2,18 @@
 import os
 import time
 import argparse
+import logging
+import tempfile
 from typing import Dict, Optional, List
 
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from jinja2 import Template
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 🎯 Full list of classes with their type IDs
 CLASSES: Dict[str, int] = {
@@ -54,47 +60,67 @@ CLASS_COLORS: Dict[str, str] = {
 BASE_URL = 'https://alla.clumsysworld.com/'
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset='utf-8'>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ cls }} Spells - Norrath Compendium</title>
+    <meta name="description" content="Complete {{ cls }} spell compendium for EverQuest - Browse all {{ total_spells }} spells with detailed information">
+    
+    <!-- Preconnect to external domains for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Import fonts with display swap for better performance -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
+    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&family=Crimson+Text:wght@400;600&display=swap');
-        
         :root {
             --primary-color: {{ color }};
             --primary-rgb: {{ color_rgb }};
             --bg-dark: #0a0e1a;
             --bg-darker: #050810;
+            --bg-glass: rgba(16, 20, 32, 0.85);
             --card-bg: rgba(42, 46, 54, 0.95);
             --text-light: #e2e8f0;
             --text-dark: #f8fafc;
+            --text-muted: #94a3b8;
             --shadow-color: rgba(0, 0, 0, 0.4);
+            --shadow-heavy: rgba(0, 0, 0, 0.6);
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --accent-glow: rgba(var(--primary-rgb), 0.3);
         }
         
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* Reset and base styles */
+        *, *::before, *::after { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
         
         html {
-            background: var(--bg-darker);
-            background-attachment: fixed;
+            scroll-behavior: smooth;
+            font-size: 16px;
         }
         
         body { 
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: 
                 var(--bg-darker),
-                radial-gradient(circle at 20% 50%, rgba(var(--primary-rgb), 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(var(--primary-rgb), 0.2) 0%, transparent 50%),
-                radial-gradient(circle at 40% 80%, rgba(var(--primary-rgb), 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at 25% 25%, rgba(var(--primary-rgb), 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 75% 25%, rgba(var(--primary-rgb), 0.12) 0%, transparent 60%),
+                radial-gradient(ellipse at 25% 75%, rgba(var(--primary-rgb), 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 75% 75%, rgba(var(--primary-rgb), 0.10) 0%, transparent 60%),
                 linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
             background-attachment: fixed;
-            background-size: 100% 100%;
             min-height: 100vh;
             color: var(--text-light);
-            position: relative;
+            line-height: 1.6;
             overflow-x: hidden;
+            position: relative;
         }
         
+        /* Animated background grain effect */
         body::before {
             content: '';
             position: fixed;
@@ -102,47 +128,34 @@ HTML_TEMPLATE = """
             left: 0;
             right: 0;
             bottom: 0;
-            background: 
-                var(--bg-darker),
-                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="0.5" fill="rgba(255,255,255,0.03)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><pattern id="grain" width="200" height="200" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="0.5" fill="rgba(255,255,255,0.02)"/><circle cx="150" cy="150" r="0.3" fill="rgba(147,112,219,0.03)"/><circle cx="150" cy="50" r="0.4" fill="rgba(255,255,255,0.015)"/><circle cx="50" cy="150" r="0.3" fill="rgba(147,112,219,0.025)"/></pattern></defs><rect width="200" height="200" fill="url(%23grain)"/></svg>');
             pointer-events: none;
             z-index: 1;
-            will-change: transform;
+            animation: grainMove 20s linear infinite;
+        }
+        
+        @keyframes grainMove {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(-2px, 2px); }
+            50% { transform: translate(2px, -2px); }
+            75% { transform: translate(-1px, -1px); }
+            100% { transform: translate(0, 0); }
         }
         
         .main-container {
             position: relative;
             z-index: 2;
-            padding: 40px 20px;
-            max-width: 1400px;
+            padding: 2rem 1rem;
+            max-width: 1600px;
             margin: 0 auto;
-            background: transparent;
         }
         
-        /* Scroll blur effect */
-        .scroll-blur .spell-card {
-            filter: blur(3px);
-            opacity: 0.7;
-            transform: scale(0.98);
-        }
-        
-        .scroll-blur .level-section {
-            filter: blur(3px);
-            opacity: 0.7;
-            transform: scale(0.98);
-        }
-        
-        .scroll-blur .level-header {
-            filter: blur(3px);
-            opacity: 0.7;
-            transform: scale(0.98);
-        }
-        
+        /* Hero Section */
         .hero-section {
             text-align: center;
-            margin-bottom: 60px;
+            margin-bottom: 4rem;
             position: relative;
-            background: transparent;
+            padding: 2rem 0;
         }
         
         .hero-section::before {
@@ -151,12 +164,18 @@ HTML_TEMPLATE = """
             top: -50%;
             left: 50%;
             transform: translateX(-50%);
-            width: 200px;
-            height: 200px;
+            width: 300px;
+            height: 300px;
             background: radial-gradient(circle, rgba(var(--primary-rgb), 0.4) 0%, transparent 70%);
             border-radius: 50%;
-            filter: blur(60px);
+            filter: blur(80px);
             z-index: -1;
+            animation: heroGlow 4s ease-in-out infinite alternate;
+        }
+        
+        @keyframes heroGlow {
+            0% { opacity: 0.7; transform: translateX(-50%) scale(1); }
+            100% { opacity: 1; transform: translateX(-50%) scale(1.1); }
         }
         
         .home-button {
@@ -166,92 +185,87 @@ HTML_TEMPLATE = """
             background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
             color: white;
             border: none;
-            border-radius: 12px;
-            padding: 12px 20px;
-            font-size: 0.9em;
+            border-radius: 16px;
+            padding: 0.75rem 1.25rem;
+            font-size: 0.9rem;
             font-weight: 600;
             cursor: pointer;
             text-decoration: none;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 0.5rem;
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+            box-shadow: 0 4px 20px rgba(var(--primary-rgb), 0.3);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            font-family: 'Inter', sans-serif;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         .home-button::before {
-            content: '';
-            width: 0;
-            height: 0;
-            border-top: 5px solid transparent;
-            border-bottom: 5px solid transparent;
-            border-right: 8px solid white;
-            transition: all 0.3s ease;
+            content: '←';
+            font-size: 1.2em;
+            transition: transform 0.3s ease;
         }
         
         .home-button:hover {
             background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.95), var(--primary-color));
-            transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
-            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(var(--primary-rgb), 0.5);
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
         }
         
         .home-button:hover::before {
-            border-right-color: #e8f4fd;
-            transform: translateX(-2px);
-        }
-        
-        .home-button:active {
-            transform: translateY(0) scale(1.02);
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.6);
+            transform: translateX(-3px);
         }
         
         .class-title {
             font-family: 'Cinzel', serif;
-            font-size: 4.5em;
+            font-size: clamp(3rem, 8vw, 5.5rem);
             font-weight: 700;
-            background: linear-gradient(135deg, var(--primary-color) 0%, rgba(255,255,255,0.8) 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, rgba(255,255,255,0.9) 50%, var(--primary-color) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 15px;
-            text-shadow: 0 0 30px rgba(var(--primary-rgb), 0.5);
-            animation: glow 3s ease-in-out infinite alternate;
+            margin: 1rem 0;
+            text-shadow: 0 0 40px rgba(var(--primary-rgb), 0.6);
+            animation: titleGlow 3s ease-in-out infinite alternate;
+            letter-spacing: 2px;
         }
         
-        @keyframes glow {
-            from { text-shadow: 0 0 20px rgba(var(--primary-rgb), 0.5); }
-            to { text-shadow: 0 0 40px rgba(var(--primary-rgb), 0.8), 0 0 60px rgba(var(--primary-rgb), 0.4); }
+        @keyframes titleGlow {
+            0% { filter: drop-shadow(0 0 20px rgba(var(--primary-rgb), 0.5)); }
+            100% { filter: drop-shadow(0 0 40px rgba(var(--primary-rgb), 0.8)) drop-shadow(0 0 60px rgba(var(--primary-rgb), 0.4)); }
         }
         
         .class-subtitle {
-            font-size: 1.4em;
-            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.5rem;
+            color: var(--text-muted);
             font-weight: 300;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
             text-transform: uppercase;
+            margin-top: 0.5rem;
         }
         
+        /* Statistics Dashboard */
         .stats-dashboard {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 30px;
-            margin-bottom: 60px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-bottom: 4rem;
         }
         
         .stat-card {
-            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
-            padding: 30px;
+            background: linear-gradient(145deg, var(--bg-glass), rgba(255,255,255,0.03));
+            backdrop-filter: blur(25px);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 2.5rem;
             text-align: center;
             position: relative;
             overflow: hidden;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
         }
         
         .stat-card::before {
@@ -261,8 +275,8 @@ HTML_TEMPLATE = """
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(var(--primary-rgb), 0.2), transparent);
-            transition: left 0.6s;
+            background: linear-gradient(90deg, transparent, rgba(var(--primary-rgb), 0.15), transparent);
+            transition: left 0.6s ease;
         }
         
         .stat-card:hover::before {
@@ -270,170 +284,149 @@ HTML_TEMPLATE = """
         }
         
         .stat-card:hover {
-            transform: translateY(-10px) scale(1.02);
-            box-shadow: 0 20px 40px rgba(var(--primary-rgb), 0.3);
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 25px 50px rgba(var(--primary-rgb), 0.3);
+            border-color: rgba(var(--primary-rgb), 0.4);
         }
         
         .stat-number {
-            font-size: 3.5em;
+            font-size: 4rem;
             font-weight: 700;
             color: var(--primary-color);
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 0.5rem;
             font-family: 'Cinzel', serif;
+            text-shadow: 0 0 20px rgba(var(--primary-rgb), 0.5);
         }
         
         .stat-label {
-            font-size: 1.1em;
+            font-size: 1.1rem;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: rgba(255,255,255,0.8);
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
             font-weight: 500;
         }
         
+        /* Enhanced Level Navigator */
         .level-navigator {
-            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 60px;
+            background: linear-gradient(145deg, var(--bg-glass), rgba(255,255,255,0.03));
+            backdrop-filter: blur(25px);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin-bottom: 4rem;
             position: relative;
             overflow: hidden;
         }
         
-        .level-navigator::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.05), transparent);
-            pointer-events: none;
-        }
-        
         .level-nav-title {
             font-family: 'Cinzel', serif;
-            font-size: 1.8em;
+            font-size: 2rem;
             font-weight: 600;
             color: var(--primary-color);
             text-align: center;
-            margin-bottom: 25px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            margin-bottom: 2rem;
+            text-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4);
         }
         
         .level-matrix {
             display: grid;
             grid-template-columns: repeat(10, 1fr);
-            gap: 8px;
+            grid-template-rows: repeat(6, 1fr);
+            gap: 0.5rem;
             max-width: 600px;
             margin: 0 auto;
-            position: relative;
+            padding: 1rem;
         }
         
         .level-cell {
             aspect-ratio: 1;
-            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 600;
-            font-size: 0.9em;
+            font-size: 0.85rem;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             position: relative;
             overflow: hidden;
-            color: rgba(255, 255, 255, 0.7);
-            min-height: 40px;
-            max-height: 40px;
-            width: 100%;
-            box-sizing: border-box;
+            color: var(--text-muted);
+            min-height: 45px;
+            font-family: 'Inter', sans-serif;
             text-align: center;
-            line-height: 1;
-        }
-        
-        .level-cell.disabled {
-            background: linear-gradient(135deg, rgba(100,100,100,0.15), rgba(80,80,80,0.08));
-            border: 1px solid rgba(100,100,100,0.2);
-            color: rgba(180, 180, 180, 0.6);
-            cursor: not-allowed;
-            opacity: 0.6;
-            font-weight: 400;
-        }
-        
-        .level-cell.disabled:hover {
-            transform: none;
-            background: linear-gradient(135deg, rgba(100,100,100,0.15), rgba(80,80,80,0.08));
-            border-color: rgba(100,100,100,0.2);
-            color: rgba(180, 180, 180, 0.6);
-            box-shadow: none;
-            text-shadow: none;
-        }
-        
-        .level-cell.disabled::before {
-            display: none;
-        }
-        
-        .level-cell::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(var(--primary-rgb), 0.3), transparent);
-            transition: left 0.4s ease;
-        }
-        
-        .level-cell:hover::before {
-            left: 100%;
-        }
-        
-        .level-cell:hover {
-            transform: translateY(-2px) scale(1.05);
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.3), rgba(var(--primary-rgb), 0.15));
-            border-color: rgba(var(--primary-rgb), 0.6);
-            color: white;
-            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
-        }
-        
-        .level-cell:active {
-            transform: translateY(0) scale(1.02);
-            box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.6);
+            user-select: none;
         }
         
         .level-cell.available {
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.1));
-            border-color: rgba(var(--primary-rgb), 0.4);
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.25), rgba(var(--primary-rgb), 0.15));
+            border-color: rgba(var(--primary-rgb), 0.5);
             color: var(--text-light);
             font-weight: 700;
+            box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.2);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
         
         .level-cell.available:hover {
             background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
             color: white;
-            transform: translateY(-3px) scale(1.08);
-            box-shadow: 0 12px 25px rgba(var(--primary-rgb), 0.5);
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(var(--primary-rgb), 0.6);
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+            border-color: var(--primary-color);
         }
         
+        .level-cell.available:active {
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.8);
+        }
+        
+        .level-cell.disabled {
+            background: linear-gradient(135deg, rgba(100, 100, 100, 0.1), rgba(80, 80, 80, 0.05));
+            border-color: rgba(100, 100, 100, 0.15);
+            color: rgba(180, 180, 180, 0.4);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        
+        .level-cell.disabled:hover {
+            transform: none;
+            box-shadow: none;
+            background: linear-gradient(135deg, rgba(100, 100, 100, 0.1), rgba(80, 80, 80, 0.05));
+            border-color: rgba(100, 100, 100, 0.15);
+        }
+        
+        .level-cell.current {
+            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.9)) !important;
+            color: white !important;
+            border-color: rgba(255, 255, 255, 0.8) !important;
+            box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.8) !important;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 1) !important;
+            animation: currentLevel 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes currentLevel {
+            0% { box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.8); }
+            100% { box-shadow: 0 0 30px rgba(var(--primary-rgb), 1), 0 0 40px rgba(var(--primary-rgb), 0.6); }
+        }
+        
+        /* Enhanced Spell Cards */
         .level-section {
-            margin-bottom: 80px;
+            margin-bottom: 5rem;
             opacity: 0;
             animation: fadeInUp 0.8s ease-out forwards;
-            scroll-margin-top: 100px;
+            scroll-margin-top: 120px;
         }
         
-        .level-section:nth-child(even) { animation-delay: 0.2s; }
-        .level-section:nth-child(odd) { animation-delay: 0.4s; }
+        .level-section:nth-child(even) { animation-delay: 0.1s; }
+        .level-section:nth-child(odd) { animation-delay: 0.2s; }
         
         @keyframes fadeInUp {
             from {
                 opacity: 0;
-                transform: translateY(30px);
+                transform: translateY(40px);
             }
             to {
                 opacity: 1;
@@ -445,37 +438,49 @@ HTML_TEMPLATE = """
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.05));
-            backdrop-filter: blur(10px);
+            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.15), rgba(var(--primary-rgb), 0.05));
+            backdrop-filter: blur(20px);
             border: 1px solid rgba(var(--primary-rgb), 0.3);
-            border-radius: 15px;
-            padding: 25px 35px;
-            margin-bottom: 30px;
+            border-radius: 20px;
+            padding: 2rem 2.5rem;
+            margin-bottom: 2rem;
             position: relative;
+            overflow: hidden;
+        }
+        
+        .level-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-color), rgba(var(--primary-rgb), 0.6), var(--primary-color));
         }
         
         .level-title {
             font-family: 'Cinzel', serif;
-            font-size: 2.2em;
+            font-size: 2.5rem;
             font-weight: 600;
             color: var(--primary-color);
+            text-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4);
         }
         
         .level-header-right {
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 1rem;
         }
         
         .level-count {
             background: rgba(0, 0, 0, 0.8);
             color: white;
-            padding: 8px 16px;
-            border-radius: 25px;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
             font-weight: 700;
-            font-size: 0.9em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            font-size: 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
         }
         
         .go-to-top-btn {
@@ -483,178 +488,182 @@ HTML_TEMPLATE = """
             color: white;
             border: none;
             border-radius: 12px;
-            padding: 10px 16px;
-            font-size: 0.85em;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
-            display: flex;
-            align-items: center;
-            gap: 6px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .go-to-top-btn:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+        }
+        
+        .go-to-top-btn::after {
+            content: '↑';
+            font-size: 1.2em;
+        }
+        
+        /* Modern Spell Cards Grid */
+        .spells-masonry {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 1.5rem;
+            align-items: start;
+        }
+        
+        .spell-card {
+            background: linear-gradient(145deg, var(--card-bg), rgba(255,255,255,0.05));
+            backdrop-filter: blur(25px);
+            border-radius: 24px;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            border: 2px solid rgba(var(--primary-rgb), 0.2);
+            box-shadow: 0 10px 40px var(--shadow-color);
+        }
+        
+        .spell-card:hover {
+            transform: translateY(-8px) rotate(0.5deg);
+            box-shadow: 0 30px 60px rgba(var(--primary-rgb), 0.3);
+            border-color: rgba(var(--primary-rgb), 0.6);
+        }
+        
+        .spell-header {
+            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
+            color: white;
+            padding: 1.5rem 2rem;
             position: relative;
             overflow: hidden;
         }
         
-        .go-to-top-btn::before {
+        .spell-header::before {
             content: '';
             position: absolute;
             top: 0;
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: left 0.5s ease;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.6s ease;
         }
         
-        .go-to-top-btn:hover::before {
+        .spell-card:hover .spell-header::before {
             left: 100%;
-        }
-        
-        .go-to-top-btn:hover {
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.95), var(--primary-color));
-            transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
-            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
-        }
-        
-        .go-to-top-btn:active {
-            transform: translateY(0) scale(1.02);
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.6);
-        }
-        
-        /* CSS arrow pointing up */
-        .go-to-top-btn::after {
-            content: '';
-            width: 0;
-            height: 0;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-bottom: 6px solid white;
-            transition: all 0.3s ease;
-        }
-        
-        .go-to-top-btn:hover::after {
-            border-bottom-color: #e8f4fd;
-            transform: translateY(-1px);
-        }
-        
-        .spells-masonry {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-            gap: 25px;
-            align-items: start;
-        }
-        
-        .spell-card {
-            background: var(--card-bg);
-            border-radius: 20px;
-            padding: 0;
-            box-shadow: 0 10px 30px var(--shadow-color);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            position: relative;
-            overflow: hidden;
-            border: 2px solid rgba(var(--primary-rgb), 0.4);
-        }
-        
-        .spell-card:hover {
-            transform: translateY(-8px) rotate(1deg);
-            box-shadow: 0 25px 50px rgba(var(--primary-rgb), 0.4);
-            border: 2px solid rgba(var(--primary-rgb), 0.7);
-        }
-        
-        .spell-header {
-            background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
-            color: white;
-            padding: 20px 25px;
-            position: relative;
         }
         
         .spell-icon {
             position: absolute;
-            top: 10px;
-            right: 15px;
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
-            border: 3px solid rgba(255,255,255,0.4);
+            top: 15px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            border: 3px solid rgba(255,255,255,0.3);
             background: rgba(255,255,255,0.1);
-            padding: 3px;
+            padding: 4px;
             transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
         }
         
         .spell-icon:hover {
             transform: scale(1.15);
-            border-color: rgba(255,255,255,0.9);
-            box-shadow: 0 0 20px rgba(255,255,255,0.5);
+            border-color: rgba(255,255,255,0.8);
+            box-shadow: 0 0 25px rgba(255,255,255,0.5);
         }
         
         .spell-name {
             font-family: 'Cinzel', serif;
-            font-size: 1.6em;
+            font-size: 1.75rem;
             font-weight: 600;
-            margin-bottom: 5px;
-            padding-right: 70px;
+            margin-bottom: 0.5rem;
+            padding-right: 80px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            color: #ffffff;
+            line-height: 1.2;
         }
         
         .spell-level {
-            font-size: 0.9em;
+            font-size: 1rem;
             opacity: 0.9;
             font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .spell-body {
-            padding: 25px;
+            padding: 2rem;
             color: var(--text-dark);
-            font-family: 'Crimson Text', serif;
         }
         
         .spell-attributes {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 20px;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
         
         .spell-attribute {
             display: flex;
             flex-direction: column;
             background: rgba(var(--primary-rgb), 0.05);
-            padding: 12px;
-            border-radius: 10px;
-            border-left: 3px solid var(--primary-color);
+            padding: 1rem;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary-color);
             position: relative;
-            font-family: 'Crimson Text', serif;
+            transition: all 0.3s ease;
+        }
+        
+        .spell-attribute:hover {
+            background: rgba(var(--primary-rgb), 0.1);
+            transform: translateX(3px);
         }
         
         .attribute-label {
-            font-size: 0.85em;
+            font-size: 0.8rem;
             font-weight: 600;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 4px;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-family: 'Inter', sans-serif;
         }
         
         .attribute-value {
-            font-size: 1em;
-            font-weight: 400;
+            font-size: 1rem;
+            font-weight: 500;
             color: var(--text-dark);
             font-family: 'Crimson Text', serif;
         }
         
-        /* Target type color coding */
-        .target-self { background: rgba(255, 255, 0, 0.15) !important; border-left-color: #ffd700 !important; }
-        .target-single { background: rgba(255, 0, 0, 0.15) !important; border-left-color: #ff4444 !important; }
-        .target-aoe-target { background: rgba(0, 255, 0, 0.15) !important; border-left-color: #44ff44 !important; }
-        .target-aoe-caster { background: rgba(0, 100, 255, 0.15) !important; border-left-color: #4488ff !important; }
-        .target-group { background: rgba(150, 0, 255, 0.15) !important; border-left-color: #9944ff !important; }
-
+        /* Enhanced Target Type Color Coding */
+        .target-self { 
+            background: rgba(255, 215, 0, 0.1) !important; 
+            border-left-color: #ffd700 !important; 
+        }
+        .target-single { 
+            background: rgba(255, 68, 68, 0.1) !important; 
+            border-left-color: #ff4444 !important; 
+        }
+        .target-aoe-target { 
+            background: rgba(34, 197, 94, 0.1) !important; 
+            border-left-color: #22c55e !important; 
+        }
+        .target-aoe-caster { 
+            background: rgba(59, 130, 246, 0.1) !important; 
+            border-left-color: #3b82f6 !important; 
+        }
+        .target-group { 
+            background: rgba(168, 85, 247, 0.1) !important; 
+            border-left-color: #a855f7 !important; 
+        }
+        
+        /* Enhanced Copy Button */
         .spell-id-container {
             display: flex;
             align-items: center;
@@ -665,66 +674,32 @@ HTML_TEMPLATE = """
             background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 0.8em;
+            border-radius: 10px;
+            padding: 0.5rem;
+            font-size: 0.8rem;
             cursor: pointer;
             transition: all 0.3s ease;
-            margin-left: 10px;
-            box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.3);
+            margin-left: 0.75rem;
+            width: 36px;
+            height: 32px;
             display: flex;
             align-items: center;
-            gap: 4px;
-            min-width: 32px;
-            height: 28px;
             justify-content: center;
             position: relative;
+            backdrop-filter: blur(10px);
         }
         
         .copy-btn:hover {
-            background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.9), var(--primary-color));
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.4);
+            box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.5);
         }
         
-        .copy-btn:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.3);
-        }
-        
-        /* CSS-based clipboard icon */
         .copy-btn::before {
-            content: '';
-            width: 12px;
-            height: 14px;
-            border: 2px solid white;
-            border-radius: 2px;
-            position: relative;
-            background: transparent;
+            content: '📋';
+            font-size: 1rem;
         }
         
-        .copy-btn::after {
-            content: '';
-            position: absolute;
-            width: 8px;
-            height: 10px;
-            border: 1.5px solid white;
-            border-radius: 1px;
-            background: rgba(255,255,255,0.2);
-            top: 50%;
-            left: 50%;
-            transform: translate(-30%, -45%);
-        }
-        
-        .copy-btn:hover::before {
-            border-color: #e8f4fd;
-        }
-        
-        .copy-btn:hover::after {
-            border-color: #e8f4fd;
-            background: rgba(232,244,253,0.3);
-        }
-        
+        /* Copy Popup */
         .copy-popup {
             position: fixed;
             top: 50%;
@@ -732,228 +707,413 @@ HTML_TEMPLATE = """
             transform: translate(-50%, -50%);
             background: var(--primary-color);
             color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
             font-weight: 600;
             z-index: 1000;
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: all 0.3s ease;
             pointer-events: none;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(20px);
         }
         
         .copy-popup.show {
             opacity: 1;
+            transform: translate(-50%, -50%) scale(1.05);
+        }
+        
+        /* Scroll Effects */
+        .scroll-blur .spell-card {
+            filter: blur(2px);
+            opacity: 0.8;
+            transform: scale(0.99);
+        }
+        
+        .scroll-blur .level-section {
+            filter: blur(2px);
+            opacity: 0.8;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .spells-masonry {
+                grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            }
         }
         
         @media (max-width: 768px) {
-            .class-title { font-size: 3em; }
-            .stats-dashboard { grid-template-columns: 1fr; }
-            .spells-masonry { grid-template-columns: 1fr; }
-            .spell-attributes { grid-template-columns: 1fr; }
-            .level-matrix { grid-template-columns: repeat(5, 1fr); }
-            .level-navigator { padding: 20px; }
-            .level-header { flex-direction: column; gap: 15px; text-align: center; }
-            .level-header-right { flex-direction: row; justify-content: center; }
-            .home-button { position: static; margin: 0 auto 20px auto; }
+            .main-container {
+                padding: 1rem;
+            }
+            
+            .class-title { 
+                font-size: 3rem; 
+            }
+            
+            .stats-dashboard { 
+                grid-template-columns: 1fr; 
+                gap: 1rem;
+            }
+            
+            .spells-masonry { 
+                grid-template-columns: 1fr; 
+            }
+            
+            .spell-attributes { 
+                grid-template-columns: 1fr; 
+            }
+            
+            .level-matrix { 
+                grid-template-columns: repeat(8, 1fr);
+                grid-template-rows: repeat(8, 1fr);
+                max-width: 500px;
+            }
+            
+            .level-navigator { 
+                padding: 1.5rem; 
+            }
+            
+            .level-header { 
+                flex-direction: column; 
+                gap: 1rem; 
+                text-align: center; 
+                padding: 1.5rem;
+            }
+            
+            .home-button { 
+                position: static; 
+                margin: 0 auto 1.5rem auto; 
+            }
         }
         
         @media (max-width: 480px) {
-            .level-matrix { grid-template-columns: repeat(5, 1fr); gap: 6px; }
-            .level-cell { font-size: 0.8em; min-height: 35px; }
-            .go-to-top-btn { padding: 8px 12px; font-size: 0.8em; }
+            .level-matrix { 
+                grid-template-columns: repeat(6, 1fr);
+                grid-template-rows: repeat(10, 1fr);
+                gap: 0.25rem;
+                max-width: 400px;
+            }
+            
+            .level-cell { 
+                font-size: 0.8rem; 
+                min-height: 40px; 
+            }
+            
+            .spell-card {
+                border-radius: 16px;
+            }
+            
+            .spell-body {
+                padding: 1.5rem;
+            }
+        }
+        
+        /* Performance optimizations */
+        .spell-card {
+            will-change: transform;
+        }
+        
+        .level-cell {
+            will-change: transform;
+        }
+        
+        /* Accessibility improvements */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+        
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+            :root {
+                --text-light: #ffffff;
+                --text-dark: #ffffff;
+                --border-glass: rgba(255, 255, 255, 0.3);
+            }
         }
     </style>
 </head>
 <body>
     <div class="main-container">
-        <div class="hero-section">
-            <a href="index.html" class="home-button">Home</a>
+        <header class="hero-section">
+            <a href="index.html" class="home-button" aria-label="Return to home page">
+                <span>Home</span>
+            </a>
             <h1 class="class-title">{{ cls }}</h1>
             <p class="class-subtitle">Spell Compendium</p>
-        </div>
+        </header>
         
-        <div class="stats-dashboard">
-            <div class="stat-card">
-                <span class="stat-number">{{ total_spells }}</span>
+        <section class="stats-dashboard" aria-label="Spell statistics">
+            <div class="stat-card" tabindex="0">
+                <span class="stat-number" aria-label="{{ total_spells }} total spells">{{ total_spells }}</span>
                 <span class="stat-label">Total Spells</span>
             </div>
-            <div class="stat-card">
-                <span class="stat-number">{{ max_level }}</span>
+            <div class="stat-card" tabindex="0">
+                <span class="stat-number" aria-label="Maximum level {{ max_level }}">{{ max_level }}</span>
                 <span class="stat-label">Max Level</span>
             </div>
-            <div class="stat-card">
-                <span class="stat-number">{{ schools_count }}</span>
+            <div class="stat-card" tabindex="0">
+                <span class="stat-number" aria-label="{{ schools_count }} magic schools">{{ schools_count }}</span>
                 <span class="stat-label">Magic Schools</span>
             </div>
-        </div>
+        </section>
         
-        <div class="level-navigator">
-            <h3 class="level-nav-title">Quick Level Navigation</h3>
-            <div class="level-matrix" id="levelMatrix">
+        <nav class="level-navigator" aria-label="Level navigation">
+            <h2 class="level-nav-title">Quick Level Navigation</h2>
+            <div class="level-matrix" id="levelMatrix" role="grid" aria-label="Level selection grid">
                 <!-- Level cells will be populated by JavaScript -->
             </div>
-        </div>
+        </nav>
         
-        {{ content|safe }}
+        <main>
+            {{ content|safe }}
+        </main>
     </div>
     
     <!-- Copy confirmation popup -->
-    <div id="copyPopup" class="copy-popup">
+    <div id="copyPopup" class="copy-popup" role="alert" aria-live="polite">
         Spell ID copied to clipboard!
     </div>
     
     <script>
-        let isScrolling = false;
-        let scrollTimeout;
-        
-        // Initialize level navigation matrix
-        function initializeLevelMatrix() {
-            const matrix = document.getElementById('levelMatrix');
-            const availableLevels = new Set();
+        (() => {
+            'use strict';
             
-            // Find all level sections on the page
-            const levelSections = document.querySelectorAll('.level-section');
-            levelSections.forEach(section => {
-                const levelTitle = section.querySelector('.level-title');
-                if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
-                    if (levelMatch) {
-                        availableLevels.add(parseInt(levelMatch[1]));
+            let isScrolling = false;
+            let scrollTimeout;
+            
+            // Initialize level navigation matrix
+            function initializeLevelMatrix() {
+                const matrix = document.getElementById('levelMatrix');
+                if (!matrix) return;
+                
+                const availableLevels = new Set();
+                
+                // Find all level sections on the page
+                document.querySelectorAll('.level-section').forEach(section => {
+                    const levelTitle = section.querySelector('.level-title');
+                    if (levelTitle) {
+                        const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
+                        if (levelMatch) {
+                            availableLevels.add(parseInt(levelMatch[1], 10));
+                        }
                     }
-                }
-            });
-            
-            // Create 60 level cells (10x6 grid)
-            for (let i = 1; i <= 60; i++) {
-                const cell = document.createElement('div');
-                cell.className = 'level-cell';
-                cell.textContent = String(i);
-                cell.setAttribute('data-level', String(i));
+                });
                 
-                // Mark available levels
-                if (availableLevels.has(i)) {
-                    cell.classList.add('available');
-                    cell.style.cursor = 'pointer';
-                    cell.addEventListener('click', () => scrollToLevel(i));
-                } else {
-                    cell.classList.add('disabled');
-                    cell.style.cursor = 'not-allowed';
-                    cell.title = `No spells available at level ${i}`;
-                }
-                
-                matrix.appendChild(cell);
-            }
-        }
-        
-        // Apply blur effect during scrolling
-        function applyScrollBlur() {
-            if (!isScrolling) {
-                isScrolling = true;
-                document.body.classList.add('scroll-blur');
-            }
-            
-            // Clear existing timeout
-            clearTimeout(scrollTimeout);
-            
-            // Remove blur after scrolling stops
-            scrollTimeout = setTimeout(() => {
-                isScrolling = false;
-                document.body.classList.remove('scroll-blur');
-            }, 150);
-        }
-        
-        // Scroll to a specific level section
-        function scrollToLevel(level) {
-            const levelSections = document.querySelectorAll('.level-section');
-            
-            for (const section of levelSections) {
-                const levelTitle = section.querySelector('.level-title');
-                if (levelTitle) {
-                    const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
-                    if (levelMatch && parseInt(levelMatch[1]) === level) {
-                        // Apply blur effect before scrolling
-                        applyScrollBlur();
-                        
-                        section.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
+                // Create level cells (6 rows x 10 columns = 60 levels)
+                const fragment = document.createDocumentFragment();
+                for (let i = 1; i <= 60; i++) {
+                    const cell = document.createElement('button');
+                    cell.className = 'level-cell';
+                    cell.textContent = String(i);
+                    cell.setAttribute('data-level', String(i));
+                    cell.type = 'button';
+                    
+                    if (availableLevels.has(i)) {
+                        cell.classList.add('available');
+                        cell.setAttribute('aria-label', `Jump to level ${i} spells`);
+                        cell.setAttribute('title', `Click to view level ${i} spells`);
+                        cell.addEventListener('click', () => {
+                            // Add visual feedback
+                            cell.style.transform = 'scale(0.95)';
+                            setTimeout(() => {
+                                cell.style.transform = '';
+                            }, 150);
+                            scrollToLevel(i);
                         });
-                        
-                        // Add a temporary highlight effect after blur clears
-                        setTimeout(() => {
-                            const levelHeader = section.querySelector('.level-header');
-                            if (levelHeader) {
-                                levelHeader.style.transform = 'scale(1.02)';
-                                levelHeader.style.boxShadow = '0 0 30px rgba(var(--primary-rgb), 0.6)';
-                                setTimeout(() => {
-                                    levelHeader.style.transform = '';
-                                    levelHeader.style.boxShadow = '';
-                                }, 1000);
-                            }
-                        }, 300);
-                        break;
+                    } else {
+                        cell.classList.add('disabled');
+                        cell.setAttribute('aria-label', `No spells available at level ${i}`);
+                        cell.setAttribute('title', `No spells at level ${i}`);
+                        cell.disabled = true;
+                    }
+                    
+                    fragment.appendChild(cell);
+                }
+                
+                matrix.appendChild(fragment);
+            }
+            
+            // Apply blur effect during scrolling
+            function applyScrollBlur() {
+                if (!isScrolling) {
+                    isScrolling = true;
+                    document.body.classList.add('scroll-blur');
+                }
+                
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    isScrolling = false;
+                    document.body.classList.remove('scroll-blur');
+                }, 150);
+            }
+            
+            // Scroll to a specific level section
+            function scrollToLevel(level) {
+                const sections = document.querySelectorAll('.level-section');
+                
+                for (const section of sections) {
+                    const levelTitle = section.querySelector('.level-title');
+                    if (levelTitle) {
+                        const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
+                        if (levelMatch && parseInt(levelMatch[1], 10) === level) {
+                            applyScrollBlur();
+                            
+                            section.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                            });
+                            
+                            // Highlight effect
+                            setTimeout(() => {
+                                const levelHeader = section.querySelector('.level-header');
+                                if (levelHeader) {
+                                    levelHeader.style.transform = 'scale(1.02)';
+                                    levelHeader.style.boxShadow = '0 0 40px rgba(var(--primary-rgb), 0.6)';
+                                    setTimeout(() => {
+                                        levelHeader.style.transform = '';
+                                        levelHeader.style.boxShadow = '';
+                                    }, 1000);
+                                }
+                            }, 300);
+                            break;
+                        }
                     }
                 }
             }
-        }
-        
-        // Scroll to top of page
-        function scrollToTop() {
-            // Apply blur effect before scrolling
-            applyScrollBlur();
             
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
-        }
-        
-        // Listen for manual scrolling to also apply blur effect
-        let scrollTimer;
-        window.addEventListener('scroll', () => {
-            // Only apply blur if this is manual scrolling (not from our functions)
-            if (!isScrolling) {
+            // Scroll to top of page
+            function scrollToTop() {
                 applyScrollBlur();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
             }
-        });
-        
-        function copySpellId(spellId) {
-            // Copy to clipboard
-            navigator.clipboard.writeText(spellId).then(function() {
-                // Show confirmation popup
+            
+            // Copy spell ID to clipboard
+            function copySpellId(spellId) {
                 const popup = document.getElementById('copyPopup');
-                popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
-                popup.classList.add('show');
                 
-                // Hide popup after 2 seconds
-                setTimeout(function() {
-                    popup.classList.remove('show');
-                }, 2000);
-            }).catch(function(err) {
-                // Fallback for older browsers
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(spellId)
+                        .then(() => showCopyPopup(popup, spellId))
+                        .catch(() => fallbackCopy(spellId, popup));
+                } else {
+                    fallbackCopy(spellId, popup);
+                }
+            }
+            
+            function fallbackCopy(spellId, popup) {
                 const textArea = document.createElement('textarea');
                 textArea.value = spellId;
+                textArea.style.position = 'absolute';
+                textArea.style.left = '-9999px';
                 document.body.appendChild(textArea);
                 textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
                 
-                // Show confirmation popup
-                const popup = document.getElementById('copyPopup');
+                try {
+                    document.execCommand('copy');
+                    showCopyPopup(popup, spellId);
+                } catch (err) {
+                    console.error('Failed to copy text: ', err);
+                } finally {
+                    document.body.removeChild(textArea);
+                }
+            }
+            
+            function showCopyPopup(popup, spellId) {
+                if (!popup) return;
+                
                 popup.textContent = `Spell ID ${spellId} copied to clipboard!`;
                 popup.classList.add('show');
                 
-                setTimeout(function() {
+                setTimeout(() => {
                     popup.classList.remove('show');
-                }, 2000);
-            });
-        }
-        
-        // Initialize everything when the page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeLevelMatrix();
-        });
+                }, 2500);
+            }
+            
+            // Function to update current level indicator
+            function updateCurrentLevel() {
+                const sections = document.querySelectorAll('.level-section');
+                const levelCells = document.querySelectorAll('.level-cell.available');
+                const scrollPosition = window.scrollY + window.innerHeight / 3;
+                
+                let currentLevel = null;
+                
+                // Find which section is currently in view
+                sections.forEach(section => {
+                    const rect = section.getBoundingClientRect();
+                    const top = rect.top + window.scrollY;
+                    
+                    if (scrollPosition >= top) {
+                        const levelTitle = section.querySelector('.level-title');
+                        if (levelTitle) {
+                            const levelMatch = levelTitle.textContent.match(/Level (\\d+)/);
+                            if (levelMatch) {
+                                currentLevel = parseInt(levelMatch[1], 10);
+                            }
+                        }
+                    }
+                });
+                
+                // Update level cell highlighting
+                levelCells.forEach(cell => {
+                    const cellLevel = parseInt(cell.getAttribute('data-level'), 10);
+                    if (cellLevel === currentLevel) {
+                        cell.classList.add('current');
+                    } else {
+                        cell.classList.remove('current');
+                    }
+                });
+            }
+            
+            // Listen for scroll events
+            let scrollTimer;
+            window.addEventListener('scroll', () => {
+                if (!isScrolling) {
+                    applyScrollBlur();
+                }
+                
+                // Update current level indicator
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(updateCurrentLevel, 100);
+            }, { passive: true });
+            
+            // Make functions available globally
+            window.scrollToLevel = scrollToLevel;
+            window.scrollToTop = scrollToTop;
+            window.copySpellId = copySpellId;
+            
+            // Initialize when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    initializeLevelMatrix();
+                    // Initialize current level after a short delay
+                    setTimeout(updateCurrentLevel, 500);
+                });
+            } else {
+                initializeLevelMatrix();
+                // Initialize current level after a short delay
+                setTimeout(updateCurrentLevel, 500);
+            }
+            
+            // Performance optimization: preload critical resources
+            const preloadCritical = () => {
+                const link = document.createElement('link');
+                link.rel = 'preload';
+                link.as = 'style';
+                link.href = 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap';
+                document.head.appendChild(link);
+            };
+            
+            // Run preload after initial render
+            requestAnimationFrame(preloadCritical);
+        })();
     </script>
 </body>
 </html>
@@ -964,17 +1124,46 @@ def fetch_spell_html(class_type: int, base_url: str = BASE_URL) -> str:
     
     # Add headers to mimic a real browser
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
     }
     
-    resp = requests.get(
-        base_url,
-        params={"a": "spells", "name": "", "type": class_type, "level": 1, "opt": 2},
-        headers=headers,
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.text
+    session = requests.Session()
+    session.headers.update(headers)
+    
+    try:
+        logger.info(f"Fetching spell data for class type {class_type} from {base_url}")
+        resp = session.get(
+            base_url,
+            params={"a": "spells", "name": "", "type": class_type, "level": 1, "opt": 2},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        
+        if len(resp.text) < 1000:
+            raise ValueError(f"Received suspiciously short response ({len(resp.text)} chars)")
+            
+        logger.info(f"Successfully fetched {len(resp.text)} characters of HTML")
+        return resp.text
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout while fetching data for class type {class_type}")
+        raise ConnectionError("Request timed out after 30 seconds")
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Connection error for class type {class_type}: {e}")
+        raise ConnectionError(f"Unable to connect to {base_url}")
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP error {e.response.status_code} for class type {class_type}")
+        raise ConnectionError(f"Server returned error {e.response.status_code}")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching data for class type {class_type}: {e}")
+        raise
+    finally:
+        session.close()
 
 def read_local_spell_html(cls: str, local_dir: str) -> Optional[str]:
     """Return HTML from a local file if present."""
@@ -992,8 +1181,17 @@ def read_local_spell_html(cls: str, local_dir: str) -> Optional[str]:
 
 def parse_spell_table(html: str) -> pd.DataFrame:
     """Parse spell table from HTML for alla clone structure."""
-    soup = BeautifulSoup(html, 'html.parser')
+    if not html or len(html) < 100:
+        raise ValueError("HTML content is too short or empty")
+        
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+    except Exception as e:
+        logger.error(f"Failed to parse HTML with BeautifulSoup: {e}")
+        raise ValueError(f"Invalid HTML content: {e}")
+        
     spells = []
+    logger.info("Starting spell table parsing")
     
     # Look for level sections in the HTML
     level_headers = soup.find_all(string=lambda text: text and text.strip().startswith('Level:'))
@@ -1177,19 +1375,52 @@ def parse_spell_table(html: str) -> pd.DataFrame:
                     spell_count += 1
                     
         except (ValueError, AttributeError) as e:
+            logger.debug(f"Skipping level section due to parsing error: {e}")
+            continue
+        except Exception as e:
+            logger.warning(f"Unexpected error parsing level section: {e}")
             continue
     
     if not spells:
-        raise ValueError("No spell data found in HTML")
+        logger.error("No spell data found in HTML")
+        # Save problematic HTML for debugging
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+            f.write(html[:5000])  # First 5000 chars
+            logger.error(f"Saved problematic HTML snippet to {f.name}")
+        raise ValueError("No spell data found in HTML - possible structure change")
     
     # Create DataFrame and clean up
-    df = pd.DataFrame(spells)
-    df = df.drop_duplicates(subset=['Name'], keep='first')
-    
-    # Sort by level then by name
-    df['Level'] = pd.to_numeric(df['Level'], errors='coerce')
-    df = df.sort_values(['Level', 'Name'])
-    return df;
+    try:
+        df = pd.DataFrame(spells)
+        
+        if df.empty:
+            raise ValueError("Created empty DataFrame from spell data")
+            
+        logger.info(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
+        
+        # Remove duplicates
+        initial_count = len(df)
+        df = df.drop_duplicates(subset=['Name'], keep='first')
+        final_count = len(df)
+        
+        if initial_count != final_count:
+            logger.info(f"Removed {initial_count - final_count} duplicate spells")
+        
+        # Sort by level then by name
+        df['Level'] = pd.to_numeric(df['Level'], errors='coerce')
+        df = df.sort_values(['Level', 'Name'])
+        
+        # Validate data quality
+        null_names = df['Name'].isnull().sum()
+        if null_names > 0:
+            logger.warning(f"Found {null_names} spells with null names")
+            
+        logger.info(f"Final dataset: {len(df)} spells, levels {df['Level'].min()}-{df['Level'].max()}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to create or process DataFrame: {e}")
+        raise ValueError(f"Data processing failed: {e}")
 
 
 def _hex_to_rgb(hex_color: str) -> str:
@@ -1325,11 +1556,15 @@ def scrape_class(cls: str, base_url: str, local_dir: Optional[str]) -> pd.DataFr
         print(f"Fetching {cls} from {base_url}")
         html = fetch_spell_html(CLASSES[cls], base_url=base_url)
         
-        # Save raw HTML for debugging
-        temp_file = os.path.join(os.path.dirname(__file__), f"temp_{cls.lower()}.html")
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(html)
-        print(f"Saved temp HTML to {temp_file}")
+        # Save raw HTML for debugging in system temp directory
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=f"_{cls.lower()}.html", delete=False, encoding="utf-8") as f:
+                f.write(html)
+                temp_file = f.name
+            logger.info(f"Saved temp HTML to {temp_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save temp HTML: {e}")
+            temp_file = "<temp file creation failed>"
     
     return parse_spell_table(html)
 

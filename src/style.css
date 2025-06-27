@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&family=Crimson+Text:wght@400;600&display=swap');
+
+:root {
+  --primary-color: #9370db;
+  --primary-rgb: 147, 112, 219;
+  --bg-dark: #0a0e1a;
+  --bg-darker: #050810;
+  --card-bg: rgba(42, 46, 54, 0.95);
+  --text-light: #e2e8f0;
+  --text-dark: #f8fafc;
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  --accent-purple: #6a4c93;
+}
+
+* { 
+  margin: 0; 
+  padding: 0; 
+  box-sizing: border-box; 
+}
+
+html {
+  background: var(--bg-darker);
+  background-attachment: fixed;
+}
+
+body { 
+  font-family: 'Inter', sans-serif;
+  background: 
+    var(--bg-darker),
+    radial-gradient(circle at 25% 25%, rgba(var(--primary-rgb), 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 75% 25%, rgba(106, 76, 147, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 25% 75%, rgba(147, 112, 219, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(var(--primary-rgb), 0.1) 0%, transparent 50%),
+    linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  background-attachment: fixed;
+  background-size: 100% 100%;
+  min-height: 100vh;
+  color: var(--text-light);
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="0.3" fill="rgba(255,255,255,0.02)"/><circle cx="75" cy="75" r="0.2" fill="rgba(147,112,219,0.03)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform;
+}
+
+.main-container {
+  position: relative;
+  z-index: 2;
+  padding: 60px 20px;
+  max-width: 1800px;
+  margin: 0 auto;
+  background: transparent;
+}
+
+/* Class-specific colors */
+.warrior { --class-color: #8e2d2d; --class-color-rgb: 142, 45, 45; }
+.cleric { --class-color: #ccccff; --class-color-rgb: 204, 204, 255; }
+.paladin { --class-color: #ffd700; --class-color-rgb: 255, 215, 0; }
+.ranger { --class-color: #228b22; --class-color-rgb: 34, 139, 34; }
+.shadowknight { --class-color: #551a8b; --class-color-rgb: 85, 26, 139; }
+.druid { --class-color: #a0522d; --class-color-rgb: 160, 82, 45; }
+.monk { --class-color: #556b2f; --class-color-rgb: 85, 107, 47; }
+.bard { --class-color: #ff69b4; --class-color-rgb: 255, 105, 180; }
+.rogue { --class-color: #708090; --class-color-rgb: 112, 128, 144; }
+.shaman { --class-color: #20b2aa; --class-color-rgb: 32, 178, 170; }
+.necromancer { --class-color: #4b0082; --class-color-rgb: 75, 0, 130; }
+.wizard { --class-color: #1e90ff; --class-color-rgb: 30, 144, 255; }
+.magician { --class-color: #ff8c00; --class-color-rgb: 255, 140, 0; }
+.enchanter { --class-color: #9370db; --class-color-rgb: 147, 112, 219; }
+.beastlord { --class-color: #a52a2a; --class-color-rgb: 165, 42, 42; }
+.berserker { --class-color: #b22222; --class-color-rgb: 178, 34, 34; }
+
+/* Scroll blur effect */
+body.scroll-blur .spell-card {
+  filter: blur(0.8px);
+  opacity: 0.7;
+  transition: filter 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+body.scroll-blur .level-navigator {
+  filter: blur(0.4px);
+  opacity: 0.85;
+  transition: filter 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+body.scroll-blur .level-section {
+  filter: blur(0.6px);
+  opacity: 0.8;
+  transition: filter 0.15s ease-out, opacity 0.15s ease-out;
+} 
