@@ -1,78 +1,257 @@
 # EQDataScraper
 
+A modern, full-stack Vue.js application for browsing EverQuest spell data with an interactive, user-friendly interface.
 
-EQDataScraper is a small Python utility that retrieves spell information for every EverQuest class from the **Clumsy's World** Allakhazam clone. For each class the script builds a colour‑themed HTML page listing all spells at or above level 1.
+## 🌟 Features
 
-The script pulls data directly from `https://alla.clumsysworld.com/` by default, so an internet connection is required unless you provide pre-saved HTML files. Output files are named `<class>_spells.html` and are written to the project directory.
+- **Modern Vue.js Frontend**: Single Page Application with Vue Router and Pinia state management
+- **Flask REST API Backend**: Serves spell data with caching and comprehensive error handling  
+- **Interactive Navigation**: 6×10 level matrix for quick navigation to any spell level
+- **Enhanced Spell Cards**: Display spell ID, school, target type, mana cost, and effects with copy functionality
+- **Class-Specific Theming**: Dynamic color schemes for all 16 EverQuest classes
+- **Responsive Design**: Mobile-friendly interface with glassmorphism aesthetics
+- **Smart Features**: "Top" buttons, scroll blur effects, and smooth animations
+- **Unified App Runner**: Single script to manage both frontend and backend services
 
-## Requirements
-- Python 3.8 or newer
-- The packages listed in `requirements.txt`
+## 🚀 Quick Start
 
-Install the dependencies with:
-
-This script retrieves spell data for each EverQuest class from the Clumsy's World Allakhazam clone. It generates one HTML file per class showing the spell table with a simple colour theme.
-
-By default the script fetches spell tables directly from the Clumsy's World site. If the
-site is unreachable you can provide a directory of HTML files using `--local-dir`.
-Each file should be named `<class>.html` (e.g. `bard.html`). A generic
-`sample_table.html` is provided for testing and will be used for any missing class file.
-
-## Usage
-
-Install dependencies:
+### Option 1: Unified Runner (Recommended)
 ```bash
+# Install all dependencies
+python3 run.py install
+
+# Start both frontend and backend
+python3 run.py start
+```
+
+### Option 2: NPM Scripts
+```bash
+# Install dependencies
+npm run install:all
+
+# Start the application
+npm run start
+```
+
+### Option 3: Platform-Specific Scripts
+**Windows:**
+```cmd
+run.bat start
+```
+
+**Linux/macOS:**
+```bash
+./run.sh start
+```
+
+## 📋 Requirements
+
+- **Python 3.8+** with pip
+- **Node.js 16+** with npm
+- **Internet connection** for spell data scraping
+
+## 🛠️ Manual Setup
+
+If you prefer to set up each component manually:
+
+### Backend Setup
+```bash
+cd backend
 pip install -r requirements.txt
+python app.py
 ```
 
-
-## Basic usage
-Execute the scraper once for all classes:
-Run once:
+### Frontend Setup
 ```bash
+npm install
+npm run dev
+```
+
+## 🎮 Application URLs
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+
+## 📖 Unified Runner Commands
+
+The `run.py` script provides comprehensive application management:
+
+| Command | Description |
+|---------|-------------|
+| `python3 run.py start` | Start both frontend and backend services |
+| `python3 run.py stop` | Stop all running services |
+| `python3 run.py status` | Check service status |
+| `python3 run.py install` | Install all dependencies |
+| `python3 run.py start --skip-deps` | Start without dependency checking |
+
+### Command Options
+- `--skip-deps` / `--ignore-deps`: Skip dependency verification (use with caution)
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Vue.js SPA    │───▶│   Flask API      │───▶│ Spell Scraper   │
+│   Port: 3000    │    │   Port: 5000     │    │ (alla.clumsy    │
+│                 │    │                  │    │  sworld.com)    │
+│ • Vue Router    │    │ • REST Endpoints │    │                 │
+│ • Pinia Store   │    │ • Data Caching   │    │ • BeautifulSoup │
+│ • Axios Client  │    │ • Error Handling │    │ • Pandas        │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+## 🎨 User Interface Features
+
+### Interactive Level Matrix
+- 6×10 grid (levels 1-60) with visual indicators
+- Available levels highlighted in class colors
+- Click any level to instantly scroll to spells
+- Current section highlighting while browsing
+
+### Enhanced Spell Cards
+- **Spell Information**: Name, level, mana cost, school, target type
+- **Copy Functionality**: Click to copy spell IDs to clipboard
+- **Visual Indicators**: Color-coded target types (self, single, group, AoE)
+- **Detailed Effects**: Complete spell descriptions
+
+### Smart Navigation
+- "Top" buttons at each level header
+- Smooth scroll animations with blur effects
+- Responsive design for mobile and desktop
+- Back to class selection from any page
+
+## 🎭 Class Theming
+
+Each of the 16 EverQuest classes has a unique color theme:
+
+| Class | Color | Class | Color |
+|-------|--------|-------|--------|
+| Warrior | Red | Cleric | Light Blue |
+| Paladin | Gold | Ranger | Green |
+| Shadow Knight | Purple | Druid | Brown |
+| Monk | Olive | Bard | Pink |
+| Rogue | Gray | Shaman | Teal |
+| Necromancer | Indigo | Wizard | Blue |
+| Magician | Orange | Enchanter | Violet |
+| Beastlord | Maroon | Berserker | Crimson |
+
+## 🔧 Development
+
+### Project Structure
+```
+EQDataScraper/
+├── backend/           # Flask API server
+│   ├── app.py        # Main Flask application
+│   └── requirements.txt
+├── src/              # Vue.js frontend source
+│   ├── components/   
+│   ├── views/        # Page components
+│   ├── stores/       # Pinia state management
+│   └── router/       # Vue Router configuration
+├── public/           # Static assets
+├── run.py           # Unified application runner
+├── run.sh           # Unix shell script
+├── run.bat          # Windows batch script
+└── scrape_spells.py # Original spell scraper
+```
+
+### Build for Production
+```bash
+# Build frontend
+npm run build
+
+# Frontend files will be in dist/
+# Backend runs the same (python backend/app.py)
+```
+
+## 🧪 Testing the Unified Runner
+
+```bash
+# Check service status
+python3 run.py status
+
+# Start with dependency bypass (if needed)
+python3 run.py start --skip-deps
+
+# Stop all services
+python3 run.py stop
+
+# Check help
+python3 run.py --help
+```
+
+## 🔍 API Endpoints
+
+The Flask backend provides these REST endpoints:
+
+- `GET /api/classes` - List all available classes
+- `GET /api/spells/{className}` - Get spells for a specific class
+- `POST /api/scrape-all` - Trigger scraping for all classes
+- `GET /api/cache-status` - Check cache status
+- `GET /api/health` - Health check
+
+## 🛠️ Legacy Usage (scrape_spells.py)
+
+The original Python scraper can still be used independently:
+
+```bash
+# Scrape all classes once
 python scrape_spells.py
-```
-When finished you will find HTML files such as `bard_spells.html`, `cleric_spells.html` and so on in the repository folder. Open any of these files in your browser to view the results.
 
-## Running continuously
-The script can run in a loop to keep your local files up‑to‑date. Use `--loop` together with an optional `--interval` (seconds) to control how often it runs. The example below scrapes every hour:
-
-Run continually every hour:
-```bash
+# Run continuously (every hour)
 python scrape_spells.py --loop --interval 3600
-```
 
-Press **Ctrl+C** to stop the loop.
-
-## Command-line options
-- `--loop` &ndash; run indefinitely, scraping at a set interval.
-- `--interval SECONDS` &ndash; number of seconds between runs when using `--loop` (default: 3600).
-- `--base-url URL` &ndash; alternate website root if you wish to scrape from a mirror.
-- `--local-dir PATH` &ndash; read pre-saved HTML files from this folder instead of downloading from the web. Each file should be named `<class>.html`. A `sample_table.html` is provided for testing.
-
-## Example: using local files
-If your environment has no internet access you can still test the script by providing the supplied sample HTML table:
-
-Use local HTML files instead of fetching:
-```bash
+# Use local files instead of web scraping
 python scrape_spells.py --local-dir samples
 ```
 
-The generated pages will contain the data from the files in `samples/`.
+## 🐛 Troubleshooting
 
-## Customisation
-Colour themes for each class are defined in `scrape_spells.py` within the `CLASS_COLORS` dictionary. You can adjust the colours or add CSS in `HTML_TEMPLATE` to change the appearance of the output pages.
+### Common Issues
 
-## Troubleshooting
-- **Connection errors** &ndash; ensure the target site is reachable, or use `--local-dir` with pre‑downloaded pages.
-- **No table found** &ndash; the website may have changed its structure. Verify the HTML manually and update `parse_spell_table` if necessary.
-
-## License
-This project is provided as-is for personal use and education.
-
-Specify an alternate base URL:
+**Dependencies Missing:**
 ```bash
-python scrape_spells.py --base-url https://my-mirror.example.com/
+# Install Python dependencies
+pip install -r backend/requirements.txt
+
+# Install Node.js dependencies  
+npm install
 ```
 
-Generated HTML files will appear in the project directory.
+**Port Conflicts:**
+- Frontend uses port 3000
+- Backend uses port 5000
+- Stop conflicting services or change ports in config
+
+**Permission Issues:**
+```bash
+chmod +x run.sh  # Make shell script executable
+```
+
+**Service Won't Start:**
+```bash
+# Check what's running
+python3 run.py status
+
+# Force stop everything
+python3 run.py stop
+
+# Start with verbose output
+python3 run.py start --skip-deps
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/new-feature`
+3. Make your changes and test thoroughly
+4. Commit with descriptive messages
+5. Push and create a pull request
+
+## 📄 License
+
+This project is provided as-is for personal use and education.
+
+## 🔗 Data Source
+
+Spell data is sourced from [Clumsy's World](https://alla.clumsysworld.com/), an Allakhazam clone for EverQuest.

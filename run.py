@@ -33,6 +33,7 @@ class AppRunner:
         self.frontend_dir = self.root_dir
         self.pids_file = self.root_dir / ".app_pids.json"
         self.processes = {}
+        self.skip_dependency_check = False
         
     def print_header(self, title: str):
         """Print a formatted header"""
@@ -67,7 +68,7 @@ class AppRunner:
             import flask
             import requests
             import pandas
-            import beautifulsoup4
+            from bs4 import BeautifulSoup  # beautifulsoup4 package imports as bs4
             import jinja2
             self.print_status("Python dependencies: OK", "success")
         except ImportError as e:
@@ -188,8 +189,11 @@ class AppRunner:
         """Start both frontend and backend services"""
         self.print_header("Starting EQDataScraper Application")
         
-        if not self.check_dependencies():
+        if self.skip_dependency_check:
+            self.print_status("⚠️  Skipping dependency check as requested", "warning")
+        elif not self.check_dependencies():
             self.print_status("Dependency check failed. Please resolve issues and try again.", "error")
+            self.print_status("Use --skip-deps to bypass this check (not recommended)", "info")
             return
             
         success = True
@@ -311,9 +315,12 @@ def main():
     parser = argparse.ArgumentParser(description="EQDataScraper Application Runner")
     parser.add_argument("command", choices=["start", "stop", "status", "install"], 
                        help="Command to execute")
+    parser.add_argument("--skip-deps", "--ignore-deps", action="store_true",
+                       help="Skip dependency checking (use with caution)")
     
     args = parser.parse_args()
     runner = AppRunner()
+    runner.skip_dependency_check = args.skip_deps
     
     if args.command == "start":
         runner.start_services()
