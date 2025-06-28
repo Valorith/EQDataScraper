@@ -116,11 +116,6 @@
                   <span class="attribute-value">{{ spell.mana }}</span>
                 </div>
               </div>
-              
-              <div v-if="spell.effects" class="spell-description">
-                <span class="attribute-label">Effects:</span>
-                <p>{{ spell.effects }}</p>
-              </div>
             </div>
           </div>
         </div>
@@ -739,22 +734,6 @@ export default {
 .target-group { 
   background: rgba(168, 85, 247, 0.1) !important; 
   border-left-color: #a855f7 !important; 
-}
-
-.spell-description {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.spell-description .attribute-label {
-  margin-bottom: 0.5rem;
-}
-
-.spell-description p {
-  color: var(--text-light);
-  font-style: italic;
-  line-height: 1.5;
 }
 
 .retry-button,

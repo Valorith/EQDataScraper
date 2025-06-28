@@ -60,8 +60,17 @@ def can_scrape_class(class_name):
 def get_spells(class_name):
     """Get spells for a specific class"""
     try:
-        # Normalize class name
-        class_name = class_name.title()
+        # Normalize class name - handle special cases
+        class_name_lower = class_name.lower()
+        
+        # Map common variations to correct case
+        class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+        
+        if class_name_lower in class_name_map:
+            class_name = class_name_map[class_name_lower]
+        else:
+            # Fallback to title case for unknown names
+            class_name = class_name.title()
         
         if class_name not in CLASSES:
             logger.warning(f"Invalid class name requested: {class_name}")
