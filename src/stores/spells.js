@@ -62,6 +62,12 @@ export const useSpellsStore = defineStore('spells', {
           throw new Error('Invalid response format from server')
         }
         
+        // Check for stale cache warning
+        if (response.data.stale && response.data.message) {
+          console.warn(`Stale data warning: ${response.data.message}`)
+          // Could show a toast notification here if needed
+        }
+        
         this.spellsData[className] = spellsData
         return spellsData
       } catch (error) {
@@ -72,6 +78,11 @@ export const useSpellsStore = defineStore('spells', {
           switch (error.response.status) {
             case 404:
               errorMessage = `No spells found for ${className}. Try scraping data first.`
+              break
+            case 429:
+              // Rate limited
+              const retryAfter = error.response.data?.retry_after_minutes || 5
+              errorMessage = `Rate limited. Please wait ${retryAfter.toFixed(1)} minutes before trying again.`
               break
             case 500:
               errorMessage = 'Server error. Please try again later.'

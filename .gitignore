@@ -1,5 +1,9 @@
 # Ignore generated HTML files and logs
 *_spells.html
+temp_*.html
+static-backup/
 run.log
 __pycache__/
 download_icons.py
+node_modules/
+.app_pids.json

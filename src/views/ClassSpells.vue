@@ -71,8 +71,19 @@
             class="spell-card"
           >
             <div class="spell-header">
-              <h3 class="spell-name">{{ spell.name }}</h3>
-              <span v-if="spell.mana" class="spell-mana">{{ spell.mana }} MP</span>
+              <div class="spell-title-section">
+                <img 
+                  v-if="spell.icon" 
+                  :src="spell.icon" 
+                  :alt="`${spell.name} icon`"
+                  class="spell-icon"
+                  @error="handleIconError"
+                />
+                <div class="spell-title-text">
+                  <h3 class="spell-name">{{ spell.name }}</h3>
+                  <span v-if="spell.mana" class="spell-mana">{{ spell.mana }} MP</span>
+                </div>
+              </div>
             </div>
             <div class="spell-details">
               <div class="spell-attributes">
@@ -192,14 +203,14 @@ export default {
       return groupedSpells.value[level] && groupedSpells.value[level].length > 0
     }
 
+
     const scrollToLevel = (level) => {
-      applyScrollBlur()
       const element = document.getElementById(`level-${level}`)
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' })
         currentLevel.value = level
         
-        // Add highlight effect after scrolling
+        // Add highlight effect after scrolling completes
         setTimeout(() => {
           const levelHeader = element.querySelector('.level-header')
           if (levelHeader) {
@@ -210,12 +221,11 @@ export default {
               levelHeader.style.boxShadow = ''
             }, 1000)
           }
-        }, 300)
+        }, 500)
       }
     }
 
     const scrollToTop = () => {
-      applyScrollBlur()
       window.scrollTo({
         top: 0,
         behavior: 'smooth'
@@ -227,24 +237,11 @@ export default {
       router.push('/')
     }
 
-    // Blur effect during scrolling
-    let isScrolling = false
-    let scrollTimeout
-
-    const applyScrollBlur = () => {
-      if (!isScrolling) {
-        isScrolling = true
-        document.body.classList.add('scroll-blur')
-        console.log('Blur effect applied')
-      }
-      
-      clearTimeout(scrollTimeout)
-      scrollTimeout = setTimeout(() => {
-        isScrolling = false
-        document.body.classList.remove('scroll-blur')
-        console.log('Blur effect removed')
-      }, 300)
+    // Handle natural scroll events
+    const handleScroll = () => {
+      // No blur effect - just placeholder for future scroll-based features
     }
+
 
     const getTargetTypeClass = (targetType) => {
       if (!targetType) return ''
@@ -338,11 +335,6 @@ export default {
     // Debounced loading function to prevent rapid API calls
     const debouncedLoad = debounce(loadSpells, 300)
     
-    // Add scroll event listener for manual scrolling blur effect
-    const handleScroll = () => {
-      applyScrollBlur()
-    }
-    
     onMounted(() => {
       loadSpells()
       window.addEventListener('scroll', handleScroll, { passive: true })
@@ -350,7 +342,6 @@ export default {
     
     onUnmounted(() => {
       window.removeEventListener('scroll', handleScroll)
-      document.body.classList.remove('scroll-blur')
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
@@ -366,6 +357,11 @@ export default {
         }, 500)
       }
     })
+
+    const handleIconError = (event) => {
+      // Hide the icon if it fails to load
+      event.target.style.display = 'none'
+    }
 
     return {
       loading,
@@ -384,7 +380,8 @@ export default {
       getTargetTypeClass,
       copySpellId,
       retryLoad,
-      scrapeClass
+      scrapeClass,
+      handleIconError
     }
   }
 }
@@ -911,6 +908,36 @@ export default {
   margin-bottom: 15px;
 }
 
+.spell-title-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.spell-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(var(--class-color-rgb), 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.spell-icon:hover {
+  transform: scale(1.1);
+  border-color: var(--class-color);
+  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.4);
+}
+
+.spell-title-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+}
+
 .spell-name {
   font-family: 'Cinzel', serif;
   font-size: 1.4em;
@@ -954,6 +981,8 @@ export default {
   padding-top: 15px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* Blur effect CSS removed */
 
 @media (max-width: 768px) {
   .class-title { font-size: 3em; }

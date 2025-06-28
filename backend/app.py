@@ -18,7 +18,9 @@ CORS(app)
 # Data storage
 spells_cache = {}
 cache_timestamp = {}
-CACHE_EXPIRY_HOURS = 24
+last_scrape_time = {}
+CACHE_EXPIRY_HOURS = 24  # 24 hours - reasonable balance between freshness and server load
+MIN_SCRAPE_INTERVAL_MINUTES = 5  # Minimum 5 minutes between scrapes for same class
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +47,15 @@ def clear_expired_cache():
         cache_timestamp.pop(class_name, None)
         logger.info(f"Cleared expired cache for {class_name}")
 
+def can_scrape_class(class_name):
+    """Check if enough time has passed since last scrape for rate limiting"""
+    if class_name not in last_scrape_time:
+        return True
+    
+    last_scrape = datetime.fromisoformat(last_scrape_time[class_name])
+    min_interval = timedelta(minutes=MIN_SCRAPE_INTERVAL_MINUTES)
+    return datetime.now() > last_scrape + min_interval
+
 @app.route('/api/spells/<class_name>', methods=['GET'])
 def get_spells(class_name):
     """Get spells for a specific class"""
@@ -70,6 +81,27 @@ def get_spells(class_name):
                 'cached': True,
                 'last_updated': cache_timestamp[class_name]
             })
+        
+        # Check rate limiting before scraping
+        if not can_scrape_class(class_name):
+            time_since_last = datetime.now() - datetime.fromisoformat(last_scrape_time[class_name])
+            wait_time = MIN_SCRAPE_INTERVAL_MINUTES - time_since_last.total_seconds() / 60
+            logger.warning(f"Rate limited: {class_name} was scraped too recently. Wait {wait_time:.1f} minutes.")
+            
+            # Return stale cache if available, or error
+            if class_name in spells_cache:
+                return jsonify({
+                    'spells': spells_cache[class_name],
+                    'cached': True,
+                    'stale': True,
+                    'message': f'Using stale cache data. Please wait {wait_time:.1f} minutes before requesting fresh data.',
+                    'last_updated': cache_timestamp[class_name]
+                })
+            else:
+                return jsonify({
+                    'error': f'Rate limited. Please wait {wait_time:.1f} minutes before trying again.',
+                    'retry_after_minutes': wait_time
+                }), 429
         
         logger.info(f"Scraping fresh data for {class_name}")
         
@@ -101,8 +133,10 @@ def get_spells(class_name):
             spells.append(spell)
         
         # Cache the data
+        current_time = datetime.now().isoformat()
         spells_cache[class_name] = spells
-        cache_timestamp[class_name] = datetime.now().isoformat()
+        cache_timestamp[class_name] = current_time
+        last_scrape_time[class_name] = current_time
         
         logger.info(f"Successfully scraped {len(spells)} spells for {class_name} in {scrape_time:.2f}s")
         
@@ -214,4 +248,4 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=5000) 
