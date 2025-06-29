@@ -7,3 +7,7 @@ __pycache__/
 download_icons.py
 node_modules/
 .app_pids.json
+
+# AI Assistant Documentation
+CLAUDE.md
+GEMINI.md

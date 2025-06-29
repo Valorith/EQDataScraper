@@ -32,15 +32,20 @@ export const useSpellsStore = defineStore('spells', {
     },
     
     getSpellsForClass: (state) => (className) => {
-      return state.spellsData[className] || []
+      // Always normalize to lowercase for consistent lookups
+      const normalizedClassName = className.toLowerCase()
+      return state.spellsData[normalizedClassName] || []
     }
   },
 
   actions: {
     async fetchSpellsForClass(className) {
+      // Normalize the className to lowercase for consistent caching
+      const normalizedClassName = className.toLowerCase()
+      
       // Check for cached data first
-      if (this.spellsData[className] && this.spellsData[className].length > 0) {
-        return this.spellsData[className]
+      if (this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
+        return this.spellsData[normalizedClassName]
       }
 
       this.loading = true
@@ -68,7 +73,7 @@ export const useSpellsStore = defineStore('spells', {
           // Could show a toast notification here if needed
         }
         
-        this.spellsData[className] = spellsData
+        this.spellsData[normalizedClassName] = spellsData
         return spellsData
       } catch (error) {
         let errorMessage = 'An unexpected error occurred'

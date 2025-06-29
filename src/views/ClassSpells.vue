@@ -413,16 +413,25 @@ export default {
       error.value = null
       
       try {
-        await spellsStore.fetchSpellsForClass(props.className)
+        const result = await spellsStore.fetchSpellsForClass(props.className)
         
         // Wait for DOM updates before hiding loading
         await nextTick()
         
-        // Small delay to prevent loading flash
+        // Check if we actually got data
+        const currentSpells = spellsStore.getSpellsForClass(props.className)
+        
         if (showLoading) {
-          setTimeout(() => {
+          // Only add delay if we're showing a loading state and actually have data
+          if (currentSpells && currentSpells.length > 0) {
+            // Shorter delay for better UX, and ensure loading is hidden
+            setTimeout(() => {
+              loading.value = false
+            }, 150)
+          } else {
+            // No delay if no data - hide loading immediately
             loading.value = false
-          }, 300)
+          }
         }
       } catch (err) {
         error.value = err.message || 'Failed to load spells'
