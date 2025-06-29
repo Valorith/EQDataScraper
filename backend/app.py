@@ -247,6 +247,215 @@ def get_cache_status():
     
     return jsonify(status)
 
+@app.route('/api/spell-details/<int:spell_id>', methods=['GET'])
+def get_spell_details(spell_id):
+    """Get detailed spell information from alla website"""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        # Add headers to mimic a real browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
+        logger.info(f"Fetching spell details for ID {spell_id} from {url}")
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        details = parse_spell_details_from_html(soup)
+        
+        logger.info(f"Successfully parsed spell details for ID {spell_id}")
+        return jsonify(details)
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout while fetching spell details for ID {spell_id}")
+        return jsonify({'error': 'Request timed out'}), 504
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Connection error for spell ID {spell_id}: {e}")
+        return jsonify({'error': 'Unable to connect to spell database'}), 503
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP error {e.response.status_code} for spell ID {spell_id}")
+        if e.response.status_code == 404:
+            return jsonify({'error': 'Spell not found'}), 404
+        return jsonify({'error': f'Server error ({e.response.status_code})'}), e.response.status_code
+    except Exception as e:
+        logger.error(f"Unexpected error fetching spell details for ID {spell_id}: {e}")
+        return jsonify({'error': 'Failed to fetch spell details'}), 500
+
+def parse_spell_details_from_html(soup):
+    """Parse spell details from the HTML soup object"""
+    details = {}
+    
+    try:
+        # Look for tables containing spell information
+        tables = soup.find_all('table')
+        
+        for table in tables:
+            rows = table.find_all('tr')
+            
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    label = cells[0].get_text(strip=True).lower()
+                    value = cells[1].get_text(strip=True)
+                    
+                    if label and value and value != '-':
+                        # Map common spell attributes
+                        if 'cast time' in label or 'casting time' in label:
+                            details['cast_time'] = value
+                        elif 'duration' in label:
+                            details['duration'] = value
+                        elif 'range' in label:
+                            details['range'] = value
+                        elif 'resist' in label:
+                            details['resist'] = value
+                        elif 'description' in label:
+                            details['description'] = value
+                        elif 'recast' in label or 'recast time' in label:
+                            details['recast_time'] = value
+                        elif 'skill' in label:
+                            details['skill'] = value
+                        elif 'target' in label:
+                            details['target_type'] = value
+        
+        # Look for spell effects in different possible locations
+        effects = []
+        
+        # First, try to find the specific "Spell Effects" section
+        spell_effects_header = None
+        for header in soup.find_all('h2', class_='section_header'):
+            if header.get_text(strip=True) == 'Spell Effects':
+                spell_effects_header = header
+                break
+        
+        if spell_effects_header:
+            # Look for the parent table cell that contains the effects
+            effects_container = spell_effects_header.find_parent('td')
+            if effects_container:
+                # Find all <ul> elements that contain effect information
+                effect_lists = effects_container.find_all('ul')
+                for ul in effect_lists:
+                    effect_text = ul.get_text(strip=True)
+                    if effect_text and 'Effect type' in effect_text:
+                        # Clean up the effect text
+                        cleaned_effect = effect_text.replace('Effect type :', '').replace('Effect type:', '').strip()
+                        if cleaned_effect and len(cleaned_effect) > 5 and cleaned_effect not in effects:
+                            effects.append(cleaned_effect)
+        
+        # Alternative approach: look for <ul> elements with effect information
+        if not effects:
+            for ul in soup.find_all('ul'):
+                # Look for <b> tags containing effect numbers and types
+                b_tags = ul.find_all('b')
+                for b_tag in b_tags:
+                    b_text = b_tag.get_text(strip=True)
+                    if 'Effect type' in b_text and ':' in b_text:
+                        # Get the parent <ul> element to extract the full effect text
+                        ul_text = ul.get_text(strip=True)
+                        # Extract everything after "Effect type :"
+                        if 'Effect type :' in ul_text:
+                            effect_desc = ul_text.split('Effect type :')[-1].strip()
+                            if effect_desc and len(effect_desc) > 5 and effect_desc not in effects:
+                                effects.append(effect_desc)
+        
+        # Fallback: Try to find effect text in various elements
+        if not effects:
+            for element in soup.find_all(['td', 'div', 'p']):
+                text = element.get_text(strip=True)
+                
+                # Look for effect-like text patterns
+                if (text and len(text) > 10 and 
+                    any(keyword in text.lower() for keyword in [
+                        'increase', 'decrease', 'damage', 'heal', 'restore', 
+                        'drain', 'buff', 'debuff', 'summon', 'teleport',
+                        'effect:', 'slot 1:', 'slot 2:', 'slot 3:'
+                    ])):
+                    # Clean up the text
+                    cleaned_text = ' '.join(text.split())
+                    if cleaned_text not in effects and len(cleaned_text) < 200:
+                        effects.append(cleaned_text)
+        
+        if effects:
+            details['effects'] = effects[:5]  # Limit to 5 effects to avoid clutter
+        
+        # Look for spell components/reagents
+        components = []
+        
+        # Look for table rows with reagent information
+        for table in soup.find_all('table'):
+            rows = table.find_all('tr')
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    label_cell = cells[0]
+                    value_cell = cells[1]
+                    
+                    label_text = label_cell.get_text(strip=True).lower()
+                    
+                    # Check if this row contains reagent information
+                    if 'reagent' in label_text or 'component' in label_text:
+                        # Extract reagent information from the value cell
+                        reagent_info = {}
+                        
+                        # Look for links to items (reagent names)
+                        links = value_cell.find_all('a')
+                        if links:
+                            for link in links:
+                                href = link.get('href', '')
+                                reagent_name = link.get_text(strip=True)
+                                
+                                if href and reagent_name:
+                                    # Build full URL for the reagent
+                                    if href.startswith('?'):
+                                        reagent_url = f"https://alla.clumsysworld.com/{href}"
+                                    else:
+                                        reagent_url = href
+                                    
+                                    reagent_info['name'] = reagent_name
+                                    reagent_info['url'] = reagent_url
+                                    
+                                    # For now, skip icon fetching to avoid overhead
+                                    # Icons could be added later with caching if needed
+                        
+                        # Extract quantity from the cell text
+                        cell_text = value_cell.get_text(strip=True)
+                        # Look for quantity in parentheses like "(1)" or "(5)"
+                        import re
+                        quantity_match = re.search(r'\((\d+)\)', cell_text)
+                        if quantity_match:
+                            reagent_info['quantity'] = int(quantity_match.group(1))
+                        
+                        # If we have reagent information, add it to components
+                        if reagent_info.get('name'):
+                            components.append(reagent_info)
+        
+        if components:
+            details['components'] = components
+            
+        # If we didn't find much detail, try to get basic description from title or headers
+        if not details.get('description'):
+            title_element = soup.find('title')
+            if title_element:
+                title_text = title_element.get_text(strip=True)
+                if 'spell' in title_text.lower():
+                    details['description'] = title_text
+                    
+        logger.info(f"Parsed spell details: {list(details.keys())}")
+        return details
+        
+    except Exception as e:
+        logger.error(f"Error parsing spell details: {e}")
+        return {'description': 'Spell information available on alla website'}
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

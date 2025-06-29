@@ -69,6 +69,7 @@
             v-for="spell in levelGroup" 
             :key="spell.name"
             class="spell-card"
+            @click="openSpellModal(spell)"
           >
             <div class="spell-header">
               <div class="spell-title-section">
@@ -93,7 +94,7 @@
                     <span class="attribute-value">{{ spell.spell_id }}</span>
                     <button 
                       class="copy-btn" 
-                      @click="copySpellId(spell.spell_id)" 
+                      @click.stop="copySpellId(spell.spell_id)" 
                       title="Copy Spell ID to clipboard"
                     >
                       📋
@@ -118,6 +119,120 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Spell Detail Modal -->
+    <div v-if="showModal" class="modal-overlay" @click="closeModal">
+      <div class="modal-container" @click.stop>
+        <div class="modal-header">
+          <div class="modal-title-section">
+            <img 
+              v-if="selectedSpell?.icon" 
+              :src="selectedSpell.icon" 
+              :alt="`${selectedSpell.name} icon`"
+              class="modal-spell-icon"
+            />
+            <div>
+              <h2 class="modal-spell-name">{{ selectedSpell?.name }}</h2>
+              <p class="modal-spell-level">Level {{ selectedSpell?.level }}</p>
+            </div>
+          </div>
+          <button @click="closeModal" class="modal-close-btn">
+            <span>×</span>
+          </button>
+        </div>
+        
+        <div class="modal-content">
+          <div v-if="loadingSpellDetails" class="modal-loading">
+            <div class="modal-spinner"></div>
+            <p>Loading spell details...</p>
+          </div>
+          
+          <div v-else-if="spellDetailsError" class="modal-error">
+            <p>{{ spellDetailsError }}</p>
+            <button @click="fetchSpellDetails(selectedSpell.spell_id)" class="retry-btn">
+              Retry
+            </button>
+          </div>
+          
+          <div v-else-if="spellDetails" class="modal-spell-details">
+            <!-- Basic Info Grid -->
+            <div class="modal-info-grid">
+              <div class="modal-info-card">
+                <span class="modal-info-label">Spell ID</span>
+                <span class="modal-info-value">{{ selectedSpell.spell_id }}</span>
+              </div>
+              <div class="modal-info-card" v-if="selectedSpell.mana">
+                <span class="modal-info-label">Mana Cost</span>
+                <span class="modal-info-value">{{ selectedSpell.mana }}</span>
+              </div>
+              <div class="modal-info-card" v-if="selectedSpell.skill">
+                <span class="modal-info-label">School</span>
+                <span class="modal-info-value">{{ selectedSpell.skill }}</span>
+              </div>
+              <div class="modal-info-card" v-if="selectedSpell.target_type">
+                <span class="modal-info-label">Target</span>
+                <span class="modal-info-value">{{ selectedSpell.target_type }}</span>
+              </div>
+              <div class="modal-info-card" v-if="spellDetails.cast_time">
+                <span class="modal-info-label">Cast Time</span>
+                <span class="modal-info-value">{{ spellDetails.cast_time }}</span>
+              </div>
+              <div class="modal-info-card" v-if="spellDetails.duration">
+                <span class="modal-info-label">Duration</span>
+                <span class="modal-info-value">{{ spellDetails.duration }}</span>
+              </div>
+              <div class="modal-info-card" v-if="spellDetails.range">
+                <span class="modal-info-label">Range</span>
+                <span class="modal-info-value">{{ spellDetails.range }}</span>
+              </div>
+              <div class="modal-info-card" v-if="spellDetails.resist">
+                <span class="modal-info-label">Resist</span>
+                <span class="modal-info-value">{{ spellDetails.resist }}</span>
+              </div>
+            </div>
+            
+            <!-- Description -->
+            <div v-if="spellDetails.description" class="modal-description">
+              <h3>Description</h3>
+              <p>{{ spellDetails.description }}</p>
+            </div>
+            
+            <!-- Effects -->
+            <div v-if="spellDetails.effects && spellDetails.effects.length" class="modal-effects">
+              <h3>Effects</h3>
+              <ul>
+                <li v-for="(effect, index) in spellDetails.effects" :key="index">
+                  {{ effect }}
+                </li>
+              </ul>
+            </div>
+            
+            <!-- Reagents -->
+            <div v-if="hasValidReagents" class="reagents-section">
+              <h3 class="reagents-header">Reagents</h3>
+              <div class="reagents-container">
+                <div v-for="reagent in validReagents" :key="reagent.name" class="reagent-box">
+                  <a :href="reagent.url" target="_blank" class="reagent-text">
+                    {{ reagent.name }} ↗ × ({{ reagent.quantity }})
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <a 
+            :href="`https://alla.clumsysworld.com/?a=spell&id=${selectedSpell?.spell_id}`" 
+            target="_blank" 
+            class="view-original-btn"
+          >
+            View on Alla Website
+            <span class="external-icon">↗</span>
+          </a>
         </div>
       </div>
     </div>
@@ -153,6 +268,13 @@ export default {
     const error = ref(null)
     const isTransitioning = ref(false)
     const currentLevel = ref(null)
+    
+    // Modal state
+    const showModal = ref(false)
+    const selectedSpell = ref(null)
+    const spellDetails = ref(null)
+    const loadingSpellDetails = ref(false)
+    const spellDetailsError = ref(null)
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -333,10 +455,12 @@ export default {
     onMounted(() => {
       loadSpells()
       window.addEventListener('scroll', handleScroll, { passive: true })
+      window.addEventListener('keydown', handleKeydown)
     })
     
     onUnmounted(() => {
       window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('keydown', handleKeydown)
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
@@ -358,6 +482,155 @@ export default {
       event.target.style.display = 'none'
     }
 
+    // Modal functions
+    const openSpellModal = async (spell) => {
+      selectedSpell.value = spell
+      showModal.value = true
+      spellDetails.value = null
+      spellDetailsError.value = null
+      
+      if (spell.spell_id) {
+        await fetchSpellDetails(spell.spell_id)
+      }
+    }
+
+    const closeModal = () => {
+      showModal.value = false
+      selectedSpell.value = null
+      spellDetails.value = null
+      spellDetailsError.value = null
+    }
+
+    const fetchSpellDetails = async (spellId) => {
+      loadingSpellDetails.value = true
+      spellDetailsError.value = null
+
+      try {
+        const response = await fetch(`/api/spell-details/${spellId}?_t=${Date.now()}`, {
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        })
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+        }
+        
+        const details = await response.json()
+        console.log('Raw API response:', details)
+        console.log('Components type:', typeof details.components)
+        console.log('Components content:', details.components)
+        
+        // Force clean the components data
+        if (details.components && Array.isArray(details.components)) {
+          details.components = details.components.filter(c => c && typeof c === 'object' && c.name && c.url)
+        }
+        
+        spellDetails.value = details
+        
+      } catch (error) {
+        console.error('Error fetching spell details:', error)
+        spellDetailsError.value = error.message || 'Failed to load spell details. Please try again.'
+      } finally {
+        loadingSpellDetails.value = false
+      }
+    }
+
+    const parseSpellDetails = (doc) => {
+      const details = {}
+      
+      // Try to find spell information from the page
+      const tables = doc.querySelectorAll('table')
+      
+      for (const table of tables) {
+        const rows = table.querySelectorAll('tr')
+        
+        for (const row of rows) {
+          const cells = row.querySelectorAll('td')
+          if (cells.length >= 2) {
+            const label = cells[0]?.textContent?.trim()
+            const value = cells[1]?.textContent?.trim()
+            
+            if (label && value) {
+              switch (label.toLowerCase()) {
+                case 'cast time:':
+                case 'casting time:':
+                  details.cast_time = value
+                  break
+                case 'duration:':
+                  details.duration = value
+                  break
+                case 'range:':
+                  details.range = value
+                  break
+                case 'resist:':
+                case 'resist type:':
+                  details.resist = value
+                  break
+                case 'description:':
+                  details.description = value
+                  break
+              }
+            }
+          }
+        }
+      }
+      
+      // Try to find effects/components in different sections
+      const effectsList = []
+      const componentsList = []
+      
+      // Look for effect information
+      const effectElements = doc.querySelectorAll('td, p, div')
+      for (const elem of effectElements) {
+        const text = elem.textContent?.trim()
+        if (text && (text.includes('Effect:') || text.includes('Increases') || text.includes('Decreases'))) {
+          effectsList.push(text)
+        }
+      }
+      
+      if (effectsList.length > 0) {
+        details.effects = effectsList
+      }
+      
+      // Look for component information
+      const componentElements = doc.querySelectorAll('td, span')
+      for (const elem of componentElements) {
+        const text = elem.textContent?.trim()
+        if (text && (text.includes('Component:') || text.includes('Reagent:'))) {
+          componentsList.push(text.replace(/^(Component:|Reagent:)\s*/, ''))
+        }
+      }
+      
+      if (componentsList.length > 0) {
+        details.components = componentsList
+      }
+      
+      return details
+    }
+
+    // Handle escape key to close modal
+    const handleKeydown = (event) => {
+      if (event.key === 'Escape' && showModal.value) {
+        closeModal()
+      }
+    }
+
+    // Computed properties for reagents
+    const validReagents = computed(() => {
+      if (!spellDetails.value?.components || !Array.isArray(spellDetails.value.components)) {
+        return []
+      }
+      return spellDetails.value.components.filter(c => 
+        c && typeof c === 'object' && c.name && c.url
+      )
+    })
+
+    const hasValidReagents = computed(() => {
+      return validReagents.value.length > 0
+    })
+
     return {
       loading,
       error,
@@ -376,7 +649,19 @@ export default {
       copySpellId,
       retryLoad,
       scrapeClass,
-      handleIconError
+      handleIconError,
+      // Modal properties and methods
+      showModal,
+      selectedSpell,
+      spellDetails,
+      loadingSpellDetails,
+      spellDetailsError,
+      openSpellModal,
+      closeModal,
+      fetchSpellDetails,
+      // Reagents
+      validReagents,
+      hasValidReagents
     }
   }
 }
@@ -963,10 +1248,476 @@ export default {
 
 /* Blur effect CSS removed */
 
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+.modal-container {
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(var(--class-color-rgb), 0.3);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 100px rgba(var(--class-color-rgb), 0.2);
+  animation: modalSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2rem 2.5rem 1.5rem;
+  border-bottom: 1px solid rgba(var(--class-color-rgb), 0.2);
+  position: relative;
+}
+
+.modal-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 2.5rem;
+  right: 2.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--class-color), transparent);
+}
+
+.modal-title-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.modal-spell-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  border: 3px solid var(--class-color);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+  box-shadow: 0 8px 20px rgba(var(--class-color-rgb), 0.4);
+}
+
+.modal-spell-name {
+  font-family: 'Cinzel', serif;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--class-color);
+  margin: 0;
+  text-shadow: 0 0 20px rgba(var(--class-color-rgb), 0.6);
+}
+
+.modal-spell-level {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0.5rem 0 0 0;
+  font-weight: 500;
+}
+
+.modal-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: white;
+  transform: scale(1.1);
+}
+
+.modal-content {
+  padding: 2rem 2.5rem;
+}
+
+.modal-loading {
+  text-align: center;
+  padding: 3rem 0;
+}
+
+.modal-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(var(--class-color-rgb), 0.2);
+  border-top: 4px solid var(--class-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+.modal-error {
+  text-align: center;
+  padding: 2rem 0;
+  color: #ff6b6b;
+}
+
+.modal-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.modal-info-card {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border: 1px solid rgba(var(--class-color-rgb), 0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.modal-info-card:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.15), rgba(var(--class-color-rgb), 0.08));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(var(--class-color-rgb), 0.2);
+}
+
+.modal-info-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: 'Inter', sans-serif;
+}
+
+.modal-info-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--class-color);
+  font-family: 'Crimson Text', serif;
+  text-shadow: 0 0 10px rgba(var(--class-color-rgb), 0.3);
+}
+
+.modal-description,
+.modal-effects,
+.modal-reagents-section {
+  margin-bottom: 2rem;
+}
+
+.modal-description h3,
+.modal-effects h3,
+.reagents-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--class-color);
+  margin-bottom: 1rem;
+  text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+}
+
+.modal-description p {
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+.modal-effects ul {
+  list-style: none;
+  padding: 0;
+}
+
+.modal-effects li {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border-left: 3px solid var(--class-color);
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  transition: all 0.3s ease;
+}
+
+.modal-effects li:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  transform: translateX(5px);
+}
+
+.components-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.component-item {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.component-item:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border-color: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-2px);
+}
+
+.reagents-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.reagent-item {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.reagent-item:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border-color: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-2px);
+}
+
+.reagent-name-link {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+.reagent-name-link:hover {
+  color: var(--class-color);
+  text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+  transform: translateY(-1px);
+}
+
+.reagent-name-link::after {
+  content: '↗';
+  margin-left: 0.3rem;
+  font-size: 0.8rem;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.reagent-name-link:hover::after {
+  opacity: 1;
+}
+
+.reagent-count {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.reagents-section {
+  margin-bottom: 2rem;
+}
+
+.reagents-header {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--class-color);
+  margin-bottom: 1rem;
+  text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+}
+
+.reagents-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.reagent-box {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.reagent-box:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border-color: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-2px);
+}
+
+.reagent-text {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease;
+}
+
+.reagent-text:hover {
+  color: var(--class-color);
+  text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+.modal-footer {
+  padding: 1.5rem 2.5rem 2rem;
+  border-top: 1px solid rgba(var(--class-color-rgb), 0.2);
+  text-align: center;
+  position: relative;
+}
+
+.modal-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 2.5rem;
+  right: 2.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--class-color), transparent);
+}
+
+.view-original-btn {
+  background: linear-gradient(135deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 15px rgba(var(--class-color-rgb), 0.4);
+}
+
+.view-original-btn:hover {
+  background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.95), var(--class-color));
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(var(--class-color-rgb), 0.6);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+.external-icon {
+  font-size: 1.2em;
+  transition: transform 0.3s ease;
+}
+
+.view-original-btn:hover .external-icon {
+  transform: translate(2px, -2px);
+}
+
+.retry-btn {
+  background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 1rem;
+}
+
+.retry-btn:hover {
+  background: linear-gradient(135deg, #ee5a24, #ff6b6b);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+}
+
+/* Add cursor pointer to spell cards */
+.spell-card {
+  cursor: pointer;
+}
+
 @media (max-width: 768px) {
   .class-title { font-size: 3em; }
   .spells-grid { grid-template-columns: 1fr; }
   .spell-card { padding: 20px; }
   .home-button { position: relative; margin-bottom: 30px; }
+  
+  .modal-container {
+    margin: 1rem;
+    max-height: 95vh;
+  }
+  
+  .modal-header {
+    padding: 1.5rem;
+  }
+  
+  .modal-content {
+    padding: 1.5rem;
+  }
+  
+  .modal-footer {
+    padding: 1rem 1.5rem;
+  }
+  
+  .modal-spell-name {
+    font-size: 2rem;
+  }
+  
+  .modal-info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .components-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style> 
