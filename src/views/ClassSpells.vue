@@ -231,8 +231,15 @@
               <h3 class="reagents-header">Reagents</h3>
               <div class="reagents-container">
                 <div v-for="reagent in validReagents" :key="reagent.name" class="reagent-box">
-                  <a :href="reagent.url" target="_blank" class="reagent-text">
-                    {{ reagent.name }} ↗ × ({{ reagent.quantity }})
+                  <a :href="reagent.url" target="_blank" class="reagent-link">
+                    <img 
+                      v-if="reagent.icon" 
+                      :src="reagent.icon" 
+                      :alt="reagent.name"
+                      class="reagent-icon"
+                      @error="handleReagentIconError"
+                    />
+                    <span class="reagent-text">{{ reagent.name }} ↗ × ({{ reagent.quantity }})</span>
                   </a>
                 </div>
               </div>
@@ -722,6 +729,11 @@ export default {
       event.target.style.display = 'none'
     }
 
+    // Method to handle reagent icon errors
+    const handleReagentIconError = (event) => {
+      event.target.style.display = 'none'
+    }
+
     return {
       loading,
       error,
@@ -758,7 +770,8 @@ export default {
       // Items with Spell
       validItemsWithSpell,
       hasValidItemsWithSpell,
-      handleItemIconError
+      handleItemIconError,
+      handleReagentIconError
     }
   }
 }
@@ -1824,7 +1837,10 @@ export default {
   transform: translateY(-2px);
 }
 
-.reagent-text {
+.reagent-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
@@ -1832,9 +1848,29 @@ export default {
   transition: all 0.3s ease;
 }
 
-.reagent-text:hover {
+.reagent-link:hover {
   color: var(--class-color);
   text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+.reagent-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.reagent-icon:hover {
+  border-color: rgba(var(--class-color-rgb), 0.5);
+  transform: scale(1.05);
+}
+
+.reagent-text {
+  flex: 1;
+  line-height: 1.3;
 }
 
 /* Items with Spell Section */

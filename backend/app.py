@@ -456,8 +456,24 @@ def parse_spell_details_from_html(soup):
                                     reagent_info['name'] = reagent_name
                                     reagent_info['url'] = reagent_url
                                     
-                                    # For now, skip icon fetching to avoid overhead
-                                    # Icons could be added later with caching if needed
+                                    # Look for an icon in the same row/cell
+                                    parent_cell = link.find_parent(['td', 'div'])
+                                    if parent_cell:
+                                        icon_img = parent_cell.find('img')
+                                        if icon_img and icon_img.get('src'):
+                                            icon_src = icon_img.get('src')
+                                            if icon_src.startswith('/'):
+                                                reagent_info['icon'] = f"https://alla.clumsysworld.com{icon_src}"
+                                            elif not icon_src.startswith('http'):
+                                                reagent_info['icon'] = f"https://alla.clumsysworld.com/{icon_src}"
+                                            else:
+                                                reagent_info['icon'] = icon_src
+                                    
+                                    # Extract item ID from href if possible
+                                    import re
+                                    reagent_id_match = re.search(r'id=(\d+)', href)
+                                    if reagent_id_match:
+                                        reagent_info['item_id'] = int(reagent_id_match.group(1))
                         
                         # Extract quantity from the cell text
                         cell_text = value_cell.get_text(strip=True)
