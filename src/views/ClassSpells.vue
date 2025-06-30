@@ -237,6 +237,25 @@
                 </div>
               </div>
             </div>
+            
+            <!-- Items with Spell -->
+            <div v-if="hasValidItemsWithSpell" class="items-with-spell-section">
+              <h3 class="items-header">Items with Spell</h3>
+              <div class="items-container">
+                <div v-for="item in validItemsWithSpell" :key="item.item_id || item.name" class="item-box">
+                  <a :href="item.url" target="_blank" class="item-link">
+                    <img 
+                      v-if="item.icon" 
+                      :src="item.icon" 
+                      :alt="item.name"
+                      class="item-icon"
+                      @error="handleItemIconError"
+                    />
+                    <span class="item-text">{{ item.name }} ↗</span>
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -684,6 +703,25 @@ export default {
       return validReagents.value.length > 0
     })
 
+    // Computed properties for items with spell
+    const validItemsWithSpell = computed(() => {
+      if (!spellDetails.value?.items_with_spell || !Array.isArray(spellDetails.value.items_with_spell)) {
+        return []
+      }
+      return spellDetails.value.items_with_spell.filter(item => 
+        item && typeof item === 'object' && item.name && item.url
+      )
+    })
+
+    const hasValidItemsWithSpell = computed(() => {
+      return validItemsWithSpell.value.length > 0
+    })
+
+    // Method to handle item icon errors
+    const handleItemIconError = (event) => {
+      event.target.style.display = 'none'
+    }
+
     return {
       loading,
       error,
@@ -716,7 +754,11 @@ export default {
       fetchSpellDetails,
       // Reagents
       validReagents,
-      hasValidReagents
+      hasValidReagents,
+      // Items with Spell
+      validItemsWithSpell,
+      hasValidItemsWithSpell,
+      handleItemIconError
     }
   }
 }
@@ -1793,6 +1835,81 @@ export default {
 .reagent-text:hover {
   color: var(--class-color);
   text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+/* Items with Spell Section */
+.items-with-spell-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(var(--class-color-rgb), 0.15);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.items-header {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--class-color);
+  margin-bottom: 1rem;
+  text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+}
+
+.items-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.item-box {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.3s ease;
+}
+
+.item-box:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border-color: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.2);
+}
+
+.item-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease;
+}
+
+.item-link:hover {
+  color: var(--class-color);
+  text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+.item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.item-icon:hover {
+  border-color: rgba(var(--class-color-rgb), 0.5);
+  transform: scale(1.05);
+}
+
+.item-text {
+  flex: 1;
+  line-height: 1.3;
 }
 
 .modal-footer {

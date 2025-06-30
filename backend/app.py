@@ -473,6 +473,75 @@ def parse_spell_details_from_html(soup):
         
         if components:
             details['components'] = components
+        
+        # Look for "Items with spell" section
+        items_with_spell = []
+        
+        # Find the "Items with spell" header or similar text
+        items_header = None
+        for element in soup.find_all(['h2', 'h3', 'th', 'td', 'b', 'strong']):
+            element_text = element.get_text(strip=True).lower()
+            if 'items with spell' in element_text or 'items with this spell' in element_text:
+                items_header = element
+                break
+        
+        if items_header:
+            # Find the table or container that follows the header
+            current = items_header
+            while current:
+                current = current.find_next()
+                if not current:
+                    break
+                
+                # Look for links that might be items
+                if hasattr(current, 'find_all'):
+                    item_links = current.find_all('a', href=True)
+                    
+                    for link in item_links:
+                        href = link.get('href', '')
+                        item_name = link.get_text(strip=True)
+                        
+                        # Check if this looks like an item link
+                        if ('a=item' in href and item_name and 
+                            len(item_name) > 2 and item_name != 'Items with spell'):
+                            
+                            item_info = {
+                                'name': item_name,
+                                'url': href if href.startswith('http') else f"https://alla.clumsysworld.com/{href.lstrip('/')}"
+                            }
+                            
+                            # Look for an icon in the same row/cell
+                            parent_cell = link.find_parent(['td', 'div'])
+                            if parent_cell:
+                                icon_img = parent_cell.find('img')
+                                if icon_img and icon_img.get('src'):
+                                    icon_src = icon_img.get('src')
+                                    if icon_src.startswith('/'):
+                                        item_info['icon'] = f"https://alla.clumsysworld.com{icon_src}"
+                                    elif not icon_src.startswith('http'):
+                                        item_info['icon'] = f"https://alla.clumsysworld.com/{icon_src}"
+                                    else:
+                                        item_info['icon'] = icon_src
+                            
+                            # Extract item ID from href if possible
+                            import re
+                            id_match = re.search(r'id=(\d+)', href)
+                            if id_match:
+                                item_info['item_id'] = int(id_match.group(1))
+                            
+                            items_with_spell.append(item_info)
+                
+                # Stop if we've found items or hit another major section
+                if items_with_spell and len(items_with_spell) > 10:
+                    break
+                    
+                # Stop if we hit another section header
+                if (hasattr(current, 'get_text') and current.name in ['h2', 'h3'] and 
+                    current != items_header and 'items with spell' not in current.get_text(strip=True).lower()):
+                    break
+        
+        if items_with_spell:
+            details['items_with_spell'] = items_with_spell[:20]  # Limit to 20 items to avoid clutter
             
         # If we didn't find much detail, try to get basic description from title or headers
         if not details.get('description'):
