@@ -8,6 +8,10 @@ download_icons.py
 node_modules/
 .app_pids.json
 
+# User-specific configuration files
+config.json
+
 # AI Assistant Documentation
 CLAUDE.md
 GEMINI.md
+.DS_Store

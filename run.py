@@ -11,8 +11,9 @@ import signal
 import subprocess
 import argparse
 import json
+import socket
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -32,9 +33,11 @@ class AppRunner:
         self.backend_dir = self.root_dir / "backend"
         self.frontend_dir = self.root_dir
         self.pids_file = self.root_dir / ".app_pids.json"
+        self.config_file = self.root_dir / "config.json"
         self.processes = {}
         self.skip_dependency_check = False
         self.npm_command = None
+        self.config = self.load_config()
         
     def print_header(self, title: str):
         """Print a formatted header"""
@@ -59,6 +62,155 @@ class AppRunner:
         }.get(status, "•")
         
         print(f"{color}{prefix} {message}{Colors.END}")
+    
+    def load_config(self) -> Dict:
+        """Load configuration from config.json"""
+        default_config = {
+            'backend_port': 5001,
+            'frontend_port': 3000,
+            'cache_expiry_hours': 24,
+            'min_scrape_interval_minutes': 5
+        }
+        
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, 'r') as f:
+                    config = {**default_config, **json.load(f)}
+            else:
+                config = default_config
+                self.save_config(config)
+        except (json.JSONDecodeError, IOError) as e:
+            self.print_status(f"Error loading config.json: {e}. Using defaults.", "warning")
+            config = default_config
+            
+        return config
+    
+    def save_config(self, config: Dict):
+        """Save configuration to config.json"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+        except IOError as e:
+            self.print_status(f"Error saving config.json: {e}", "error")
+    
+    def is_port_in_use(self, port: int) -> bool:
+        """Check if a port is already in use"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex(('localhost', port))
+                return result == 0
+        except:
+            return False
+    
+    def find_available_port(self, start_port: int, max_attempts: int = 10) -> int:
+        """Find an available port starting from start_port"""
+        for port in range(start_port, start_port + max_attempts):
+            if not self.is_port_in_use(port):
+                return port
+        return start_port  # Fallback to original port
+    
+    def get_port_conflict_process(self, port: int) -> Optional[str]:
+        """Get information about the process using a port"""
+        try:
+            import platform
+            
+            if platform.system() == "Windows":
+                # Use netstat on Windows to find process using port
+                result = subprocess.run(['netstat', '-ano'], 
+                                      capture_output=True, text=True, shell=True)
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if f':{port}' in line and 'LISTENING' in line:
+                            parts = line.split()
+                            if len(parts) >= 5:
+                                pid = parts[-1]
+                                # Get process name from PID
+                                proc_result = subprocess.run(['tasklist', '/fi', f'PID eq {pid}', '/fo', 'csv'], 
+                                                           capture_output=True, text=True, shell=True)
+                                if proc_result.returncode == 0 and proc_result.stdout:
+                                    lines = proc_result.stdout.strip().split('\n')
+                                    if len(lines) > 1:
+                                        # Parse CSV output (Image Name is first column)
+                                        process_name = lines[1].split(',')[0].strip('"')
+                                        return process_name
+                return "unknown process"
+                
+            elif platform.system() == "Darwin":  # macOS
+                result = subprocess.run(['lsof', '-ti', f':{port}'], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0 and result.stdout.strip():
+                    pid = result.stdout.strip().split('\n')[0]
+                    proc_result = subprocess.run(['ps', '-p', pid, '-o', 'comm='], 
+                                               capture_output=True, text=True)
+                    if proc_result.returncode == 0:
+                        return proc_result.stdout.strip()
+                        
+            elif platform.system() == "Linux":
+                # Try multiple methods for Linux
+                # Method 1: ss command (preferred)
+                try:
+                    result = subprocess.run(['ss', '-tlnp', f'sport = :{port}'], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip():
+                        lines = result.stdout.strip().split('\n')
+                        for line in lines[1:]:  # Skip header
+                            if f':{port}' in line:
+                                # Parse ss output to extract process info
+                                parts = line.split()
+                                if len(parts) >= 6 and 'users:' in parts[-1]:
+                                    return "process found via ss"
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    pass
+                
+                # Method 2: netstat fallback
+                try:
+                    result = subprocess.run(['netstat', '-tlnp'], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            if f':{port}' in line and 'LISTEN' in line:
+                                return "process found via netstat"
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    pass
+                    
+                return "unknown process"
+                
+        except Exception as e:
+            # Fallback: just indicate something is using the port
+            pass
+        return None
+    
+    def handle_port_conflict(self, service: str, port: int) -> int:
+        """Handle port conflicts by suggesting alternatives and updating config"""
+        process_info = self.get_port_conflict_process(port)
+        
+        if process_info:
+            if "ControlCenter" in process_info or port == 5000:
+                self.print_status(f"Port {port} is used by AirPlay Receiver (ControlCenter)", "warning")
+                self.print_status("Tip: You can disable AirPlay Receiver in System Settings -> General -> AirDrop & Handoff", "info")
+            else:
+                self.print_status(f"Port {port} is in use by: {process_info}", "warning")
+        else:
+            self.print_status(f"Port {port} is already in use", "warning")
+        
+        # Find alternative port
+        new_port = self.find_available_port(port + 1)
+        if new_port != port:
+            self.print_status(f"Suggesting alternative port {new_port} for {service}", "info")
+            
+            # Update config
+            if service == "backend":
+                self.config['backend_port'] = new_port
+            elif service == "frontend":
+                self.config['frontend_port'] = new_port
+            
+            self.save_config(self.config)
+            self.print_status(f"Updated config.json with new {service} port: {new_port}", "success")
+            return new_port
+        else:
+            self.print_status(f"Could not find alternative port for {service}", "error")
+            return port
         
     def find_npm_command(self) -> Optional[str]:
         """Find the npm command that works on this system"""
@@ -114,7 +266,10 @@ class AppRunner:
             self.print_status("Python dependencies: OK", "success")
         except ImportError as e:
             self.print_status(f"Missing Python dependency: {e}", "error")
-            self.print_status("Run: pip install -r backend/requirements.txt", "info")
+            self.print_status("", "info")  # Blank line
+            self.print_status("🔧 To fix this issue:", "info")
+            self.print_status("   1. pip install -r backend/requirements.txt", "info")
+            self.print_status("   2. Or run: python3 run.py install", "info")
             return False
             
         # Check Node.js and npm
@@ -126,14 +281,22 @@ class AppRunner:
                 raise subprocess.CalledProcessError(1, "node")
         except (subprocess.CalledProcessError, FileNotFoundError):
             self.print_status("Node.js not found", "error")
-            self.print_status("Please install Node.js from https://nodejs.org/", "info")
+            self.print_status("", "info")  # Blank line
+            self.print_status("🔧 To fix this issue:", "info")
+            self.print_status("   1. Install Node.js from https://nodejs.org/", "info")
+            self.print_status("   2. Choose the LTS version (recommended)", "info")
+            self.print_status("   3. Restart your terminal after installation", "info")
             return False
         
         # Find npm command
         npm_cmd = self.find_npm_command()
         if not npm_cmd:
             self.print_status("npm not found", "error")
-            self.print_status("Please ensure npm is installed and in your PATH", "info")
+            self.print_status("", "info")  # Blank line
+            self.print_status("🔧 To fix this issue:", "info")
+            self.print_status("   1. npm should come with Node.js installation", "info")
+            self.print_status("   2. Try restarting your terminal", "info")
+            self.print_status("   3. Verify Node.js installation: node --version", "info")
             return False
         else:
             self.npm_command = npm_cmd
@@ -159,7 +322,10 @@ class AppRunner:
         
         if missing_packages:
             self.print_status(f"Missing critical packages: {', '.join(missing_packages)}", "warning")
-            self.print_status(f"Run: {npm_cmd} install", "info")
+            self.print_status("", "info")  # Blank line
+            self.print_status("🔧 To fix this issue:", "info")
+            self.print_status(f"   1. {npm_cmd} install", "info")
+            self.print_status("   2. Or run: python3 run.py install", "info")
             return False
         
         # Check for Rollup dependency issues (Windows and WSL)
@@ -181,6 +347,11 @@ class AppRunner:
                 return self._fix_windows_dependencies(npm_cmd)
         
         self.print_status("Node modules: OK", "success")
+        
+        # Check network connectivity for web scraping
+        if not self._check_network_connectivity():
+            self.print_status("⚠ Network connectivity issue detected", "warning")
+            self.print_status("   The app will start but may have issues scraping spell data", "warning")
             
         return True
         
@@ -218,6 +389,58 @@ class AppRunner:
         except Exception as e:
             self.print_status(f"Error fixing dependencies: {e}", "error")
             return False
+    
+    def _check_network_connectivity(self) -> bool:
+        """Check if we can reach the spell data source"""
+        try:
+            import urllib.request
+            import urllib.error
+            
+            # Test connectivity to the spell data source
+            test_url = "https://alla.clumsysworld.com/"
+            request = urllib.request.Request(test_url)
+            request.add_header('User-Agent', 'EQDataScraper/1.0')
+            
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status == 200
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+            return False
+        except Exception:
+            # Any other error, assume connectivity is fine
+            return True
+    
+    def _verify_services_health(self):
+        """Verify that services are actually responding"""
+        self.print_status("Verifying service health...", "info")
+        
+        # Check backend health
+        try:
+            import urllib.request
+            import urllib.error
+            
+            backend_url = f"http://localhost:{self.config['backend_port']}/api/health"
+            request = urllib.request.Request(backend_url)
+            with urllib.request.urlopen(request, timeout=5) as response:
+                if response.status == 200:
+                    self.print_status("✓ Backend API is responding", "success")
+                else:
+                    self.print_status(f"⚠ Backend API returned status {response.status}", "warning")
+        except urllib.error.URLError:
+            self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
+        except Exception as e:
+            self.print_status(f"⚠ Could not verify backend health: {e}", "warning")
+        
+        # Check frontend health (basic connectivity)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2)
+                result = s.connect_ex(('localhost', self.config['frontend_port']))
+                if result == 0:
+                    self.print_status("✓ Frontend server is accepting connections", "success")
+                else:
+                    self.print_status("⚠ Frontend server not yet accepting connections", "warning")
+        except Exception as e:
+            self.print_status(f"⚠ Could not verify frontend connectivity: {e}", "warning")
     
     def save_pids(self):
         """Save process IDs to file"""
@@ -263,15 +486,57 @@ class AppRunner:
                 return True
         except (OSError, ProcessLookupError, subprocess.CalledProcessError):
             return False
+    
+    def _terminate_process_by_pid(self, pid: int):
+        """Terminate a process by PID in a cross-platform way"""
+        import platform
+        
+        if platform.system() == "Windows":
+            # On Windows, use taskkill
+            try:
+                subprocess.run(['taskkill', '/PID', str(pid), '/F'], 
+                             capture_output=True, text=True, shell=True, timeout=10)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                # Fallback to direct process termination if available
+                try:
+                    import psutil
+                    process = psutil.Process(pid)
+                    process.terminate()
+                    process.wait(timeout=5)
+                except:
+                    pass
+        else:
+            # On Unix systems, use os.kill with signals
+            try:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(2)
+                if self.is_process_running(pid):
+                    os.kill(pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
             
-    def start_backend(self) -> bool:
+    def start_backend(self, retry_count: int = 0) -> bool:
         """Start the Flask backend server"""
         self.print_status("Starting backend server...", "info")
+        
+        backend_port = self.config['backend_port']
+        
+        # Check for port conflicts
+        if self.is_port_in_use(backend_port):
+            backend_port = self.handle_port_conflict("backend", backend_port)
         
         try:
             # Change to backend directory and start Flask app
             env = os.environ.copy()
             env['PYTHONPATH'] = str(self.root_dir)
+            env['BACKEND_PORT'] = str(backend_port)
+            
+            # Platform-specific subprocess creation
+            import platform
+            creation_flags = 0
+            if platform.system() == "Windows":
+                # On Windows, prevent console window popup
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
             
             process = subprocess.Popen(
                 [sys.executable, "app.py"],
@@ -279,7 +544,8 @@ class AppRunner:
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                creationflags=creation_flags if platform.system() == "Windows" else 0
             )
             
             self.processes["backend"] = process
@@ -287,11 +553,23 @@ class AppRunner:
             # Wait a moment and check if it started successfully
             time.sleep(3)
             if process.poll() is None:
-                self.print_status("Backend server started on http://localhost:5000", "success")
+                self.print_status(f"Backend server started on http://localhost:{backend_port}", "success")
                 return True
             else:
                 stdout, stderr = process.communicate()
-                self.print_status(f"Backend failed to start: {stderr.strip()}", "error")
+                error_msg = stderr.strip()
+                
+                # Check for port-related errors
+                if "Address already in use" in error_msg or "Port" in error_msg and retry_count < 2:
+                    self.print_status("Port conflict detected after startup attempt", "warning")
+                    new_port = self.handle_port_conflict("backend", backend_port)
+                    if new_port != backend_port:
+                        self.print_status("Retrying with new port...", "info")
+                        # Reload config and retry once
+                        self.config = self.load_config()
+                        return self.start_backend(retry_count + 1)  # Recursive retry with new port
+                
+                self.print_status(f"Backend failed to start: {error_msg}", "error")
                 return False
                 
         except Exception as e:
@@ -330,13 +608,20 @@ class AppRunner:
                     cmd_str = ' '.join(cmd)
                     self.print_status(f"Trying command: {cmd_str}", "info")
                     
+                    # Platform-specific subprocess creation
+                    creation_flags = 0
+                    if platform.system() == "Windows":
+                        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+                        use_shell = True  # npm.cmd requires shell on Windows
+                    
                     process = subprocess.Popen(
                         cmd,
                         cwd=self.frontend_dir,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
-                        shell=use_shell
+                        shell=use_shell,
+                        creationflags=creation_flags if platform.system() == "Windows" else 0
                     )
                     
                     # Wait for Vite to start
@@ -387,9 +672,12 @@ class AppRunner:
         if success:
             self.save_pids()
             self.print_status("\n🎉 Application started successfully!", "success")
-            self.print_status("Frontend: http://localhost:3000", "info")
-            self.print_status("Backend API: http://localhost:5000", "info")
+            self.print_status(f"Frontend: http://localhost:{self.config['frontend_port']}", "info")
+            self.print_status(f"Backend API: http://localhost:{self.config['backend_port']}", "info")
             self.print_status("\nPress Ctrl+C to stop all services", "info")
+            
+            # Verify services are actually responding
+            self._verify_services_health()
             
             try:
                 # Wait for processes and handle Ctrl+C
@@ -431,10 +719,7 @@ class AppRunner:
                 if self.is_process_running(pid):
                     self.print_status(f"Found running {name} service (PID: {pid})", "info")
                     try:
-                        os.kill(pid, signal.SIGTERM)
-                        time.sleep(2)
-                        if self.is_process_running(pid):
-                            os.kill(pid, signal.SIGKILL)
+                        self._terminate_process_by_pid(pid)
                         self.print_status(f"Stopped {name} service", "success")
                     except (OSError, ProcessLookupError):
                         self.print_status(f"Could not stop {name} service", "warning")
@@ -477,13 +762,42 @@ class AppRunner:
         
         if not pids:
             self.print_status("No services are currently tracked", "info")
+            # Check if services might be running without tracking
+            self._check_untracked_services()
             return
             
+        services_running = False
         for name, pid in pids.items():
             if self.is_process_running(pid):
                 self.print_status(f"{name.capitalize()} service: Running (PID: {pid})", "success")
+                services_running = True
             else:
                 self.print_status(f"{name.capitalize()} service: Not running", "error")
+        
+        if services_running:
+            self.print_status("", "info")  # Blank line
+            self._verify_services_health()
+    
+    def _check_untracked_services(self):
+        """Check if services are running but not tracked"""
+        self.print_status("Checking for untracked services...", "info")
+        
+        # Check if ports are in use
+        backend_port = self.config['backend_port']
+        frontend_port = self.config['frontend_port']
+        
+        if self.is_port_in_use(backend_port):
+            process_info = self.get_port_conflict_process(backend_port)
+            if process_info and "Python" in process_info:
+                self.print_status(f"Backend may be running on port {backend_port} (untracked)", "warning")
+        
+        if self.is_port_in_use(frontend_port):
+            process_info = self.get_port_conflict_process(frontend_port)
+            if process_info and ("node" in process_info or "vite" in process_info):
+                self.print_status(f"Frontend may be running on port {frontend_port} (untracked)", "warning")
+        
+        if self.is_port_in_use(backend_port) or self.is_port_in_use(frontend_port):
+            self.print_status("Use 'python3 run.py stop' to clean up untracked services", "info")
                 
     def install_deps(self):
         """Install all dependencies"""
@@ -513,9 +827,78 @@ class AppRunner:
             return
             
         self.print_status("All dependencies installed successfully!", "success")
+        self.print_status("", "info")  # Blank line
+        
+        # Show platform-appropriate start command
+        import platform
+        if platform.system() == "Windows":
+            self.print_status("🚀 Ready to start! Run: run.bat start", "success")
+            self.print_status("   Or: python run.py start", "info")
+        else:
+            self.print_status("🚀 Ready to start! Run: python3 run.py start", "success")
+            self.print_status("   Or: ./run.sh start", "info")
+    
+    def _is_setup_complete(self) -> bool:
+        """Check if the application appears to be set up"""
+        # Check for key indicators that setup is complete
+        node_modules_exists = (self.frontend_dir / "node_modules").exists()
+        critical_packages = ["vite", "vue", "@vitejs/plugin-vue"]
+        packages_exist = all((self.frontend_dir / "node_modules" / pkg).exists() for pkg in critical_packages)
+        
+        try:
+            # Try importing Python dependencies
+            import flask, requests, pandas
+            from bs4 import BeautifulSoup
+            python_deps_ok = True
+        except ImportError:
+            python_deps_ok = False
+        
+        return node_modules_exists and packages_exist and python_deps_ok
+    
+    def _show_first_time_setup_message(self):
+        """Show helpful first-time setup message"""
+        import platform
+        
+        self.print_header("First-Time Setup Required")
+        self.print_status("🚨 It looks like this is your first time running EQDataScraper!", "warning")
+        self.print_status("", "info")
+        self.print_status("📋 Quick Setup Steps:", "info")
+        
+        if platform.system() == "Windows":
+            self.print_status("   1. run.bat install       # Install dependencies", "info")
+            self.print_status("   2. run.bat start         # Start the application", "info")
+            self.print_status("   3. Open http://localhost:3000 in your browser", "info")
+            self.print_status("", "info")
+            self.print_status("⚡ Or run 'run.bat install' now to get started!", "success")
+        else:
+            self.print_status("   1. python3 run.py install  # Install dependencies", "info")
+            self.print_status("   2. python3 run.py start    # Start the application", "info")
+            self.print_status("   3. Open http://localhost:3000 in your browser", "info")
+            self.print_status("", "info")
+            self.print_status("⚡ Or run 'python3 run.py install' now to get started!", "success")
+        self.print_status("", "info")
 
 def main():
-    parser = argparse.ArgumentParser(description="EQDataScraper Application Runner")
+    parser = argparse.ArgumentParser(description="EQDataScraper Application Runner",
+                                   formatter_class=argparse.RawDescriptionHelpFormatter,
+                                   epilog="""
+Examples:
+  python3 run.py install    # First-time setup: install all dependencies
+  python3 run.py start      # Start both frontend and backend services
+  python3 run.py status     # Check if services are running
+  python3 run.py stop       # Stop all services
+
+Platform-specific shortcuts:
+  Windows: run.bat [command]
+  Unix/Linux/macOS: ./run.sh [command]
+
+First-time setup:
+  1. python3 run.py install (or run.bat install on Windows)
+  2. python3 run.py start (or run.bat start on Windows)
+  3. Open http://localhost:3000 in your browser
+
+For help with common issues, see the README.md file.
+""")
     parser.add_argument("command", choices=["start", "stop", "status", "install"], 
                        help="Command to execute")
     parser.add_argument("--skip-deps", "--ignore-deps", action="store_true",
@@ -524,6 +907,10 @@ def main():
     args = parser.parse_args()
     runner = AppRunner()
     runner.skip_dependency_check = args.skip_deps
+    
+    # Check for first-time setup
+    if not runner._is_setup_complete() and args.command != "install":
+        runner._show_first_time_setup_message()
     
     if args.command == "start":
         runner.start_services()

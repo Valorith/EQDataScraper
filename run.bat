@@ -13,4 +13,4 @@ if "%1"=="" (
     exit /b 1
 )
 
-python3 run.py %1 2>nul || python run.py %1
+python3 run.py %1 2>nul || python run.py %1 2>nul || py -3 run.py %1
