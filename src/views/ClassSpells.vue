@@ -123,6 +123,22 @@
       </div>
     </div>
     
+    <!-- Scroll Animation Overlay -->
+    <div v-if="isScrolling" class="scroll-overlay">
+      <div class="scroll-animation-container">
+        <div class="scroll-class-icon">
+          <img 
+            :src="`/icons/${classInfo?.name.toLowerCase()}.gif`" 
+            :alt="classInfo?.name"
+            @error="handleScrollIconError"
+          >
+        </div>
+        <div class="scroll-level-text">
+          {{ currentLevel ? `Scrolling to Level ${currentLevel}` : 'Scrolling to Top' }}
+        </div>
+      </div>
+    </div>
+    
     <!-- Spell Detail Modal -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-container" @click.stop>
@@ -321,11 +337,17 @@ export default {
     }
 
 
+    const isScrolling = ref(false)
+
     const scrollToLevel = (level) => {
       const element = document.getElementById(`level-${level}`)
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        // Start blur animation
+        isScrolling.value = true
         currentLevel.value = level
+        
+        // Scroll to element
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
         
         // Add highlight effect after scrolling completes
         setTimeout(() => {
@@ -338,16 +360,30 @@ export default {
               levelHeader.style.boxShadow = ''
             }, 1000)
           }
-        }, 500)
+          
+          // End blur animation after scroll and highlight are complete
+          setTimeout(() => {
+            isScrolling.value = false
+          }, 500)
+        }, 800)
       }
     }
 
     const scrollToTop = () => {
+      // Start blur animation
+      isScrolling.value = true
+      currentLevel.value = null
+      
+      // Scroll to top
       window.scrollTo({
         top: 0,
         behavior: 'smooth'
       })
-      currentLevel.value = null
+      
+      // End blur animation after scroll completes
+      setTimeout(() => {
+        isScrolling.value = false
+      }, 1000)
     }
 
     const goHome = () => {
@@ -489,6 +525,14 @@ export default {
     const handleIconError = (event) => {
       // Hide the icon if it fails to load
       event.target.style.display = 'none'
+    }
+
+    const handleScrollIconError = (event) => {
+      const fallbackUrl = `https://wiki.heroesjourneyemu.com/${event.target.alt.toLowerCase()}.gif`
+      event.target.src = fallbackUrl
+      event.target.onerror = () => {
+        event.target.style.display = 'none'
+      }
     }
 
     // Modal functions
@@ -650,6 +694,7 @@ export default {
       titleStyles,
       isTransitioning,
       currentLevel,
+      isScrolling,
       hasSpellsAtLevel,
       scrollToLevel,
       scrollToTop,
@@ -659,6 +704,7 @@ export default {
       retryLoad,
       scrapeClass,
       handleIconError,
+      handleScrollIconError,
       // Modal properties and methods
       showModal,
       selectedSpell,
@@ -1255,7 +1301,137 @@ export default {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Blur effect CSS removed */
+/* Scroll Animation Overlay */
+.scroll-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: scrollOverlayFadeIn 0.3s ease-out;
+}
+
+@keyframes scrollOverlayFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(12px);
+  }
+}
+
+.scroll-animation-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  text-align: center;
+}
+
+.scroll-class-icon {
+  width: 150px;
+  height: 150px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 
+    0 0 40px rgba(var(--class-color-rgb), 0.8),
+    0 0 80px rgba(var(--class-color-rgb), 0.4);
+  animation: scrollIconFloat 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.scroll-class-icon::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255,255,255,0.3), transparent);
+  transform: rotate(45deg);
+  animation: scrollIconShimmer 2s ease-in-out infinite;
+}
+
+.scroll-class-icon img {
+  width: 85%;
+  height: 85%;
+  object-fit: cover;
+  border-radius: 16px;
+  z-index: 1;
+  position: relative;
+  animation: scrollIconPulse 1.5s ease-in-out infinite;
+}
+
+.scroll-level-text {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--class-color);
+  text-shadow: 
+    0 0 20px rgba(var(--class-color-rgb), 0.8),
+    0 0 40px rgba(var(--class-color-rgb), 0.4);
+  animation: scrollTextGlow 2s ease-in-out infinite alternate;
+  letter-spacing: 1px;
+}
+
+@keyframes scrollIconFloat {
+  0%, 100% { 
+    transform: translateY(0px) scale(1);
+  }
+  50% { 
+    transform: translateY(-20px) scale(1.05);
+  }
+}
+
+@keyframes scrollIconShimmer {
+  0% { 
+    transform: rotate(45deg) translate(-200%, -200%);
+  }
+  50% { 
+    transform: rotate(45deg) translate(0%, 0%);
+  }
+  100% { 
+    transform: rotate(45deg) translate(200%, 200%);
+  }
+}
+
+@keyframes scrollIconPulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+}
+
+@keyframes scrollTextGlow {
+  0% { 
+    text-shadow: 
+      0 0 20px rgba(var(--class-color-rgb), 0.6),
+      0 0 40px rgba(var(--class-color-rgb), 0.3);
+  }
+  100% { 
+    text-shadow: 
+      0 0 30px rgba(var(--class-color-rgb), 1),
+      0 0 60px rgba(var(--class-color-rgb), 0.6),
+      0 0 90px rgba(var(--class-color-rgb), 0.3);
+  }
+}
 
 /* Modal Styles */
 .modal-overlay {
