@@ -15,16 +15,49 @@ from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
 app = Flask(__name__)
 CORS(app)
 
+# Load configuration
+def load_config():
+    """Load configuration from config.json and environment variables"""
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
+    default_config = {
+        'backend_port': 5001,
+        'frontend_port': 3000,
+        'cache_expiry_hours': 24,
+        'min_scrape_interval_minutes': 5
+    }
+    
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = {**default_config, **json.load(f)}
+        else:
+            config = default_config
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Error loading config.json: {e}. Using defaults.")
+        config = default_config
+    
+    # Override with environment variables if present
+    config['backend_port'] = int(os.getenv('BACKEND_PORT', config['backend_port']))
+    config['frontend_port'] = int(os.getenv('FRONTEND_PORT', config['frontend_port']))
+    config['cache_expiry_hours'] = int(os.getenv('CACHE_EXPIRY_HOURS', config['cache_expiry_hours']))
+    config['min_scrape_interval_minutes'] = int(os.getenv('MIN_SCRAPE_INTERVAL_MINUTES', config['min_scrape_interval_minutes']))
+    
+    return config
+
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load configuration
+config = load_config()
+
 # Data storage
 spells_cache = {}
 cache_timestamp = {}
 last_scrape_time = {}
-CACHE_EXPIRY_HOURS = 24  # 24 hours - reasonable balance between freshness and server load
-MIN_SCRAPE_INTERVAL_MINUTES = 5  # Minimum 5 minutes between scrapes for same class
+CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
+MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def is_cache_expired(class_name):
     """Check if cache entry is expired"""
@@ -466,4 +499,4 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=config['backend_port']) 
