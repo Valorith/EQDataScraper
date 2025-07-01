@@ -36,7 +36,7 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: frontendPort,
-    allowedHosts: ['all']
+    allowedHosts: ['all', 'eqdatascraper-frontend-production.up.railway.app']
   },
   build: {
     outDir: 'dist',
