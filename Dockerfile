@@ -4,11 +4,11 @@ FROM node:18 AS builder
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files (package-lock.json excluded via .dockerignore)
+COPY package.json ./
 
-# Install all dependencies
-RUN npm ci
+# Install dependencies fresh (no package-lock.json for platform compatibility)
+RUN npm install
 
 # Copy source code
 COPY . .
