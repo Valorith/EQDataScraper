@@ -38,8 +38,21 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: frontendPort,
-    allowedHosts: 'all',
-    strictPort: false
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      'eqdatascraper-frontend-production.up.railway.app',
+      '.railway.app'
+    ],
+    strictPort: false,
+    proxy: {
+      '/api': {
+        target: process.env.BACKEND_URL || `http://localhost:${backendPort}`,
+        changeOrigin: true,
+        secure: true
+      }
+    }
   },
   build: {
     outDir: 'dist',
