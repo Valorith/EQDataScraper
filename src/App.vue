@@ -8,9 +8,10 @@
 export default {
   name: 'App',
   mounted() {
-    console.log('🔧 Environment Variables Debug:')
+    console.log('🔧 Environment Variables Debug v2:')
     console.log('VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
     console.log('All Vite env vars:', import.meta.env)
+    console.log('Build timestamp:', new Date().toISOString())
   }
 }
 </script>
