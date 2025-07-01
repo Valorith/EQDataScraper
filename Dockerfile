@@ -1,4 +1,4 @@
-# Build stage - use full Node.js for building
+# Build stage - use full Node.js for building (Railway deployment)
 FROM node:18 AS builder
 
 # Set working directory
