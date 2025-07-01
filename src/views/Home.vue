@@ -192,6 +192,10 @@
 import { useSpellsStore } from '../stores/spells'
 import axios from 'axios'
 
+// Configure API base URL - use environment variable in production, relative path in development
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+
 export default {
   name: 'Home',
   data() {
@@ -291,7 +295,7 @@ export default {
       this.searchLoading = true
       
       try {
-        const response = await axios.get(`/api/search-spells?q=${encodeURIComponent(this.searchQuery)}`)
+        const response = await axios.get(`${API_BASE_URL}/api/search-spells?q=${encodeURIComponent(this.searchQuery)}`)
         this.searchResults = response.data.results || []
         this.showDropdown = true
         this.selectedIndex = -1
@@ -438,7 +442,7 @@ export default {
     
     async checkCacheStatus() {
       try {
-        const response = await axios.get('/api/cache-status')
+        const response = await axios.get(`${API_BASE_URL}/api/cache-status`)
         this.cacheStatus = response.data
       } catch (error) {
         console.error('Error checking cache status:', error)
@@ -466,7 +470,13 @@ export default {
         
         try {
           console.log(`Loading spells for ${cls.name}...`)
-          const response = await axios.get(`/api/spells/${cls.name.toLowerCase()}`)
+          const response = await axios.get(`${API_BASE_URL}/api/spells/${cls.name.toLowerCase()}`)
+          
+          // Check if we got HTML instead of JSON (proxy routing issue)
+          if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
+            throw new Error(`API returned HTML instead of JSON for ${cls.name} - possible proxy routing issue`)
+          }
+          
           console.log(`Successfully loaded ${response.data.spell_count} spells for ${cls.name}`)
           
           // Update cache status for this class
@@ -484,6 +494,7 @@ export default {
         } catch (error) {
           console.error(`Error loading ${cls.name}:`, error)
           console.error('Error details:', error.response?.data || error.message)
+          console.error('Response type:', typeof error.response?.data)
           
           // Still update progress even on error
           this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
