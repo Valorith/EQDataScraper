@@ -1643,7 +1643,7 @@ export default {
 
 .modal-info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
   margin-bottom: 2rem;
 }
@@ -1818,17 +1818,17 @@ export default {
 
 .reagents-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
 }
 
 .reagent-box {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 8px;
-  padding: 1rem;
-  text-align: center;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
   transition: all 0.3s ease;
+  overflow: hidden;
 }
 
 .reagent-box:hover {
@@ -1840,12 +1840,13 @@ export default {
 .reagent-link {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
+  width: 100%;
 }
 
 .reagent-link:hover {
@@ -1869,13 +1870,15 @@ export default {
 }
 
 .reagent-text {
-  flex: 1;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Items with Spell Section */
 .items-with-spell-section {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
   padding: 1.5rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
   border: 1px solid rgba(var(--class-color-rgb), 0.15);
@@ -1893,16 +1896,17 @@ export default {
 
 .items-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
 }
 
 .item-box {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
   transition: all 0.3s ease;
+  overflow: hidden;
 }
 
 .item-box:hover {
@@ -1915,12 +1919,13 @@ export default {
 .item-link {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
+  width: 100%;
 }
 
 .item-link:hover {
@@ -1944,8 +1949,10 @@ export default {
 }
 
 .item-text {
-  flex: 1;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .modal-footer {
