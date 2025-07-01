@@ -7,9 +7,7 @@ from datetime import datetime, timedelta
 import logging
 import time
 
-# Add the parent directory to the path so we can import scrape_spells
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+# Import scrape_spells from the same directory
 from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
 
 app = Flask(__name__)
@@ -36,8 +34,8 @@ def load_config():
         logger.warning(f"Error loading config.json: {e}. Using defaults.")
         config = default_config
     
-    # Override with environment variables if present
-    config['backend_port'] = int(os.getenv('BACKEND_PORT', config['backend_port']))
+    # Override with environment variables (Railway provides PORT)
+    config['backend_port'] = int(os.getenv('PORT', os.getenv('BACKEND_PORT', config['backend_port'])))
     config['frontend_port'] = int(os.getenv('FRONTEND_PORT', config['frontend_port']))
     config['cache_expiry_hours'] = int(os.getenv('CACHE_EXPIRY_HOURS', config['cache_expiry_hours']))
     config['min_scrape_interval_minutes'] = int(os.getenv('MIN_SCRAPE_INTERVAL_MINUTES', config['min_scrape_interval_minutes']))
