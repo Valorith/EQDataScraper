@@ -187,26 +187,95 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
             logger.warning(f"No spell data found for {class_name}")
             return None
         
-        # Extract headers
-        header_row = rows[0]
-        headers = [th.get_text(strip=True) for th in header_row.find_all(['th', 'td'])]
-        
-        # Extract data
+        # Skip the header row and extract spell data
+        # Actual columns: Icon, Name, Class-Level, Effects, Mana, Skill, Target, Spell ID
         data = []
-        for row in rows[1:]:
+        spell_count = 0
+        
+        for i, row in enumerate(rows[1:]):  # Skip header row
             cells = row.find_all(['td', 'th'])
-            if len(cells) >= len(headers):
-                row_data = []
-                for cell in cells[:len(headers)]:
-                    text = cell.get_text(strip=True)
-                    row_data.append(text)
-                data.append(row_data)
+            
+            if len(cells) >= 7:  # Ensure we have minimum expected columns
+                try:
+                    # Extract spell icon URL
+                    icon_cell = cells[0]
+                    icon_img = icon_cell.find('img')
+                    icon_url = ''
+                    if icon_img and icon_img.get('src'):
+                        icon_src = icon_img.get('src')
+                        if icon_src.startswith('/'):
+                            icon_url = f"https://alla.clumsysworld.com{icon_src}"
+                        elif not icon_src.startswith('http'):
+                            icon_url = f"https://alla.clumsysworld.com/{icon_src}"
+                        else:
+                            icon_url = icon_src
+                    
+                    # Extract spell name and ID from link
+                    name_cell = cells[1]
+                    name_link = name_cell.find('a')
+                    spell_name = name_link.get_text(strip=True) if name_link else name_cell.get_text(strip=True)
+                    
+                    # Extract spell ID from the link href
+                    spell_id = ''
+                    if name_link and name_link.get('href'):
+                        href = name_link.get('href')
+                        # Extract ID from URL like "?a=spell&id=123"
+                        import re
+                        id_match = re.search(r'[?&]id=(\d+)', href)
+                        if id_match:
+                            spell_id = id_match.group(1)
+                    
+                    # Extract class and level from "Class Level" field (e.g., "Cleric 1")
+                    class_level_text = cells[2].get_text(strip=True)
+                    level = 0
+                    import re
+                    level_match = re.search(r'(\d+)$', class_level_text)
+                    if level_match:
+                        level = int(level_match.group(1))
+                    
+                    # Extract other fields - handling both 7 and 8 column layouts
+                    if len(cells) == 8:
+                        effects = cells[3].get_text(strip=True)
+                        mana = cells[4].get_text(strip=True)
+                        skill = cells[5].get_text(strip=True)
+                        target_type = cells[6].get_text(strip=True)
+                        spell_id_cell = cells[7].get_text(strip=True)
+                        if not spell_id and spell_id_cell.isdigit():
+                            spell_id = spell_id_cell
+                    else:  # 7 columns
+                        effects = cells[2].get_text(strip=True) if len(cells) > 2 else ''
+                        mana = cells[3].get_text(strip=True) if len(cells) > 3 else ''
+                        skill = cells[4].get_text(strip=True) if len(cells) > 4 else ''
+                        target_type = cells[5].get_text(strip=True) if len(cells) > 5 else ''
+                        spell_id_cell = cells[6].get_text(strip=True) if len(cells) > 6 else ''
+                        if not spell_id and spell_id_cell.isdigit():
+                            spell_id = spell_id_cell
+                    
+                    # Only add valid spells (with name and level)
+                    if spell_name and level > 0:
+                        spell_data = {
+                            'name': spell_name,
+                            'level': level,
+                            'mana': mana,
+                            'spell_id': spell_id,
+                            'icon': icon_url,
+                            'skill': skill,
+                            'target_type': target_type,
+                            'effects': effects,
+                        }
+                        data.append(spell_data)
+                        spell_count += 1
+                        
+                except Exception as e:
+                    logger.warning(f"Error parsing spell row: {e}")
+                    continue
         
         if not data:
-            logger.warning(f"No spell data extracted for {class_name}")
+            logger.warning(f"No valid spell data extracted for {class_name}")
             return None
         
-        df = pd.DataFrame(data, columns=headers)
+        # Convert to DataFrame with proper column names
+        df = pd.DataFrame(data)
         logger.info(f"Successfully scraped {len(df)} spells for {class_name}")
         
         return df
