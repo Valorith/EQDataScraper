@@ -76,8 +76,21 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         
+        logger.info(f"HTTP Status: {response.status_code}")
+        logger.info(f"Response length: {len(response.content)} bytes")
+        logger.info(f"Content type: {response.headers.get('content-type', 'unknown')}")
+        
         soup = BeautifulSoup(response.content, 'html.parser')
         tables = soup.find_all('table')
+        
+        logger.info(f"Found {len(tables)} tables")
+        if tables:
+            for i, table in enumerate(tables):
+                rows = table.find_all('tr')
+                logger.info(f"Table {i}: {len(rows)} rows")
+                if rows:
+                    header_text = rows[0].get_text(strip=True)[:100]
+                    logger.info(f"Table {i} header: {header_text}")
         
         if not tables:
             logger.warning(f"No tables found for {class_name}")
