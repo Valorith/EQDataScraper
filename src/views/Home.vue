@@ -867,6 +867,7 @@ export default {
   transform: translateX(-50%);
   width: 100%;
   max-width: 600px;
+  height: 520px; /* Fixed height: header(60px) + 10*results(40px each) + footer(60px) */
   background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
   backdrop-filter: blur(25px);
   border: 2px solid rgba(147, 112, 219, 0.3);
@@ -875,6 +876,8 @@ export default {
   overflow: hidden;
   animation: searchDropdownFadeIn 0.3s ease-out;
   z-index: 1100;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes searchDropdownFadeIn {
@@ -892,14 +895,16 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.5rem;
   background: rgba(147, 112, 219, 0.15);
   border-bottom: 1px solid rgba(147, 112, 219, 0.2);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
+  height: 48px;
 }
 
 .page-indicator {
@@ -911,15 +916,21 @@ export default {
 }
 
 .search-results-list {
-  max-height: 450px;
-  overflow-y: auto;
+  flex: 1;
+  overflow: hidden; /* No scrolling */
+  display: flex;
+  flex-direction: column;
 }
 
 .search-result-item {
-  padding: 1rem 1.5rem;
+  padding: 0.5rem 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
   transition: all 0.3s ease;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .search-result-item:hover,
@@ -935,13 +946,14 @@ export default {
 .search-result-info {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 .search-result-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   border: 2px solid rgba(147, 112, 219, 0.3);
   background: rgba(255, 255, 255, 0.1);
   object-fit: cover;
@@ -955,13 +967,14 @@ export default {
 
 .search-result-name {
   font-family: 'Cinzel', serif;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: white;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .search-result-name mark {
@@ -973,9 +986,10 @@ export default {
 }
 
 .search-result-details {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
+  line-height: 1.2;
 }
 
 .spell-classes {
@@ -992,6 +1006,8 @@ export default {
   border-top: 1px solid rgba(147, 112, 219, 0.2);
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+  height: 60px;
 }
 
 .pagination-info {
