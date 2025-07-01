@@ -55,7 +55,11 @@ export const useSpellsStore = defineStore('spells', {
       this.error = null
 
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/spells/${className}`, {
+        const apiUrl = `${API_BASE_URL}/api/spells/${className}`
+        console.log('API_BASE_URL:', API_BASE_URL)
+        console.log('Making API call to:', apiUrl)
+        
+        const response = await axios.get(apiUrl, {
           timeout: 30000, // 30 second timeout
           headers: {
             'Accept': 'application/json',
