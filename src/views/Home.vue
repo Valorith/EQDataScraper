@@ -465,27 +465,36 @@ export default {
         this.currentlyLoading = cls.name
         
         try {
-          await axios.get(`/api/spells/${cls.name.toLowerCase()}`)
+          console.log(`Loading spells for ${cls.name}...`)
+          const response = await axios.get(`/api/spells/${cls.name.toLowerCase()}`)
+          console.log(`Successfully loaded ${response.data.spell_count} spells for ${cls.name}`)
           
           // Update cache status for this class
           this.cacheStatus[cls.name] = { 
             cached: true, 
-            spell_count: 1,
-            last_updated: new Date().toISOString()
+            spell_count: response.data.spell_count || 0,
+            last_updated: response.data.last_updated || new Date().toISOString()
           }
           
           this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
           
           // Small delay to show progress
-          await new Promise(resolve => setTimeout(resolve, 300))
+          await new Promise(resolve => setTimeout(resolve, 500))
           
         } catch (error) {
           console.error(`Error loading ${cls.name}:`, error)
+          console.error('Error details:', error.response?.data || error.message)
+          
+          // Still update progress even on error
+          this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
         }
       }
       
       this.loadingComplete = true
       this.currentlyLoading = 'Complete!'
+      
+      // Refresh cache status to update the UI
+      await this.checkCacheStatus()
       
       // Keep modal open for a moment to show completion
       setTimeout(() => {
