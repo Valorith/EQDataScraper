@@ -5,12 +5,130 @@
       <p class="main-subtitle">Class Information</p>
     </div>
     
+    <!-- Global Spell Search -->
+    <div class="global-search-container">
+      <div class="search-input-wrapper">
+        <input
+          ref="searchInput"
+          v-model="searchQuery"
+          @input="handleSearchInput"
+          @focus="showDropdown = true"
+          @keydown="handleKeyDown"
+          type="text"
+          placeholder="Search spells across all classes..."
+          class="global-search-input"
+          autocomplete="off"
+        />
+        <div class="search-icon">🔍</div>
+        <button 
+          v-if="searchQuery" 
+          @click="clearSearch" 
+          class="clear-search-btn"
+        >
+          ×
+        </button>
+        
+        <!-- Search Results Dropdown -->
+        <div v-if="showDropdown && searchResults.length > 0" class="search-dropdown">
+          <div class="search-results-header">
+            <span>{{ searchResults.length }} result{{ searchResults.length === 1 ? '' : 's' }}</span>
+            <span v-if="showPagination" class="page-indicator">
+              Page {{ currentPage + 1 }} of {{ totalPages }}
+            </span>
+          </div>
+          <div class="search-results-list">
+            <div 
+              v-for="(spell, index) in paginatedResults" 
+              :key="`${spell.spell_id}-${spell.classes.join('-')}`"
+              :class="['search-result-item', { 'highlighted': index === selectedIndex }]"
+              @click="selectSpell(spell)"
+              @mouseenter="selectedIndex = index"
+            >
+              <div class="search-result-info">
+                <img 
+                  v-if="spell.icon" 
+                  :src="spell.icon" 
+                  :alt="`${spell.name} icon`"
+                  class="search-result-icon"
+                  @error="handleIconError"
+                />
+                <div class="search-result-text">
+                  <div class="search-result-name" v-html="highlightMatch(spell.name)"></div>
+                  <div class="search-result-details">
+                    Level {{ spell.level }}
+                    <span v-if="spell.mana"> • {{ spell.mana }} MP</span>
+                    <span class="spell-classes"> • {{ spell.classes.join(', ') }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="showPagination" class="search-results-footer">
+            <div class="pagination-info">
+              <div>Showing {{ (currentPage * resultsPerPage) + 1 }}-{{ Math.min((currentPage + 1) * resultsPerPage, searchResults.length) }} of {{ searchResults.length }}</div>
+              <div class="keyboard-tip">Tip: Use tab and keyboard arrows to navigate. Enter to select.</div>
+            </div>
+            <div class="pagination-controls">
+              <button 
+                @click="goToPreviousPage" 
+                :disabled="!canGoToPreviousPage"
+                class="pagination-arrow"
+                title="Previous page"
+              >
+                ←
+              </button>
+              <button 
+                @click="goToNextPage" 
+                :disabled="!canGoToNextPage"
+                :class="['pagination-arrow', { 'glow-attention': showRightArrowGlow }]"
+                title="Next page"
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Empty State -->
+        <div v-if="showDropdown && searchQuery && searchResults.length === 0 && !searchLoading" class="search-empty">
+          No spells found matching "{{ searchQuery }}"
+        </div>
+        
+        <!-- Loading State -->
+        <div v-if="searchLoading" class="search-loading">
+          <div class="search-spinner"></div>
+          <span>Searching...</span>
+        </div>
+      </div>
+      
+      <!-- Refresh Data Message -->
+      <div v-if="hasUncachedClasses" class="refresh-message">
+        <div class="refresh-content">
+          <span class="refresh-icon">⚠️</span>
+          <span class="refresh-text">
+            {{ uncachedClasses.length }} class{{ uncachedClasses.length === 1 ? '' : 'es' }} need spell data for search functionality.
+          </span>
+          <button @click="refreshAllSpellData" class="refresh-button" :disabled="isRefreshing">
+            <span v-if="isRefreshing" class="refresh-spinner"></span>
+            {{ isRefreshing ? 'Loading...' : 'Load All Spell Data' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <div class="classes-grid">
       <router-link 
         v-for="cls in classes" 
         :key="cls.name"
         :to="{ name: 'ClassSpells', params: { className: cls.name.toLowerCase() } }"
-        :class="['class-card', cls.name.toLowerCase()]"
+        :class="[
+          'class-card', 
+          cls.name.toLowerCase(),
+          {
+            'cached': getCacheStatusForClass(cls.name).cached,
+            'uncached': !getCacheStatusForClass(cls.name).cached
+          }
+        ]"
       >
         <div class="class-icon">
           <img 
@@ -22,19 +140,125 @@
         <div class="class-name">{{ cls.name }}</div>
       </router-link>
     </div>
+    
+    <!-- Loading Modal -->
+    <div v-if="showRefreshModal" class="refresh-modal-overlay" @click="closeRefreshModal">
+      <div class="refresh-modal" @click.stop>
+        <div class="refresh-modal-header">
+          <h3>Loading Spell Data</h3>
+          <button v-if="!isRefreshing" @click="closeRefreshModal" class="modal-close-btn">×</button>
+        </div>
+        
+        <div class="refresh-modal-content">
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div 
+                class="progress-fill" 
+                :style="{ width: refreshProgress + '%' }"
+                :class="{ 'complete': loadingComplete }"
+              ></div>
+            </div>
+            <div class="progress-text">{{ refreshProgress }}%</div>
+          </div>
+          
+          <div class="status-text">
+            <span v-if="loadingComplete" class="status-complete">
+              ✅ All spell data loaded successfully!
+            </span>
+            <span v-else class="status-loading">
+              📚 Loading {{ currentlyLoading }}...
+            </span>
+          </div>
+          
+          <div class="loading-details">
+            <div class="loading-animation">
+              <img 
+                v-if="currentlyLoading && !loadingComplete"
+                :src="`/icons/${currentlyLoading.toLowerCase()}.gif`" 
+                :alt="`${currentlyLoading} icon`"
+                class="class-loading-icon"
+                @error="handleLoadingIconError"
+              />
+              <div v-else class="spell-icon-bounce">✅</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import { useSpellsStore } from '../stores/spells'
+import axios from 'axios'
 
 export default {
   name: 'Home',
+  data() {
+    return {
+      searchQuery: '',
+      searchResults: [],
+      showDropdown: false,
+      selectedIndex: -1,
+      searchLoading: false,
+      searchTimeout: null,
+      cacheStatus: {},
+      showRefreshModal: false,
+      refreshProgress: 0,
+      currentlyLoading: '',
+      loadingComplete: false,
+      isRefreshing: false,
+      currentPage: 0,
+      resultsPerPage: 10,
+      showRightArrowGlow: false
+    }
+  },
   setup() {
     const spellsStore = useSpellsStore()
     
     return {
       classes: spellsStore.classes
+    }
+  },
+  computed: {
+    uncachedClasses() {
+      return this.classes.filter(cls => !this.getCacheStatusForClass(cls.name).cached)
+    },
+    
+    hasUncachedClasses() {
+      return this.uncachedClasses.length > 0
+    },
+    
+    totalPages() {
+      return Math.ceil(this.searchResults.length / this.resultsPerPage)
+    },
+    
+    paginatedResults() {
+      const start = this.currentPage * this.resultsPerPage
+      const end = start + this.resultsPerPage
+      return this.searchResults.slice(start, end)
+    },
+    
+    showPagination() {
+      return this.searchResults.length > this.resultsPerPage
+    },
+    
+    canGoToPreviousPage() {
+      return this.currentPage > 0
+    },
+    
+    canGoToNextPage() {
+      return this.currentPage < this.totalPages - 1
+    }
+  },
+  async mounted() {
+    document.addEventListener('click', this.handleOutsideClick)
+    await this.checkCacheStatus()
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.handleOutsideClick)
+    if (this.searchTimeout) {
+      clearTimeout(this.searchTimeout)
     }
   },
   methods: {
@@ -43,6 +267,251 @@ export default {
       event.target.src = fallbackUrl
       event.target.onerror = () => {
         event.target.style.display = 'none'
+      }
+    },
+    
+    handleSearchInput() {
+      if (this.searchTimeout) {
+        clearTimeout(this.searchTimeout)
+      }
+      
+      this.searchTimeout = setTimeout(() => {
+        this.performSearch()
+      }, 300)
+    },
+    
+    async performSearch() {
+      if (!this.searchQuery || this.searchQuery.length < 2) {
+        this.searchResults = []
+        this.showDropdown = false
+        this.currentPage = 0
+        return
+      }
+      
+      this.searchLoading = true
+      
+      try {
+        const response = await axios.get(`/api/search-spells?q=${encodeURIComponent(this.searchQuery)}`)
+        this.searchResults = response.data.results || []
+        this.showDropdown = true
+        this.selectedIndex = -1
+        this.currentPage = 0 // Reset to first page on new search
+        
+        // Trigger glow effect if there are more than 10 results
+        if (this.searchResults.length > this.resultsPerPage) {
+          this.$nextTick(() => {
+            this.showRightArrowGlow = true
+            setTimeout(() => {
+              this.showRightArrowGlow = false
+            }, 2000) // Glow for 2 seconds
+          })
+        }
+      } catch (error) {
+        console.error('Search error:', error)
+        this.searchResults = []
+        this.currentPage = 0
+      } finally {
+        this.searchLoading = false
+      }
+    },
+    
+    selectSpell(spell) {
+      if (spell.class_names && spell.class_names.length > 0) {
+        const firstClass = spell.class_names[0].toLowerCase()
+        this.$router.push({ 
+          name: 'ClassSpells', 
+          params: { className: firstClass },
+          hash: `#spell-${spell.spell_id}`,
+          query: { openModal: 'true' }
+        })
+      }
+      this.clearSearch()
+    },
+    
+    clearSearch() {
+      this.searchQuery = ''
+      this.searchResults = []
+      this.showDropdown = false
+      this.selectedIndex = -1
+      this.currentPage = 0
+    },
+    
+    handleKeyDown(event) {
+      if (!this.showDropdown || this.searchResults.length === 0) return
+      
+      const maxIndex = Math.min(this.paginatedResults.length - 1, 9)
+      
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault()
+          if (this.selectedIndex < maxIndex) {
+            this.selectedIndex++
+          } else if (this.canGoToNextPage) {
+            this.goToNextPage()
+            this.selectedIndex = 0
+          } else {
+            this.selectedIndex = 0
+          }
+          break
+        case 'ArrowUp':
+          event.preventDefault()
+          if (this.selectedIndex > 0) {
+            this.selectedIndex--
+          } else if (this.canGoToPreviousPage) {
+            this.goToPreviousPage()
+            this.selectedIndex = Math.min(this.paginatedResults.length - 1, 9)
+          } else {
+            this.selectedIndex = maxIndex
+          }
+          break
+        case 'Tab':
+          event.preventDefault()
+          if (event.shiftKey) {
+            // Shift+Tab - cycle backwards
+            if (this.selectedIndex > 0) {
+              this.selectedIndex--
+            } else if (this.canGoToPreviousPage) {
+              this.goToPreviousPage()
+              this.selectedIndex = Math.min(this.paginatedResults.length - 1, 9)
+            } else {
+              this.selectedIndex = maxIndex
+            }
+          } else {
+            // Tab - cycle forwards
+            if (this.selectedIndex < maxIndex) {
+              this.selectedIndex++
+            } else if (this.canGoToNextPage) {
+              this.goToNextPage()
+              this.selectedIndex = 0
+            } else {
+              this.selectedIndex = 0
+            }
+          }
+          break
+        case 'Enter':
+          event.preventDefault()
+          if (this.selectedIndex >= 0 && this.selectedIndex <= maxIndex) {
+            this.selectSpell(this.paginatedResults[this.selectedIndex])
+          }
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          this.goToPreviousPage()
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          this.goToNextPage()
+          break
+        case 'Escape':
+          this.showDropdown = false
+          this.selectedIndex = -1
+          this.$refs.searchInput.blur()
+          break
+      }
+    },
+    
+    handleOutsideClick(event) {
+      const searchContainer = this.$el.querySelector('.global-search-container')
+      if (searchContainer && !searchContainer.contains(event.target)) {
+        this.showDropdown = false
+      }
+    },
+    
+    highlightMatch(text) {
+      if (!this.searchQuery) return text
+      const regex = new RegExp(`(${this.searchQuery})`, 'gi')
+      return text.replace(regex, '<mark>$1</mark>')
+    },
+    
+    handleIconError(event) {
+      event.target.style.display = 'none'
+    },
+    
+    handleLoadingIconError(event) {
+      // Fallback to generic icon if class icon fails to load
+      event.target.style.display = 'none'
+      const parent = event.target.parentElement
+      if (parent) {
+        parent.innerHTML = '<div class="spell-icon-bounce">🔮</div>'
+      }
+    },
+    
+    async checkCacheStatus() {
+      try {
+        const response = await axios.get('/api/cache-status')
+        this.cacheStatus = response.data
+      } catch (error) {
+        console.error('Error checking cache status:', error)
+        this.cacheStatus = {}
+      }
+    },
+    
+    getCacheStatusForClass(className) {
+      return this.cacheStatus[className] || { cached: false, spell_count: 0 }
+    },
+    
+    
+    async refreshAllSpellData() {
+      this.showRefreshModal = true
+      this.isRefreshing = true
+      this.refreshProgress = 0
+      this.loadingComplete = false
+      
+      const classesToLoad = this.uncachedClasses
+      const totalClasses = classesToLoad.length
+      
+      for (let i = 0; i < classesToLoad.length; i++) {
+        const cls = classesToLoad[i]
+        this.currentlyLoading = cls.name
+        
+        try {
+          await axios.get(`/api/spells/${cls.name.toLowerCase()}`)
+          
+          // Update cache status for this class
+          this.cacheStatus[cls.name] = { 
+            cached: true, 
+            spell_count: 1,
+            last_updated: new Date().toISOString()
+          }
+          
+          this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
+          
+          // Small delay to show progress
+          await new Promise(resolve => setTimeout(resolve, 300))
+          
+        } catch (error) {
+          console.error(`Error loading ${cls.name}:`, error)
+        }
+      }
+      
+      this.loadingComplete = true
+      this.currentlyLoading = 'Complete!'
+      
+      // Keep modal open for a moment to show completion
+      setTimeout(() => {
+        this.showRefreshModal = false
+        this.isRefreshing = false
+        this.refreshProgress = 0
+      }, 1500)
+    },
+    
+    closeRefreshModal() {
+      if (!this.isRefreshing) {
+        this.showRefreshModal = false
+      }
+    },
+    
+    goToPreviousPage() {
+      if (this.canGoToPreviousPage) {
+        this.currentPage--
+        this.selectedIndex = -1
+      }
+    },
+    
+    goToNextPage() {
+      if (this.canGoToNextPage) {
+        this.currentPage++
+        this.selectedIndex = -1
       }
     }
   }
@@ -291,5 +760,730 @@ export default {
   .classes-grid { grid-template-columns: 1fr; }
   .class-card { height: 312px; padding: 35px 15px; }
   .class-icon { width: 90px; height: 90px; margin-bottom: 25px; }
+}
+
+/* Global Search Styles */
+.global-search-container {
+  position: relative;
+  margin-bottom: 4rem;
+  z-index: 100;
+}
+
+.global-search-container:has(.refresh-message) {
+  margin-bottom: 3rem;
+}
+
+.search-input-wrapper {
+  position: relative;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.global-search-input {
+  width: 100%;
+  padding: 1.25rem 3.5rem 1.25rem 4rem;
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  backdrop-filter: blur(20px);
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 500;
+  outline: none;
+  transition: all 0.3s ease;
+  font-family: 'Inter', sans-serif;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.global-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.global-search-input:focus {
+  border-color: #9370db;
+  box-shadow: 0 0 25px rgba(147, 112, 219, 0.4), 0 8px 32px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+}
+
+.search-icon {
+  position: absolute;
+  left: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(147, 112, 219, 0.2);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.3rem;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.clear-search-btn:hover {
+  background: rgba(147, 112, 219, 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 0.125rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 600px;
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 20px;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4), 0 0 60px rgba(147, 112, 219, 0.2);
+  overflow: hidden;
+  animation: searchDropdownFadeIn 0.3s ease-out;
+  z-index: 1100;
+}
+
+@keyframes searchDropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.search-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: rgba(147, 112, 219, 0.15);
+  border-bottom: 1px solid rgba(147, 112, 219, 0.2);
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.page-indicator {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.search-results-list {
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.search-result-item:hover,
+.search-result-item.highlighted {
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.15), rgba(147, 112, 219, 0.08));
+  transform: translateX(6px);
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.search-result-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.search-result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-name mark {
+  background: #9370db;
+  color: white;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.search-result-details {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.spell-classes {
+  color: #9370db;
+  font-weight: 600;
+}
+
+.search-results-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: rgba(147, 112, 219, 0.08);
+  border-top: 1px solid rgba(147, 112, 219, 0.2);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pagination-info {
+  font-style: italic;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.keyboard-tip {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: normal;
+  font-weight: 400;
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.pagination-arrow {
+  background: rgba(147, 112, 219, 0.2);
+  border: 1px solid rgba(147, 112, 219, 0.3);
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.pagination-arrow:hover:not(:disabled) {
+  background: rgba(147, 112, 219, 0.4);
+  border-color: rgba(147, 112, 219, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(147, 112, 219, 0.3);
+}
+
+.pagination-arrow:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(147, 112, 219, 0.1);
+  border-color: rgba(147, 112, 219, 0.15);
+}
+
+.pagination-arrow:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(147, 112, 219, 0.2);
+}
+
+.pagination-arrow.glow-attention {
+  animation: arrowGlow 2s ease-in-out;
+  background: rgba(147, 112, 219, 0.6) !important;
+  border-color: rgba(147, 112, 219, 0.8) !important;
+  box-shadow: 0 0 15px rgba(147, 112, 219, 0.8), 0 0 30px rgba(147, 112, 219, 0.4) !important;
+}
+
+@keyframes arrowGlow {
+  0% {
+    box-shadow: 0 2px 8px rgba(147, 112, 219, 0.3);
+  }
+  25% {
+    box-shadow: 0 0 20px rgba(147, 112, 219, 1), 0 0 40px rgba(147, 112, 219, 0.6);
+    transform: translateY(-1px) scale(1.1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(147, 112, 219, 1), 0 0 50px rgba(147, 112, 219, 0.8);
+    transform: translateY(-2px) scale(1.15);
+  }
+  75% {
+    box-shadow: 0 0 20px rgba(147, 112, 219, 1), 0 0 40px rgba(147, 112, 219, 0.6);
+    transform: translateY(-1px) scale(1.1);
+  }
+  100% {
+    box-shadow: 0 2px 8px rgba(147, 112, 219, 0.3);
+    transform: translateY(0) scale(1);
+  }
+}
+
+.search-empty {
+  position: absolute;
+  top: calc(100% + 0.125rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 600px;
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 20px;
+  padding: 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  z-index: 1100;
+  animation: searchDropdownFadeIn 0.3s ease-out;
+}
+
+.search-loading {
+  position: absolute;
+  top: calc(100% + 0.125rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 20px;
+  padding: 1rem 2rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.95rem;
+  z-index: 1100;
+  animation: searchDropdownFadeIn 0.3s ease-out;
+}
+
+.search-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-top: 2px solid #9370db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .global-search-container {
+    margin-bottom: 3rem;
+  }
+  
+  .global-search-input {
+    font-size: 1.1rem;
+    padding: 1rem 3rem 1rem 3.5rem;
+  }
+  
+  .search-dropdown {
+    margin: 0 1rem;
+    width: calc(100% - 2rem);
+  }
+}
+
+/* Cache Status Borders */
+.class-card.cached {
+  border-color: #22c55e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px #22c55e;
+}
+
+.class-card.uncached {
+  border-color: #f59e0b !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px #f59e0b;
+}
+
+.class-card.cached:hover {
+  border-color: #16a34a !important;
+  box-shadow: 0 25px 60px rgba(34, 197, 94, 0.3), 0 0 40px rgba(34, 197, 94, 0.2);
+}
+
+.class-card.uncached:hover {
+  border-color: #d97706 !important;
+  box-shadow: 0 25px 60px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.2);
+}
+
+/* Refresh Message */
+.refresh-message {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(147, 112, 219, 0.2);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  padding: 0.75rem 1rem;
+  margin: 0 auto;
+  max-width: 540px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  opacity: 0.95;
+  position: relative;
+  z-index: 50;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 0.95;
+    transform: translateY(0);
+  }
+}
+
+.refresh-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.refresh-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.refresh-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  font-weight: 400;
+  flex: 1;
+  min-width: 180px;
+}
+
+.refresh-button {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.8), rgba(147, 112, 219, 0.6));
+  color: white;
+  border: 1px solid rgba(147, 112, 219, 0.4);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 120px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9370db, rgba(147, 112, 219, 0.9));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(147, 112, 219, 0.3);
+  border-color: rgba(147, 112, 219, 0.6);
+}
+
+.refresh-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.refresh-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Loading Modal */
+.refresh-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.refresh-modal {
+  background: linear-gradient(145deg, rgba(30, 35, 50, 0.95), rgba(20, 25, 40, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 24px;
+  padding: 0;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 80px rgba(147, 112, 219, 0.3);
+  animation: modalSlideIn 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.refresh-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2rem 2rem 1rem;
+  border-bottom: 1px solid rgba(147, 112, 219, 0.2);
+}
+
+.refresh-modal-header h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: white;
+  margin: 0;
+  text-shadow: 0 0 20px rgba(147, 112, 219, 0.4);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.refresh-modal-content {
+  padding: 2rem;
+}
+
+.progress-container {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(147, 112, 219, 0.3);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #9370db, #c8a8ff);
+  border-radius: 6px;
+  transition: width 0.5s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: progressShimmer 2s infinite;
+}
+
+.progress-fill.complete {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+@keyframes progressShimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.status-text {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  min-height: 24px;
+}
+
+.status-loading {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.status-complete {
+  color: #22c55e;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.loading-details {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading-animation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spell-icon-bounce {
+  font-size: 2rem;
+  animation: bounce 1.5s ease-in-out infinite;
+}
+
+.class-loading-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 2px solid rgba(147, 112, 219, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+  animation: bounce 1.5s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-8px) rotate(5deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-12px) rotate(-5deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .global-search-container {
+    margin-bottom: 3rem;
+  }
+  
+  .global-search-container:has(.refresh-message) {
+    margin-bottom: 2.5rem;
+  }
+  
+  .refresh-message {
+    max-width: calc(100% - 2rem);
+    margin: 0 1rem;
+  }
+  
+  .refresh-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.5rem;
+  }
+  
+  .refresh-text {
+    min-width: auto;
+    font-size: 0.75rem;
+  }
+  
+  .refresh-button {
+    min-width: 100px;
+    font-size: 0.7rem;
+    padding: 0.35rem 0.7rem;
+  }
+  
+  .refresh-modal {
+    width: 95%;
+    margin: 1rem;
+  }
+  
+  .refresh-modal-header,
+  .refresh-modal-content {
+    padding: 1.5rem;
+  }
 }
 </style> 
