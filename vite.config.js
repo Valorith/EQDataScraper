@@ -7,19 +7,21 @@ import { resolve } from 'path'
 let backendPort = 5001
 let frontendPort = 3000
 
+// Try to load config.json if it exists
 try {
-  const configPath = resolve(__dirname, 'config.json')
+  const configPath = resolve(process.cwd(), 'config.json')
   const configData = readFileSync(configPath, 'utf8')
   const config = JSON.parse(configData)
   backendPort = config.backend_port || 5001
   frontendPort = config.frontend_port || 3000
 } catch (error) {
-  console.warn('Could not load config.json, using default ports')
+  // In production environments like Railway, config.json might not exist
+  // This is expected and we'll use environment variables instead
 }
 
-// Override with environment variables if present
+// Override with environment variables (Railway provides PORT)
 backendPort = parseInt(process.env.BACKEND_PORT) || backendPort
-frontendPort = parseInt(process.env.FRONTEND_PORT) || frontendPort
+frontendPort = parseInt(process.env.PORT) || parseInt(process.env.FRONTEND_PORT) || frontendPort
 
 export default defineConfig({
   plugins: [vue()],
@@ -36,7 +38,8 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: frontendPort,
-    allowedHosts: 'all'
+    allowedHosts: 'all',
+    strictPort: false
   },
   build: {
     outDir: 'dist',
