@@ -29,7 +29,7 @@
         </button>
         
         <!-- Search Results Dropdown -->
-        <div v-if="showDropdown && searchResults.length > 0" class="search-dropdown">
+        <div v-if="showDropdown && searchResults.length > 0" :class="['search-dropdown', showPagination ? 'has-pagination' : 'no-pagination']">
           <div class="search-results-header">
             <span>{{ searchResults.length }} result{{ searchResults.length === 1 ? '' : 's' }}</span>
             <span v-if="showPagination" class="page-indicator">
@@ -867,7 +867,6 @@ export default {
   transform: translateX(-50%);
   width: 100%;
   max-width: 600px;
-  height: 520px; /* Fixed height: header(60px) + 10*results(40px each) + footer(60px) */
   background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
   backdrop-filter: blur(25px);
   border: 2px solid rgba(147, 112, 219, 0.3);
@@ -878,6 +877,16 @@ export default {
   z-index: 1100;
   display: flex;
   flex-direction: column;
+}
+
+/* Full height when 10 results (with pagination) */
+.search-dropdown.has-pagination {
+  height: 520px; /* Fixed height: header(48px) + 10*results(40px each) + footer(60px) + padding(12px) */
+}
+
+/* Dynamic height when fewer than 10 results (no pagination) */
+.search-dropdown.no-pagination {
+  min-height: 108px; /* header(48px) + 1*result(40px) + padding(20px) */
 }
 
 @keyframes searchDropdownFadeIn {
@@ -920,6 +929,11 @@ export default {
   overflow: hidden; /* No scrolling */
   display: flex;
   flex-direction: column;
+}
+
+/* Add bottom padding when no pagination */
+.search-dropdown.no-pagination .search-results-list {
+  padding-bottom: 20px;
 }
 
 .search-result-item {
