@@ -13,6 +13,9 @@ node_modules/
 # User-specific configuration files
 config.json
 
+# Build artifacts (generated during deployment)
+dist/
+
 # AI Assistant Documentation
 CLAUDE.md
 GEMINI.md
