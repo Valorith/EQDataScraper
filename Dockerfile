@@ -5,10 +5,11 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
 # Install all dependencies (including devDependencies for building)
-RUN npm ci
+# Use npm install instead of npm ci to resolve platform-specific deps
+RUN npm install
 
 # Copy source code
 COPY . .
