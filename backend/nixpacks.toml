@@ -1,17 +1,8 @@
-[variables]
-PYTHONPATH = "."
-
 [phases.setup]
-nixPkgs = ["python311", "pip"]
+nixPkgs = ["python311"]
 
 [phases.install]
-cmds = [
-  "python -m pip install --upgrade pip",
-  "pip install -r requirements.txt"
-]
-
-[phases.build]
-cmds = ["echo 'Flask app ready'"]
+cmds = ["python -m pip install -r requirements.txt"]
 
 [start]
 cmd = "python app.py"
