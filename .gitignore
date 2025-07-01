@@ -3,6 +3,8 @@
 temp_*.html
 static-backup/
 run.log
+frontend.log
+backend.log
 __pycache__/
 download_icons.py
 node_modules/
