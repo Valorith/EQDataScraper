@@ -26,6 +26,73 @@
     </div>
 
     <div v-else class="spells-container">
+      <!-- Spell Search -->
+      <div class="spell-search-container">
+        <div class="search-input-wrapper">
+          <input
+            ref="searchInput"
+            v-model="searchQuery"
+            @input="handleSearchInput"
+            @focus="showDropdown = true"
+            @keydown="handleKeyDown"
+            type="text"
+            placeholder="Search spells..."
+            class="spell-search-input"
+            autocomplete="off"
+          />
+          <div class="search-icon">🔍</div>
+          <button 
+            v-if="searchQuery" 
+            @click="clearSearch" 
+            class="clear-search-btn"
+          >
+            ×
+          </button>
+        </div>
+        
+        <!-- Search Results Dropdown -->
+        <div v-if="showDropdown && filteredSpells.length > 0" class="search-dropdown">
+          <div class="search-results-header">
+            <span>{{ filteredSpells.length }} result{{ filteredSpells.length === 1 ? '' : 's' }}</span>
+          </div>
+          <div class="search-results-list">
+            <div 
+              v-for="(spell, index) in filteredSpells.slice(0, 10)" 
+              :key="spell.name"
+              :class="['search-result-item', { 'highlighted': index === selectedIndex }]"
+              @click="selectSpell(spell)"
+              @mouseenter="selectedIndex = index"
+            >
+              <div class="search-result-info">
+                <img 
+                  v-if="spell.icon" 
+                  :src="spell.icon" 
+                  :alt="`${spell.name} icon`"
+                  class="search-result-icon"
+                  @error="handleIconError"
+                  @load="handleIconLoad"
+                />
+                <div class="search-result-text">
+                  <div class="search-result-name" v-html="highlightMatch(spell.name)"></div>
+                  <div class="search-result-details">
+                    Level {{ spell.level }}
+                    <span v-if="spell.mana"> • {{ spell.mana }} MP</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="filteredSpells.length > 10" class="search-results-footer">
+            Showing first 10 of {{ filteredSpells.length }} results
+          </div>
+        </div>
+        
+        <!-- Empty State -->
+        <div v-if="showDropdown && searchQuery && filteredSpells.length === 0" class="search-empty">
+          No spells found matching "{{ searchQuery }}"
+        </div>
+      </div>
+
       <!-- Level Matrix Navigation -->
       <nav class="level-navigator" aria-label="Level navigation">
         <h2 class="level-nav-title">Quick Level Navigation</h2>
@@ -68,6 +135,7 @@
           <div 
             v-for="spell in levelGroup" 
             :key="spell.name"
+            :data-spell-name="spell.name"
             class="spell-card"
             @click="openSpellModal(spell)"
           >
@@ -79,6 +147,7 @@
                   :alt="`${spell.name} icon`"
                   class="spell-icon"
                   @error="handleIconError"
+                  @load="handleIconLoad"
                 />
                 <div class="spell-title-text">
                   <h3 class="spell-name">{{ spell.name }}</h3>
@@ -134,7 +203,7 @@
           >
         </div>
         <div class="scroll-level-text">
-          {{ currentLevel ? `Scrolling to Level ${currentLevel}` : 'Scrolling to Top' }}
+          {{ currentSpellName ? `Scrolling to ${currentSpellName}` : currentLevel ? `Scrolling to Level ${currentLevel}` : 'Scrolling to Top' }}
         </div>
       </div>
     </div>
@@ -149,6 +218,8 @@
               :src="selectedSpell.icon" 
               :alt="`${selectedSpell.name} icon`"
               class="modal-spell-icon"
+              @error="handleIconError"
+              @load="handleIconLoad"
             />
             <div>
               <h2 class="modal-spell-name">{{ selectedSpell?.name }}</h2>
@@ -303,23 +374,39 @@
         </div>
         
         <div class="modal-footer">
-          <a 
-            :href="`https://alla.clumsysworld.com/?a=spell&id=${selectedSpell?.spell_id}`" 
-            target="_blank" 
-            class="view-original-btn"
-          >
-            View on Alla Website
-            <span class="external-icon">↗</span>
-          </a>
+          <div class="modal-footer-buttons">
+            <button 
+              @click="shareSpell" 
+              class="share-spell-btn"
+              title="Copy shareable link to this spell"
+            >
+              <span class="share-icon">🔗</span>
+              Share Spell
+            </button>
+            <a 
+              :href="`https://alla.clumsysworld.com/?a=spell&id=${selectedSpell?.spell_id}`" 
+              target="_blank" 
+              class="view-original-btn"
+            >
+              View on Alla Website
+              <span class="external-icon">↗</span>
+            </a>
+          </div>
         </div>
       </div>
+    </div>
+    
+    <!-- Share Toast Notification -->
+    <div v-if="shareToastVisible" class="share-toast">
+      <span class="toast-icon">✓</span>
+      Spell link copied to clipboard!
     </div>
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useSpellsStore } from '../stores/spells'
 
 // Debounce utility function
@@ -341,11 +428,20 @@ export default {
   },
   setup(props) {
     const router = useRouter()
+    const route = useRoute()
     const spellsStore = useSpellsStore()
     const loading = ref(false)
     const error = ref(null)
     const isTransitioning = ref(false)
     const currentLevel = ref(null)
+    const currentSpellName = ref(null)
+    
+    // Search state
+    const searchInput = ref(null)
+    const searchQuery = ref('')
+    const showDropdown = ref(false)
+    const selectedIndex = ref(-1)
+    const filteredSpells = ref([])
     
     // Modal state
     const showModal = ref(false)
@@ -445,6 +541,10 @@ export default {
       // End blur animation after scroll completes
       setTimeout(() => {
         isScrolling.value = false
+        // Focus search box after scrolling to top
+        if (searchInput.value) {
+          searchInput.value.focus()
+        }
       }, 1000)
     }
 
@@ -559,15 +659,32 @@ export default {
     // Debounced loading function to prevent rapid API calls
     const debouncedLoad = debounce(loadSpells, 300)
     
-    onMounted(() => {
-      loadSpells()
+    onMounted(async () => {
+      await loadSpells()
       window.addEventListener('scroll', handleScroll, { passive: true })
       window.addEventListener('keydown', handleKeydown)
+      document.addEventListener('click', handleClickOutside, { passive: true })
+      
+      // Wait for DOM to be fully rendered before checking for shared spell
+      await nextTick()
+      setTimeout(async () => {
+        await checkForSharedSpell()
+      }, 100)
+      
+      // Focus search input after spells are loaded and DOM is updated
+      await nextTick()
+      // Add a small delay to ensure the search container is fully rendered
+      setTimeout(() => {
+        if (searchInput.value && spells.value.length > 0) {
+          searchInput.value.focus()
+        }
+      }, 500)
     })
     
     onUnmounted(() => {
       window.removeEventListener('scroll', handleScroll)
       window.removeEventListener('keydown', handleKeydown)
+      document.removeEventListener('click', handleClickOutside)
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
@@ -587,6 +704,14 @@ export default {
     const handleIconError = (event) => {
       // Hide the icon if it fails to load
       event.target.style.display = 'none'
+    }
+
+    const handleIconLoad = (event) => {
+      // Check if the loaded image is a placeholder (0.gif or very small dimensions)
+      const img = event.target
+      if (img.naturalWidth <= 1 || img.naturalHeight <= 1 || img.src.includes('0.gif')) {
+        img.style.display = 'none'
+      }
     }
 
     const handleScrollIconError = (event) => {
@@ -770,6 +895,255 @@ export default {
       event.target.style.display = 'none'
     }
 
+    // Search methods
+    const handleSearchInput = () => {
+      if (searchQuery.value.trim() === '') {
+        filteredSpells.value = []
+        showDropdown.value = false
+        selectedIndex.value = -1
+        return
+      }
+      
+      const query = searchQuery.value.toLowerCase().trim()
+      filteredSpells.value = spells.value.filter(spell => 
+        spell.name.toLowerCase().includes(query)
+      ).sort((a, b) => {
+        // Prioritize exact matches at the beginning
+        const aStartsWith = a.name.toLowerCase().startsWith(query)
+        const bStartsWith = b.name.toLowerCase().startsWith(query)
+        
+        if (aStartsWith && !bStartsWith) return -1
+        if (!aStartsWith && bStartsWith) return 1
+        
+        // Then sort by level
+        return a.level - b.level
+      })
+      
+      selectedIndex.value = filteredSpells.value.length > 0 ? 0 : -1
+      showDropdown.value = true
+    }
+
+    const clearSearch = () => {
+      searchQuery.value = ''
+      filteredSpells.value = []
+      showDropdown.value = false
+      selectedIndex.value = -1
+    }
+
+    const selectSpell = (spell) => {
+      // Find the spell card element and scroll to it
+      const spellElement = document.querySelector(`[data-spell-name="${spell.name}"]`)
+      if (spellElement) {
+        // Start blur animation with spell name
+        isScrolling.value = true
+        currentLevel.value = null
+        currentSpellName.value = spell.name
+        
+        // Scroll to element
+        spellElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        })
+        
+        // Add highlight effect after scrolling completes
+        setTimeout(() => {
+          // Add golden glow border effect
+          spellElement.classList.add('spell-search-highlight')
+          spellElement.style.transform = 'scale(1.02)'
+          
+          // Remove highlight after 5 seconds
+          setTimeout(() => {
+            spellElement.classList.remove('spell-search-highlight')
+            spellElement.style.transform = ''
+          }, 5000)
+          
+          // End blur animation after scroll is complete
+          setTimeout(() => {
+            isScrolling.value = false
+            currentSpellName.value = null
+          }, 500)
+        }, 800)
+      }
+      
+      // Clear search
+      clearSearch()
+    }
+
+    const handleKeyDown = (event) => {
+      if (!showDropdown.value || filteredSpells.value.length === 0) return
+      
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault()
+          selectedIndex.value = Math.min(selectedIndex.value + 1, Math.min(filteredSpells.value.length - 1, 9))
+          break
+        case 'ArrowUp':
+          event.preventDefault()
+          selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+          break
+        case 'Tab':
+          event.preventDefault()
+          // Tab cycles through results (forward only, Shift+Tab would be backward but we'll keep it simple)
+          const maxIndex = Math.min(filteredSpells.value.length - 1, 9)
+          selectedIndex.value = selectedIndex.value >= maxIndex ? 0 : selectedIndex.value + 1
+          break
+        case 'Enter':
+          event.preventDefault()
+          if (selectedIndex.value >= 0 && selectedIndex.value < filteredSpells.value.length) {
+            selectSpell(filteredSpells.value[selectedIndex.value])
+          }
+          break
+        case 'Escape':
+          event.preventDefault()
+          clearSearch()
+          break
+      }
+    }
+
+    const highlightMatch = (text) => {
+      if (!searchQuery.value) return text
+      
+      const query = searchQuery.value.trim()
+      const regex = new RegExp(`(${query})`, 'gi')
+      return text.replace(regex, '<mark>$1</mark>')
+    }
+
+    // Close dropdown when clicking outside
+    const handleClickOutside = (event) => {
+      const searchContainer = document.querySelector('.spell-search-container')
+      if (searchContainer && !searchContainer.contains(event.target)) {
+        showDropdown.value = false
+      }
+    }
+
+    // Share spell functionality
+    const shareSpell = async () => {
+      if (!selectedSpell.value) return
+      
+      const currentUrl = window.location.origin + window.location.pathname
+      const shareUrl = `${currentUrl}?spell=${selectedSpell.value.spell_id}`
+      
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(shareUrl)
+          showShareFeedback()
+        } else {
+          fallbackCopyUrl(shareUrl)
+        }
+      } catch (err) {
+        fallbackCopyUrl(shareUrl)
+      }
+    }
+
+    const fallbackCopyUrl = (url) => {
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      textArea.style.position = 'absolute'
+      textArea.style.left = '-9999px'
+      document.body.appendChild(textArea)
+      textArea.select()
+      
+      try {
+        document.execCommand('copy')
+        showShareFeedback()
+      } catch (err) {
+        console.error('Failed to copy URL: ', err)
+        alert('Could not copy link. Please copy manually: ' + url)
+      } finally {
+        document.body.removeChild(textArea)
+      }
+    }
+
+    const shareToastVisible = ref(false)
+    
+    const showShareFeedback = () => {
+      shareToastVisible.value = true
+      setTimeout(() => {
+        shareToastVisible.value = false
+      }, 3000)
+    }
+
+    // Check for shared spell on page load
+    const checkForSharedSpell = async () => {
+      const spellId = route.query.spell
+      if (spellId) {
+        // Wait for spells to be loaded
+        if (spells.value.length === 0) {
+          // Spells not loaded yet, wait a bit and try again
+          setTimeout(checkForSharedSpell, 500)
+          return
+        }
+        
+        // Find the spell by ID
+        const spell = spells.value.find(s => s.spell_id === spellId)
+        if (spell) {
+          // Wait a bit more to ensure DOM is fully rendered
+          await nextTick()
+          setTimeout(() => {
+            const spellElement = document.querySelector(`[data-spell-name="${spell.name}"]`)
+            console.log('Looking for spell element:', spell.name, 'Found:', spellElement)
+            
+            if (spellElement) {
+              // Start blur animation with spell name
+              isScrolling.value = true
+              currentLevel.value = null
+              currentSpellName.value = spell.name
+              
+              // Scroll to element
+              spellElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+              })
+              
+              // Add highlight effect after scrolling completes
+              setTimeout(() => {
+                console.log('Adding highlight class to:', spellElement)
+                // Add golden glow border effect
+                spellElement.classList.add('spell-search-highlight')
+                spellElement.style.transform = 'scale(1.02)'
+                // Force the highlight styles as inline styles too
+                spellElement.style.border = '3px solid #ffd700'
+                spellElement.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.3), 0 15px 40px rgba(var(--class-color-rgb), 0.2)'
+                spellElement.style.zIndex = '10'
+                spellElement.style.position = 'relative'
+                console.log('Highlight class added, classes:', spellElement.classList.toString())
+                
+                // End blur animation after a delay
+                setTimeout(() => {
+                  isScrolling.value = false
+                  currentSpellName.value = null
+                }, 1000)
+                
+                // Open the modal after user has seen the highlight for a moment
+                setTimeout(() => {
+                  openSpellModal(spell)
+                }, 2000)
+                
+                // Remove highlight after 5 seconds
+                setTimeout(() => {
+                  console.log('Removing highlight class')
+                  spellElement.classList.remove('spell-search-highlight')
+                  spellElement.style.transform = ''
+                  spellElement.style.border = ''
+                  spellElement.style.boxShadow = ''
+                  spellElement.style.zIndex = ''
+                  spellElement.style.position = ''
+                }, 5000)
+              }, 1200)
+            } else {
+              console.log('Spell element not found for:', spell.name)
+              // If element not found, just open the modal
+              openSpellModal(spell)
+            }
+          }, 1000)
+          
+          // Remove the query parameter from URL without triggering navigation
+          const newUrl = window.location.pathname
+          window.history.replaceState({}, document.title, newUrl)
+        }
+      }
+    }
+
     return {
       loading,
       error,
@@ -780,6 +1154,7 @@ export default {
       titleStyles,
       isTransitioning,
       currentLevel,
+      currentSpellName,
       isScrolling,
       hasSpellsAtLevel,
       scrollToLevel,
@@ -790,6 +1165,7 @@ export default {
       retryLoad,
       scrapeClass,
       handleIconError,
+      handleIconLoad,
       handleScrollIconError,
       // Modal properties and methods
       showModal,
@@ -807,7 +1183,21 @@ export default {
       validItemsWithSpell,
       hasValidItemsWithSpell,
       handleItemIconError,
-      handleReagentIconError
+      handleReagentIconError,
+      // Search functionality
+      searchInput,
+      searchQuery,
+      showDropdown,
+      selectedIndex,
+      filteredSpells,
+      handleSearchInput,
+      clearSearch,
+      selectSpell,
+      handleKeyDown,
+      highlightMatch,
+      // Share functionality
+      shareSpell,
+      shareToastVisible
     }
   }
 }
@@ -1556,10 +1946,10 @@ export default {
   background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
   backdrop-filter: blur(25px);
   border: 2px solid rgba(var(--class-color-rgb), 0.3);
-  border-radius: 24px;
+  border-radius: 16px;
   width: 100%;
-  max-width: 800px;
-  max-height: 90vh;
+  max-width: 700px;
+  max-height: 85vh;
   overflow-y: auto;
   position: relative;
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 100px rgba(var(--class-color-rgb), 0.2);
@@ -1581,7 +1971,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2rem 2.5rem 1.5rem;
+  padding: 1.5rem 2rem 1rem;
   border-bottom: 1px solid rgba(var(--class-color-rgb), 0.2);
   position: relative;
 }
@@ -1590,8 +1980,8 @@ export default {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 2.5rem;
-  right: 2.5rem;
+  left: 2rem;
+  right: 2rem;
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--class-color), transparent);
 }
@@ -1604,18 +1994,18 @@ export default {
 }
 
 .modal-spell-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 12px;
-  border: 3px solid var(--class-color);
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 2px solid var(--class-color);
   background: rgba(255, 255, 255, 0.1);
   object-fit: cover;
-  box-shadow: 0 8px 20px rgba(var(--class-color-rgb), 0.4);
+  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.4);
 }
 
 .modal-spell-name {
   font-family: 'Cinzel', serif;
-  font-size: 2.5rem;
+  font-size: 1.8rem;
   font-weight: 700;
   color: var(--class-color);
   margin: 0;
@@ -1623,9 +2013,9 @@ export default {
 }
 
 .modal-spell-level {
-  font-size: 1.2rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.8);
-  margin: 0.5rem 0 0 0;
+  margin: 0.25rem 0 0 0;
   font-weight: 500;
 }
 
@@ -1633,15 +2023,15 @@ export default {
   background: rgba(255, 255, 255, 0.1);
   border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 50%;
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s ease;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   font-weight: bold;
 }
 
@@ -1653,7 +2043,7 @@ export default {
 }
 
 .modal-content {
-  padding: 2rem 2.5rem;
+  padding: 1.5rem 2rem;
 }
 
 .modal-loading {
@@ -1679,16 +2069,16 @@ export default {
 
 .modal-info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .modal-info-card {
   background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
   border: 1px solid rgba(var(--class-color-rgb), 0.3);
-  border-radius: 12px;
-  padding: 1.5rem;
+  border-radius: 8px;
+  padding: 1rem;
   position: relative;
   transition: all 0.3s ease;
 }
@@ -1702,36 +2092,36 @@ export default {
 .modal-info-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
+  gap: 0.4rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   font-family: 'Inter', sans-serif;
 }
 
 .modal-info-icon {
-  font-size: 1rem;
+  font-size: 0.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1rem;
+  height: 1rem;
   flex-shrink: 0;
 }
 
 .section-icon {
-  font-size: 1.2rem;
-  margin-right: 0.5rem;
+  font-size: 1rem;
+  margin-right: 0.4rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .modal-info-value {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--class-color);
   font-family: 'Crimson Text', serif;
@@ -1741,16 +2131,16 @@ export default {
 .modal-description,
 .modal-effects,
 .modal-reagents-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .modal-description h3,
 .modal-effects h3,
 .reagents-title {
   font-family: 'Cinzel', serif;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   color: var(--class-color);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
   display: flex;
   align-items: center;
@@ -1758,8 +2148,8 @@ export default {
 
 .modal-description p {
   color: rgba(255, 255, 255, 0.9);
-  line-height: 1.6;
-  font-size: 1rem;
+  line-height: 1.5;
+  font-size: 0.95rem;
 }
 
 .modal-effects ul {
@@ -1770,11 +2160,12 @@ export default {
 .modal-effects li {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border-left: 3px solid var(--class-color);
-  padding: 1rem;
-  margin-bottom: 0.5rem;
-  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.4rem;
+  border-radius: 6px;
   color: rgba(255, 255, 255, 0.9);
   transition: all 0.3s ease;
+  font-size: 0.9rem;
 }
 
 .modal-effects li:hover {
@@ -1877,18 +2268,20 @@ export default {
 }
 
 .reagents-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .reagent-box {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 12px;
-  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
   transition: all 0.3s ease;
   overflow: hidden;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .reagent-box:hover {
@@ -1900,13 +2293,14 @@ export default {
 .reagent-link {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
   width: 100%;
+  font-size: 0.9rem;
 }
 
 .reagent-link:hover {
@@ -1915,10 +2309,10 @@ export default {
 }
 
 .reagent-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.05);
   object-fit: cover;
   transition: all 0.3s ease;
@@ -1932,43 +2326,43 @@ export default {
 .reagent-text {
   line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Items with Spell Section */
 .items-with-spell-section {
-  margin-top: 1.5rem;
-  padding: 1.5rem;
+  margin-top: 1.2rem;
+  padding: 1.2rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
   border: 1px solid rgba(var(--class-color-rgb), 0.15);
-  border-radius: 16px;
+  border-radius: 12px;
   backdrop-filter: blur(10px);
 }
 
 .items-header {
   font-family: 'Cinzel', serif;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   color: var(--class-color);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
   display: flex;
   align-items: center;
 }
 
 .items-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .item-box {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 12px;
-  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
   transition: all 0.3s ease;
   overflow: hidden;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .item-box:hover {
@@ -1981,13 +2375,14 @@ export default {
 .item-link {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
   width: 100%;
+  font-size: 0.9rem;
 }
 
 .item-link:hover {
@@ -1996,10 +2391,10 @@ export default {
 }
 
 .item-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.05);
   object-fit: cover;
   transition: all 0.3s ease;
@@ -2013,42 +2408,82 @@ export default {
 .item-text {
   line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .modal-footer {
-  padding: 1.5rem 2.5rem 2rem;
+  padding: 1.2rem 2rem 1.5rem;
   border-top: 1px solid rgba(var(--class-color-rgb), 0.2);
   text-align: center;
   position: relative;
+}
+
+.modal-footer-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .modal-footer::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 2.5rem;
-  right: 2.5rem;
+  left: 2rem;
+  right: 2rem;
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--class-color), transparent);
+}
+
+.share-spell-btn {
+  background: linear-gradient(135deg, #4a90e2, rgba(74, 144, 226, 0.8));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 15px rgba(74, 144, 226, 0.4);
+}
+
+.share-spell-btn:hover {
+  background: linear-gradient(135deg, rgba(74, 144, 226, 0.95), #4a90e2);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(74, 144, 226, 0.6);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.share-icon {
+  font-size: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.share-spell-btn:hover .share-icon {
+  transform: rotate(15deg);
 }
 
 .view-original-btn {
   background: linear-gradient(135deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
   color: white;
   border: none;
-  border-radius: 12px;
-  padding: 1rem 2rem;
-  font-size: 1rem;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
   font-weight: 600;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   box-shadow: 0 4px 15px rgba(var(--class-color-rgb), 0.4);
 }
 
@@ -2092,6 +2527,352 @@ export default {
   cursor: pointer;
 }
 
+/* Search Component Styles */
+.spell-search-container {
+  position: relative;
+  margin-bottom: 2rem;
+  z-index: 100;
+}
+
+.search-input-wrapper {
+  position: relative;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.spell-search-input {
+  width: 100%;
+  padding: 1rem 3rem 1rem 3.5rem;
+  border: 2px solid rgba(var(--class-color-rgb), 0.3);
+  border-radius: 25px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(15px);
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 500;
+  outline: none;
+  transition: all 0.3s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.spell-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.spell-search-input:focus {
+  border-color: var(--class-color);
+  box-shadow: 0 0 20px rgba(var(--class-color-rgb), 0.4);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.08));
+}
+
+.search-icon {
+  position: absolute;
+  left: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(var(--class-color-rgb), 0.2);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.2rem;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.clear-search-btn:hover {
+  background: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 500px;
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(var(--class-color-rgb), 0.3);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 50px rgba(var(--class-color-rgb), 0.2);
+  overflow: hidden;
+  animation: searchDropdownFadeIn 0.2s ease-out;
+  z-index: 1000;
+}
+
+@keyframes searchDropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.search-results-header {
+  padding: 0.75rem 1rem;
+  background: rgba(var(--class-color-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--class-color-rgb), 0.2);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.search-results-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.search-result-item:hover,
+.search-result-item.highlighted {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.15), rgba(var(--class-color-rgb), 0.08));
+  transform: translateX(4px);
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.search-result-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(var(--class-color-rgb), 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.search-result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-name mark {
+  background: var(--class-color);
+  color: white;
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.search-result-details {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.search-results-footer {
+  padding: 0.75rem 1rem;
+  background: rgba(var(--class-color-rgb), 0.05);
+  border-top: 1px solid rgba(var(--class-color-rgb), 0.2);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  font-style: italic;
+}
+
+.search-empty {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 500px;
+  background: linear-gradient(145deg, rgba(20, 25, 40, 0.95), rgba(15, 20, 35, 0.98));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(255, 68, 68, 0.3);
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.95rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: searchDropdownFadeIn 0.2s ease-out;
+  z-index: 1000;
+}
+
+/* Share Toast Notification */
+.share-toast {
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  background: linear-gradient(135deg, #10b981, rgba(16, 185, 129, 0.9));
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 20px rgba(16, 185, 129, 0.4);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  font-size: 0.95rem;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: toastSlideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  max-width: 300px;
+}
+
+.toast-icon {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Spell card highlight animation */
+.spell-card {
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Golden highlight effect for search results */
+.spells-grid .spell-card.spell-search-highlight {
+  border: 3px solid #ffd700 !important;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.6) !important,
+    0 0 40px rgba(255, 215, 0, 0.3) !important,
+    0 15px 40px rgba(var(--class-color-rgb), 0.2) !important;
+  animation: goldenPulse 2s ease-in-out infinite alternate !important;
+  z-index: 10 !important;
+  position: relative !important;
+}
+
+@keyframes goldenPulse {
+  0% {
+    box-shadow: 
+      0 0 20px rgba(255, 215, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.3),
+      0 15px 40px rgba(var(--class-color-rgb), 0.2);
+  }
+  100% {
+    box-shadow: 
+      0 0 30px rgba(255, 215, 0, 0.8),
+      0 0 60px rgba(255, 215, 0, 0.5),
+      0 15px 40px rgba(var(--class-color-rgb), 0.3);
+  }
+}
+
+/* Darker text for lighter colored class themes */
+.main-container.cleric .home-button,
+.main-container.cleric .go-to-top-btn,
+.main-container.cleric .retry-button,
+.main-container.cleric .scrape-button,
+.main-container.cleric .view-original-btn {
+  color: #2c3e50 !important;
+}
+
+/* Lighter text for darker colored class themes - modal info values */
+.main-container.necromancer .modal-info-value,
+.main-container.shadowknight .modal-info-value,
+.main-container.monk .modal-info-value,
+.main-container.rogue .modal-info-value {
+  color: #ffffff !important;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+}
+
+.main-container.paladin .home-button,
+.main-container.paladin .go-to-top-btn,
+.main-container.paladin .retry-button,
+.main-container.paladin .scrape-button,
+.main-container.paladin .view-original-btn {
+  color: #2c3e50 !important;
+}
+
+.main-container.bard .home-button,
+.main-container.bard .go-to-top-btn,
+.main-container.bard .retry-button,
+.main-container.bard .scrape-button,
+.main-container.bard .view-original-btn {
+  color: #2c3e50 !important;
+}
+
+.main-container.wizard .home-button,
+.main-container.wizard .go-to-top-btn,
+.main-container.wizard .retry-button,
+.main-container.wizard .scrape-button,
+.main-container.wizard .view-original-btn {
+  color: #2c3e50 !important;
+}
+
+.main-container.magician .home-button,
+.main-container.magician .go-to-top-btn,
+.main-container.magician .retry-button,
+.main-container.magician .scrape-button,
+.main-container.magician .view-original-btn {
+  color: #2c3e50 !important;
+}
+
+.main-container.shaman .home-button,
+.main-container.shaman .go-to-top-btn,
+.main-container.shaman .retry-button,
+.main-container.shaman .scrape-button,
+.main-container.shaman .view-original-btn {
+  color: #2c3e50 !important;
+}
+
 @media (max-width: 768px) {
   .class-title { font-size: 3em; }
   .spells-grid { grid-template-columns: 1fr; }
@@ -2104,19 +2885,19 @@ export default {
   }
   
   .modal-header {
-    padding: 1.5rem;
+    padding: 1.2rem;
   }
   
   .modal-content {
-    padding: 1.5rem;
+    padding: 1.2rem;
   }
   
   .modal-footer {
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.2rem;
   }
   
   .modal-spell-name {
-    font-size: 2rem;
+    font-size: 1.5rem;
   }
   
   .modal-info-grid {
@@ -2125,6 +2906,38 @@ export default {
   
   .components-grid {
     grid-template-columns: 1fr;
+  }
+  
+  /* Mobile search adjustments */
+  .spell-search-input {
+    font-size: 1rem;
+    padding: 0.875rem 2.5rem 0.875rem 3rem;
+  }
+  
+  .search-dropdown {
+    width: calc(100vw - 2rem);
+    max-width: none;
+  }
+  
+  /* Mobile modal footer adjustments */
+  .modal-footer-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .share-spell-btn,
+  .view-original-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  /* Mobile toast adjustments */
+  .share-toast {
+    top: 1rem;
+    right: 1rem;
+    left: 1rem;
+    max-width: none;
+    font-size: 0.9rem;
   }
 }
 </style> 
