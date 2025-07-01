@@ -70,13 +70,68 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
     
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
-        response = requests.get(url, headers=headers, timeout=30)
+        # First, get the search form page
+        form_response = requests.get(url, headers=headers, timeout=30)
+        form_response.raise_for_status()
+        
+        logger.info(f"Form page HTTP Status: {form_response.status_code}")
+        
+        # Parse the form to get any hidden fields or required parameters
+        form_soup = BeautifulSoup(form_response.content, 'html.parser')
+        
+        # Try different URL patterns to get spell data
+        search_urls = [
+            f"{base_url}?a=spells&class={class_name.lower()}",
+            f"{base_url}?a=spells&iclass={type_id}",
+            f"{base_url}?a=spells&classid={type_id}",
+            f"{base_url}?a=spells&search=&iclass={type_id}&level_min=1&level_max=65",
+            f"{base_url}?a=spell_list&class={type_id}",
+            f"{base_url}spells/?class={type_id}",
+            f"{base_url}spells.php?class={type_id}"
+        ]
+        
+        response = None
+        for search_url in search_urls:
+            try:
+                logger.info(f"Trying URL: {search_url}")
+                response = requests.get(search_url, headers=headers, timeout=30)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    tables = soup.find_all('table')
+                    
+                    # Check if this URL returns spell data
+                    spell_found = False
+                    for table in tables:
+                        rows = table.find_all('tr')
+                        if len(rows) > 1:  # Has header + data rows
+                            header_text = rows[0].get_text().lower()
+                            # Look for spell-related content in tables with multiple rows
+                            if any(keyword in header_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']) and len(rows) > 5:
+                                spell_found = True
+                                logger.info(f"Found spell data with URL: {search_url}")
+                                break
+                    
+                    if spell_found:
+                        break
+                        
+            except Exception as e:
+                logger.warning(f"Failed to fetch {search_url}: {e}")
+                continue
+        
+        if response is None:
+            logger.error(f"All URL attempts failed for {class_name}")
+            return None
         response.raise_for_status()
         
-        logger.info(f"HTTP Status: {response.status_code}")
+        logger.info(f"Search results HTTP Status: {response.status_code}")
         logger.info(f"Response length: {len(response.content)} bytes")
         logger.info(f"Content type: {response.headers.get('content-type', 'unknown')}")
         
