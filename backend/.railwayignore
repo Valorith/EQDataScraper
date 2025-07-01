@@ -1,0 +1,11 @@
+node_modules/
+package.json
+package-lock.json
+src/
+public/
+dist/
+vite.config.js
+*.vue
+*.js
+!app.py
+!*.py
