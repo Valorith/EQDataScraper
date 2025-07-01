@@ -1,12 +1,17 @@
 <template>
-  <div id="app" class="railway-deployment-test">
+  <div id="app" class="railway-deployment-debug">
     <router-view />
   </div>
 </template>
 
 <script>
 export default {
-  name: 'App'
+  name: 'App',
+  mounted() {
+    console.log('🔧 Environment Variables Debug:')
+    console.log('VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
+    console.log('All Vite env vars:', import.meta.env)
+  }
 }
 </script>
 
