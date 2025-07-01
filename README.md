@@ -7,6 +7,8 @@
 
 A modern Vue.js application for browsing EverQuest spell data with an interactive, user-friendly interface.
 
+🚀 **Live Demo**: [https://eqdatascraper-frontend-production.up.railway.app](https://eqdatascraper-frontend-production.up.railway.app)
+
 ## ✨ What This App Does
 
 Browse spell data for all 16 EverQuest classes with:
