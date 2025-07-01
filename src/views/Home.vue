@@ -27,78 +27,78 @@
         >
           ×
         </button>
-      </div>
-      
-      <!-- Search Results Dropdown -->
-      <div v-if="showDropdown && searchResults.length > 0" class="search-dropdown">
-        <div class="search-results-header">
-          <span>{{ searchResults.length }} result{{ searchResults.length === 1 ? '' : 's' }}</span>
-          <span v-if="showPagination" class="page-indicator">
-            Page {{ currentPage + 1 }} of {{ totalPages }}
-          </span>
-        </div>
-        <div class="search-results-list">
-          <div 
-            v-for="(spell, index) in paginatedResults" 
-            :key="`${spell.spell_id}-${spell.classes.join('-')}`"
-            :class="['search-result-item', { 'highlighted': index === selectedIndex }]"
-            @click="selectSpell(spell)"
-            @mouseenter="selectedIndex = index"
-          >
-            <div class="search-result-info">
-              <img 
-                v-if="spell.icon" 
-                :src="spell.icon" 
-                :alt="`${spell.name} icon`"
-                class="search-result-icon"
-                @error="handleIconError"
-              />
-              <div class="search-result-text">
-                <div class="search-result-name" v-html="highlightMatch(spell.name)"></div>
-                <div class="search-result-details">
-                  Level {{ spell.level }}
-                  <span v-if="spell.mana"> • {{ spell.mana }} MP</span>
-                  <span class="spell-classes"> • {{ spell.classes.join(', ') }}</span>
+        
+        <!-- Search Results Dropdown -->
+        <div v-if="showDropdown && searchResults.length > 0" class="search-dropdown">
+          <div class="search-results-header">
+            <span>{{ searchResults.length }} result{{ searchResults.length === 1 ? '' : 's' }}</span>
+            <span v-if="showPagination" class="page-indicator">
+              Page {{ currentPage + 1 }} of {{ totalPages }}
+            </span>
+          </div>
+          <div class="search-results-list">
+            <div 
+              v-for="(spell, index) in paginatedResults" 
+              :key="`${spell.spell_id}-${spell.classes.join('-')}`"
+              :class="['search-result-item', { 'highlighted': index === selectedIndex }]"
+              @click="selectSpell(spell)"
+              @mouseenter="selectedIndex = index"
+            >
+              <div class="search-result-info">
+                <img 
+                  v-if="spell.icon" 
+                  :src="spell.icon" 
+                  :alt="`${spell.name} icon`"
+                  class="search-result-icon"
+                  @error="handleIconError"
+                />
+                <div class="search-result-text">
+                  <div class="search-result-name" v-html="highlightMatch(spell.name)"></div>
+                  <div class="search-result-details">
+                    Level {{ spell.level }}
+                    <span v-if="spell.mana"> • {{ spell.mana }} MP</span>
+                    <span class="spell-classes"> • {{ spell.classes.join(', ') }}</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        <div v-if="showPagination" class="search-results-footer">
-          <div class="pagination-info">
-            <div>Showing {{ (currentPage * resultsPerPage) + 1 }}-{{ Math.min((currentPage + 1) * resultsPerPage, searchResults.length) }} of {{ searchResults.length }}</div>
-            <div class="keyboard-tip">Tip: Use tab and keyboard arrows to navigate. Enter to select.</div>
+          <div v-if="showPagination" class="search-results-footer">
+            <div class="pagination-info">
+              <div>Showing {{ (currentPage * resultsPerPage) + 1 }}-{{ Math.min((currentPage + 1) * resultsPerPage, searchResults.length) }} of {{ searchResults.length }}</div>
+              <div class="keyboard-tip">Tip: Use tab and keyboard arrows to navigate. Enter to select.</div>
+            </div>
+            <div class="pagination-controls">
+              <button 
+                @click="goToPreviousPage" 
+                :disabled="!canGoToPreviousPage"
+                class="pagination-arrow"
+                title="Previous page"
+              >
+                ←
+              </button>
+              <button 
+                @click="goToNextPage" 
+                :disabled="!canGoToNextPage"
+                :class="['pagination-arrow', { 'glow-attention': showRightArrowGlow }]"
+                title="Next page"
+              >
+                →
+              </button>
+            </div>
           </div>
-          <div class="pagination-controls">
-            <button 
-              @click="goToPreviousPage" 
-              :disabled="!canGoToPreviousPage"
-              class="pagination-arrow"
-              title="Previous page"
-            >
-              ←
-            </button>
-            <button 
-              @click="goToNextPage" 
-              :disabled="!canGoToNextPage"
-              :class="['pagination-arrow', { 'glow-attention': showRightArrowGlow }]"
-              title="Next page"
-            >
-              →
-            </button>
-          </div>
         </div>
-      </div>
-      
-      <!-- Empty State -->
-      <div v-if="showDropdown && searchQuery && searchResults.length === 0 && !searchLoading" class="search-empty">
-        No spells found matching "{{ searchQuery }}"
-      </div>
-      
-      <!-- Loading State -->
-      <div v-if="searchLoading" class="search-loading">
-        <div class="search-spinner"></div>
-        <span>Searching...</span>
+        
+        <!-- Empty State -->
+        <div v-if="showDropdown && searchQuery && searchResults.length === 0 && !searchLoading" class="search-empty">
+          No spells found matching "{{ searchQuery }}"
+        </div>
+        
+        <!-- Loading State -->
+        <div v-if="searchLoading" class="search-loading">
+          <div class="search-spinner"></div>
+          <span>Searching...</span>
+        </div>
       </div>
       
       <!-- Refresh Data Message -->
@@ -321,7 +321,8 @@ export default {
         this.$router.push({ 
           name: 'ClassSpells', 
           params: { className: firstClass },
-          hash: `#spell-${spell.spell_id}`
+          hash: `#spell-${spell.spell_id}`,
+          query: { openModal: 'true' }
         })
       }
       this.clearSearch()
@@ -841,7 +842,7 @@ export default {
 
 .search-dropdown {
   position: absolute;
-  top: calc(100% + 0.75rem);
+  top: calc(100% + 0.125rem);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -853,7 +854,7 @@ export default {
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4), 0 0 60px rgba(147, 112, 219, 0.2);
   overflow: hidden;
   animation: searchDropdownFadeIn 0.3s ease-out;
-  z-index: 1000;
+  z-index: 1100;
 }
 
 @keyframes searchDropdownFadeIn {
@@ -1059,7 +1060,7 @@ export default {
 
 .search-empty {
   position: absolute;
-  top: calc(100% + 0.75rem);
+  top: calc(100% + 0.125rem);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -1072,13 +1073,13 @@ export default {
   text-align: center;
   color: rgba(255, 255, 255, 0.7);
   font-size: 1rem;
-  z-index: 1000;
+  z-index: 1100;
   animation: searchDropdownFadeIn 0.3s ease-out;
 }
 
 .search-loading {
   position: absolute;
-  top: calc(100% + 0.75rem);
+  top: calc(100% + 0.125rem);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1091,7 +1092,7 @@ export default {
   padding: 1rem 2rem;
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.95rem;
-  z-index: 1000;
+  z-index: 1100;
   animation: searchDropdownFadeIn 0.3s ease-out;
 }
 
@@ -1159,6 +1160,7 @@ export default {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   opacity: 0.95;
   position: relative;
+  z-index: 50;
   animation: slideDown 0.3s ease-out;
 }
 

@@ -679,11 +679,25 @@ export default {
         if (route.hash) {
           const spellId = route.hash.replace('#spell-', '')
           if (spellId) {
+            // Check if we should also open the modal
+            const shouldOpenModal = route.query.openModal === 'true'
+            
             setTimeout(() => {
               const spellElement = document.getElementById(`spell-${spellId}`)
               if (spellElement) {
                 spellElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
                 spellElement.classList.add('spell-search-highlight')
+                
+                // If modal should be opened, find the spell and open it
+                if (shouldOpenModal) {
+                  const spell = spells.value.find(s => s.spell_id === spellId)
+                  if (spell) {
+                    setTimeout(() => {
+                      openSpellModal(spell)
+                    }, 1000) // Wait for scroll to complete
+                  }
+                }
+                
                 setTimeout(() => {
                   spellElement.classList.remove('spell-search-highlight')
                 }, 3000)
@@ -972,6 +986,11 @@ export default {
           // Add golden glow border effect
           spellElement.classList.add('spell-search-highlight')
           spellElement.style.transform = 'scale(1.02)'
+          
+          // Open the modal after a brief delay
+          setTimeout(() => {
+            openSpellModal(spell)
+          }, 1000) // Wait for scroll and highlight to be visible
           
           // Remove highlight after 5 seconds
           setTimeout(() => {
