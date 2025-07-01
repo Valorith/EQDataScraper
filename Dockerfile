@@ -1,20 +1,14 @@
-# Use Node.js 18 LTS
-FROM node:18-alpine
-
-# Install build dependencies for native modules
-RUN apk add --no-cache python3 make g++
+# Build stage - use full Node.js for building
+FROM node:18 AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files first for better Docker layer caching
+# Copy package files
 COPY package*.json ./
 
-# Clear npm cache and install dependencies
-RUN npm cache clean --force && npm ci
-
-# Rebuild native modules for Alpine Linux platform
-RUN npm rebuild
+# Install all dependencies
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -22,8 +16,17 @@ COPY . .
 # Build the Vue app
 RUN npm run build
 
-# Install serve globally for production
+# Production stage - use Alpine for runtime
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install serve globally
 RUN npm install -g serve
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
 
 # Expose port
 EXPOSE 3000
