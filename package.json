@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "serve": "vite preview",
-    "start": "python3 run.py start",
+    "preview": "vite preview --host 0.0.0.0",
+    "serve": "serve -s dist -p $PORT",
+    "start": "npm run build && npm run serve",
     "stop": "python3 run.py stop",
     "status": "python3 run.py status",
     "install:all": "python3 run.py install"
@@ -16,7 +16,8 @@
     "axios": "^1.10.0",
     "pinia": "^2.3.1",
     "vue": "^3.4.0",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "serve": "^14.2.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.5.0",
