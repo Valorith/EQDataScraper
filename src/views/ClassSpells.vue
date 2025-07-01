@@ -135,6 +135,7 @@
           <div 
             v-for="spell in levelGroup" 
             :key="spell.name"
+            :id="`spell-${spell.spell_id}`"
             :data-spell-name="spell.name"
             class="spell-card"
             @click="openSpellModal(spell)"
@@ -673,6 +674,23 @@ export default {
       await nextTick()
       setTimeout(async () => {
         await checkForSharedSpell()
+        
+        // Check for hash navigation (from global search)
+        if (route.hash) {
+          const spellId = route.hash.replace('#spell-', '')
+          if (spellId) {
+            setTimeout(() => {
+              const spellElement = document.getElementById(`spell-${spellId}`)
+              if (spellElement) {
+                spellElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                spellElement.classList.add('spell-search-highlight')
+                setTimeout(() => {
+                  spellElement.classList.remove('spell-search-highlight')
+                }, 3000)
+              }
+            }, 500)
+          }
+        }
       }, 100)
       
       // Focus search input after spells are loaded and DOM is updated

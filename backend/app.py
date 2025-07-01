@@ -640,6 +640,86 @@ def parse_spell_details_from_html(soup):
         logger.error(f"Error parsing spell details: {e}")
         return {'description': 'Spell information available on alla website'}
 
+@app.route('/api/search-spells', methods=['GET'])
+def search_spells():
+    """Search for spells across all classes"""
+    try:
+        query = request.args.get('q', '').strip()
+        if not query or len(query) < 2:
+            return jsonify({
+                'error': 'Query must be at least 2 characters long',
+                'results': []
+            }), 400
+        
+        # Class abbreviations mapping
+        class_abbreviations = {
+            'Cleric': 'CLR',
+            'Rogue': 'ROG', 
+            'Monk': 'MNK',
+            'Enchanter': 'ENC',
+            'Magician': 'MAG',
+            'Wizard': 'WIZ',
+            'Shaman': 'SHM',
+            'Bard': 'BRD',
+            'Ranger': 'RNG',
+            'Beastlord': 'BST',
+            'Berserker': 'BER',
+            'Shadowknight': 'DRK',
+            'Paladin': 'PAL',
+            'Necromancer': 'NEC'
+        }
+        
+        results = []
+        query_lower = query.lower()
+        
+        # Search through cached spells from all classes
+        for class_name, spells in spells_cache.items():
+            class_abbrev = class_abbreviations.get(class_name, class_name[:3].upper())
+            
+            for spell in spells:
+                spell_name = spell.get('name', '').lower()
+                if query_lower in spell_name:
+                    # Check if this spell is already in results (same spell_id)
+                    existing_spell = None
+                    for result in results:
+                        if result.get('spell_id') == spell.get('spell_id'):
+                            existing_spell = result
+                            break
+                    
+                    if existing_spell:
+                        # Add this class to the existing spell entry
+                        if class_abbrev not in existing_spell['classes']:
+                            existing_spell['classes'].append(class_abbrev)
+                            existing_spell['class_names'].append(class_name)
+                    else:
+                        # Create new spell entry
+                        results.append({
+                            'name': spell.get('name', ''),
+                            'level': spell.get('level', 0),
+                            'mana': spell.get('mana', ''),
+                            'spell_id': spell.get('spell_id', ''),
+                            'icon': spell.get('icon', ''),
+                            'classes': [class_abbrev],
+                            'class_names': [class_name]
+                        })
+        
+        # Sort results by spell name and limit to 50
+        results.sort(key=lambda x: x['name'].lower())
+        results = results[:50]
+        
+        return jsonify({
+            'results': results,
+            'query': query,
+            'total_found': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching spells: {e}")
+        return jsonify({
+            'error': 'Internal server error',
+            'results': []
+        }), 500
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
