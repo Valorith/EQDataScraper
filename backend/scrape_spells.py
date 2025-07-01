@@ -109,8 +109,9 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
                         rows = table.find_all('tr')
                         if len(rows) > 1:  # Has header + data rows
                             header_text = rows[0].get_text().lower()
-                            # Look for spell-related content in tables with multiple rows
-                            if any(keyword in header_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']) and len(rows) > 5:
+                            # Look for spell-related content - table 3 has "Level: X" header and many rows
+                            if (any(keyword in header_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']) and len(rows) > 5) or \
+                               ('level:' in header_text and len(rows) > 50):
                                 spell_found = True
                                 logger.info(f"Found spell data with URL: {search_url}")
                                 break
@@ -147,16 +148,31 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
             logger.warning(f"No tables found for {class_name}")
             return None
         
-        # Find the spell table - look for table with spell-related headers
+        # Find the spell table - prioritize tables with "Level: X" pattern and many rows
         spell_table = None
+        best_table_score = 0
+        
         for table in tables:
-            # Check if this table has spell-related headers
             header_row = table.find('tr')
             if header_row:
                 headers_text = header_row.get_text().lower()
-                if any(keyword in headers_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']):
+                rows = table.find_all('tr')
+                
+                # Score tables: Level: X pattern with many rows gets highest score
+                score = 0
+                if 'level:' in headers_text and len(rows) > 50:
+                    score = 100 + len(rows)  # High priority for Level: X tables
+                elif any(keyword in headers_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']) and len(rows) > 5:
+                    score = 50 + len(rows)   # Medium priority for traditional headers
+                
+                if score > best_table_score:
+                    best_table_score = score
                     spell_table = table
-                    break
+                    logger.info(f"New best table (score {score}): {headers_text[:50]}... ({len(rows)} rows)")
+        
+        if spell_table is not None:
+            rows = spell_table.find_all('tr')
+            logger.info(f"Final selected table: {len(rows)} rows")
         
         # Fallback to largest table if no spell table found
         if spell_table is None:
