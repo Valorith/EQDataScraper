@@ -159,17 +159,18 @@ def get_spells(class_name):
             }), 404
         
         # Convert DataFrame to list of dictionaries
+        # The new scraper returns DataFrame with lowercase column names and proper data types
         spells = []
         for _, row in df.iterrows():
             spell = {
-                'name': row.get('Name', ''),
-                'level': int(row.get('Level', 0)) if row.get('Level', '') else 0,
-                'mana': row.get('Mana', ''),
-                'skill': row.get('Skill', ''),
-                'target_type': row.get('Target Type', ''),
-                'spell_id': row.get('Spell ID', ''),
-                'effects': row.get('Effect(s)', ''),
-                'icon': row.get('Icon', '')
+                'name': row.get('name', ''),
+                'level': row.get('level', 0),  # Already an int from scraper
+                'mana': row.get('mana', ''),
+                'skill': row.get('skill', ''),
+                'target_type': row.get('target_type', ''),
+                'spell_id': row.get('spell_id', ''),
+                'effects': row.get('effects', ''),
+                'icon': row.get('icon', '')
             }
             spells.append(spell)
         
@@ -229,13 +230,14 @@ def scrape_all_classes():
                     spells = []
                     for _, row in df.iterrows():
                         spell = {
-                            'name': row.get('Name', ''),
-                            'level': row.get('Level', ''),
-                            'mana': row.get('Mana', ''),
-                            'cast_time': row.get('Cast Time', ''),
-                            'duration': row.get('Duration', ''),
-                            'range': row.get('Range', ''),
-                            'description': row.get('Description', '')
+                            'name': row.get('name', ''),
+                            'level': row.get('level', 0),
+                            'mana': row.get('mana', ''),
+                            'skill': row.get('skill', ''),
+                            'target_type': row.get('target_type', ''),
+                            'spell_id': row.get('spell_id', ''),
+                            'effects': row.get('effects', ''),
+                            'icon': row.get('icon', '')
                         }
                         spells.append(spell)
                     
