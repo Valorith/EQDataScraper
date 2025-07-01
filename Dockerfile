@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all dependencies (including devDependencies for building)
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -16,7 +16,7 @@ COPY . .
 # Build the Vue app
 RUN npm run build
 
-# Install serve globally
+# Install serve globally for production
 RUN npm install -g serve
 
 # Expose port
