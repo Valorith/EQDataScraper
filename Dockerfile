@@ -4,12 +4,11 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
+# Copy package files first for better Docker layer caching
+COPY package*.json ./
 
-# Install all dependencies (including devDependencies for building)
-# Use npm install instead of npm ci to resolve platform-specific deps
-RUN npm install
+# Install dependencies using npm ci for production builds
+RUN npm ci
 
 # Copy source code
 COPY . .
