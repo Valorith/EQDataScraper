@@ -409,6 +409,9 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSpellsStore } from '../stores/spells'
 
+// Configure API base URL - use environment variable in production, relative path in development
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || ''
+
 // Debounce utility function
 function debounce(func, delay) {
   let timeoutId
@@ -746,7 +749,7 @@ export default {
       spellDetailsError.value = null
 
       try {
-        const response = await fetch(`/api/spell-details/${spellId}?_t=${Date.now()}`, {
+        const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}?_t=${Date.now()}`, {
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'

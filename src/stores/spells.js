@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
+// Configure API base URL - use environment variable in production, relative path in development
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || ''
+
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
     classes: [
@@ -52,7 +55,7 @@ export const useSpellsStore = defineStore('spells', {
       this.error = null
 
       try {
-        const response = await axios.get(`/api/spells/${className}`, {
+        const response = await axios.get(`${API_BASE_URL}/api/spells/${className}`, {
           timeout: 30000, // 30 second timeout
           headers: {
             'Accept': 'application/json',
@@ -121,7 +124,7 @@ export const useSpellsStore = defineStore('spells', {
       this.error = null
 
       try {
-        const response = await axios.post('/api/scrape-all')
+        const response = await axios.post(`${API_BASE_URL}/api/scrape-all`)
         return response.data
       } catch (error) {
         this.error = error.message
