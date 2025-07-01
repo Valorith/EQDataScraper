@@ -23,6 +23,12 @@ try {
 backendPort = parseInt(process.env.BACKEND_PORT) || backendPort
 frontendPort = parseInt(process.env.PORT) || parseInt(process.env.FRONTEND_PORT) || frontendPort
 
+// Debug environment variables during build
+console.log('🔧 Vite Build Environment Variables:')
+console.log('VITE_BACKEND_URL:', process.env.VITE_BACKEND_URL)
+console.log('NODE_ENV:', process.env.NODE_ENV)
+console.log('Available VITE_ vars:', Object.keys(process.env).filter(key => key.startsWith('VITE_')))
+
 export default defineConfig({
   plugins: [vue()],
   server: {
