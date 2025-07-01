@@ -177,48 +177,78 @@
             <!-- Basic Info Grid -->
             <div class="modal-info-grid">
               <div class="modal-info-card">
-                <span class="modal-info-label">Spell ID</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🆔</span>
+                  Spell ID
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.spell_id }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.mana">
-                <span class="modal-info-label">Mana Cost</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">💙</span>
+                  Mana Cost
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.mana }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.skill">
-                <span class="modal-info-label">School</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">📚</span>
+                  School
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.skill }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.target_type">
-                <span class="modal-info-label">Target</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🎯</span>
+                  Target
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.target_type }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.cast_time">
-                <span class="modal-info-label">Cast Time</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">⏱️</span>
+                  Cast Time
+                </span>
                 <span class="modal-info-value">{{ spellDetails.cast_time }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.duration">
-                <span class="modal-info-label">Duration</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">⏳</span>
+                  Duration
+                </span>
                 <span class="modal-info-value">{{ spellDetails.duration }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.range">
-                <span class="modal-info-label">Range</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">📏</span>
+                  Range
+                </span>
                 <span class="modal-info-value">{{ spellDetails.range }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.resist">
-                <span class="modal-info-label">Resist</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🛡️</span>
+                  Resist
+                </span>
                 <span class="modal-info-value">{{ spellDetails.resist }}</span>
               </div>
             </div>
             
             <!-- Description -->
             <div v-if="spellDetails.description" class="modal-description">
-              <h3>Description</h3>
+              <h3>
+                <span class="section-icon">📖</span>
+                Description
+              </h3>
               <p>{{ spellDetails.description }}</p>
             </div>
             
             <!-- Effects -->
             <div v-if="spellDetails.effects && spellDetails.effects.length" class="modal-effects">
-              <h3>Effects</h3>
+              <h3>
+                <span class="section-icon">✨</span>
+                Effects
+              </h3>
               <ul>
                 <li v-for="(effect, index) in spellDetails.effects" :key="index">
                   {{ effect }}
@@ -228,11 +258,43 @@
             
             <!-- Reagents -->
             <div v-if="hasValidReagents" class="reagents-section">
-              <h3 class="reagents-header">Reagents</h3>
+              <h3 class="reagents-header">
+                <span class="section-icon">🧪</span>
+                Reagents
+              </h3>
               <div class="reagents-container">
                 <div v-for="reagent in validReagents" :key="reagent.name" class="reagent-box">
-                  <a :href="reagent.url" target="_blank" class="reagent-text">
-                    {{ reagent.name }} ↗ × ({{ reagent.quantity }})
+                  <a :href="reagent.url" target="_blank" class="reagent-link">
+                    <img 
+                      v-if="reagent.icon" 
+                      :src="reagent.icon" 
+                      :alt="reagent.name"
+                      class="reagent-icon"
+                      @error="handleReagentIconError"
+                    />
+                    <span class="reagent-text">{{ reagent.name }} ↗ × ({{ reagent.quantity }})</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Items with Spell -->
+            <div v-if="hasValidItemsWithSpell" class="items-with-spell-section">
+              <h3 class="items-header">
+                <span class="section-icon">⚔️</span>
+                Items with Spell
+              </h3>
+              <div class="items-container">
+                <div v-for="item in validItemsWithSpell" :key="item.item_id || item.name" class="item-box">
+                  <a :href="item.url" target="_blank" class="item-link">
+                    <img 
+                      v-if="item.icon" 
+                      :src="item.icon" 
+                      :alt="item.name"
+                      class="item-icon"
+                      @error="handleItemIconError"
+                    />
+                    <span class="item-text">{{ item.name }} ↗</span>
                   </a>
                 </div>
               </div>
@@ -684,6 +746,30 @@ export default {
       return validReagents.value.length > 0
     })
 
+    // Computed properties for items with spell
+    const validItemsWithSpell = computed(() => {
+      if (!spellDetails.value?.items_with_spell || !Array.isArray(spellDetails.value.items_with_spell)) {
+        return []
+      }
+      return spellDetails.value.items_with_spell.filter(item => 
+        item && typeof item === 'object' && item.name && item.url
+      )
+    })
+
+    const hasValidItemsWithSpell = computed(() => {
+      return validItemsWithSpell.value.length > 0
+    })
+
+    // Method to handle item icon errors
+    const handleItemIconError = (event) => {
+      event.target.style.display = 'none'
+    }
+
+    // Method to handle reagent icon errors
+    const handleReagentIconError = (event) => {
+      event.target.style.display = 'none'
+    }
+
     return {
       loading,
       error,
@@ -716,7 +802,12 @@ export default {
       fetchSpellDetails,
       // Reagents
       validReagents,
-      hasValidReagents
+      hasValidReagents,
+      // Items with Spell
+      validItemsWithSpell,
+      hasValidItemsWithSpell,
+      handleItemIconError,
+      handleReagentIconError
     }
   }
 }
@@ -1588,7 +1679,7 @@ export default {
 
 .modal-info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
   margin-bottom: 2rem;
 }
@@ -1609,7 +1700,9 @@ export default {
 }
 
 .modal-info-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
@@ -1617,6 +1710,24 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-family: 'Inter', sans-serif;
+}
+
+.modal-info-icon {
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+}
+
+.section-icon {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-info-value {
@@ -1641,6 +1752,8 @@ export default {
   color: var(--class-color);
   margin-bottom: 1rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
 }
 
 .modal-description p {
@@ -1759,21 +1872,23 @@ export default {
   color: var(--class-color);
   margin-bottom: 1rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
 }
 
 .reagents-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
 }
 
 .reagent-box {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 8px;
-  padding: 1rem;
-  text-align: center;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
   transition: all 0.3s ease;
+  overflow: hidden;
 }
 
 .reagent-box:hover {
@@ -1782,17 +1897,124 @@ export default {
   transform: translateY(-2px);
 }
 
-.reagent-text {
+.reagent-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
+  width: 100%;
 }
 
-.reagent-text:hover {
+.reagent-link:hover {
   color: var(--class-color);
   text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+.reagent-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.reagent-icon:hover {
+  border-color: rgba(var(--class-color-rgb), 0.5);
+  transform: scale(1.05);
+}
+
+.reagent-text {
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Items with Spell Section */
+.items-with-spell-section {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(var(--class-color-rgb), 0.15);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.items-header {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--class-color);
+  margin-bottom: 1rem;
+  text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
+}
+
+.items-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.item-box {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.item-box:hover {
+  background: linear-gradient(145deg, rgba(var(--class-color-rgb), 0.1), rgba(var(--class-color-rgb), 0.05));
+  border-color: rgba(var(--class-color-rgb), 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.2);
+}
+
+.item-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease;
+  width: 100%;
+}
+
+.item-link:hover {
+  color: var(--class-color);
+  text-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.6);
+}
+
+.item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.item-icon:hover {
+  border-color: rgba(var(--class-color-rgb), 0.5);
+  transform: scale(1.05);
+}
+
+.item-text {
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .modal-footer {
