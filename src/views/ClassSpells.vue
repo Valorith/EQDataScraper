@@ -177,48 +177,78 @@
             <!-- Basic Info Grid -->
             <div class="modal-info-grid">
               <div class="modal-info-card">
-                <span class="modal-info-label">Spell ID</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🆔</span>
+                  Spell ID
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.spell_id }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.mana">
-                <span class="modal-info-label">Mana Cost</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">💙</span>
+                  Mana Cost
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.mana }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.skill">
-                <span class="modal-info-label">School</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">📚</span>
+                  School
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.skill }}</span>
               </div>
               <div class="modal-info-card" v-if="selectedSpell.target_type">
-                <span class="modal-info-label">Target</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🎯</span>
+                  Target
+                </span>
                 <span class="modal-info-value">{{ selectedSpell.target_type }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.cast_time">
-                <span class="modal-info-label">Cast Time</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">⏱️</span>
+                  Cast Time
+                </span>
                 <span class="modal-info-value">{{ spellDetails.cast_time }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.duration">
-                <span class="modal-info-label">Duration</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">⏳</span>
+                  Duration
+                </span>
                 <span class="modal-info-value">{{ spellDetails.duration }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.range">
-                <span class="modal-info-label">Range</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">📏</span>
+                  Range
+                </span>
                 <span class="modal-info-value">{{ spellDetails.range }}</span>
               </div>
               <div class="modal-info-card" v-if="spellDetails.resist">
-                <span class="modal-info-label">Resist</span>
+                <span class="modal-info-label">
+                  <span class="modal-info-icon">🛡️</span>
+                  Resist
+                </span>
                 <span class="modal-info-value">{{ spellDetails.resist }}</span>
               </div>
             </div>
             
             <!-- Description -->
             <div v-if="spellDetails.description" class="modal-description">
-              <h3>Description</h3>
+              <h3>
+                <span class="section-icon">📖</span>
+                Description
+              </h3>
               <p>{{ spellDetails.description }}</p>
             </div>
             
             <!-- Effects -->
             <div v-if="spellDetails.effects && spellDetails.effects.length" class="modal-effects">
-              <h3>Effects</h3>
+              <h3>
+                <span class="section-icon">✨</span>
+                Effects
+              </h3>
               <ul>
                 <li v-for="(effect, index) in spellDetails.effects" :key="index">
                   {{ effect }}
@@ -228,7 +258,10 @@
             
             <!-- Reagents -->
             <div v-if="hasValidReagents" class="reagents-section">
-              <h3 class="reagents-header">Reagents</h3>
+              <h3 class="reagents-header">
+                <span class="section-icon">🧪</span>
+                Reagents
+              </h3>
               <div class="reagents-container">
                 <div v-for="reagent in validReagents" :key="reagent.name" class="reagent-box">
                   <a :href="reagent.url" target="_blank" class="reagent-link">
@@ -247,7 +280,10 @@
             
             <!-- Items with Spell -->
             <div v-if="hasValidItemsWithSpell" class="items-with-spell-section">
-              <h3 class="items-header">Items with Spell</h3>
+              <h3 class="items-header">
+                <span class="section-icon">⚔️</span>
+                Items with Spell
+              </h3>
               <div class="items-container">
                 <div v-for="item in validItemsWithSpell" :key="item.item_id || item.name" class="item-box">
                   <a :href="item.url" target="_blank" class="item-link">
@@ -1664,7 +1700,9 @@ export default {
 }
 
 .modal-info-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
@@ -1672,6 +1710,24 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-family: 'Inter', sans-serif;
+}
+
+.modal-info-icon {
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+}
+
+.section-icon {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-info-value {
@@ -1696,6 +1752,8 @@ export default {
   color: var(--class-color);
   margin-bottom: 1rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
 }
 
 .modal-description p {
@@ -1814,6 +1872,8 @@ export default {
   color: var(--class-color);
   margin-bottom: 1rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
 }
 
 .reagents-container {
@@ -1892,6 +1952,8 @@ export default {
   color: var(--class-color);
   margin-bottom: 1rem;
   text-shadow: 0 0 15px rgba(var(--class-color-rgb), 0.4);
+  display: flex;
+  align-items: center;
 }
 
 .items-container {
