@@ -87,15 +87,11 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
         # Parse the form to get any hidden fields or required parameters
         form_soup = BeautifulSoup(form_response.content, 'html.parser')
         
-        # Try different URL patterns to get spell data
+        # Use the correct URL format for alla.clumsysworld.com spell search
         search_urls = [
-            f"{base_url}?a=spells&class={class_name.lower()}",
-            f"{base_url}?a=spells&iclass={type_id}",
-            f"{base_url}?a=spells&classid={type_id}",
-            f"{base_url}?a=spells&search=&iclass={type_id}&level_min=1&level_max=65",
-            f"{base_url}?a=spell_list&class={type_id}",
-            f"{base_url}spells/?class={type_id}",
-            f"{base_url}spells.php?class={type_id}"
+            f"{base_url}?a=spells&name=&type={type_id}&level=1&opt=2",
+            f"{base_url}?a=spells&type={type_id}&level=1&opt=2",
+            f"{base_url}?a=spells&type={type_id}&opt=2"
         ]
         
         response = None
