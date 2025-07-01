@@ -83,8 +83,24 @@ def scrape_class(class_name: str, base_url: str, output_file: Optional[str]) -> 
             logger.warning(f"No tables found for {class_name}")
             return None
         
-        # Find the spell table (usually the largest table)
-        spell_table = max(tables, key=lambda t: len(t.find_all('tr')))
+        # Find the spell table - look for table with spell-related headers
+        spell_table = None
+        for table in tables:
+            # Check if this table has spell-related headers
+            header_row = table.find('tr')
+            if header_row:
+                headers_text = header_row.get_text().lower()
+                if any(keyword in headers_text for keyword in ['name', 'level', 'spell', 'mana', 'cast']):
+                    spell_table = table
+                    break
+        
+        # Fallback to largest table if no spell table found
+        if spell_table is None:
+            if tables:
+                spell_table = max(tables, key=lambda t: len(t.find_all('tr')))
+            else:
+                logger.warning(f"No tables found for {class_name}")
+                return None
         
         rows = spell_table.find_all('tr')
         if len(rows) < 2:
