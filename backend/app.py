@@ -324,6 +324,68 @@ def get_spell_details(spell_id):
         logger.error(f"Unexpected error fetching spell details for ID {spell_id}: {e}")
         return jsonify({'error': 'Failed to fetch spell details'}), 500
 
+def enhance_reagents_with_icons(components):
+    """Enhance reagent components with icons from their individual item pages"""
+    import requests
+    from bs4 import BeautifulSoup
+    
+    if not components:
+        return components
+    
+    enhanced_components = []
+    
+    for reagent in components:
+        try:
+            # Skip if no item_id or if icon is already present
+            if not reagent.get('item_id') or reagent.get('icon'):
+                enhanced_components.append(reagent)
+                continue
+                
+            item_id = reagent['item_id']
+            
+            # Fetch the item page to get the icon
+            item_url = f'https://alla.clumsysworld.com/?a=item&id={item_id}'
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            }
+            
+            response = requests.get(item_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                item_soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Look for the item icon - typically the first image in the item details
+                item_icon = None
+                
+                # Try to find icon in common locations
+                for img in item_soup.find_all('img'):
+                    src = img.get('src', '')
+                    if ('icon' in src.lower() or 'item_' in src) and src.endswith('.png'):
+                        if src.startswith('/'):
+                            item_icon = f"https://alla.clumsysworld.com{src}"
+                        elif not src.startswith('http'):
+                            item_icon = f"https://alla.clumsysworld.com/{src}"
+                        else:
+                            item_icon = src
+                        break
+                
+                # Add icon if found
+                if item_icon:
+                    reagent['icon'] = item_icon
+                    logger.info(f"Found icon for reagent {reagent['name']}: {item_icon}")
+                else:
+                    logger.debug(f"No icon found for reagent {reagent['name']}")
+            else:
+                logger.warning(f"Failed to fetch item page for {reagent['name']} (status: {response.status_code})")
+                
+        except Exception as e:
+            logger.warning(f"Error fetching icon for reagent {reagent.get('name', 'unknown')}: {e}")
+        
+        enhanced_components.append(reagent)
+    
+    return enhanced_components
+
 def parse_spell_details_from_html(soup):
     """Parse spell details from the HTML soup object"""
     details = {}
@@ -489,6 +551,9 @@ def parse_spell_details_from_html(soup):
         
         if components:
             details['components'] = components
+            
+            # Enhance reagents with icons from their item pages (lightweight approach)
+            details['components'] = enhance_reagents_with_icons(details['components'])
         
         # Look for "Items with spell" section
         items_with_spell = []
