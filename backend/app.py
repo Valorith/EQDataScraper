@@ -23,6 +23,7 @@ def load_config():
         'backend_port': 5001,
         'frontend_port': 3000,
         'cache_expiry_hours': 24,
+        'pricing_cache_expiry_hours': 168,  # 1 week
         'min_scrape_interval_minutes': 5,
         'use_production_database': False,
         'production_database_url': ''
@@ -42,6 +43,7 @@ def load_config():
     config['backend_port'] = int(os.getenv('PORT', os.getenv('BACKEND_PORT', config['backend_port'])))
     config['frontend_port'] = int(os.getenv('FRONTEND_PORT', config['frontend_port']))
     config['cache_expiry_hours'] = int(os.getenv('CACHE_EXPIRY_HOURS', config['cache_expiry_hours']))
+    config['pricing_cache_expiry_hours'] = int(os.getenv('PRICING_CACHE_EXPIRY_HOURS', config['pricing_cache_expiry_hours']))
     config['min_scrape_interval_minutes'] = int(os.getenv('MIN_SCRAPE_INTERVAL_MINUTES', config['min_scrape_interval_minutes']))
     
     return config
@@ -170,8 +172,10 @@ spells_cache = {}
 pricing_cache = {}
 spell_details_cache = {}
 cache_timestamp = {}
+pricing_cache_timestamp = {}  # Track when each spell's pricing was cached
 last_scrape_time = {}
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
+PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
 def load_cache_from_storage():
@@ -215,6 +219,8 @@ def load_cache_from_database():
         for key, value in metadata_rows:
             if key == 'cache_timestamp':
                 cache_timestamp.update(value)
+            elif key == 'pricing_cache_timestamp':
+                pricing_cache_timestamp.update(value)
             elif key == 'last_scrape_time':
                 last_scrape_time.update(value)
         
@@ -271,6 +277,7 @@ def load_cache_from_files():
             with open(METADATA_CACHE_FILE, 'r') as f:
                 metadata = json.load(f)
                 cache_timestamp.update(metadata.get('cache_timestamp', {}))
+                pricing_cache_timestamp.update(metadata.get('pricing_cache_timestamp', {}))
                 last_scrape_time.update(metadata.get('last_scrape_time', {}))
                 logger.info(f"✓ Successfully loaded cache metadata for {len(cache_timestamp)} classes")
         else:
@@ -286,6 +293,7 @@ def load_cache_from_files():
         pricing_cache = {}
         spell_details_cache = {}
         cache_timestamp = {}
+        pricing_cache_timestamp = {}
         last_scrape_time = {}
 
 def save_cache_to_storage():
@@ -336,6 +344,7 @@ def save_cache_to_database():
         # Save metadata
         metadata_items = [
             ('cache_timestamp', cache_timestamp),
+            ('pricing_cache_timestamp', pricing_cache_timestamp),
             ('last_scrape_time', last_scrape_time),
             ('last_updated', datetime.now().isoformat())
         ]
@@ -389,6 +398,7 @@ def save_cache_to_files():
         # Save metadata
         metadata = {
             'cache_timestamp': cache_timestamp,
+            'pricing_cache_timestamp': pricing_cache_timestamp,
             'last_scrape_time': last_scrape_time,
             'last_updated': datetime.now().isoformat()
         }
@@ -411,7 +421,7 @@ load_cache_from_storage()
 
 
 def is_cache_expired(class_name):
-    """Check if cache entry is expired"""
+    """Check if spell cache entry is expired (24 hours)"""
     if class_name not in cache_timestamp:
         return True
     
@@ -419,20 +429,45 @@ def is_cache_expired(class_name):
     expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
     return datetime.now() > expiry_time
 
+def is_pricing_cache_expired(spell_id):
+    """Check if pricing cache entry is expired (1 week)"""
+    spell_id = str(spell_id)
+    if spell_id not in pricing_cache_timestamp:
+        return True
+    
+    cache_time = datetime.fromisoformat(pricing_cache_timestamp[spell_id])
+    expiry_time = cache_time + timedelta(hours=PRICING_CACHE_EXPIRY_HOURS)
+    return datetime.now() > expiry_time
+
 def clear_expired_cache():
-    """Remove expired cache entries"""
+    """Remove expired cache entries for both spells and pricing"""
     expired_classes = []
+    expired_pricing = []
+    
+    # Check spell cache expiry (24 hours)
     for class_name in list(cache_timestamp.keys()):
         if is_cache_expired(class_name):
             expired_classes.append(class_name)
     
+    # Check pricing cache expiry (1 week)
+    for spell_id in list(pricing_cache_timestamp.keys()):
+        if is_pricing_cache_expired(spell_id):
+            expired_pricing.append(spell_id)
+    
+    # Clear expired spell cache entries
     for class_name in expired_classes:
         spells_cache.pop(class_name, None)
         cache_timestamp.pop(class_name, None)
-        logger.info(f"Cleared expired cache for {class_name}")
+        logger.info(f"Cleared expired spell cache for {class_name}")
     
-    # Save changes to disk if any classes were cleared
-    if expired_classes:
+    # Clear expired pricing cache entries
+    for spell_id in expired_pricing:
+        pricing_cache.pop(spell_id, None)
+        pricing_cache_timestamp.pop(spell_id, None)
+        logger.info(f"Cleared expired pricing cache for spell {spell_id}")
+    
+    # Save changes to storage if any entries were cleared
+    if expired_classes or expired_pricing:
         save_cache_to_storage()
 
 def can_scrape_class(class_name):
@@ -643,6 +678,13 @@ def get_cache_status():
             'spell_count': len(spells_cache.get(class_name, [])),
             'last_updated': cache_timestamp.get(class_name)
         }
+    
+    # Add cache expiry configuration
+    status['_config'] = {
+        'spell_cache_expiry_hours': CACHE_EXPIRY_HOURS,
+        'pricing_cache_expiry_hours': PRICING_CACHE_EXPIRY_HOURS,
+        'min_scrape_interval_minutes': MIN_SCRAPE_INTERVAL_MINUTES
+    }
     
     return jsonify(status)
 
@@ -1382,8 +1424,8 @@ session.headers.update({
 
 def fetch_single_spell_pricing(spell_id, max_retries=2):
     """Fetch pricing for a single spell with retry logic"""
-    # Check cache first
-    if str(spell_id) in pricing_cache:
+    # Check cache first and verify it's not expired
+    if str(spell_id) in pricing_cache and not is_pricing_cache_expired(spell_id):
         return pricing_cache[str(spell_id)]
     
     for attempt in range(max_retries + 1):
@@ -1404,6 +1446,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 
                 # Cache the result
                 pricing_cache[str(spell_id)] = result
+                pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
                 # Save pricing cache periodically (every 10 new entries)
                 if len(pricing_cache) % 10 == 0:
                     save_cache_to_storage()
@@ -1412,6 +1455,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 if attempt == max_retries:
                     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                     pricing_cache[str(spell_id)] = result
+                    pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
                     # Save on failure too
                     if len(pricing_cache) % 10 == 0:
                         save_cache_to_storage()
@@ -1422,6 +1466,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
             if attempt == max_retries:
                 result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 pricing_cache[str(spell_id)] = result
+                pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
                 # Save on failure too
                 if len(pricing_cache) % 10 == 0:
                     save_cache_to_storage()
@@ -1433,6 +1478,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
     # Fallback
     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
     pricing_cache[str(spell_id)] = result
+    pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
     # Save fallback too
     if len(pricing_cache) % 10 == 0:
         save_cache_to_storage()
@@ -1613,6 +1659,7 @@ def cache_status():
             'pricing_entries': len(pricing_cache),
             'spell_details': len(spell_details_cache),
             'timestamps': len(cache_timestamp),
+            'pricing_timestamps': len(pricing_cache_timestamp),
             'last_scrape_times': len(last_scrape_time)
         },
         'storage': storage_info,
@@ -1623,7 +1670,8 @@ def cache_status():
             'cache_storage_type': 'database' if USE_DATABASE_CACHE else 'files'
         },
         'config': {
-            'cache_expiry_hours': CACHE_EXPIRY_HOURS,
+            'spell_cache_expiry_hours': CACHE_EXPIRY_HOURS,
+            'pricing_cache_expiry_hours': PRICING_CACHE_EXPIRY_HOURS,
             'min_scrape_interval_minutes': MIN_SCRAPE_INTERVAL_MINUTES
         }
     })
