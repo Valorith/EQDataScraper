@@ -239,10 +239,13 @@
               
               <button 
                 @click.stop="addToCart(spell)" 
-                :class="['add-to-cart-btn', { 'in-cart': isInCart(spell.spell_id) }]"
-                :title="isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'"
+                :class="['add-to-cart-btn', { 'in-cart': isInCart(spell.spell_id), 'disabled': !hasValidPricing(spell), 'loading': !spell.pricing || getPricingProgress(spell.spell_id) < 100 }]"
+                :disabled="!hasValidPricing(spell)"
+                :title="getCartButtonTitle(spell)"
               >
                 <span v-if="isInCart(spell.spell_id)">✓</span>
+                <span v-else-if="!spell.pricing || getPricingProgress(spell.spell_id) < 100">⏳</span>
+                <span v-else-if="spell.pricing && spell.pricing.unknown">❌</span>
                 <span v-else>🛒</span>
               </button>
             </div>
@@ -1404,7 +1407,11 @@ export default {
     }
     
     const hasValidPricing = (spell) => {
-      // A spell has valid pricing if it has pricing data AND it's not loading AND it's not marked as unknown
+      // A spell has valid pricing if:
+      // 1. It has pricing data 
+      // 2. Pricing is not null
+      // 3. Pricing has finished loading (progress = 100%)
+      // 4. Pricing is not marked as unknown (failed fetch)
       return spell.pricing && 
              (spell.pricing !== null) && 
              getPricingProgress(spell.spell_id) === 100 && 
@@ -1412,7 +1419,13 @@ export default {
     }
     
     const getCartButtonTitle = (spell) => {
-      if (!hasValidPricing(spell)) {
+      if (!spell.pricing) {
+        return 'Loading price - please wait'
+      }
+      if (getPricingProgress(spell.spell_id) < 100) {
+        return `Loading price (${getPricingProgress(spell.spell_id)}%) - please wait`
+      }
+      if (spell.pricing.unknown) {
         return 'Price unknown - cannot add to cart'
       }
       return isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'
@@ -3550,6 +3563,30 @@ export default {
   background: linear-gradient(135deg, #6c757d, #5a6268);
   transform: none;
   box-shadow: 0 1px 3px rgba(108, 117, 125, 0.2);
+}
+
+/* Loading state for add to cart button */
+.add-to-cart-btn.loading {
+  background: linear-gradient(135deg, #ffc107, #e0a800);
+  cursor: wait;
+  opacity: 0.8;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+.add-to-cart-btn.loading:hover {
+  background: linear-gradient(135deg, #e0a800, #d39e00);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+}
+
+/* Animation for loading hourglass */
+.add-to-cart-btn.loading span {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 /* Mobile adjustments for spell footer */
