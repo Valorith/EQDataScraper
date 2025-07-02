@@ -19,6 +19,69 @@
       </div>
     </div>
 
+    <!-- Cache Status Section -->
+    <div v-if="cacheStatus && !loading" class="cache-status-section">
+      <div class="cache-status-container">
+        <div class="cache-status-header">
+          <h3>📊 Data Status</h3>
+        </div>
+        
+        <div class="cache-status-grid">
+          <!-- Spell Data Status -->
+          <div class="cache-status-card" :class="{ 'expired': cacheStatus.spells?.expired }">
+            <div class="cache-status-icon">🪄</div>
+            <div class="cache-status-content">
+              <div class="cache-status-title">Spell Data</div>
+              <div class="cache-status-details">
+                <div class="cache-status-timestamp">
+                  {{ formatTimestamp(cacheStatus.spells?.timestamp) }}
+                </div>
+                <div v-if="cacheStatus.spells?.expired" class="cache-status-expired">
+                  ⚠️ Expired ({{ formatExpiredTime(cacheStatus.spells?.timestamp, 24) }})
+                </div>
+                <div v-else class="cache-status-fresh">
+                  ✅ Fresh (expires {{ formatExpiryTime(cacheStatus.spells?.timestamp, 24) }})
+                </div>
+              </div>
+            </div>
+            <div v-if="cacheStatus.spells?.expired" class="cache-status-actions">
+              <button @click="refreshSpellData" :disabled="refreshingSpells" class="refresh-button">
+                <span v-if="refreshingSpells">🔄</span>
+                <span v-else>🔄</span>
+                {{ refreshingSpells ? 'Refreshing...' : 'Refresh Spells' }}
+              </button>
+            </div>
+          </div>
+          
+          <!-- Pricing Data Status -->
+          <div class="cache-status-card" :class="{ 'expired': cacheStatus.pricing?.expired_count > 0 }">
+            <div class="cache-status-icon">💰</div>
+            <div class="cache-status-content">
+              <div class="cache-status-title">Pricing Data</div>
+              <div class="cache-status-details">
+                <div class="cache-status-info">
+                  {{ cacheStatus.pricing?.cached_count || 0 }} / {{ cacheStatus.pricing?.total_spells || 0 }} spells cached
+                </div>
+                <div v-if="cacheStatus.pricing?.expired_count > 0" class="cache-status-expired">
+                  ⚠️ {{ cacheStatus.pricing.expired_count }} expired entries
+                </div>
+                <div v-else class="cache-status-fresh">
+                  ✅ All cached pricing fresh (1 week expiry)
+                </div>
+              </div>
+            </div>
+            <div v-if="cacheStatus.pricing?.expired_count > 0" class="cache-status-actions">
+              <button @click="refreshPricingData" :disabled="refreshingPricing" class="refresh-button">
+                <span v-if="refreshingPricing">🔄</span>
+                <span v-else>🔄</span>
+                {{ refreshingPricing ? 'Refreshing...' : 'Refresh Pricing' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading-container" :class="{ 'transitioning': isTransitioning }">
       <div class="loading-spinner"></div>
       <p>{{ isTransitioning ? 'Switching classes...' : 'Loading spells...' }}</p>
@@ -680,6 +743,11 @@ export default {
     // Retry queue system
     const retryQueue = ref(new Set())
     const isFetchingPricing = ref(false)
+    
+    // Cache status state
+    const cacheStatus = ref(null)
+    const refreshingSpells = ref(false)
+    const refreshingPricing = ref(false)
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -889,9 +957,95 @@ export default {
 
     // Debounced loading function to prevent rapid API calls
     const debouncedLoad = debounce(loadSpells, 300)
+
+    // Cache status management
+    const fetchCacheStatus = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/cache-expiry-status/${props.className}`)
+        cacheStatus.value = response.data
+      } catch (err) {
+        console.error('Failed to fetch cache status:', err)
+        cacheStatus.value = null
+      }
+    }
+
+    const refreshSpellData = async () => {
+      refreshingSpells.value = true
+      try {
+        const response = await axios.post(`${API_BASE_URL}/api/refresh-spell-cache/${props.className}`)
+        if (response.data.success) {
+          // Reload the spells data
+          await loadSpells(false)
+          // Update cache status
+          await fetchCacheStatus()
+          alert(`Spell data refreshed! ${response.data.spell_count} spells loaded.`)
+        }
+      } catch (err) {
+        console.error('Failed to refresh spell data:', err)
+        alert('Failed to refresh spell data. Please try again.')
+      } finally {
+        refreshingSpells.value = false
+      }
+    }
+
+    const refreshPricingData = async () => {
+      refreshingPricing.value = true
+      try {
+        const response = await axios.post(`${API_BASE_URL}/api/refresh-pricing-cache/${props.className}`)
+        if (response.data.success) {
+          // Update cache status
+          await fetchCacheStatus()
+          alert(`Pricing cache cleared for ${response.data.cleared_count} spells. New pricing will be fetched when needed.`)
+        }
+      } catch (err) {
+        console.error('Failed to refresh pricing data:', err)
+        alert('Failed to refresh pricing data. Please try again.')
+      } finally {
+        refreshingPricing.value = false
+      }
+    }
+
+    // Utility functions for formatting timestamps
+    const formatTimestamp = (timestamp) => {
+      if (!timestamp) return 'Unknown'
+      return new Date(timestamp).toLocaleString()
+    }
+
+    const formatExpiredTime = (timestamp, expiryHours) => {
+      if (!timestamp) return 'Unknown'
+      const now = new Date()
+      const cacheTime = new Date(timestamp)
+      const expiredTime = new Date(cacheTime.getTime() + (expiryHours * 60 * 60 * 1000))
+      const timeSinceExpired = now - expiredTime
+      const hours = Math.floor(timeSinceExpired / (1000 * 60 * 60))
+      const minutes = Math.floor((timeSinceExpired % (1000 * 60 * 60)) / (1000 * 60))
+      
+      if (hours > 0) {
+        return `${hours}h ${minutes}m ago`
+      } else {
+        return `${minutes}m ago`
+      }
+    }
+
+    const formatExpiryTime = (timestamp, expiryHours) => {
+      if (!timestamp) return 'Unknown'
+      const cacheTime = new Date(timestamp)
+      const expiryTime = new Date(cacheTime.getTime() + (expiryHours * 60 * 60 * 1000))
+      const now = new Date()
+      const timeUntilExpiry = expiryTime - now
+      const hours = Math.floor(timeUntilExpiry / (1000 * 60 * 60))
+      const minutes = Math.floor((timeUntilExpiry % (1000 * 60 * 60)) / (1000 * 60))
+      
+      if (hours > 0) {
+        return `in ${hours}h ${minutes}m`
+      } else {
+        return `in ${minutes}m`
+      }
+    }
     
     onMounted(async () => {
       await loadSpells()
+      await fetchCacheStatus()
       window.addEventListener('scroll', handleScroll, { passive: true })
       window.addEventListener('keydown', handleKeydown)
       document.addEventListener('click', handleClickOutside, { passive: true })
@@ -2097,7 +2251,17 @@ export default {
       getPricingProgress,
       // Retry queue state
       retryQueue,
-      isFetchingPricing
+      isFetchingPricing,
+      // Cache status functionality
+      cacheStatus,
+      refreshingSpells,
+      refreshingPricing,
+      fetchCacheStatus,
+      refreshSpellData,
+      refreshPricingData,
+      formatTimestamp,
+      formatExpiredTime,
+      formatExpiryTime
     }
   }
 }
@@ -2129,6 +2293,178 @@ export default {
   border-radius: 50%;
   filter: blur(60px);
   z-index: -1;
+}
+
+/* Cache Status Section */
+.cache-status-section {
+  margin: 0 auto 40px auto;
+  max-width: 1000px;
+  padding: 0 20px;
+}
+
+.cache-status-container {
+  background: rgba(var(--class-color-rgb), 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.cache-status-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.cache-status-header h3 {
+  color: var(--class-color);
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+  text-shadow: 0 0 20px rgba(var(--class-color-rgb), 0.5);
+}
+
+.cache-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.cache-status-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(var(--class-color-rgb), 0.15);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: all 0.3s ease;
+}
+
+.cache-status-card.expired {
+  border-color: rgba(255, 165, 0, 0.4);
+  background: rgba(255, 165, 0, 0.05);
+}
+
+.cache-status-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(var(--class-color-rgb), 0.15);
+}
+
+.cache-status-icon {
+  font-size: 2rem;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.cache-status-content {
+  flex: 1;
+}
+
+.cache-status-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--class-color);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.cache-status-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.cache-status-timestamp {
+  color: rgba(255, 255, 255, 0.7);
+  font-family: monospace;
+  text-align: center;
+}
+
+.cache-status-info {
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+}
+
+.cache-status-expired {
+  color: #ffa500;
+  font-weight: 500;
+  text-align: center;
+}
+
+.cache-status-fresh {
+  color: #32cd32;
+  font-weight: 500;
+  text-align: center;
+}
+
+.cache-status-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.refresh-button {
+  background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.2), rgba(var(--class-color-rgb), 0.1));
+  border: 1px solid rgba(var(--class-color-rgb), 0.3);
+  color: var(--class-color);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.3), rgba(var(--class-color-rgb), 0.2));
+  border-color: rgba(var(--class-color-rgb), 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.2);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refresh-button:disabled span {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive design for cache status */
+@media (max-width: 768px) {
+  .cache-status-section {
+    padding: 0 15px;
+    margin-bottom: 30px;
+  }
+  
+  .cache-status-container {
+    padding: 20px;
+  }
+  
+  .cache-status-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .cache-status-card {
+    padding: 16px;
+  }
+  
+  .cache-status-icon {
+    font-size: 1.5rem;
+  }
 }
 
 .home-button {
