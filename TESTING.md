@@ -2,6 +2,12 @@
 
 This document provides comprehensive information about the testing suite for EQDataScraper.
 
+## ⚠️ Important CI/CD Notes
+
+**Frontend Tests**: Due to rollup native dependency issues, frontend tests are **skipped in CI** but work locally. This is a known limitation that doesn't affect deployment or functionality.
+
+**GitHub Actions**: We use a single streamlined CI/CD pipeline (`ci.yml`) that focuses on what works reliably in CI environments.
+
 ## Overview
 
 The testing suite includes:
@@ -12,16 +18,13 @@ The testing suite includes:
 
 ## Quick Start
 
-### Run All Tests
+### Run All Tests Locally
 ```bash
-# Install dependencies and run all tests
-./scripts/test.sh --install
+# Recommended: Run local test suite
+npm run test:local
 
-# Run with coverage reports
-./scripts/test.sh --coverage
-
-# Verbose output
-./scripts/test.sh --verbose
+# This runs both backend and frontend tests
+# Frontend tests may show warnings (expected)
 ```
 
 ### Backend Tests Only
@@ -35,8 +38,8 @@ cd backend && python -m pytest
 # With coverage
 npm run test:backend:coverage
 
-# Using custom runner
-cd backend && python run_tests.py --coverage --verbose
+# Run specific test
+cd backend && python -m pytest tests/test_api_endpoints.py -v
 ```
 
 ### Frontend Tests Only
