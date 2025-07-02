@@ -53,6 +53,7 @@ config = load_config()
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
 SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
 PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
+SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
 METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
 
 # Create cache directory if it doesn't exist
@@ -60,6 +61,8 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Data storage
 spells_cache = {}
+pricing_cache = {}
+spell_details_cache = {}
 cache_timestamp = {}
 last_scrape_time = {}
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
@@ -67,7 +70,7 @@ MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
 def load_cache_from_disk():
     """Load cached data from JSON files"""
-    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
     
     try:
         # Load spells cache
@@ -82,6 +85,12 @@ def load_cache_from_disk():
                 pricing_cache = json.load(f)
                 logger.info(f"Loaded {len(pricing_cache)} spells from pricing cache")
         
+        # Load spell details cache
+        if os.path.exists(SPELL_DETAILS_CACHE_FILE):
+            with open(SPELL_DETAILS_CACHE_FILE, 'r') as f:
+                spell_details_cache = json.load(f)
+                logger.info(f"Loaded {len(spell_details_cache)} spell details from cache")
+        
         # Load metadata
         if os.path.exists(METADATA_CACHE_FILE):
             with open(METADATA_CACHE_FILE, 'r') as f:
@@ -95,6 +104,7 @@ def load_cache_from_disk():
         # Initialize empty caches if loading fails
         spells_cache = {}
         pricing_cache = {}
+        spell_details_cache = {}
         cache_timestamp = {}
         last_scrape_time = {}
 
@@ -109,6 +119,10 @@ def save_cache_to_disk():
         with open(PRICING_CACHE_FILE, 'w') as f:
             json.dump(pricing_cache, f, indent=2)
         
+        # Save spell details cache
+        with open(SPELL_DETAILS_CACHE_FILE, 'w') as f:
+            json.dump(spell_details_cache, f, indent=2)
+        
         # Save metadata
         metadata = {
             'cache_timestamp': cache_timestamp,
@@ -118,7 +132,7 @@ def save_cache_to_disk():
         with open(METADATA_CACHE_FILE, 'w') as f:
             json.dump(metadata, f, indent=2)
             
-        logger.info(f"Saved cache to disk: {len(spells_cache)} classes, {len(pricing_cache)} pricing entries")
+        logger.info(f"Saved cache to disk: {len(spells_cache)} classes, {len(pricing_cache)} pricing entries, {len(spell_details_cache)} spell details")
         
     except Exception as e:
         logger.error(f"Error saving cache to disk: {e}")
@@ -367,6 +381,13 @@ def get_cache_status():
 def get_spell_details(spell_id):
     """Get detailed spell information from alla website"""
     try:
+        spell_id_str = str(spell_id)
+        
+        # Check cache first
+        if spell_id_str in spell_details_cache:
+            logger.info(f"Serving cached spell details for ID {spell_id}")
+            return jsonify(spell_details_cache[spell_id_str])
+        
         import requests
         from bs4 import BeautifulSoup
         
@@ -381,7 +402,7 @@ def get_spell_details(spell_id):
         }
         
         url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
-        logger.info(f"Fetching spell details for ID {spell_id} from {url}")
+        logger.info(f"Fetching fresh spell details for ID {spell_id} from {url}")
         
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -389,7 +410,14 @@ def get_spell_details(spell_id):
         soup = BeautifulSoup(response.text, 'html.parser')
         details = parse_spell_details_from_html(soup)
         
-        logger.info(f"Successfully parsed spell details for ID {spell_id}")
+        # Cache the result
+        spell_details_cache[spell_id_str] = details
+        
+        # Save cache periodically (every 5 new entries)
+        if len(spell_details_cache) % 5 == 0:
+            save_cache_to_disk()
+        
+        logger.info(f"Successfully parsed and cached spell details for ID {spell_id}")
         return jsonify(details)
         
     except requests.exceptions.Timeout:
@@ -1081,8 +1109,7 @@ session.headers.update({
     'Connection': 'keep-alive'
 })
 
-# Pricing cache for the backend
-pricing_cache = {}
+# Pricing cache is already declared at the top with other global storage variables
 
 def fetch_single_spell_pricing(spell_id, max_retries=2):
     """Fetch pricing for a single spell with retry logic"""
@@ -1095,7 +1122,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
             from bs4 import BeautifulSoup
             
             url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
-            response = session.get(url, timeout=5)
+            response = session.get(url, timeout=8)
             
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
@@ -1104,7 +1131,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 if details.get('pricing'):
                     result = details['pricing']
                 else:
-                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 
                 # Cache the result
                 pricing_cache[str(spell_id)] = result
@@ -1161,8 +1188,8 @@ def get_spell_pricing():
         import queue
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        # Use smaller thread pool to avoid overwhelming the server
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        # Use single thread to avoid overwhelming the server
+        with ThreadPoolExecutor(max_workers=1) as executor:
             # Submit all tasks
             future_to_spell = {executor.submit(fetch_single_spell_pricing, spell_id): spell_id for spell_id in spell_ids}
             
@@ -1170,14 +1197,14 @@ def get_spell_pricing():
             for future in as_completed(future_to_spell):
                 spell_id = future_to_spell[future]
                 try:
-                    result = future.result(timeout=8)  # Individual timeout
+                    result = future.result(timeout=12)  # Individual timeout
                     pricing_results[str(spell_id)] = result
                 except Exception as e:
                     logger.error(f"Failed to get pricing for spell {spell_id}: {e}")
                     pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 
                 # Rate limiting between requests
-                time.sleep(0.2)
+                time.sleep(0.5)
         
         # Save cache after batch processing
         save_cache_to_disk()
@@ -1199,7 +1226,8 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'cached_classes': len(spells_cache),
-        'cached_pricing': len(pricing_cache)
+        'cached_pricing': len(pricing_cache),
+        'cached_spell_details': len(spell_details_cache)
     })
 
 @app.route('/api/cache/save', methods=['POST'])
@@ -1211,7 +1239,8 @@ def save_cache():
             'message': 'Cache saved successfully',
             'timestamp': datetime.now().isoformat(),
             'cached_classes': len(spells_cache),
-            'cached_pricing': len(pricing_cache)
+            'cached_pricing': len(pricing_cache),
+        'cached_spell_details': len(spell_details_cache)
         })
     except Exception as e:
         logger.error(f"Error saving cache: {e}")
@@ -1220,16 +1249,17 @@ def save_cache():
 @app.route('/api/cache/clear', methods=['POST'])
 def clear_cache():
     """Clear all cached data"""
-    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
     
     try:
         spells_cache.clear()
         cache_timestamp.clear()
         last_scrape_time.clear()
         pricing_cache.clear()
+        spell_details_cache.clear()
         
         # Remove cache files
-        for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, METADATA_CACHE_FILE]:
+        for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, SPELL_DETAILS_CACHE_FILE, METADATA_CACHE_FILE]:
             if os.path.exists(cache_file):
                 os.remove(cache_file)
         

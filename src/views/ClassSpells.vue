@@ -135,6 +135,15 @@
           <h2 class="level-title">Level {{ level }}</h2>
           <div class="level-header-right">
             <span class="level-count">{{ levelGroup.length }} {{ levelGroup.length === 1 ? 'Spell' : 'Spells' }}</span>
+            <button 
+              class="buy-all-btn" 
+              @click="buyAllSpellsAtLevel(levelGroup)" 
+              :disabled="!canBuyAllSpellsAtLevel(levelGroup)"
+              :title="getBuyAllButtonTitle(levelGroup)"
+            >
+              <span>🛒</span>
+              <span>Buy All</span>
+            </button>
             <button class="go-to-top-btn" @click="scrollToTop" title="Go to top of page">
               <span>Top</span>
               <span class="top-arrow">↑</span>
@@ -222,13 +231,16 @@
                 </div>
               </div>
               <div v-else-if="spell.pricing && (spell.pricing.unknown || !hasAnyPrice(spell.pricing))" class="spell-pricing-unknown">
-                <span class="pricing-status">Unknown Cost</span>
+                <span v-if="retryQueue.has(spell.spell_id)" class="pricing-status queued">Queued for retry</span>
+                <span v-else class="pricing-status">Unknown Cost</span>
                 <button 
                   @click.stop="retryPricingFetch(spell.spell_id)"
-                  class="retry-pricing-btn"
-                  title="Retry fetching price"
+                  :class="['retry-pricing-btn', { 'queued': retryQueue.has(spell.spell_id), 'disabled': isFetchingPricing && retryQueue.has(spell.spell_id) }]"
+                  :disabled="isFetchingPricing && retryQueue.has(spell.spell_id)"
+                  :title="getRetryButtonTitle(spell.spell_id)"
                 >
-                  🔄
+                  <span v-if="retryQueue.has(spell.spell_id)">⏳</span>
+                  <span v-else>🔄</span>
                 </button>
               </div>
               <div v-else class="spell-pricing-loading">
@@ -650,6 +662,9 @@ export default {
     const processedSpellsForPricing = ref(0)
     const pricingCache = ref({})
     
+    // Spell details cache
+    const spellDetailsCache = ref({})
+    
     // Circuit breaker for pricing failures
     const pricingFailureCount = ref(0)
     const lastFailureTime = ref(null)
@@ -983,14 +998,22 @@ export default {
     }
 
     const fetchSpellDetails = async (spellId) => {
+      // Check cache first
+      if (spellDetailsCache.value[spellId]) {
+        console.log(`📦 Using cached spell details for ${spellId}`)
+        spellDetails.value = spellDetailsCache.value[spellId]
+        return
+      }
+      
       loadingSpellDetails.value = true
       spellDetailsError.value = null
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}?_t=${Date.now()}`, {
+        console.log(`🌐 Fetching fresh spell details for ${spellId}`)
+        const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}`, {
           headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           }
         })
         if (!response.ok) {
@@ -1007,6 +1030,11 @@ export default {
         if (details.components && Array.isArray(details.components)) {
           details.components = details.components.filter(c => c && typeof c === 'object' && c.name && c.url)
         }
+        
+        // Cache the details
+        spellDetailsCache.value[spellId] = details
+        saveSpellDetailsToLocalStorage(spellId, details)
+        console.log(`✅ Cached spell details for ${spellId}`)
         
         spellDetails.value = details
         
@@ -1425,14 +1453,15 @@ export default {
     
     const hasValidPricing = (spell) => {
       // A spell has valid pricing if:
-      // 1. It has pricing data 
-      // 2. Pricing is not null
-      // 3. Pricing has finished loading (progress = 100%)
-      // 4. Pricing is not marked as unknown (failed fetch)
+      // 1. It has pricing data and pricing is not null
+      // 2. Pricing has finished loading (progress = 100%)
+      // 3. Pricing is not marked as unknown (failed fetch)
+      // 4. At least one currency value is greater than 0 (has actual price)
       return spell.pricing && 
              (spell.pricing !== null) && 
              getPricingProgress(spell.spell_id) === 100 && 
-             !spell.pricing.unknown
+             !spell.pricing.unknown &&
+             hasAnyPrice(spell.pricing)
     }
     
     const getCartButtonTitle = (spell) => {
@@ -1445,7 +1474,28 @@ export default {
       if (spell.pricing.unknown) {
         return 'Price unknown - cannot add to cart'
       }
+      if (spell.pricing && !hasAnyPrice(spell.pricing)) {
+        return 'No price available - cannot add to cart'
+      }
       return isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'
+    }
+    
+    const getRetryButtonTitle = (spellId) => {
+      if (retryQueue.value.has(spellId)) {
+        if (isFetchingPricing.value) {
+          return 'Retry queued - click again if stuck after 10 seconds'
+        }
+        return 'Retry queued - will fetch shortly'
+      }
+      return 'Retry fetching price'
+    }
+    
+    const forceProcessRetryQueue = () => {
+      if (retryQueue.value.size > 0) {
+        console.log(`🔥 Force processing retry queue with ${retryQueue.value.size} items`)
+        isFetchingPricing.value = false // Reset the flag
+        fetchPricingForSpells()
+      }
     }
 
     const openCart = () => {
@@ -1462,7 +1512,70 @@ export default {
       }
     }
     
+    // Buy All functionality for level groups
+    const canBuyAllSpellsAtLevel = (levelGroup) => {
+      // Can buy all if at least one spell has valid pricing
+      return levelGroup.some(spell => hasValidPricing(spell))
+    }
+    
+    const getBuyAllButtonTitle = (levelGroup) => {
+      const validSpells = levelGroup.filter(spell => hasValidPricing(spell))
+      const invalidSpells = levelGroup.filter(spell => !hasValidPricing(spell))
+      
+      if (validSpells.length === 0) {
+        return 'No spells available for purchase at this level'
+      }
+      
+      if (invalidSpells.length === 0) {
+        return `Add all ${validSpells.length} spells to cart`
+      }
+      
+      return `Add ${validSpells.length} of ${levelGroup.length} spells to cart (${invalidSpells.length} unavailable)`
+    }
+    
+    const buyAllSpellsAtLevel = (levelGroup) => {
+      const validSpells = levelGroup.filter(spell => hasValidPricing(spell))
+      
+      if (validSpells.length === 0) {
+        console.log('No valid spells to add at this level')
+        return
+      }
+      
+      let addedCount = 0
+      let skippedCount = 0
+      
+      validSpells.forEach(spell => {
+        if (!isInCart(spell.spell_id)) {
+          const success = cartStore.addItem(spell)
+          if (success) {
+            addedCount++
+          } else {
+            skippedCount++
+          }
+        } else {
+          skippedCount++ // Already in cart
+        }
+      })
+      
+      console.log(`Buy All: Added ${addedCount} spells, skipped ${skippedCount} spells`)
+      
+      // Optional: Show user feedback
+      if (addedCount > 0) {
+        console.log(`✅ Added ${addedCount} spells to cart!`)
+      }
+      if (skippedCount > 0) {
+        console.log(`ℹ️ Skipped ${skippedCount} spells (already in cart or invalid pricing)`)
+      }
+    }
+    
     const retryPricingFetch = async (spellId) => {
+      // If this spell is already queued and user clicks again, force process the queue
+      if (retryQueue.value.has(spellId)) {
+        console.log(`🔥 Force processing retry queue for spell ${spellId} (user clicked again)`)
+        forceProcessRetryQueue()
+        return
+      }
+      
       console.log(`🔄 Queueing retry for spell ${spellId}`)
       
       // Find the spell object
@@ -1481,12 +1594,24 @@ export default {
       retryQueue.value.add(spellId)
       console.log(`📋 Added spell ${spellId} to retry queue (queue size: ${retryQueue.value.size})`)
       
-      // If no pricing fetch is currently running, trigger one
+      // If no pricing fetch is currently running, trigger one immediately
       if (!isFetchingPricing.value) {
         console.log('🚀 Starting pricing fetch for retry queue')
         fetchPricingForSpells()
       } else {
-        console.log('⏳ Pricing fetch in progress - retry will be processed next')
+        console.log('⏳ Pricing fetch in progress - will try to process retry in 5 seconds')
+        // Set a timeout to try again if the current fetch seems stuck
+        setTimeout(() => {
+          if (retryQueue.value.has(spellId) && !isFetchingPricing.value) {
+            console.log(`⏰ Timeout triggered - processing queued retry for spell ${spellId}`)
+            fetchPricingForSpells()
+          } else if (retryQueue.value.has(spellId)) {
+            console.log(`⚠️ Retry still queued for spell ${spellId} after timeout - forcing new fetch`)
+            // Force a new fetch even if one seems to be running
+            isFetchingPricing.value = false
+            fetchPricingForSpells()
+          }
+        }, 5000)
       }
     }
 
@@ -1515,8 +1640,9 @@ export default {
       pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
     }
     
-    // localStorage functions for persistent pricing cache
+    // localStorage functions for persistent caching
     const PRICING_CACHE_KEY = 'eq-spell-pricing-cache'
+    const SPELL_DETAILS_CACHE_KEY = 'eq-spell-details-cache'
     
     const savePricingToLocalStorage = (spellId, pricing) => {
       try {
@@ -1573,6 +1699,62 @@ export default {
       }
     }
     
+    // Spell details caching functions
+    const saveSpellDetailsToLocalStorage = (spellId, details) => {
+      try {
+        const existingCache = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        existingCache[spellId] = {
+          ...details,
+          cached_at: Date.now()
+        }
+        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(existingCache))
+      } catch (error) {
+        console.error('Failed to save spell details to localStorage:', error)
+      }
+    }
+    
+    const loadSpellDetailsFromLocalStorage = () => {
+      try {
+        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        
+        // Filter out expired entries and load valid ones
+        Object.keys(cachedDetails).forEach(spellId => {
+          const cached = cachedDetails[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            const { cached_at, ...details } = cached
+            spellDetailsCache.value[spellId] = details
+          }
+        })
+        
+        console.log(`💾 Loaded ${Object.keys(spellDetailsCache.value).length} cached spell details from localStorage`)
+      } catch (error) {
+        console.error('Failed to load spell details from localStorage:', error)
+      }
+    }
+    
+    const clearExpiredSpellDetailsCache = () => {
+      try {
+        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        const validCache = {}
+        
+        Object.keys(cachedDetails).forEach(spellId => {
+          const cached = cachedDetails[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            validCache[spellId] = cached
+          }
+        })
+        
+        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(validCache))
+        console.log(`🧹 Cleaned spell details cache - kept ${Object.keys(validCache).length} valid entries`)
+      } catch (error) {
+        console.error('Failed to clean spell details cache:', error)
+      }
+    }
+    
     // Check if circuit breaker is open
     const isCircuitBreakerOpen = () => {
       if (pricingFailureCount.value >= FAILURE_THRESHOLD) {
@@ -1612,6 +1794,12 @@ export default {
       }
       
       isFetchingPricing.value = true
+      
+      // Set a timeout to reset the flag if the fetch hangs
+      const fetchTimeout = setTimeout(() => {
+        console.warn('⚠️ Pricing fetch timed out after 60 seconds - resetting state')
+        isFetchingPricing.value = false
+      }, 60000) // 60 second timeout
       
       // Apply cached pricing to spells that don't have it yet
       spells.value.forEach(spell => {
@@ -1659,8 +1847,8 @@ export default {
       })
       
       try {
-        // Use even smaller batch size for better reliability 
-        const batchSize = 2
+        // Use very small batch size for maximum reliability 
+        const batchSize = 1
         for (let i = 0; i < spellsNeedingPricing.length; i += batchSize) {
           const batch = spellsNeedingPricing.slice(i, i + batchSize)
           const spellIds = batch.map(spell => spell.spell_id)
@@ -1678,7 +1866,7 @@ export default {
             const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
               spell_ids: spellIds
             }, {
-              timeout: 20000, // Increased timeout for reliability
+              timeout: 15000, // Balanced timeout for better reliability
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
@@ -1731,12 +1919,12 @@ export default {
               // Try each spell individually with a delay
               for (const spell of batch) {
                 try {
-                  await new Promise(resolve => setTimeout(resolve, 500)) // Small delay between individual retries
+                  await new Promise(resolve => setTimeout(resolve, 1000)) // Longer delay between individual retries
                   
                   const singleResponse = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
                     spell_ids: [spell.spell_id]
                   }, {
-                    timeout: 10000, // Shorter timeout for individual requests
+                    timeout: 12000, // Moderate timeout for individual requests
                     headers: {
                       'Accept': 'application/json',
                       'Content-Type': 'application/json'
@@ -1782,7 +1970,7 @@ export default {
           
           // Longer delay between batches to prevent server overload
           if (i + batchSize < spellsNeedingPricing.length) {
-            await new Promise(resolve => setTimeout(resolve, 1500))
+            await new Promise(resolve => setTimeout(resolve, 2500))
           }
         }
       } catch (error) {
@@ -1803,7 +1991,8 @@ export default {
         processedSpellsForPricing.value = totalSpellsForPricing.value
       }
       
-      // Mark fetching as complete
+      // Clear the timeout and mark fetching as complete
+      clearTimeout(fetchTimeout)
       isFetchingPricing.value = false
     }
 
@@ -1818,10 +2007,12 @@ export default {
       }, 1000) // 1 second debounce to prevent rapid successive calls
     }
     
-    // Initialize pricing cache from localStorage on component mount
+    // Initialize caches from localStorage on component mount
     onMounted(() => {
       loadPricingFromLocalStorage()
       clearExpiredPricingCache()
+      loadSpellDetailsFromLocalStorage()
+      clearExpiredSpellDetailsCache()
     })
     
     watch(spells, debouncedFetchPricing, { immediate: true })
@@ -1890,9 +2081,17 @@ export default {
       openCart,
       removeFromCart,
       clearCart,
+      canBuyAllSpellsAtLevel,
+      getBuyAllButtonTitle,
+      buyAllSpellsAtLevel,
       retryPricingFetch,
+      getRetryButtonTitle,
+      forceProcessRetryQueue,
       // Pricing progress
-      getPricingProgress
+      getPricingProgress,
+      // Retry queue state
+      retryQueue,
+      isFetchingPricing
     }
   }
 }
@@ -2314,6 +2513,45 @@ export default {
   padding: 0.5rem 1rem;
   border-radius: 20px;
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
+}
+
+.buy-all-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  font-family: 'Inter', sans-serif;
+}
+
+.buy-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838, #1ea080);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(40, 167, 69, 0.5);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.buy-all-btn:disabled {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: 0 2px 6px rgba(108, 117, 125, 0.2);
+}
+
+.buy-all-btn:disabled:hover {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  transform: none;
+  box-shadow: 0 2px 6px rgba(108, 117, 125, 0.2);
 }
 
 .go-to-top-btn {
@@ -3762,11 +4000,58 @@ export default {
   height: 20px;
 }
 
-.retry-pricing-btn:hover {
+.retry-pricing-btn:hover:not(.disabled) {
   background: rgba(255, 165, 0, 0.3);
   border-color: rgba(255, 165, 0, 0.6);
   transform: rotate(180deg);
   box-shadow: 0 2px 4px rgba(255, 165, 0, 0.2);
+}
+
+/* Queued retry button state */
+.retry-pricing-btn.queued {
+  background: rgba(52, 152, 219, 0.2);
+  border-color: rgba(52, 152, 219, 0.4);
+  color: rgba(52, 152, 219, 0.9);
+  cursor: wait;
+}
+
+.retry-pricing-btn.queued:hover {
+  background: rgba(52, 152, 219, 0.3);
+  border-color: rgba(52, 152, 219, 0.6);
+  transform: none;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.2);
+}
+
+/* Disabled retry button state */
+.retry-pricing-btn.disabled {
+  background: rgba(108, 117, 125, 0.2);
+  border-color: rgba(108, 117, 125, 0.4);
+  color: rgba(108, 117, 125, 0.6);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.retry-pricing-btn.disabled:hover {
+  background: rgba(108, 117, 125, 0.2);
+  border-color: rgba(108, 117, 125, 0.4);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Queued pricing status text */
+.pricing-status.queued {
+  color: rgba(52, 152, 219, 0.9);
+  font-weight: 600;
+}
+
+/* Hourglass animation for queued retry button */
+.retry-pricing-btn.queued span {
+  animation: hourglass 2s ease-in-out infinite;
+}
+
+@keyframes hourglass {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.1) rotate(180deg); }
 }
 
 .add-to-cart-btn {
