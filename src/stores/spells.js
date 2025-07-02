@@ -3,7 +3,7 @@ import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5013')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5016')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
