@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta
 import logging
 import time
+import psycopg2
+from urllib.parse import urlparse
 
 # Import scrape_spells from the same directory
 from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
@@ -49,23 +51,99 @@ logger = logging.getLogger(__name__)
 # Load configuration
 config = load_config()
 
-# Cache file paths - use Railway volume mount if available, fallback to local
-if os.path.exists('/app/cache'):
-    CACHE_DIR = '/app/cache'  # Railway volume mount
-else:
-    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')  # Local development
-SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
-PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
-SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
-METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
+# Database connection setup
+DATABASE_URL = os.environ.get('DATABASE_URL')
+USE_DATABASE_CACHE = DATABASE_URL is not None
 
-# Create cache directory if it doesn't exist
-try:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    logger.info(f"Cache directory created/verified: {CACHE_DIR}")
-    logger.info(f"Cache directory is writable: {os.access(CACHE_DIR, os.W_OK)}")
-except Exception as e:
-    logger.error(f"Failed to create cache directory {CACHE_DIR}: {e}")
+if USE_DATABASE_CACHE:
+    logger.info("Using PostgreSQL database for cache storage")
+    # Parse DATABASE_URL for connection
+    parsed = urlparse(DATABASE_URL)
+    DB_CONFIG = {
+        'host': parsed.hostname,
+        'port': parsed.port,
+        'database': parsed.path[1:],  # Remove leading slash
+        'user': parsed.username,
+        'password': parsed.password
+    }
+else:
+    logger.info("Using file system for cache storage")
+    # Fallback to file cache for local development
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+    SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
+    PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
+    SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
+    METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
+
+# Initialize cache storage
+def init_cache_storage():
+    """Initialize cache storage (database or file system)"""
+    if USE_DATABASE_CACHE:
+        init_database_cache()
+    else:
+        init_file_cache()
+
+def init_database_cache():
+    """Initialize PostgreSQL tables for cache storage"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Create cache tables
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS spell_cache (
+                class_name VARCHAR(50) PRIMARY KEY,
+                data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pricing_cache (
+                spell_id VARCHAR(50) PRIMARY KEY,
+                data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS spell_details_cache (
+                spell_id VARCHAR(50) PRIMARY KEY,
+                data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cache_metadata (
+                key VARCHAR(100) PRIMARY KEY,
+                value JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info("✓ Database cache tables initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"✗ Failed to initialize database cache: {e}")
+
+def init_file_cache():
+    """Initialize file system cache (fallback for local development)"""
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        logger.info(f"Cache directory created/verified: {CACHE_DIR}")
+        logger.info(f"Cache directory is writable: {os.access(CACHE_DIR, os.W_OK)}")
+    except Exception as e:
+        logger.error(f"Failed to create cache directory {CACHE_DIR}: {e}")
+
+# Initialize cache storage
+init_cache_storage()
 
 # Data storage
 spells_cache = {}
@@ -76,34 +154,77 @@ last_scrape_time = {}
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
-def load_cache_from_disk():
-    """Load cached data from JSON files"""
+def load_cache_from_storage():
+    """Load cached data from database or files"""
+    if USE_DATABASE_CACHE:
+        load_cache_from_database()
+    else:
+        load_cache_from_files()
+
+def load_cache_from_database():
+    """Load cached data from PostgreSQL database"""
     global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
     
-    logger.info(f"=== CACHE LOADING DEBUG INFO ===")
+    logger.info(f"=== DATABASE CACHE LOADING ===")
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Load spells cache
+        cursor.execute("SELECT class_name, data FROM spell_cache")
+        spell_rows = cursor.fetchall()
+        spells_cache = {row[0]: row[1] for row in spell_rows}
+        logger.info(f"✓ Loaded {len(spells_cache)} classes from database spell cache")
+        
+        # Load pricing cache
+        cursor.execute("SELECT spell_id, data FROM pricing_cache")
+        pricing_rows = cursor.fetchall()
+        pricing_cache = {row[0]: row[1] for row in pricing_rows}
+        logger.info(f"✓ Loaded {len(pricing_cache)} spells from database pricing cache")
+        
+        # Load spell details cache
+        cursor.execute("SELECT spell_id, data FROM spell_details_cache")
+        details_rows = cursor.fetchall()
+        spell_details_cache = {row[0]: row[1] for row in details_rows}
+        logger.info(f"✓ Loaded {len(spell_details_cache)} spell details from database cache")
+        
+        # Load metadata
+        cursor.execute("SELECT key, value FROM cache_metadata")
+        metadata_rows = cursor.fetchall()
+        for key, value in metadata_rows:
+            if key == 'cache_timestamp':
+                cache_timestamp.update(value)
+            elif key == 'last_scrape_time':
+                last_scrape_time.update(value)
+        
+        logger.info(f"✓ Loaded cache metadata for {len(cache_timestamp)} classes")
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"=== DATABASE CACHE LOADING COMPLETE ===")
+        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells, Details: {len(spell_details_cache)} spells")
+        
+    except Exception as e:
+        logger.error(f"✗ Error loading cache from database: {e}")
+        # Initialize empty caches if loading fails
+        spells_cache = {}
+        pricing_cache = {}
+        spell_details_cache = {}
+        cache_timestamp = {}
+        last_scrape_time = {}
+
+def load_cache_from_files():
+    """Load cached data from JSON files (fallback for local development)"""
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    
+    logger.info(f"=== FILE CACHE LOADING ===")
     logger.info(f"Cache directory: {CACHE_DIR}")
     logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
-    logger.info(f"Working directory: {os.getcwd()}")
-    logger.info(f"Python path: {os.path.dirname(os.path.abspath(__file__))}")
-    
-    # List contents of parent directory to see what's available
-    parent_dir = os.path.dirname(CACHE_DIR)
-    logger.info(f"Parent directory ({parent_dir}) contents: {os.listdir(parent_dir) if os.path.exists(parent_dir) else 'Does not exist'}")
-    
-    # List cache directory contents if it exists
-    if os.path.exists(CACHE_DIR):
-        cache_contents = os.listdir(CACHE_DIR)
-        logger.info(f"Cache directory contents: {cache_contents}")
-        for item in cache_contents:
-            item_path = os.path.join(CACHE_DIR, item)
-            logger.info(f"  {item}: {os.path.getsize(item_path)} bytes")
-    else:
-        logger.info("Cache directory does not exist")
     
     try:
         # Load spells cache
-        logger.info(f"Checking spells cache file: {SPELLS_CACHE_FILE}")
-        logger.info(f"Spells cache file exists: {os.path.exists(SPELLS_CACHE_FILE)}")
         if os.path.exists(SPELLS_CACHE_FILE):
             with open(SPELLS_CACHE_FILE, 'r') as f:
                 spells_cache = json.load(f)
@@ -112,8 +233,6 @@ def load_cache_from_disk():
             logger.warning(f"✗ Spells cache file not found: {SPELLS_CACHE_FILE}")
         
         # Load pricing cache
-        logger.info(f"Checking pricing cache file: {PRICING_CACHE_FILE}")
-        logger.info(f"Pricing cache file exists: {os.path.exists(PRICING_CACHE_FILE)}")
         if os.path.exists(PRICING_CACHE_FILE):
             with open(PRICING_CACHE_FILE, 'r') as f:
                 pricing_cache = json.load(f)
@@ -125,11 +244,9 @@ def load_cache_from_disk():
         if os.path.exists(SPELL_DETAILS_CACHE_FILE):
             with open(SPELL_DETAILS_CACHE_FILE, 'r') as f:
                 spell_details_cache = json.load(f)
-                logger.info(f"Loaded {len(spell_details_cache)} spell details from cache")
+                logger.info(f"✓ Loaded {len(spell_details_cache)} spell details from cache")
         
         # Load metadata
-        logger.info(f"Checking metadata cache file: {METADATA_CACHE_FILE}")
-        logger.info(f"Metadata cache file exists: {os.path.exists(METADATA_CACHE_FILE)}")
         if os.path.exists(METADATA_CACHE_FILE):
             with open(METADATA_CACHE_FILE, 'r') as f:
                 metadata = json.load(f)
@@ -138,15 +255,12 @@ def load_cache_from_disk():
                 logger.info(f"✓ Successfully loaded cache metadata for {len(cache_timestamp)} classes")
         else:
             logger.warning(f"✗ Metadata cache file not found: {METADATA_CACHE_FILE}")
-            
-        logger.info(f"=== CACHE LOADING SUMMARY ===")
-        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells, Details: {len(spell_details_cache)} spells")
-        logger.info(f"Cache timestamps: {len(cache_timestamp)} classes")
-        logger.info(f"=== END CACHE LOADING ===")
-                
+        
+        logger.info(f"=== FILE CACHE LOADING COMPLETE ===")
+        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells")
                 
     except Exception as e:
-        logger.error(f"Error loading cache from disk: {e}")
+        logger.error(f"✗ Error loading cache from files: {e}")
         # Initialize empty caches if loading fails
         spells_cache = {}
         pricing_cache = {}
@@ -154,9 +268,82 @@ def load_cache_from_disk():
         cache_timestamp = {}
         last_scrape_time = {}
 
-def save_cache_to_disk():
-    """Save cached data to JSON files"""
-    logger.info(f"=== SAVING CACHE TO DISK ===")
+def save_cache_to_storage():
+    """Save cached data to database or files"""
+    if USE_DATABASE_CACHE:
+        save_cache_to_database()
+    else:
+        save_cache_to_files()
+
+def save_cache_to_database():
+    """Save cached data to PostgreSQL database"""
+    logger.info(f"=== SAVING CACHE TO DATABASE ===")
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Save spells cache
+        logger.info(f"Saving spells cache ({len(spells_cache)} classes) to database")
+        for class_name, data in spells_cache.items():
+            cursor.execute("""
+                INSERT INTO spell_cache (class_name, data, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (class_name) 
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """, (class_name, json.dumps(data)))
+        
+        # Save pricing cache
+        logger.info(f"Saving pricing cache ({len(pricing_cache)} entries) to database")
+        for spell_id, data in pricing_cache.items():
+            cursor.execute("""
+                INSERT INTO pricing_cache (spell_id, data, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (spell_id) 
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """, (spell_id, json.dumps(data)))
+        
+        # Save spell details cache
+        logger.info(f"Saving spell details cache ({len(spell_details_cache)} entries) to database")
+        for spell_id, data in spell_details_cache.items():
+            cursor.execute("""
+                INSERT INTO spell_details_cache (spell_id, data, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (spell_id) 
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """, (spell_id, json.dumps(data)))
+        
+        # Save metadata
+        metadata_items = [
+            ('cache_timestamp', cache_timestamp),
+            ('last_scrape_time', last_scrape_time),
+            ('last_updated', datetime.now().isoformat())
+        ]
+        
+        for key, value in metadata_items:
+            cursor.execute("""
+                INSERT INTO cache_metadata (key, value, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (key) 
+                DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+            """, (key, json.dumps(value)))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✓ Successfully saved all cache data to database")
+        logger.info(f"=== DATABASE CACHE SAVE COMPLETE ===")
+        
+    except Exception as e:
+        logger.error(f"✗ Error saving cache to database: {e}")
+        logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+def save_cache_to_files():
+    """Save cached data to JSON files (fallback for local development)"""
+    logger.info(f"=== SAVING CACHE TO FILES ===")
     logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
     logger.info(f"Cache directory writable: {os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else 'Directory does not exist'}")
     
@@ -190,17 +377,17 @@ def save_cache_to_disk():
             json.dump(metadata, f, indent=2)
         logger.info(f"✓ Metadata cache saved successfully")
             
-        logger.info(f"✓ Successfully saved all cache files to disk")
-        logger.info(f"=== CACHE SAVE COMPLETE ===")
+        logger.info(f"✓ Successfully saved all cache files")
+        logger.info(f"=== FILE CACHE SAVE COMPLETE ===")
         
     except Exception as e:
-        logger.error(f"✗ Error saving cache to disk: {e}")
+        logger.error(f"✗ Error saving cache to files: {e}")
         logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Load existing cache on startup
-load_cache_from_disk()
+load_cache_from_storage()
 
 
 def is_cache_expired(class_name):
@@ -226,7 +413,7 @@ def clear_expired_cache():
     
     # Save changes to disk if any classes were cleared
     if expired_classes:
-        save_cache_to_disk()
+        save_cache_to_storage()
 
 def can_scrape_class(class_name):
     """Check if enough time has passed since last scrape for rate limiting"""
@@ -332,7 +519,7 @@ def get_spells(class_name):
         last_scrape_time[class_name] = current_time
         
         # Save to disk after successful scrape
-        save_cache_to_disk()
+        save_cache_to_storage()
         
         logger.info(f"Successfully scraped {len(spells)} spells for {class_name} in {scrape_time:.2f}s")
         
@@ -402,7 +589,7 @@ def scrape_all_classes():
                 print(f"Error scraping {class_name}: {e}")
         
         # Save to disk after scraping all classes
-        save_cache_to_disk()
+        save_cache_to_storage()
         
         return jsonify({
             'message': 'All classes scraped successfully',
@@ -477,7 +664,7 @@ def get_spell_details(spell_id):
         
         # Save cache periodically (every 5 new entries)
         if len(spell_details_cache) % 5 == 0:
-            save_cache_to_disk()
+            save_cache_to_storage()
         
         logger.info(f"Successfully parsed and cached spell details for ID {spell_id}")
         return jsonify(details)
@@ -1199,7 +1386,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 pricing_cache[str(spell_id)] = result
                 # Save pricing cache periodically (every 10 new entries)
                 if len(pricing_cache) % 10 == 0:
-                    save_cache_to_disk()
+                    save_cache_to_storage()
                 return result
             else:
                 if attempt == max_retries:
@@ -1207,7 +1394,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                     pricing_cache[str(spell_id)] = result
                     # Save on failure too
                     if len(pricing_cache) % 10 == 0:
-                        save_cache_to_disk()
+                        save_cache_to_storage()
                     return result
                 
         except Exception as e:
@@ -1217,7 +1404,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 pricing_cache[str(spell_id)] = result
                 # Save on failure too
                 if len(pricing_cache) % 10 == 0:
-                    save_cache_to_disk()
+                    save_cache_to_storage()
                 return result
             
             # Exponential backoff: 0.5s, 1s, 2s
@@ -1228,7 +1415,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
     pricing_cache[str(spell_id)] = result
     # Save fallback too
     if len(pricing_cache) % 10 == 0:
-        save_cache_to_disk()
+        save_cache_to_storage()
     return result
 
 @app.route('/api/spell-pricing', methods=['POST'])
@@ -1269,7 +1456,7 @@ def get_spell_pricing():
                 time.sleep(0.5)
         
         # Save cache after batch processing
-        save_cache_to_disk()
+        save_cache_to_storage()
         
         return jsonify({
             'pricing': pricing_results,
@@ -1296,7 +1483,7 @@ def health_check():
 def save_cache():
     """Manually save cache to disk"""
     try:
-        save_cache_to_disk()
+        save_cache_to_storage()
         return jsonify({
             'message': 'Cache saved successfully',
             'timestamp': datetime.now().isoformat(),
@@ -1336,18 +1523,69 @@ def clear_cache():
 @app.route('/api/cache/status', methods=['GET'])
 def cache_status():
     """Get detailed cache status"""
-    cache_files_exist = {
-        'spells': os.path.exists(SPELLS_CACHE_FILE),
-        'pricing': os.path.exists(PRICING_CACHE_FILE),
-        'metadata': os.path.exists(METADATA_CACHE_FILE)
-    }
+    storage_info = {}
     
-    cache_sizes = {}
-    for name, path in [('spells', SPELLS_CACHE_FILE), ('pricing', PRICING_CACHE_FILE), ('metadata', METADATA_CACHE_FILE)]:
-        if os.path.exists(path):
-            cache_sizes[name] = os.path.getsize(path)
-        else:
-            cache_sizes[name] = 0
+    if USE_DATABASE_CACHE:
+        # Get database table info
+        try:
+            conn = psycopg2.connect(**DB_CONFIG)
+            cursor = conn.cursor()
+            
+            # Get row counts for each table
+            cursor.execute("SELECT COUNT(*) FROM spell_cache")
+            spell_cache_rows = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM pricing_cache")  
+            pricing_cache_rows = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM spell_details_cache")
+            details_cache_rows = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM cache_metadata")
+            metadata_rows = cursor.fetchone()[0]
+            
+            cursor.close()
+            conn.close()
+            
+            storage_info = {
+                'type': 'database',
+                'tables': {
+                    'spell_cache_rows': spell_cache_rows,
+                    'pricing_cache_rows': pricing_cache_rows,
+                    'spell_details_cache_rows': details_cache_rows,
+                    'metadata_rows': metadata_rows
+                },
+                'database_url_available': True
+            }
+        except Exception as e:
+            storage_info = {
+                'type': 'database',
+                'error': str(e),
+                'database_url_available': True
+            }
+    else:
+        # Get file system info
+        cache_files_exist = {
+            'spells': os.path.exists(SPELLS_CACHE_FILE),
+            'pricing': os.path.exists(PRICING_CACHE_FILE),
+            'metadata': os.path.exists(METADATA_CACHE_FILE)
+        }
+        
+        cache_sizes = {}
+        for name, path in [('spells', SPELLS_CACHE_FILE), ('pricing', PRICING_CACHE_FILE), ('metadata', METADATA_CACHE_FILE)]:
+            if os.path.exists(path):
+                cache_sizes[name] = os.path.getsize(path)
+            else:
+                cache_sizes[name] = 0
+        
+        storage_info = {
+            'type': 'files',
+            'files_exist': cache_files_exist,
+            'file_sizes_bytes': cache_sizes,
+            'cache_directory': CACHE_DIR,
+            'cache_directory_exists': os.path.exists(CACHE_DIR),
+            'cache_directory_writable': os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else False
+        }
     
     return jsonify({
         'memory_cache': {
@@ -1357,17 +1595,12 @@ def cache_status():
             'timestamps': len(cache_timestamp),
             'last_scrape_times': len(last_scrape_time)
         },
-        'disk_cache': {
-            'files_exist': cache_files_exist,
-            'file_sizes_bytes': cache_sizes,
-            'cache_directory': CACHE_DIR,
-            'cache_directory_exists': os.path.exists(CACHE_DIR),
-            'cache_directory_writable': os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else False
-        },
+        'storage': storage_info,
         'environment': {
             'working_directory': os.getcwd(),
             'python_path': os.path.dirname(os.path.abspath(__file__)),
-            'cache_dir_absolute': os.path.abspath(CACHE_DIR)
+            'database_url_available': DATABASE_URL is not None,
+            'cache_storage_type': 'database' if USE_DATABASE_CACHE else 'files'
         },
         'config': {
             'cache_expiry_hours': CACHE_EXPIRY_HOURS,
