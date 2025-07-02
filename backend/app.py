@@ -1031,14 +1031,14 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 return result
             else:
                 if attempt == max_retries:
-                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                     pricing_cache[str(spell_id)] = result
                     return result
                 
         except Exception as e:
             logger.warning(f"Attempt {attempt + 1} failed for spell {spell_id}: {e}")
             if attempt == max_retries:
-                result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 pricing_cache[str(spell_id)] = result
                 return result
             
@@ -1046,7 +1046,7 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
             time.sleep(0.5 * (2 ** attempt))
     
     # Fallback
-    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
     pricing_cache[str(spell_id)] = result
     return result
 
@@ -1082,7 +1082,7 @@ def get_spell_pricing():
                     pricing_results[str(spell_id)] = result
                 except Exception as e:
                     logger.error(f"Failed to get pricing for spell {spell_id}: {e}")
-                    pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                    pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 
                 # Rate limiting between requests
                 time.sleep(0.2)

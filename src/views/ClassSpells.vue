@@ -1372,6 +1372,12 @@ export default {
 
     // Cart functionality
     const addToCart = (spell) => {
+      // Prevent adding spells with unknown pricing
+      if (!hasValidPricing(spell)) {
+        console.log(`Cannot add ${spell.name} to cart - unknown pricing`)
+        return
+      }
+      
       // Check if item is already in cart
       if (isInCart(spell.spell_id)) {
         // Remove from cart if already in cart
@@ -1540,13 +1546,13 @@ export default {
         }
       } catch (error) {
         console.error('Critical error in pricing fetch process:', error)
-        // Set empty pricing for any remaining spells to prevent endless loading
+        // Set unknown pricing for any remaining spells to prevent endless loading
         spellsNeedingPricing.forEach(spell => {
           if (!spell.pricing) {
-            const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
-            spell.pricing = emptyPricing
-            // Cache the empty pricing to prevent re-fetching
-            pricingCache.value[spell.spell_id] = emptyPricing
+            const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+            spell.pricing = unknownPricing
+            // Cache the unknown pricing to prevent re-fetching
+            pricingCache.value[spell.spell_id] = unknownPricing
           }
           // Set progress to 100% even for failed spells to stop loading state
           setPricingProgress(spell.spell_id, 100)
@@ -3468,8 +3474,8 @@ export default {
   text-align: right;
 }
 
-.spell-pricing-free {
-  color: rgba(255, 255, 255, 0.7);
+.spell-pricing-unknown {
+  color: rgba(255, 165, 0, 0.8);
   font-size: 0.8rem;
   font-style: italic;
 }
@@ -3513,6 +3519,20 @@ export default {
   background: linear-gradient(135deg, #5a6268, #495057);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+/* Disabled add to cart button for unknown pricing */
+.add-to-cart-btn.disabled {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: 0 1px 3px rgba(108, 117, 125, 0.2);
+}
+
+.add-to-cart-btn.disabled:hover {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  transform: none;
+  box-shadow: 0 1px 3px rgba(108, 117, 125, 0.2);
 }
 
 /* Mobile adjustments for spell footer */
@@ -3766,8 +3786,8 @@ export default {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.cart-pricing-free {
-  color: rgba(255, 255, 255, 0.6);
+.cart-pricing-unknown {
+  color: rgba(255, 165, 0, 0.8);
   font-style: italic;
 }
 
@@ -3819,7 +3839,7 @@ export default {
   flex-wrap: wrap;
 }
 
-.cart-total-free {
+.cart-total-none {
   color: rgba(255, 255, 255, 0.6);
   font-style: italic;
   font-size: 1.1rem;
