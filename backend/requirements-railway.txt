@@ -1,0 +1,5 @@
+# Railway deployment requirements
+# Minimal test dependencies needed for pre-deploy testing
+
+pytest==7.4.3
+pytest-mock==3.12.0

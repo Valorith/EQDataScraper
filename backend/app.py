@@ -140,6 +140,18 @@ def init_database_cache():
         """)
         
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pricing_fetch_attempts (
+                spell_id VARCHAR(50) PRIMARY KEY,
+                attempt_count INTEGER DEFAULT 1,
+                last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN DEFAULT FALSE,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS cache_metadata (
                 key VARCHAR(100) PRIMARY KEY,
                 value JSONB NOT NULL,
@@ -169,14 +181,162 @@ init_cache_storage()
 
 # Data storage
 spells_cache = {}
-pricing_cache = {}
 spell_details_cache = {}
 cache_timestamp = {}
 pricing_cache_timestamp = {}  # Track when each spell's pricing was cached
 last_scrape_time = {}
+pricing_lookup = {}  # Fast lookup index for pricing data from spell_details_cache
+pricing_cache_loaded = False  # Track if we've loaded pricing from DB into memory
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
+
+def load_all_pricing_to_memory():
+    """Load all pricing data from database to memory cache (one-time operation)"""
+    global pricing_lookup, pricing_cache_loaded
+    
+    if pricing_cache_loaded:
+        return
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Load ALL pricing data in one query to minimize DB hits
+        cursor.execute("""
+            SELECT spell_id, data->'pricing' as pricing 
+            FROM spell_details_cache 
+            WHERE data->'pricing' IS NOT NULL
+        """)
+        
+        pricing_lookup = {}
+        for row in cursor.fetchall():
+            spell_id, pricing = row
+            if pricing:
+                pricing_lookup[spell_id] = pricing
+        
+        cursor.close()
+        conn.close()
+        
+        pricing_cache_loaded = True
+        logger.info(f"Loaded {len(pricing_lookup)} pricing entries to memory cache")
+        
+    except Exception as e:
+        logger.warning(f"Error loading pricing to memory: {e}")
+
+def record_pricing_fetch_attempt(spell_id, success=False, error_message=None):
+    """Record a pricing fetch attempt in the database"""
+    if not USE_DATABASE_CACHE:
+        return
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO pricing_fetch_attempts (spell_id, success, error_message, last_attempt)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (spell_id) DO UPDATE SET
+                attempt_count = pricing_fetch_attempts.attempt_count + 1,
+                last_attempt = CURRENT_TIMESTAMP,
+                success = EXCLUDED.success,
+                error_message = EXCLUDED.error_message,
+                updated_at = CURRENT_TIMESTAMP
+        """, (spell_id, success, error_message))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+    except Exception as e:
+        logger.warning(f"Error recording pricing fetch attempt for {spell_id}: {e}")
+
+def get_unfetched_spells(spell_ids):
+    """Get spells that have never had pricing fetch attempted"""
+    if not USE_DATABASE_CACHE or not spell_ids:
+        return spell_ids  # Return all if no DB or no spells
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Find spells that have never been attempted
+        cursor.execute("""
+            SELECT unnest(%s::varchar[]) as spell_id
+            EXCEPT
+            SELECT spell_id FROM pricing_fetch_attempts
+        """, (spell_ids,))
+        
+        unfetched_spells = [row[0] for row in cursor.fetchall()]
+        
+        cursor.close()
+        conn.close()
+        
+        return unfetched_spells
+        
+    except Exception as e:
+        logger.warning(f"Error checking unfetched spells: {e}")
+        return spell_ids  # Return all on error
+
+def get_failed_pricing_spells(spell_ids):
+    """Get spells that have been attempted but failed to get pricing"""
+    if not USE_DATABASE_CACHE or not spell_ids:
+        return []
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Find spells that were attempted but failed
+        cursor.execute("""
+            SELECT spell_id FROM pricing_fetch_attempts 
+            WHERE spell_id = ANY(%s) AND success = FALSE
+        """, (spell_ids,))
+        
+        failed_spells = [row[0] for row in cursor.fetchall()]
+        
+        cursor.close()
+        conn.close()
+        
+        return failed_spells
+        
+    except Exception as e:
+        logger.warning(f"Error checking failed pricing spells: {e}")
+        return []
+
+def get_bulk_pricing_from_db(spell_ids):
+    """Efficiently get pricing for multiple spells using in-memory cache"""
+    if not spell_ids:
+        return {}
+    
+    # Ensure pricing data is loaded to memory
+    if not pricing_cache_loaded:
+        load_all_pricing_to_memory()
+    
+    # Use in-memory lookup (much faster than DB queries)
+    pricing_data = {}
+    for spell_id in spell_ids:
+        if spell_id in pricing_lookup:
+            pricing_data[spell_id] = pricing_lookup[spell_id]
+    
+    return pricing_data
+
+def rebuild_pricing_lookup():
+    """Rebuild the fast pricing lookup index from spell_details_cache"""
+    global pricing_lookup
+    pricing_lookup = {}
+    failed_count = 0
+    success_count = 0
+    
+    for spell_id, details in spell_details_cache.items():
+        if details.get('pricing'):
+            pricing_lookup[spell_id] = details['pricing']
+            if details['pricing'].get('unknown') == True:
+                failed_count += 1
+            else:
+                success_count += 1
+    
+    logger.info(f"Rebuilt pricing lookup index with {len(pricing_lookup)} entries ({success_count} successful, {failed_count} failed)")
 
 def load_cache_from_storage():
     """Load cached data from database or files"""
@@ -184,10 +344,13 @@ def load_cache_from_storage():
         load_cache_from_database()
     else:
         load_cache_from_files()
+    
+    # Rebuild pricing lookup after loading cache
+    rebuild_pricing_lookup()
 
 def load_cache_from_database():
     """Load cached data from PostgreSQL database"""
-    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache
     
     logger.info(f"=== DATABASE CACHE LOADING ===")
     
@@ -198,14 +361,14 @@ def load_cache_from_database():
         # Load spells cache
         cursor.execute("SELECT class_name, data FROM spell_cache")
         spell_rows = cursor.fetchall()
-        spells_cache = {row[0]: row[1] for row in spell_rows}
+        spells_cache = {row[0].lower(): row[1] for row in spell_rows}
         logger.info(f"✓ Loaded {len(spells_cache)} classes from database spell cache")
         
         # Load pricing cache
         cursor.execute("SELECT spell_id, data FROM pricing_cache")
         pricing_rows = cursor.fetchall()
-        pricing_cache = {row[0]: row[1] for row in pricing_rows}
-        logger.info(f"✓ Loaded {len(pricing_cache)} spells from database pricing cache")
+        # pricing_cache table is deprecated - using spell_details_cache instead
+        logger.info(f"✓ Loaded 0 spells from database pricing cache (deprecated)")
         
         # Load spell details cache
         cursor.execute("SELECT spell_id, data FROM spell_details_cache")
@@ -218,11 +381,13 @@ def load_cache_from_database():
         metadata_rows = cursor.fetchall()
         for key, value in metadata_rows:
             if key == 'cache_timestamp':
-                cache_timestamp.update(value)
+                # Convert class names to lowercase for consistency
+                cache_timestamp.update({k.lower(): v for k, v in value.items()})
             elif key == 'pricing_cache_timestamp':
                 pricing_cache_timestamp.update(value)
             elif key == 'last_scrape_time':
-                last_scrape_time.update(value)
+                # Convert class names to lowercase for consistency
+                last_scrape_time.update({k.lower(): v for k, v in value.items()})
         
         logger.info(f"✓ Loaded cache metadata for {len(cache_timestamp)} classes")
         
@@ -230,20 +395,19 @@ def load_cache_from_database():
         conn.close()
         
         logger.info(f"=== DATABASE CACHE LOADING COMPLETE ===")
-        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells, Details: {len(spell_details_cache)} spells")
+        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: 0 spells (deprecated), Details: {len(spell_details_cache)} spells")
         
     except Exception as e:
         logger.error(f"✗ Error loading cache from database: {e}")
         # Initialize empty caches if loading fails
         spells_cache = {}
-        pricing_cache = {}
         spell_details_cache = {}
         cache_timestamp = {}
         last_scrape_time = {}
 
 def load_cache_from_files():
     """Load cached data from JSON files (fallback for local development)"""
-    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache
     
     logger.info(f"=== FILE CACHE LOADING ===")
     logger.info(f"Cache directory: {CACHE_DIR}")
@@ -258,13 +422,8 @@ def load_cache_from_files():
         else:
             logger.warning(f"✗ Spells cache file not found: {SPELLS_CACHE_FILE}")
         
-        # Load pricing cache
-        if os.path.exists(PRICING_CACHE_FILE):
-            with open(PRICING_CACHE_FILE, 'r') as f:
-                pricing_cache = json.load(f)
-                logger.info(f"✓ Successfully loaded {len(pricing_cache)} spells from pricing cache")
-        else:
-            logger.warning(f"✗ Pricing cache file not found: {PRICING_CACHE_FILE}")
+        # Skip loading pricing_cache - deprecated in favor of spell_details_cache
+        logger.info(f"✓ Skipped loading pricing cache (deprecated)")
         
         # Load spell details cache
         if os.path.exists(SPELL_DETAILS_CACHE_FILE):
@@ -284,13 +443,12 @@ def load_cache_from_files():
             logger.warning(f"✗ Metadata cache file not found: {METADATA_CACHE_FILE}")
         
         logger.info(f"=== FILE CACHE LOADING COMPLETE ===")
-        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells")
+        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: 0 spells (deprecated)")
                 
     except Exception as e:
         logger.error(f"✗ Error loading cache from files: {e}")
         # Initialize empty caches if loading fails
         spells_cache = {}
-        pricing_cache = {}
         spell_details_cache = {}
         cache_timestamp = {}
         pricing_cache_timestamp = {}
@@ -313,7 +471,9 @@ def save_cache_to_database():
         
         # Save spells cache
         logger.info(f"Saving spells cache ({len(spells_cache)} classes) to database")
-        for class_name, data in spells_cache.items():
+        # Make a copy to avoid "dictionary changed size during iteration" errors
+        spells_cache_copy = dict(spells_cache)
+        for class_name, data in spells_cache_copy.items():
             cursor.execute("""
                 INSERT INTO spell_cache (class_name, data, updated_at) 
                 VALUES (%s, %s, CURRENT_TIMESTAMP)
@@ -321,19 +481,14 @@ def save_cache_to_database():
                 DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
             """, (class_name, json.dumps(data)))
         
-        # Save pricing cache
-        logger.info(f"Saving pricing cache ({len(pricing_cache)} entries) to database")
-        for spell_id, data in pricing_cache.items():
-            cursor.execute("""
-                INSERT INTO pricing_cache (spell_id, data, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (spell_id) 
-                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-            """, (spell_id, json.dumps(data)))
+        # Skip saving pricing_cache - deprecated in favor of spell_details_cache
+        logger.info(f"Saving pricing cache (0 entries) to database")
         
         # Save spell details cache
         logger.info(f"Saving spell details cache ({len(spell_details_cache)} entries) to database")
-        for spell_id, data in spell_details_cache.items():
+        # Make a copy to avoid "dictionary changed size during iteration" errors
+        spell_details_copy = dict(spell_details_cache)
+        for spell_id, data in spell_details_copy.items():
             cursor.execute("""
                 INSERT INTO spell_details_cache (spell_id, data, updated_at) 
                 VALUES (%s, %s, CURRENT_TIMESTAMP)
@@ -383,10 +538,8 @@ def save_cache_to_files():
             json.dump(spells_cache, f, indent=2)
         logger.info(f"✓ Spells cache saved successfully")
         
-        # Save pricing cache
-        logger.info(f"Saving pricing cache ({len(pricing_cache)} entries) to {PRICING_CACHE_FILE}")
-        with open(PRICING_CACHE_FILE, 'w') as f:
-            json.dump(pricing_cache, f, indent=2)
+        # Skip saving pricing_cache - deprecated in favor of spell_details_cache
+        logger.info(f"Skipped saving pricing cache (deprecated)")
         logger.info(f"✓ Pricing cache saved successfully")
         
         # Save spell details cache
@@ -418,6 +571,7 @@ def save_cache_to_files():
 
 # Load existing cache on startup
 load_cache_from_storage()
+
 
 
 def is_cache_expired(class_name):
@@ -462,7 +616,13 @@ def clear_expired_cache():
     
     # Clear expired pricing cache entries
     for spell_id in expired_pricing:
-        pricing_cache.pop(spell_id, None)
+        # Remove pricing from spell_details_cache but preserve other details
+        if spell_id in spell_details_cache:
+            spell_details_cache[spell_id].pop('pricing', None)
+            # Remove entire entry if it only contained pricing
+            if not spell_details_cache[spell_id]:
+                spell_details_cache.pop(spell_id, None)
+        pricing_lookup.pop(spell_id, None)
         pricing_cache_timestamp.pop(spell_id, None)
         logger.info(f"Cleared expired pricing cache for spell {spell_id}")
     
@@ -506,6 +666,39 @@ def get_spells(class_name):
         if class_name in spells_cache:
             is_expired = is_cache_expired(class_name)
             logger.info(f"Serving cached data for {class_name} (expired: {is_expired})")
+            
+            # Efficiently fetch pricing for this class's spells using PostgreSQL
+            applied_pricing_count = 0
+            applied_failed_count = 0
+            
+            if USE_DATABASE_CACHE:
+                spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
+                pricing_data = get_bulk_pricing_from_db(spell_ids)
+                
+                logger.info(f"CACHED: Found {len(pricing_data)} pricing entries for {len(spell_ids)} spells")
+                
+                # Apply pricing to spells
+                for spell in spells_cache[class_name]:
+                    spell_id = str(spell.get('spell_id', ''))
+                    if spell_id in pricing_data:
+                        spell['pricing'] = pricing_data[spell_id]
+                        applied_pricing_count += 1
+                        if pricing_data[spell_id].get('unknown') == True:
+                            applied_failed_count += 1
+            else:
+                # Fallback to in-memory lookup for file-based cache
+                if pricing_lookup:
+                    logger.info(f"CACHED: Using in-memory pricing lookup with {len(pricing_lookup)} entries")
+                    for spell in spells_cache[class_name]:
+                        spell_id = str(spell.get('spell_id', ''))
+                        if spell_id in pricing_lookup:
+                            spell['pricing'] = pricing_lookup[spell_id]
+                            applied_pricing_count += 1
+                            if pricing_lookup[spell_id].get('unknown') == True:
+                                applied_failed_count += 1
+            
+            logger.info(f"CACHED: Applied pricing to {applied_pricing_count} spells (including {applied_failed_count} failed attempts)")
+            
             return jsonify({
                 'spells': spells_cache[class_name],
                 'cached': True,
@@ -523,6 +716,25 @@ def get_spells(class_name):
             # Return stale cache if available, or error
             if class_name in spells_cache:
                 is_expired = is_cache_expired(class_name)
+                
+                # Efficiently fetch pricing for this class's spells using PostgreSQL
+                if USE_DATABASE_CACHE:
+                    spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
+                    pricing_data = get_bulk_pricing_from_db(spell_ids)
+                    
+                    # Apply pricing to spells
+                    for spell in spells_cache[class_name]:
+                        spell_id = str(spell.get('spell_id', ''))
+                        if spell_id in pricing_data:
+                            spell['pricing'] = pricing_data[spell_id]
+                else:
+                    # Fallback to in-memory lookup for file-based cache
+                    if pricing_lookup:
+                        for spell in spells_cache[class_name]:
+                            spell_id = str(spell.get('spell_id', ''))
+                            if spell_id in pricing_lookup:
+                                spell['pricing'] = pricing_lookup[spell_id]
+                
                 return jsonify({
                     'spells': spells_cache[class_name],
                     'cached': True,
@@ -565,11 +777,50 @@ def get_spells(class_name):
                 'spell_id': row.get('spell_id', ''),
                 'effects': row.get('effects', ''),
                 'icon': row.get('icon', ''),
-                'pricing': None  # Will be populated when spell details are requested
+                'pricing': None  # Pricing will be populated on-demand from spell details
             }
             spells.append(spell)
         
-        # Cache the data
+        # Apply existing pricing data to newly scraped spells
+        applied_pricing_count = 0
+        applied_failed_count = 0
+        
+        if USE_DATABASE_CACHE:
+            spell_ids = [str(spell.get('spell_id', '')) for spell in spells]
+            pricing_data = get_bulk_pricing_from_db(spell_ids)
+            
+            logger.info(f"Found {len(pricing_data)} pricing entries for {len(spell_ids)} spells")
+            
+            # Apply pricing to spells (including unknown: true entries)
+            for spell in spells:
+                spell_id = str(spell.get('spell_id', ''))
+                if spell_id in pricing_data:
+                    spell['pricing'] = pricing_data[spell_id]
+                    applied_pricing_count += 1
+                    if pricing_data[spell_id].get('unknown') == True:
+                        applied_failed_count += 1
+        else:
+            # Fallback to in-memory lookup for file-based cache
+            if pricing_lookup:
+                logger.info(f"Using in-memory pricing lookup with {len(pricing_lookup)} entries")
+                for spell in spells:
+                    spell_id = str(spell.get('spell_id', ''))
+                    if spell_id in pricing_lookup:
+                        spell['pricing'] = pricing_lookup[spell_id]
+                        applied_pricing_count += 1
+                        if pricing_lookup[spell_id].get('unknown') == True:
+                            applied_failed_count += 1
+        
+        logger.info(f"Applied pricing to {applied_pricing_count} spells (including {applied_failed_count} failed attempts)")
+        
+        # Debug: Check a few sample spells
+        sample_spells = spells[:3]
+        for spell in sample_spells:
+            spell_id = spell.get('spell_id', '')
+            pricing = spell.get('pricing')
+            logger.info(f"Sample spell {spell_id}: pricing = {pricing}")
+        
+        # Cache the data (with pricing applied)
         current_time = datetime.now().isoformat()
         spells_cache[class_name] = spells
         cache_timestamp[class_name] = current_time
@@ -640,6 +891,24 @@ def scrape_all_classes():
                         }
                         spells.append(spell)
                     
+                    # Apply existing pricing data to newly scraped spells
+                    if USE_DATABASE_CACHE:
+                        spell_ids = [str(spell.get('spell_id', '')) for spell in spells]
+                        pricing_data = get_bulk_pricing_from_db(spell_ids)
+                        
+                        # Apply pricing to spells (including unknown: true entries)
+                        for spell in spells:
+                            spell_id = str(spell.get('spell_id', ''))
+                            if spell_id in pricing_data:
+                                spell['pricing'] = pricing_data[spell_id]
+                    else:
+                        # Fallback to in-memory lookup for file-based cache
+                        if pricing_lookup:
+                            for spell in spells:
+                                spell_id = str(spell.get('spell_id', ''))
+                                if spell_id in pricing_lookup:
+                                    spell['pricing'] = pricing_lookup[spell_id]
+                    
                     spells_cache[class_name] = spells
                     cache_timestamp[class_name] = datetime.now().isoformat()
             except Exception as e:
@@ -675,10 +944,11 @@ def get_cache_status():
     """Get cache status for all classes"""
     status = {}
     for class_name in CLASSES.keys():
+        class_name_lower = class_name.lower()
         status[class_name] = {
-            'cached': class_name in spells_cache,
-            'spell_count': len(spells_cache.get(class_name, [])),
-            'last_updated': cache_timestamp.get(class_name)
+            'cached': class_name_lower in spells_cache,
+            'spell_count': len(spells_cache.get(class_name_lower, [])),
+            'last_updated': cache_timestamp.get(class_name_lower)
         }
     
     # Add cache expiry configuration
@@ -693,9 +963,11 @@ def get_cache_status():
 @app.route('/api/cache-expiry-status/<class_name>', methods=['GET'])
 def get_cache_expiry_status(class_name):
     """Get cache expiry status for a specific class"""
-    class_name = class_name.lower()
+    # Normalize class name to title case for CLASSES lookup
+    normalized_class_name = class_name.title()
+    class_name = class_name.lower()  # Keep lowercase for cache lookups
     
-    if class_name not in CLASSES:
+    if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
     
     # Check spell cache status
@@ -703,17 +975,39 @@ def get_cache_expiry_status(class_name):
     spell_expired = is_cache_expired(class_name) if spell_cached else True
     spell_timestamp = cache_timestamp.get(class_name)
     
-    # Count pricing entries for this class (approximation based on spell count)
+    # Count pricing entries for this class from spell_details_cache
     class_spells = spells_cache.get(class_name, [])
     pricing_count = 0
     pricing_expired_count = 0
+    most_recent_pricing_timestamp = None
     
     for spell in class_spells:
-        spell_id = str(spell.get('id', ''))
-        if spell_id in pricing_cache:
-            pricing_count += 1
-            if is_pricing_cache_expired(spell_id):
-                pricing_expired_count += 1
+        spell_id = str(spell.get('spell_id', ''))
+        if spell_id in spell_details_cache and spell_details_cache[spell_id].get('pricing'):
+            pricing_data = spell_details_cache[spell_id]['pricing']
+            # Only count spells that have actual pricing data (any coin > 0)
+            if (pricing_data.get('platinum', 0) > 0 or 
+                pricing_data.get('gold', 0) > 0 or 
+                pricing_data.get('silver', 0) > 0 or 
+                pricing_data.get('bronze', 0) > 0):
+                pricing_count += 1
+                if is_pricing_cache_expired(spell_id):
+                    pricing_expired_count += 1
+            
+            # Track most recent pricing timestamp for this class
+            pricing_timestamp = pricing_cache_timestamp.get(spell_id)
+            if pricing_timestamp:
+                if not most_recent_pricing_timestamp or pricing_timestamp > most_recent_pricing_timestamp:
+                    most_recent_pricing_timestamp = pricing_timestamp
+            else:
+                # If pricing data exists but no timestamp, create one (migration scenario)
+                if (pricing_data.get('platinum', 0) > 0 or pricing_data.get('gold', 0) > 0 or 
+                    pricing_data.get('silver', 0) > 0 or pricing_data.get('bronze', 0) > 0):
+                    current_time = datetime.now().isoformat()
+                    pricing_cache_timestamp[spell_id] = current_time
+                    if not most_recent_pricing_timestamp or current_time > most_recent_pricing_timestamp:
+                        most_recent_pricing_timestamp = current_time
+                    logger.info(f"Added missing timestamp for spell {spell_id} with existing pricing data")
     
     return jsonify({
         'class_name': class_name,
@@ -726,7 +1020,8 @@ def get_cache_expiry_status(class_name):
         'pricing': {
             'cached_count': pricing_count,
             'expired_count': pricing_expired_count,
-            'total_spells': len(class_spells)
+            'total_spells': len(class_spells),
+            'most_recent_timestamp': most_recent_pricing_timestamp
         },
         'expiry_config': {
             'spell_cache_hours': CACHE_EXPIRY_HOURS,
@@ -737,9 +1032,11 @@ def get_cache_expiry_status(class_name):
 @app.route('/api/refresh-spell-cache/<class_name>', methods=['POST'])
 def refresh_spell_cache(class_name):
     """Manually refresh spell cache for a specific class"""
-    class_name = class_name.lower()
+    # Normalize class name to title case for CLASSES lookup
+    normalized_class_name = class_name.title()
+    class_name = class_name.lower()  # Keep lowercase for cache lookups
     
-    if class_name not in CLASSES:
+    if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
     
     try:
@@ -772,9 +1069,11 @@ def refresh_spell_cache(class_name):
 @app.route('/api/refresh-pricing-cache/<class_name>', methods=['POST'])
 def refresh_pricing_cache_for_class(class_name):
     """Manually refresh pricing cache for all spells in a class"""
-    class_name = class_name.lower()
+    # Normalize class name to title case for CLASSES lookup
+    normalized_class_name = class_name.title()
+    class_name = class_name.lower()  # Keep lowercase for cache lookups
     
-    if class_name not in CLASSES:
+    if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
     
     try:
@@ -783,18 +1082,29 @@ def refresh_pricing_cache_for_class(class_name):
             return jsonify({'error': 'No spells found for class. Refresh spell data first.'}), 400
         
         # Get spell IDs to refresh
-        spell_ids = [spell.get('id') for spell in class_spells if spell.get('id')]
+        spell_ids = [spell.get('spell_id') for spell in class_spells if spell.get('spell_id')]
         
         if not spell_ids:
             return jsonify({'error': 'No valid spell IDs found'}), 400
         
-        # Clear existing pricing cache for these spells
+        # Clear existing pricing data for these spells
         refreshed_count = 0
         for spell_id in spell_ids:
             spell_id_str = str(spell_id)
-            if spell_id_str in pricing_cache:
-                pricing_cache.pop(spell_id_str, None)
+            cleared = False
+            if spell_id_str in pricing_cache_timestamp:
                 pricing_cache_timestamp.pop(spell_id_str, None)
+                cleared = True
+            if spell_id_str in pricing_lookup:
+                pricing_lookup.pop(spell_id_str, None)
+                cleared = True
+            if spell_id_str in spell_details_cache:
+                spell_details_cache[spell_id_str].pop('pricing', None)
+                # Remove entire entry if it only contained pricing
+                if not spell_details_cache[spell_id_str]:
+                    spell_details_cache.pop(spell_id_str, None)
+                cleared = True
+            if cleared:
                 refreshed_count += 1
         
         return jsonify({
@@ -808,6 +1118,158 @@ def refresh_pricing_cache_for_class(class_name):
     except Exception as e:
         logger.error(f"Error refreshing pricing cache for {class_name}: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/retry-failed-pricing/<class_name>', methods=['POST'])
+def retry_failed_pricing_for_class(class_name):
+    """Retry pricing fetch for all previously failed spells in a class"""
+    # Normalize class name to title case for CLASSES lookup
+    normalized_class_name = class_name.title()
+    class_name = class_name.lower()  # Keep lowercase for cache lookups
+    
+    if normalized_class_name not in CLASSES:
+        return jsonify({'error': 'Invalid class name'}), 400
+    
+    try:
+        class_spells = spells_cache.get(class_name, [])
+        if not class_spells:
+            return jsonify({'error': 'No spells found for class. Refresh spell data first.'}), 400
+        
+        # Get spell IDs for this class
+        spell_ids = [str(spell.get('spell_id')) for spell in class_spells if spell.get('spell_id')]
+        
+        if not spell_ids:
+            return jsonify({'error': 'No valid spell IDs found'}), 400
+        
+        # Get failed spells that need retry
+        failed_spells = get_failed_pricing_spells(spell_ids)
+        
+        if not failed_spells:
+            return jsonify({
+                'success': True,
+                'class_name': class_name,
+                'retried_count': 0,
+                'total_spells': len(spell_ids),
+                'message': 'No failed pricing attempts found to retry.'
+            })
+        
+        # Clear the failed attempts from the database so they can be retried
+        if USE_DATABASE_CACHE:
+            try:
+                conn = psycopg2.connect(**DB_CONFIG)
+                cursor = conn.cursor()
+                
+                # Reset the failed attempts for these spells
+                cursor.execute("""
+                    DELETE FROM pricing_fetch_attempts 
+                    WHERE spell_id = ANY(%s) AND success = FALSE
+                """, (failed_spells,))
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+                logger.info(f"Reset {len(failed_spells)} failed pricing attempts for {class_name}")
+                
+            except Exception as e:
+                logger.error(f"Error resetting failed pricing attempts: {e}")
+                return jsonify({'error': 'Failed to reset pricing attempts'}), 500
+        
+        return jsonify({
+            'success': True,
+            'class_name': class_name,
+            'retried_count': len(failed_spells),
+            'total_spells': len(spell_ids),
+            'failed_spells': failed_spells,
+            'message': f'Reset {len(failed_spells)} failed pricing attempts. These spells will be automatically retried when the page loads.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrying failed pricing for {class_name}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/merge-pricing-cache', methods=['POST'])
+def merge_pricing_cache():
+    """Merge pricing data from UI into the cache"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        class_name = data.get('class_name', '').lower()
+        pricing_data = data.get('pricing_data', [])
+        
+        if not class_name or not pricing_data:
+            return jsonify({'error': 'Missing class_name or pricing_data'}), 400
+        
+        # Normalize class name for validation
+        normalized_class_name = class_name.title()
+        if normalized_class_name not in CLASSES:
+            return jsonify({'error': 'Invalid class name'}), 400
+        
+        merged_count = 0
+        current_time = datetime.now().isoformat()
+        
+        # Merge each pricing entry into the cache
+        for entry in pricing_data:
+            spell_id = str(entry.get('spell_id', ''))
+            pricing = entry.get('pricing')
+            
+            if spell_id and pricing and isinstance(pricing, dict):
+                # Add to pricing cache
+                # pricing_cache deprecated - pricing stored in spell_details_cache
+                pricing_cache_timestamp[spell_id] = current_time
+                merged_count += 1
+                logger.info(f"Merged pricing for spell {spell_id}: {pricing}")
+        
+        # Save to persistent storage
+        save_cache_to_storage()
+        
+        logger.info(f"Successfully merged {merged_count} pricing entries for {class_name}")
+        
+        return jsonify({
+            'success': True,
+            'class_name': class_name,
+            'merged_count': merged_count,
+            'total_entries': len(pricing_data),
+            'message': f'Successfully merged {merged_count} pricing entries into cache.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error merging pricing cache: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/spell-states/<class_name>', methods=['GET'])
+def get_spell_states(class_name):
+    """Get pricing states for spells in a class (untried, failed, success)"""
+    try:
+        # Normalize class name
+        class_name_lower = class_name.lower()
+        
+        if class_name_lower not in [cls.lower() for cls in CLASSES.keys()]:
+            return jsonify({'error': 'Invalid class name'}), 400
+        
+        # Get spells for this class
+        class_spells = spells_cache.get(class_name_lower, [])
+        if not class_spells:
+            return jsonify({'unfetched': [], 'failed': [], 'success': []})
+        
+        spell_ids = [str(spell.get('spell_id', '')) for spell in class_spells if spell.get('spell_id')]
+        
+        # Get different spell states
+        unfetched_spells = get_unfetched_spells(spell_ids)
+        failed_spells = get_failed_pricing_spells(spell_ids)
+        success_spells = [sid for sid in spell_ids if sid in pricing_lookup]
+        
+        return jsonify({
+            'unfetched': unfetched_spells,
+            'failed': failed_spells, 
+            'success': success_spells,
+            'total': len(spell_ids)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting spell states for {class_name}: {e}")
+        return jsonify({'error': 'Failed to get spell states'}), 500
 
 @app.route('/api/spell-details/<int:spell_id>', methods=['GET'])
 def get_spell_details(spell_id):
@@ -845,27 +1307,88 @@ def get_spell_details(spell_id):
         # Cache the result
         spell_details_cache[spell_id_str] = details
         
-        # Save cache periodically (every 5 new entries)
-        if len(spell_details_cache) % 5 == 0:
-            save_cache_to_storage()
+        # Update in-memory pricing cache when new pricing is found
+        pricing_success = False
+        if details.get('pricing'):
+            logger.info(f"Found vendor pricing: {details['pricing']}")
+            # Update the in-memory pricing lookup for immediate availability
+            pricing_lookup[spell_id_str] = details['pricing']
+            pricing_success = True
+        else:
+            # No pricing found - save as failed attempt so it's not retried
+            logger.info(f"No pricing found for spell {spell_id} - marking as unknown")
+            failed_pricing = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+            details['pricing'] = failed_pricing
+            pricing_lookup[spell_id_str] = failed_pricing
+        
+        # Record the pricing fetch attempt
+        record_pricing_fetch_attempt(spell_id_str, success=pricing_success)
+        
+        # Save cache immediately to ensure persistence
+        save_cache_to_storage()
         
         logger.info(f"Successfully parsed and cached spell details for ID {spell_id}")
         return jsonify(details)
         
     except requests.exceptions.Timeout:
+        error_msg = 'Request timed out'
         logger.error(f"Timeout while fetching spell details for ID {spell_id}")
-        return jsonify({'error': 'Request timed out'}), 504
+        record_pricing_fetch_attempt(spell_id_str, success=False, error_message=error_msg)
+        
+        # Save failed pricing attempt to cache so it's not retried
+        failed_details = {'pricing': {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}}
+        spell_details_cache[spell_id_str] = failed_details
+        pricing_lookup[spell_id_str] = failed_details['pricing']
+        save_cache_to_storage()
+        
+        return jsonify(failed_details), 504
     except requests.exceptions.ConnectionError as e:
+        error_msg = 'Unable to connect to spell database'
         logger.error(f"Connection error for spell ID {spell_id}: {e}")
-        return jsonify({'error': 'Unable to connect to spell database'}), 503
+        record_pricing_fetch_attempt(spell_id_str, success=False, error_message=error_msg)
+        
+        # Save failed pricing attempt to cache so it's not retried
+        failed_details = {'pricing': {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}}
+        spell_details_cache[spell_id_str] = failed_details
+        pricing_lookup[spell_id_str] = failed_details['pricing']
+        save_cache_to_storage()
+        
+        return jsonify(failed_details), 503
     except requests.exceptions.HTTPError as e:
         logger.error(f"HTTP error {e.response.status_code} for spell ID {spell_id}")
         if e.response.status_code == 404:
-            return jsonify({'error': 'Spell not found'}), 404
-        return jsonify({'error': f'Server error ({e.response.status_code})'}), e.response.status_code
+            error_msg = 'Spell not found'
+            record_pricing_fetch_attempt(spell_id_str, success=False, error_message=error_msg)
+            
+            # Save failed pricing attempt to cache so it's not retried
+            failed_details = {'pricing': {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}}
+            spell_details_cache[spell_id_str] = failed_details
+            pricing_lookup[spell_id_str] = failed_details['pricing']
+            save_cache_to_storage()
+            
+            return jsonify(failed_details), 404
+        error_msg = f'Server error ({e.response.status_code})'
+        record_pricing_fetch_attempt(spell_id_str, success=False, error_message=error_msg)
+        
+        # Save failed pricing attempt to cache so it's not retried
+        failed_details = {'pricing': {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}}
+        spell_details_cache[spell_id_str] = failed_details
+        pricing_lookup[spell_id_str] = failed_details['pricing']
+        save_cache_to_storage()
+        
+        return jsonify(failed_details), e.response.status_code
     except Exception as e:
+        error_msg = 'Failed to fetch spell details'
         logger.error(f"Unexpected error fetching spell details for ID {spell_id}: {e}")
-        return jsonify({'error': 'Failed to fetch spell details'}), 500
+        record_pricing_fetch_attempt(spell_id_str, success=False, error_message=error_msg)
+        
+        # Save failed pricing attempt to cache so it's not retried
+        failed_details = {'pricing': {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}}
+        spell_details_cache[spell_id_str] = failed_details
+        pricing_lookup[spell_id_str] = failed_details['pricing']
+        save_cache_to_storage()
+        
+        return jsonify(failed_details), 500
 
 def extract_scroll_pricing(items_with_spell):
     """Extract pricing from scroll/spell items"""
@@ -1546,8 +2069,10 @@ session.headers.update({
 def fetch_single_spell_pricing(spell_id, max_retries=2):
     """Fetch pricing for a single spell with retry logic"""
     # Check cache first (return even if expired - let frontend decide)
-    if str(spell_id) in pricing_cache:
-        return pricing_cache[str(spell_id)]
+    # Check spell_details_cache instead of deprecated pricing_cache
+    details = spell_details_cache.get(str(spell_id), {})
+    if details.get('pricing'):
+        return details['pricing']
     
     for attempt in range(max_retries + 1):
         try:
@@ -1564,21 +2089,25 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                     result = details['pricing']
                 else:
                     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+                    details['pricing'] = result
                 
-                # Cache the result
-                pricing_cache[str(spell_id)] = result
+                # Cache the result in spell_details_cache and timestamp
+                spell_details_cache[str(spell_id)] = details
+                pricing_lookup[str(spell_id)] = result
                 pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
-                # Save pricing cache periodically (every 10 new entries)
-                if len(pricing_cache) % 10 == 0:
+                # Save cache periodically (every 10 new entries)
+                if len(pricing_cache_timestamp) % 10 == 0:
                     save_cache_to_storage()
                 return result
             else:
                 if attempt == max_retries:
                     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-                    pricing_cache[str(spell_id)] = result
+                    # Store failed pricing attempt in spell_details_cache
+                    spell_details_cache[str(spell_id)] = {'pricing': result}
+                    pricing_lookup[str(spell_id)] = result
                     pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
                     # Save on failure too
-                    if len(pricing_cache) % 10 == 0:
+                    if len(pricing_cache_timestamp) % 10 == 0:
                         save_cache_to_storage()
                     return result
                 
@@ -1586,10 +2115,12 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
             logger.warning(f"Attempt {attempt + 1} failed for spell {spell_id}: {e}")
             if attempt == max_retries:
                 result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-                pricing_cache[str(spell_id)] = result
+                # Store failed pricing attempt in spell_details_cache
+                spell_details_cache[str(spell_id)] = {'pricing': result}
+                pricing_lookup[str(spell_id)] = result
                 pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
                 # Save on failure too
-                if len(pricing_cache) % 10 == 0:
+                if len(pricing_cache_timestamp) % 10 == 0:
                     save_cache_to_storage()
                 return result
             
@@ -1598,10 +2129,12 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
     
     # Fallback
     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-    pricing_cache[str(spell_id)] = result
+    # Store failed pricing attempt in spell_details_cache
+    spell_details_cache[str(spell_id)] = {'pricing': result}
+    pricing_lookup[str(spell_id)] = result
     pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
     # Save fallback too
-    if len(pricing_cache) % 10 == 0:
+    if len(pricing_cache_timestamp) % 10 == 0:
         save_cache_to_storage()
     return result
 
@@ -1648,7 +2181,7 @@ def get_spell_pricing():
         return jsonify({
             'pricing': pricing_results,
             'fetched_count': len(pricing_results),
-            'cached_count': len([s for s in spell_ids if str(s) in pricing_cache])
+            'cached_count': len([s for s in spell_ids if str(s) in spell_details_cache and spell_details_cache[str(s)].get('pricing')])
         })
         
     except Exception as e:
@@ -1662,7 +2195,7 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'cached_classes': len(spells_cache),
-        'cached_pricing': len(pricing_cache),
+        'cached_pricing': 0,  # pricing_cache deprecated
         'cached_spell_details': len(spell_details_cache)
     })
 
@@ -1675,7 +2208,7 @@ def save_cache():
             'message': 'Cache saved successfully',
             'timestamp': datetime.now().isoformat(),
             'cached_classes': len(spells_cache),
-            'cached_pricing': len(pricing_cache),
+            'cached_pricing': 0,  # pricing_cache deprecated
         'cached_spell_details': len(spell_details_cache)
         })
     except Exception as e:
@@ -1685,19 +2218,38 @@ def save_cache():
 @app.route('/api/cache/clear', methods=['POST'])
 def clear_cache():
     """Clear all cached data"""
-    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache
     
     try:
         spells_cache.clear()
         cache_timestamp.clear()
         last_scrape_time.clear()
-        pricing_cache.clear()
+        # pricing_cache.clear() - deprecated
         spell_details_cache.clear()
         
-        # Remove cache files
-        for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, SPELL_DETAILS_CACHE_FILE, METADATA_CACHE_FILE]:
-            if os.path.exists(cache_file):
-                os.remove(cache_file)
+        # Clear database cache if using database storage
+        if USE_DATABASE_CACHE:
+            try:
+                conn = psycopg2.connect(**DB_CONFIG)
+                cursor = conn.cursor()
+                
+                # Clear database tables
+                cursor.execute("DELETE FROM spell_cache")
+                cursor.execute("DELETE FROM pricing_cache") 
+                cursor.execute("DELETE FROM spell_details_cache")
+                cursor.execute("DELETE FROM cache_metadata")
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info("✓ Database cache tables cleared")
+            except Exception as e:
+                logger.error(f"Error clearing database cache: {e}")
+        else:
+            # Remove cache files (fallback for local development)
+            for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, SPELL_DETAILS_CACHE_FILE, METADATA_CACHE_FILE]:
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
         
         return jsonify({
             'message': 'Cache cleared successfully',
@@ -1777,7 +2329,7 @@ def cache_status():
     return jsonify({
         'memory_cache': {
             'classes': len(spells_cache),
-            'pricing_entries': len(pricing_cache),
+            'pricing_entries': 0,  # pricing_cache deprecated
             'spell_details': len(spell_details_cache),
             'timestamps': len(cache_timestamp),
             'pricing_timestamps': len(pricing_cache_timestamp),
@@ -1796,6 +2348,84 @@ def cache_status():
             'min_scrape_interval_minutes': MIN_SCRAPE_INTERVAL_MINUTES
         }
     })
+
+@app.route('/api/debug/pricing-lookup/<class_name>', methods=['GET'])
+def debug_pricing_lookup(class_name):
+    """Debug endpoint to check pricing lookup for a specific class"""
+    try:
+        if class_name not in spells_cache:
+            return jsonify({'error': f'Class {class_name} not found in cache'}), 404
+        
+        spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
+        
+        # Check what's in the pricing lookup
+        found_in_lookup = {}
+        failed_in_lookup = 0
+        success_in_lookup = 0
+        
+        for spell_id in spell_ids:
+            if spell_id in pricing_lookup:
+                found_in_lookup[spell_id] = pricing_lookup[spell_id]
+                if pricing_lookup[spell_id].get('unknown') == True:
+                    failed_in_lookup += 1
+                else:
+                    success_in_lookup += 1
+        
+        # Get bulk pricing
+        pricing_data = get_bulk_pricing_from_db(spell_ids)
+        failed_in_bulk = 0
+        success_in_bulk = 0
+        
+        for spell_id, pricing in pricing_data.items():
+            if pricing.get('unknown') == True:
+                failed_in_bulk += 1
+            else:
+                success_in_bulk += 1
+        
+        # Check database directly for missing failed entries
+        db_failed_count = 0
+        db_entries = {}
+        if USE_DATABASE_CACHE:
+            try:
+                conn = psycopg2.connect(**DB_CONFIG)
+                cursor = conn.cursor()
+                cursor.execute("SELECT spell_id, data FROM spell_details WHERE spell_id = ANY(%s) AND data->>'pricing' IS NOT NULL", (spell_ids,))
+                rows = cursor.fetchall()
+                for spell_id, data in rows:
+                    pricing = data.get('pricing')
+                    if pricing and pricing.get('unknown') == True:
+                        db_failed_count += 1
+                    db_entries[spell_id] = pricing
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Database check failed: {e}")
+        
+        return jsonify({
+            'class_name': class_name,
+            'total_spells': len(spell_ids),
+            'pricing_lookup_stats': {
+                'total_found': len(found_in_lookup),
+                'successful': success_in_lookup,
+                'failed': failed_in_lookup
+            },
+            'bulk_pricing_stats': {
+                'total_found': len(pricing_data),
+                'successful': success_in_bulk,
+                'failed': failed_in_bulk
+            },
+            'database_direct_check': {
+                'total_with_pricing': len(db_entries),
+                'failed_in_db': db_failed_count
+            },
+            'sample_spell_ids': spell_ids[:5],
+            'sample_lookup_results': {spell_id: found_in_lookup.get(spell_id, 'NOT_FOUND') for spell_id in spell_ids[:5]},
+            'sample_bulk_results': {spell_id: pricing_data.get(spell_id, 'NOT_FOUND') for spell_id in spell_ids[:5]},
+            'sample_db_results': {spell_id: db_entries.get(spell_id, 'NOT_FOUND') for spell_id in spell_ids[:5]}
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=config['backend_port']) 

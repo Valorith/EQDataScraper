@@ -19,65 +19,119 @@
       </div>
     </div>
 
-    <!-- Cache Status Section -->
-    <div v-if="cacheStatus && !loading" class="cache-status-section">
-      <div class="cache-status-container">
-        <div class="cache-status-header">
-          <h3>📊 Data Status</h3>
-        </div>
-        
-        <div class="cache-status-grid">
+    <!-- Cache Status Display -->
+    <div v-if="!loading && spells.length > 0" class="cache-status-section">
+      <div class="cache-info-container">
+        <button 
+          @click="toggleDataStatus" 
+          class="data-status-toggle"
+          :class="{ 'expanded': isDataStatusExpanded, 'collapsed': !isDataStatusExpanded }"
+          :style="!isDataStatusExpanded ? { padding: '8px 1px', gap: '1px', width: 'auto', maxWidth: 'max-content' } : {}"
+          :aria-expanded="isDataStatusExpanded"
+          aria-controls="data-status-content"
+          :aria-label="isDataStatusExpanded ? 'Collapse Data Status' : 'Expand Data Status'"
+        >
+          <template v-if="!isDataStatusExpanded">
+            <span class="data-status-text">Spell Data</span>
+          </template>
+          <template v-else>
+            <span class="data-status-icon">📊</span>
+            <span class="data-status-text">Data Status</span>
+            <span class="expand-icon rotated">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 10.5L3.5 6L4.91 4.59L8 7.67L11.09 4.59L12.5 6L8 10.5Z"/>
+              </svg>
+            </span>
+          </template>
+        </button>
+        <div 
+          id="data-status-content"
+          class="cache-grid-container" 
+          :class="{ 'expanded': isDataStatusExpanded }"
+          role="region"
+          :aria-hidden="!isDataStatusExpanded"
+        >
+          <div class="cache-grid">
           <!-- Spell Data Status -->
-          <div class="cache-status-card" :class="{ 'expired': cacheStatus.spells?.expired }">
-            <div class="cache-status-icon">🪄</div>
-            <div class="cache-status-content">
-              <div class="cache-status-title">Spell Data</div>
-              <div class="cache-status-details">
-                <div class="cache-status-timestamp">
-                  {{ formatTimestamp(cacheStatus.spells?.timestamp) }}
-                </div>
-                <div v-if="cacheStatus.spells?.expired" class="cache-status-expired">
-                  ⚠️ Expired ({{ formatExpiredTime(cacheStatus.spells?.timestamp, 24) }})
-                </div>
-                <div v-else class="cache-status-fresh">
-                  ✅ Fresh (expires {{ formatExpiryTime(cacheStatus.spells?.timestamp, 24) }})
-                </div>
+          <div class="cache-card" :class="{ 'expired': isSpellDataExpired }">
+            <div class="cache-card-header">
+              <span class="cache-icon">🪄</span>
+              <span class="cache-title">Spell Data</span>
+            </div>
+            <div class="cache-details">
+              <div class="cache-count">{{ spells.length }} spells</div>
+              <div class="cache-timestamp">{{ formatTimestamp(spellMetadata?.last_updated) }}</div>
+              <div class="cache-status" :class="isSpellDataExpired ? 'expired' : 'fresh'">
+                {{ isSpellDataExpired ? '⚠️ Expired' : '✅ Fresh' }}
+                ({{ getTimeDescription(spellMetadata?.last_updated, 24, isSpellDataExpired) }})
               </div>
             </div>
-            <div v-if="cacheStatus.spells?.expired" class="cache-status-actions">
-              <button @click="refreshSpellData" :disabled="refreshingSpells" class="refresh-button">
+            <div v-if="isSpellDataExpired" class="cache-actions">
+              <button @click="refreshSpellData" :disabled="refreshingSpells" class="refresh-btn">
                 <span v-if="refreshingSpells">🔄</span>
                 <span v-else>🔄</span>
                 {{ refreshingSpells ? 'Refreshing...' : 'Refresh Spells' }}
               </button>
             </div>
           </div>
-          
+
           <!-- Pricing Data Status -->
-          <div class="cache-status-card" :class="{ 'expired': cacheStatus.pricing?.expired_count > 0 }">
-            <div class="cache-status-icon">💰</div>
-            <div class="cache-status-content">
-              <div class="cache-status-title">Pricing Data</div>
-              <div class="cache-status-details">
-                <div class="cache-status-info">
-                  {{ cacheStatus.pricing?.cached_count || 0 }} / {{ cacheStatus.pricing?.total_spells || 0 }} spells cached
-                </div>
-                <div v-if="cacheStatus.pricing?.expired_count > 0" class="cache-status-expired">
-                  ⚠️ {{ cacheStatus.pricing.expired_count }} expired entries
-                </div>
-                <div v-else class="cache-status-fresh">
-                  ✅ All cached pricing fresh (1 week expiry)
+          <div class="cache-card" :class="{ 'expired': isPricingDataExpired }">
+            <div class="cache-card-header">
+              <span class="cache-icon">💰</span>
+              <span class="cache-title">Pricing Data</span>
+            </div>
+            <div class="cache-details">
+              <div class="cache-count">
+                {{ realTimePricingStats.cached }} of {{ realTimePricingStats.total }} spell pricing detected
+                <span v-if="realTimePricingStats.loading > 0" class="loading-indicator">
+                  ({{ realTimePricingStats.loading }} loading...)
+                </span>
+                <div v-if="realTimePricingStats.failed > 0 || realTimePricingStats.unfetched > 0" class="pricing-breakdown">
+                  <span v-if="realTimePricingStats.unfetched > 0" class="stat-unfetched">{{ realTimePricingStats.unfetched }} unfetched</span>
+                  <span v-if="realTimePricingStats.failed > 0" class="stat-failed">{{ realTimePricingStats.failed }} unavailable</span>
                 </div>
               </div>
+              <div class="cache-timestamp">
+                <span v-if="pricingMetadata?.pricing?.most_recent_timestamp">
+                  {{ formatTimestamp(pricingMetadata.pricing.most_recent_timestamp) }}
+                </span>
+                <span v-else-if="pricingMetadata?.pricing?.cached_count > 0">
+                  Pricing cached (no timestamp available)
+                </span>
+                <span v-else>
+                  Last updated: {{ formatTimestamp(spellMetadata?.last_updated) }}
+                </span>
+              </div>
+              <div class="cache-status" :class="isPricingDataExpired ? 'expired' : 'fresh'">
+                <span v-if="pricingMetadata?.pricing?.cached_count > 0">
+                  {{ isPricingDataExpired ? '⚠️ Some expired' : '✅ Fresh' }}
+                  <span v-if="pricingMetadata?.pricing?.most_recent_timestamp">
+                    ({{ getTimeDescription(pricingMetadata.pricing.most_recent_timestamp, 168, isPricingDataExpired) }})
+                  </span>
+                  <span v-else>
+                    ({{ getTimeDescription(pricingMetadata.spells.timestamp, 168, isPricingDataExpired) }})
+                  </span>
+                </span>
+                <span v-else>
+                  ✅ Fresh (Can refresh in 7 days)
+                </span>
+              </div>
             </div>
-            <div v-if="cacheStatus.pricing?.expired_count > 0" class="cache-status-actions">
-              <button @click="refreshPricingData" :disabled="refreshingPricing" class="refresh-button">
+            <div v-if="shouldShowPricingRefresh" class="cache-actions">
+              <button @click="refreshPricingData" :disabled="refreshingPricing" class="refresh-btn">
                 <span v-if="refreshingPricing">🔄</span>
                 <span v-else>🔄</span>
-                {{ refreshingPricing ? 'Refreshing...' : 'Refresh Pricing' }}
+                <span v-if="refreshingPricing">
+                  Refreshing...
+                </span>
+                <span v-else>
+                  Refresh Pricing
+                </span>
               </button>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -295,34 +349,21 @@
                   </div>
                 </div>
               </div>
-              <div v-else-if="spell.pricing && (spell.pricing.unknown || !hasAnyPrice(spell.pricing))" class="spell-pricing-unknown">
-                <span v-if="retryQueue.has(spell.spell_id)" class="pricing-status queued">Queued for retry</span>
-                <span v-else class="pricing-status">Unknown Cost</span>
-                <button 
-                  @click.stop="retryPricingFetch(spell.spell_id)"
-                  :class="['retry-pricing-btn', { 'queued': retryQueue.has(spell.spell_id), 'disabled': isFetchingPricing && retryQueue.has(spell.spell_id) }]"
-                  :disabled="isFetchingPricing && retryQueue.has(spell.spell_id)"
-                  :title="getRetryButtonTitle(spell.spell_id)"
-                >
-                  <svg v-if="retryQueue.has(spell.spell_id)" class="retry-icon hourglass-icon" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C13.1 2 14 2.9 14 4V5H16C16.55 5 17 5.45 17 6S16.55 7 16 7H14V8C14 10.21 12.21 12 10 12C12.21 12 14 13.79 14 16V17H16C16.55 17 17 17.45 17 18S16.55 19 16 19H14V20C14 21.1 13.1 22 12 22S10 21.1 10 20V19H8C7.45 19 7 18.55 7 18S7.45 17 8 17H10V16C10 13.79 11.79 12 14 12C11.79 12 10 10.21 10 8V7H8C7.45 7 7 6.55 7 6S7.45 5 8 5H10V4C10 2.9 10.9 2 12 2Z"/>
-                  </svg>
-                  <svg v-else class="retry-icon refresh-icon" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-                  </svg>
-                </button>
+              <div v-else-if="spell.pricing && (spell.pricing.unknown || !hasAnyPrice(spell.pricing))" class="spell-pricing-failed">
+                <span class="pricing-status failed">❌ No Price Available</span>
               </div>
-              <div v-else class="spell-pricing-loading">
-                <div class="pricing-progress-container">
-                  <div class="pricing-progress-bar">
-                    <div 
-                      class="pricing-progress-fill" 
-                      :style="{ width: `${getPricingProgress(spell.spell_id)}%` }"
-                    ></div>
-                    <span class="pricing-loading-text">Loading Price</span>
-                  </div>
-                  <span class="pricing-progress-text">{{ getPricingProgress(spell.spell_id) }}%</span>
+              <div v-else-if="!spell.pricing && getPricingProgress(spell.spell_id) > 0 && getPricingProgress(spell.spell_id) < 100" class="pricing-progress-container">
+                <div class="pricing-progress-bar">
+                  <div 
+                    class="pricing-progress-fill" 
+                    :style="{ width: getPricingProgress(spell.spell_id) + '%' }"
+                  ></div>
+                  <span class="pricing-loading-text">Loading Price</span>
                 </div>
+                <span class="pricing-progress-text">{{ getPricingProgress(spell.spell_id) }}%</span>
+              </div>
+              <div v-else class="spell-pricing-not-fetched">
+                <span class="pricing-status not-fetched">⏳ Fetching...</span>
               </div>
               
               <button 
@@ -681,7 +722,7 @@ import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5014')
 
 // Debounce utility function
 function debounce(func, delay) {
@@ -725,6 +766,13 @@ export default {
     const loadingSpellDetails = ref(false)
     const spellDetailsError = ref(null)
     
+    // Data Status collapse state
+    const isDataStatusExpanded = ref(false)
+    
+    const toggleDataStatus = () => {
+      isDataStatusExpanded.value = !isDataStatusExpanded.value
+    }
+    
     // Pricing progress tracking
     const pricingProgress = ref({})
     const totalSpellsForPricing = ref(0)
@@ -739,18 +787,212 @@ export default {
     const lastFailureTime = ref(null)
     const FAILURE_THRESHOLD = 5
     const CIRCUIT_BREAKER_TIMEOUT = 30000 // 30 seconds
+
+    // Persistent pricing fetch manager with cleanup
+    const activePricingFetches = ref(new Map()) // spellId -> { promise, cancelled, timestamp }
+    const pricingFetchQueue = ref(new Set()) // spell IDs waiting to be fetched
+    const isPersistentFetchRunning = ref(false)
     
     // Retry queue system
     const retryQueue = ref(new Set())
     const isFetchingPricing = ref(false)
     
+    // Add cleanup interval for stale fetches  
+    const FETCH_TIMEOUT = 25000 // 25 seconds (reduced for 4 concurrent limit)
+    const cleanupStaleActiveFetches = () => {
+      const now = Date.now()
+      for (const [spellId, fetchData] of activePricingFetches.value.entries()) {
+        if (now - fetchData.timestamp > FETCH_TIMEOUT) {
+          console.log(`Cleaning up stale fetch for spell ${spellId}`)
+          fetchData.controller.cancelled = true
+          activePricingFetches.value.delete(spellId)
+        }
+      }
+    }
+    
     // Cache status state
-    const cacheStatus = ref(null)
     const refreshingSpells = ref(false)
     const refreshingPricing = ref(false)
+    const pricingMetadata = ref(null)
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
+    })
+
+    const spellMetadata = computed(() => {
+      return spellsStore.getSpellsMetadata(props.className)
+    })
+
+    const isSpellDataExpired = computed(() => {
+      if (!spellMetadata.value?.last_updated) return false
+      const now = new Date()
+      const lastUpdated = new Date(spellMetadata.value.last_updated)
+      const hoursSinceUpdate = (now - lastUpdated) / (1000 * 60 * 60)
+      return hoursSinceUpdate > 24
+    })
+
+    const isPricingDataExpired = computed(() => {
+      if (!pricingMetadata.value?.pricing) return false
+      
+      // Check if we have a most recent timestamp for pricing data
+      const lastPricingUpdate = pricingMetadata.value.pricing.most_recent_timestamp
+      if (lastPricingUpdate) {
+        const now = new Date()
+        const lastUpdate = new Date(lastPricingUpdate)
+        const daysSinceUpdate = (now - lastUpdate) / (1000 * 60 * 60 * 24)
+        
+        // Only allow refresh after 7 days
+        return daysSinceUpdate >= 7
+      }
+      
+      // If no pricing timestamp, fall back to spell data timestamp
+      if (pricingMetadata.value.spells?.timestamp) {
+        const now = new Date()
+        const lastUpdate = new Date(pricingMetadata.value.spells.timestamp)
+        const daysSinceUpdate = (now - lastUpdate) / (1000 * 60 * 60 * 24)
+        
+        // Only allow refresh after 7 days
+        return daysSinceUpdate >= 7
+      }
+      
+      // If no timestamp available, don't show refresh button
+      return false
+    })
+
+    // Real-time pricing statistics - optimized with caching
+    const pricingStatsCache = ref({ cached: 0, loading: 0, failed: 0, unfetched: 0, total: 0 })
+    const lastStatsUpdate = ref(0)
+    const STATS_CACHE_DURATION = 500 // Reduced to 500ms for more responsive updates
+    
+    const realTimePricingStats = computed(() => {
+      const now = Date.now()
+      const spellsLength = spells.value?.length || 0
+      
+      // Force refresh if total count changed or cache is older than duration
+      const shouldRefresh = (now - lastStatsUpdate.value >= STATS_CACHE_DURATION) || 
+                            (pricingStatsCache.value.total !== spellsLength)
+      
+      if (!shouldRefresh) {
+        return pricingStatsCache.value
+      }
+      
+      if (!spellsLength) {
+        const emptyStats = { cached: 0, loading: 0, failed: 0, unfetched: 0, total: 0 }
+        pricingStatsCache.value = emptyStats
+        lastStatsUpdate.value = now
+        return emptyStats
+      }
+      
+      let cached = 0
+      let loading = 0
+      let failed = 0
+      let unfetched = 0
+      
+      spells.value.forEach(spell => {
+        const progress = getPricingProgress(spell.spell_id)
+        
+        if (spell.pricing) {
+          // Spell has pricing data
+          if (spell.pricing.unknown === true) {
+            failed++  // Explicitly marked as unknown/failed
+          } else if (hasAnyPrice(spell.pricing)) {
+            cached++  // Has actual price values
+          } else {
+            failed++  // Has pricing object but no actual price (all zeros)
+          }
+        } else if (progress > 0 && progress < 100) {
+          loading++  // Currently being fetched
+        } else {
+          unfetched++  // Not yet attempted or no progress
+        }
+      })
+      
+      // Debug log to identify the mismatch
+      if (now - lastStatsUpdate.value > STATS_CACHE_DURATION) {
+        console.log(`📊 Stats update: cached=${cached}, failed=${failed}, loading=${loading}, unfetched=${unfetched}, total=${spellsLength}`)
+        
+        // Also log some sample spell states for debugging
+        const sampleSpells = spells.value.slice(0, 3)
+        sampleSpells.forEach(spell => {
+          console.log(`  Sample spell ${spell.spell_id}: pricing=${JSON.stringify(spell.pricing)}, progress=${getPricingProgress(spell.spell_id)}`)
+        })
+      }
+      
+      const newStats = { cached, loading, failed, unfetched, total: spellsLength }
+      pricingStatsCache.value = newStats
+      lastStatsUpdate.value = now
+      return newStats
+    })
+
+    // Detect spells with frontend pricing that should be synced to backend
+    const spellsWithUIPricing = computed(() => {
+      if (!spells.value?.length) return []
+      
+      const pricingData = []
+      
+      // Check component pricing cache
+      if (pricingCache.value) {
+        Object.entries(pricingCache.value).forEach(([spellId, pricing]) => {
+          if (pricing && spells.value.some(spell => spell.spell_id == spellId)) {
+            // Only include spells that have actual pricing (any coin > 0)
+            if (pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0) {
+              pricingData.push({
+                spell_id: spellId,
+                pricing: pricing
+              })
+            }
+          }
+        })
+      }
+      
+      return pricingData
+    })
+
+    // Detect inconsistency: UI has pricing but cache doesn't
+    const hasPricingInconsistency = computed(() => {
+      // No inconsistency possible when database is single source of truth
+      return false
+    })
+
+    // Auto-merge frontend pricing data into backend cache
+    const mergePricingData = async () => {
+      if (spellsWithUIPricing.value.length === 0) {
+        console.log('No frontend pricing data found to merge')
+        return
+      }
+      
+      try {
+        const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
+          (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5014')
+        
+        console.log(`Merging ${spellsWithUIPricing.value.length} pricing entries into cache`)
+        
+        // Send pricing data to backend to merge into cache
+        const response = await axios.post(`${API_BASE_URL}/api/merge-pricing-cache`, {
+          class_name: props.className,
+          pricing_data: spellsWithUIPricing.value
+        })
+        
+        // Force a brief delay to ensure backend cache is updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Reload metadata to reflect the updated cache
+        await loadPricingMetadata()
+        
+        // Force reactivity update by creating a new object
+        pricingMetadata.value = { ...pricingMetadata.value }
+        
+        console.log('Pricing data merged successfully')
+        return response.data
+      } catch (err) {
+        console.error('Failed to merge pricing data:', err)
+        throw err
+      }
+    }
+
+    // Show refresh button if expired OR inconsistent
+    const shouldShowPricingRefresh = computed(() => {
+      return isPricingDataExpired.value || hasPricingInconsistency.value
     })
 
     const containerStyles = computed(() => {
@@ -903,14 +1145,331 @@ export default {
       alert(`Spell ID ${spellId} copied to clipboard!`)
     }
 
+    const loadPricingMetadata = async () => {
+      try {
+        const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
+          (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5014')
+        
+        const response = await axios.get(`${API_BASE_URL}/api/cache-expiry-status/${props.className}`)
+        pricingMetadata.value = response.data
+      } catch (err) {
+        console.error('Failed to load pricing metadata:', err)
+        pricingMetadata.value = null
+      }
+    }
+
+    const performIntelligentPricingCheck = async () => {
+      try {
+        console.log('Starting intelligent pricing check...')
+        
+        // Reset progress for spells that already have pricing data
+        spells.value.forEach(spell => {
+          if (spell.pricing) {
+            // Clear any lingering progress for spells that already have pricing
+            setPricingProgress(spell.spell_id, 100)
+          } else {
+            const progress = getPricingProgress(spell.spell_id)
+            if (progress >= 100) {
+              // If progress is 100% but no pricing, set as failed
+              spell.pricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+              console.log(`Spell ${spell.spell_id} had 100% progress but no pricing - marking as failed`)
+            }
+          }
+        })
+        
+        // Identify spells that need pricing (no pricing data at all or null/undefined)
+        // Do NOT re-fetch spells that have unknown: true (previously failed)
+        const spellsNeedingPricing = spells.value.filter(spell => {
+          if (!spell.pricing) {
+            return true // No pricing data at all - needs fetch
+          }
+          if (spell.pricing.unknown === true) {
+            return false // Previously failed - don't re-fetch
+          }
+          return false // Has valid pricing - don't fetch
+        })
+        
+        // Count different types for debugging
+        const totalSpells = spells.value.length
+        const withPricing = spells.value.filter(s => s.pricing && !s.pricing.unknown).length
+        const failed = spells.value.filter(s => 
+          s.pricing && s.pricing.unknown === true
+        ).length
+        const noPricing = spells.value.filter(s => !s.pricing).length
+        
+        console.log(`📊 Pricing check: Total=${totalSpells}, WithPricing=${withPricing}, Failed=${failed}, NoPricing=${noPricing}, NeedingFetch=${spellsNeedingPricing.length}`)
+        
+        if (spellsNeedingPricing.length > 0) {
+          console.log(`Found ${spellsNeedingPricing.length} spells without pricing - queuing for auto-fetch`)
+          console.log(`Sample IDs needing fetch:`, spellsNeedingPricing.slice(0, 5).map(s => s.spell_id))
+          
+          // Queue all spells that don't have pricing for fetching
+          const spellIds = spellsNeedingPricing.map(spell => spell.spell_id)
+          console.log(`🎯 Queueing ${spellIds.length} cleric spells for pricing: ${spellIds.slice(0, 10)}${spellIds.length > 10 ? '...' : ''}`)
+          addToQueueAndProcess(spellIds)
+        } else {
+          console.log('✅ All spells already have pricing data (cached, failed, or unknown) - no fetch needed')
+        }
+        
+      } catch (error) {
+        console.warn('Error in intelligent pricing check:', error)
+      }
+    }
+    
+    // Check circuit breaker before making requests
+    const isCircuitBreakerOpen = () => {
+      if (pricingFailureCount.value >= FAILURE_THRESHOLD) {
+        const timeSinceLastFailure = Date.now() - lastFailureTime.value
+        if (timeSinceLastFailure < CIRCUIT_BREAKER_TIMEOUT) {
+          return true
+        } else {
+          // Reset circuit breaker after timeout
+          pricingFailureCount.value = 0
+          lastFailureTime.value = null
+        }
+      }
+      return false
+    }
+
+    // Persistent pricing fetch manager that survives state changes
+    const startPersistentPricingFetch = async (spellId) => {
+      // Validate that this spell belongs to the current class
+      const spell = spells.value.find(s => s.spell_id == spellId)
+      if (!spell) {
+        console.error(`🚫 INVALID SPELL ID: ${spellId} not found in current class ${props.className} - skipping fetch`)
+        pricingFetchQueue.value.delete(spellId)
+        activePricingFetches.value.delete(spellId)
+        return null
+      }
+
+      // Check circuit breaker
+      if (isCircuitBreakerOpen()) {
+        console.log(`Circuit breaker open, skipping fetch for spell ${spellId}`)
+        spell.pricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+        setPricingProgress(spellId, 100)
+        return null
+      }
+
+      if (activePricingFetches.value.has(spellId)) {
+        console.log(`Spell ${spellId} already being fetched`)
+        return activePricingFetches.value.get(spellId).promise
+      }
+
+      console.log(`Starting persistent fetch for spell ${spellId}`)
+      
+      const fetchController = { cancelled: false }
+      
+      const fetchPromise = (async () => {
+        try {
+          setPricingProgress(spellId, 1)
+          
+          if (fetchController.cancelled) return null
+          
+          setPricingProgress(spellId, 25)
+          const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}`)
+          
+          if (fetchController.cancelled) return null
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+          
+          setPricingProgress(spellId, 75)
+          const details = await response.json()
+          
+          if (fetchController.cancelled) return null
+          
+          // Find the spell in current spells and update it
+          const spell = spells.value.find(s => s.spell_id == spellId)
+          if (spell) {
+            if (details.pricing) {
+              spell.pricing = details.pricing
+              console.log(`✅ Updated spell ${spellId} with pricing:`, details.pricing)
+              // Reset failure count on success
+              pricingFailureCount.value = 0
+            } else {
+              spell.pricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+              console.log(`❓ No pricing found for spell ${spellId}`)
+            }
+            
+            // Force stats refresh by clearing cache
+            lastStatsUpdate.value = 0
+          }
+          
+          setPricingProgress(spellId, 100)
+          return details
+          
+        } catch (error) {
+          if (fetchController.cancelled) return null
+          console.warn(`Failed to fetch pricing for spell ${spellId}:`, error)
+          
+          // Increment failure count and record time
+          pricingFailureCount.value++
+          lastFailureTime.value = Date.now()
+          
+          const spell = spells.value.find(s => s.spell_id == spellId)
+          if (spell) {
+            spell.pricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+            // Force stats refresh by clearing cache
+            lastStatsUpdate.value = 0
+          }
+          setPricingProgress(spellId, 100)
+          return null
+        } finally {
+          activePricingFetches.value.delete(spellId)
+          pricingFetchQueue.value.delete(spellId)
+        }
+      })()
+      
+      activePricingFetches.value.set(spellId, { 
+        promise: fetchPromise, 
+        controller: fetchController,
+        timestamp: Date.now()
+      })
+      return fetchPromise
+    }
+
+    const processPricingQueue = async () => {
+      if (isPersistentFetchRunning.value) {
+        console.log('Pricing queue processor already running')
+        return
+      }
+
+      isPersistentFetchRunning.value = true
+      console.log(`Processing pricing queue with ${pricingFetchQueue.value.size} items`)
+
+      try {
+        // Process up to 4 items concurrently to improve performance
+        const CONCURRENT_LIMIT = 4
+        const queueArray = Array.from(pricingFetchQueue.value)
+        
+        for (let i = 0; i < queueArray.length; i += CONCURRENT_LIMIT) {
+          const batch = queueArray.slice(i, i + CONCURRENT_LIMIT)
+          const batchPromises = batch
+            .filter(spellId => pricingFetchQueue.value.has(spellId)) // Only process if still in queue
+            .map(spellId => startPersistentPricingFetch(spellId))
+          
+          await Promise.allSettled(batchPromises)
+          
+          // Delay between batches to avoid server overload
+          if (i + CONCURRENT_LIMIT < queueArray.length) {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        }
+      } finally {
+        isPersistentFetchRunning.value = false
+        console.log('Pricing queue processing completed')
+        
+        // Run cleanup after processing
+        cleanupStaleActiveFetches()
+      }
+    }
+
+    const addToQueueAndProcess = (spellIds) => {
+      spellIds.forEach(spellId => {
+        pricingFetchQueue.value.add(spellId)
+        
+        // Remove existing pricing to show loading state
+        const spell = spells.value.find(s => s.spell_id == spellId)
+        if (spell) {
+          delete spell.pricing
+        }
+      })
+      
+      console.log(`Added ${spellIds.length} spells to pricing queue`)
+      
+      // Start processing if not already running
+      if (!isPersistentFetchRunning.value) {
+        processPricingQueue()
+      }
+    }
+
+    // Resume interrupted fetches when spells data changes
+    const resumeInterruptedFetches = () => {
+      // First, clear progress for spells that have pricing but still show progress
+      spells.value.forEach(spell => {
+        const progress = getPricingProgress(spell.spell_id)
+        if (spell.hasOwnProperty('pricing') && progress > 0 && progress < 100) {
+          console.log(`Clearing stuck progress for spell ${spell.spell_id} (has pricing but shows ${progress}% progress)`)
+          setPricingProgress(spell.spell_id, 100)
+        }
+      })
+      
+      // Then, resume interrupted fetches for spells without pricing
+      const interruptedSpells = spells.value.filter(spell => {
+        const progress = getPricingProgress(spell.spell_id)
+        return progress > 0 && progress < 100 && !spell.pricing && !activePricingFetches.value.has(spell.spell_id)
+      })
+      
+      if (interruptedSpells.length > 0) {
+        console.log(`Resuming ${interruptedSpells.length} interrupted pricing fetches`)
+        addToQueueAndProcess(interruptedSpells.map(s => s.spell_id))
+      }
+    }
+
+    const fetchSamplePricingData = async (sampleSpells) => {
+      try {
+        console.log('Starting persistent pricing fetch for sample spells...')
+        
+        const spellIds = sampleSpells.map(spell => spell.spell_id)
+        addToQueueAndProcess(spellIds)
+        
+        console.log(`Queued ${sampleSpells.length} sample spells for persistent pricing fetch`)
+        
+      } catch (error) {
+        console.warn('Error starting sample pricing fetch:', error)
+      }
+    }
+
     const loadSpells = async (showLoading = true) => {
       if (showLoading) {
         loading.value = true
       }
       error.value = null
       
+      // Clear any stale pricing queue data from previous classes/sessions
+      pricingFetchQueue.value.clear()
+      activePricingFetches.value.clear()
+      console.log('🧹 Cleared stale pricing queue and active fetches')
+      
       try {
+        console.log(`🔄 Loading spells for ${props.className}...`)
         const result = await spellsStore.fetchSpellsForClass(props.className)
+        
+        // Debug: Check what pricing data we received from backend
+        if (result && result.length > 0) {
+          const pricingStats = {
+            total: result.length,
+            withPricing: result.filter(s => s.pricing && !s.pricing.unknown).length,
+            failed: result.filter(s => s.pricing && s.pricing.unknown === true).length,
+            noPricing: result.filter(s => !s.pricing).length
+          }
+          console.log(`📦 Backend provided: Total=${pricingStats.total}, WithPricing=${pricingStats.withPricing}, Failed=${pricingStats.failed}, NoPricing=${pricingStats.noPricing}`)
+          
+          // Show sample of spells with different pricing states
+          const sampleWithPricing = result.find(s => s.pricing && !s.pricing.unknown)
+          const sampleFailed = result.find(s => s.pricing && s.pricing.unknown === true)
+          const sampleNoPricing = result.find(s => !s.pricing)
+          
+          if (sampleWithPricing) console.log(`  Sample WITH pricing: ${sampleWithPricing.spell_id} = ${JSON.stringify(sampleWithPricing.pricing)}`)
+          if (sampleFailed) console.log(`  Sample FAILED: ${sampleFailed.spell_id} = ${JSON.stringify(sampleFailed.pricing)}`)
+          if (sampleNoPricing) console.log(`  Sample NO pricing: ${sampleNoPricing.spell_id} = ${JSON.stringify(sampleNoPricing.pricing)}`)
+        }
+        
+        // Load pricing metadata
+        await loadPricingMetadata()
+        
+        // Wait for DOM updates to ensure spell data is available
+        await nextTick()
+        
+        // Allow Vue reactivity to update computed properties
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Intelligent pricing detection and auto-fetch
+        await performIntelligentPricingCheck()
+        
+        // Resume any interrupted pricing fetches
+        resumeInterruptedFetches()
         
         // Wait for DOM updates before hiding loading
         await nextTick()
@@ -945,7 +1504,7 @@ export default {
       error.value = null
       
       try {
-        await spellsStore.scrapeAllClasses()
+        await spellsStore.scrapeSpecificClass(props.className)
         // Don't show loading again immediately after scraping
         await loadSpells(false)
       } catch (err) {
@@ -958,28 +1517,61 @@ export default {
     // Debounced loading function to prevent rapid API calls
     const debouncedLoad = debounce(loadSpells, 300)
 
-    // Cache status management
-    const fetchCacheStatus = async () => {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/api/cache-expiry-status/${props.className}`)
-        cacheStatus.value = response.data
-      } catch (err) {
-        console.error('Failed to fetch cache status:', err)
-        cacheStatus.value = null
+    // Utility functions
+    const formatTimestamp = (timestamp) => {
+      if (!timestamp) return 'Unknown'
+      const date = new Date(timestamp)
+      return date.toLocaleString()
+    }
+
+    const getTimeDescription = (timestamp, expiryHours, isExpired) => {
+      if (!timestamp) return 'Unknown'
+      const now = new Date()
+      const cacheTime = new Date(timestamp)
+      const expiredTime = new Date(cacheTime.getTime() + (expiryHours * 60 * 60 * 1000))
+      
+      const formatTime = (totalHours, totalMinutes) => {
+        if (totalHours >= 24) {
+          const days = Math.floor(totalHours / 24)
+          const remainingHours = totalHours % 24
+          if (remainingHours > 0) {
+            return `${days}d ${remainingHours}h`
+          } else {
+            return `${days}d`
+          }
+        } else if (totalHours > 0) {
+          return `${totalHours}h ${totalMinutes}m`
+        } else {
+          return `${totalMinutes}m`
+        }
+      }
+      
+      if (isExpired) {
+        const timeSinceExpired = now - expiredTime
+        const hours = Math.floor(timeSinceExpired / (1000 * 60 * 60))
+        const minutes = Math.floor((timeSinceExpired % (1000 * 60 * 60)) / (1000 * 60))
+        
+        return `expired ${formatTime(hours, minutes)} ago`
+      } else {
+        const timeUntilExpiry = expiredTime - now
+        const hours = Math.floor(timeUntilExpiry / (1000 * 60 * 60))
+        const minutes = Math.floor((timeUntilExpiry % (1000 * 60 * 60)) / (1000 * 60))
+        
+        return `Can refresh in ${formatTime(hours, minutes)}`
       }
     }
 
+    // Refresh functions
     const refreshSpellData = async () => {
       refreshingSpells.value = true
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/refresh-spell-cache/${props.className}`)
-        if (response.data.success) {
-          // Reload the spells data
-          await loadSpells(false)
-          // Update cache status
-          await fetchCacheStatus()
-          alert(`Spell data refreshed! ${response.data.spell_count} spells loaded.`)
-        }
+        // Force refresh by clearing the cache and reloading
+        const normalizedClassName = props.className.toLowerCase()
+        spellsStore.spellsData[normalizedClassName] = []
+        spellsStore.spellsMetadata[normalizedClassName] = null
+        
+        await loadSpells(false)
+        alert('Spell data refreshed successfully!')
       } catch (err) {
         console.error('Failed to refresh spell data:', err)
         alert('Failed to refresh spell data. Please try again.')
@@ -991,12 +1583,11 @@ export default {
     const refreshPricingData = async () => {
       refreshingPricing.value = true
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/refresh-pricing-cache/${props.className}`)
-        if (response.data.success) {
-          // Update cache status
-          await fetchCacheStatus()
-          alert(`Pricing cache cleared for ${response.data.cleared_count} spells. New pricing will be fetched when needed.`)
-        }
+        console.log('Refreshing pricing data - clearing cache and re-fetching all')
+        
+        // Clear cache and re-fetch all pricing data
+        await performRegularRefresh()
+        
       } catch (err) {
         console.error('Failed to refresh pricing data:', err)
         alert('Failed to refresh pricing data. Please try again.')
@@ -1005,50 +1596,72 @@ export default {
       }
     }
 
-    // Utility functions for formatting timestamps
-    const formatTimestamp = (timestamp) => {
-      if (!timestamp) return 'Unknown'
-      return new Date(timestamp).toLocaleString()
+    const performRegularRefresh = async () => {
+      const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
+        (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5014')
+      
+      console.log('Clearing backend cache and frontend pricing data...')
+      
+      // Clear backend cache
+      await axios.post(`${API_BASE_URL}/api/refresh-pricing-cache/${props.className}`)
+      
+      // Clear frontend pricing data to force re-fetch
+      spells.value.forEach(spell => {
+        if (spell.hasOwnProperty('pricing')) {
+          delete spell.pricing
+        }
+      })
+      
+      // Force a brief delay to ensure backend cache is updated
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Reload spells data from backend (without cached pricing)
+      await spellsStore.fetchSpellsForClass(props.className, true)
+      spells.value = spellsStore.getSpellsForClass(props.className) || []
+      
+      // Reload pricing metadata
+      await loadPricingMetadata()
+      
+      // Trigger intelligent pricing check to start fetching all pricing again
+      await performIntelligentPricingCheck()
+      
+      console.log('Cache cleared and re-fetch started')
     }
 
-    const formatExpiredTime = (timestamp, expiryHours) => {
-      if (!timestamp) return 'Unknown'
-      const now = new Date()
-      const cacheTime = new Date(timestamp)
-      const expiredTime = new Date(cacheTime.getTime() + (expiryHours * 60 * 60 * 1000))
-      const timeSinceExpired = now - expiredTime
-      const hours = Math.floor(timeSinceExpired / (1000 * 60 * 60))
-      const minutes = Math.floor((timeSinceExpired % (1000 * 60 * 60)) / (1000 * 60))
-      
-      if (hours > 0) {
-        return `${hours}h ${minutes}m ago`
-      } else {
-        return `${minutes}m ago`
+    // Auto-resolve cache inconsistencies
+    const performSmartCacheSync = async () => {
+      try {
+        if (hasPricingInconsistency.value && spellsWithUIPricing.value.length > 0) {
+          console.log('Auto-sync: merging frontend pricing to backend cache')
+          await mergePricingData()
+        }
+      } catch (err) {
+        console.warn('Auto-sync failed (non-critical):', err)
       }
     }
 
-    const formatExpiryTime = (timestamp, expiryHours) => {
-      if (!timestamp) return 'Unknown'
-      const cacheTime = new Date(timestamp)
-      const expiryTime = new Date(cacheTime.getTime() + (expiryHours * 60 * 60 * 1000))
-      const now = new Date()
-      const timeUntilExpiry = expiryTime - now
-      const hours = Math.floor(timeUntilExpiry / (1000 * 60 * 60))
-      const minutes = Math.floor((timeUntilExpiry % (1000 * 60 * 60)) / (1000 * 60))
-      
-      if (hours > 0) {
-        return `in ${hours}h ${minutes}m`
-      } else {
-        return `in ${minutes}m`
-      }
-    }
     
     onMounted(async () => {
       await loadSpells()
-      await fetchCacheStatus()
       window.addEventListener('scroll', handleScroll, { passive: true })
       window.addEventListener('keydown', handleKeydown)
       document.addEventListener('click', handleClickOutside, { passive: true })
+      
+      // Set up cleanup interval for performance maintenance
+      const cleanupInterval = setInterval(() => {
+        cleanupStaleActiveFetches()
+        
+        // Clear old progress entries for non-existent spells
+        const currentSpellIds = new Set(spells.value?.map(s => s.spell_id) || [])
+        Object.keys(pricingProgress.value).forEach(spellId => {
+          if (!currentSpellIds.has(spellId)) {
+            delete pricingProgress.value[spellId]
+          }
+        })
+      }, 60000) // Run every minute
+      
+      // Store interval for cleanup
+      window.cleanupInterval = cleanupInterval
       
       // Wait for DOM to be fully rendered before checking for shared spell
       await nextTick()
@@ -1101,6 +1714,34 @@ export default {
       window.removeEventListener('scroll', handleScroll)
       window.removeEventListener('keydown', handleKeydown)
       document.removeEventListener('click', handleClickOutside)
+      
+      // Clear cleanup interval
+      if (window.cleanupInterval) {
+        clearInterval(window.cleanupInterval)
+        delete window.cleanupInterval
+      }
+      
+      // Cancel all active pricing fetches to prevent memory leaks
+      activePricingFetches.value.forEach((fetchData, spellId) => {
+        console.log(`Cancelling active fetch for spell ${spellId}`)
+        fetchData.controller.cancelled = true
+      })
+      activePricingFetches.value.clear()
+      
+      // Clear pricing queue and progress tracking
+      pricingFetchQueue.value.clear()
+      pricingProgress.value = {}
+      
+      // Clear caches to free memory
+      pricingCache.value = {}
+      spellDetailsCache.value = {}
+      
+      // Reset fetch state
+      isPersistentFetchRunning.value = false
+      isFetchingPricing.value = false
+      
+      // Clear stats cache
+      pricingStatsCache.value = { cached: 0, loading: 0, failed: 0, unfetched: 0, total: 0 }
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
@@ -1193,7 +1834,7 @@ export default {
         
         // Cache the details
         spellDetailsCache.value[spellId] = details
-        saveSpellDetailsToLocalStorage(spellId, details)
+        // Spell details cached in database via backend
         console.log(`✅ Cached spell details for ${spellId}`)
         
         spellDetails.value = details
@@ -1654,7 +2295,7 @@ export default {
       if (retryQueue.value.size > 0) {
         console.log(`🔥 Force processing retry queue with ${retryQueue.value.size} items`)
         isFetchingPricing.value = false // Reset the flag
-        fetchPricingForSpells()
+        // Pricing included with spell data
       }
     }
 
@@ -1757,19 +2398,19 @@ export default {
       // If no pricing fetch is currently running, trigger one immediately
       if (!isFetchingPricing.value) {
         console.log('🚀 Starting pricing fetch for retry queue')
-        fetchPricingForSpells()
+        // Pricing included with spell data
       } else {
         console.log('⏳ Pricing fetch in progress - will try to process retry in 5 seconds')
         // Set a timeout to try again if the current fetch seems stuck
         setTimeout(() => {
           if (retryQueue.value.has(spellId) && !isFetchingPricing.value) {
             console.log(`⏰ Timeout triggered - processing queued retry for spell ${spellId}`)
-            fetchPricingForSpells()
+            // Pricing included with spell data
           } else if (retryQueue.value.has(spellId)) {
             console.log(`⚠️ Retry still queued for spell ${spellId} after timeout - forcing new fetch`)
             // Force a new fetch even if one seems to be running
             isFetchingPricing.value = false
-            fetchPricingForSpells()
+            // Pricing included with spell data
           }
         }, 5000)
       }
@@ -1800,135 +2441,9 @@ export default {
       pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
     }
     
-    // localStorage functions for persistent caching
-    const PRICING_CACHE_KEY = 'eq-spell-pricing-cache'
-    const SPELL_DETAILS_CACHE_KEY = 'eq-spell-details-cache'
+    // Database is the single source of truth - no localStorage caching needed
     
-    const savePricingToLocalStorage = (spellId, pricing) => {
-      try {
-        const existingCache = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
-        existingCache[spellId] = {
-          ...pricing,
-          cached_at: Date.now()
-        }
-        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(existingCache))
-      } catch (error) {
-        console.error('Failed to save pricing to localStorage:', error)
-      }
-    }
-    
-    const loadPricingFromLocalStorage = () => {
-      try {
-        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
-        const now = Date.now()
-        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
-        
-        // Filter out expired entries and load valid ones
-        Object.keys(cachedPricing).forEach(spellId => {
-          const cached = cachedPricing[spellId]
-          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
-            const { cached_at, ...pricing } = cached
-            pricingCache.value[spellId] = pricing
-          }
-        })
-        
-        console.log(`💾 Loaded ${Object.keys(pricingCache.value).length} cached pricing entries from localStorage`)
-      } catch (error) {
-        console.error('Failed to load pricing from localStorage:', error)
-      }
-    }
-    
-    const clearExpiredPricingCache = () => {
-      try {
-        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
-        const now = Date.now()
-        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
-        const validCache = {}
-        
-        Object.keys(cachedPricing).forEach(spellId => {
-          const cached = cachedPricing[spellId]
-          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
-            validCache[spellId] = cached
-          }
-        })
-        
-        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(validCache))
-        console.log(`🧹 Cleaned pricing cache - kept ${Object.keys(validCache).length} valid entries`)
-      } catch (error) {
-        console.error('Failed to clean pricing cache:', error)
-      }
-    }
-    
-    // Spell details caching functions
-    const saveSpellDetailsToLocalStorage = (spellId, details) => {
-      try {
-        const existingCache = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
-        existingCache[spellId] = {
-          ...details,
-          cached_at: Date.now()
-        }
-        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(existingCache))
-      } catch (error) {
-        console.error('Failed to save spell details to localStorage:', error)
-      }
-    }
-    
-    const loadSpellDetailsFromLocalStorage = () => {
-      try {
-        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
-        const now = Date.now()
-        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
-        
-        // Filter out expired entries and load valid ones
-        Object.keys(cachedDetails).forEach(spellId => {
-          const cached = cachedDetails[spellId]
-          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
-            const { cached_at, ...details } = cached
-            spellDetailsCache.value[spellId] = details
-          }
-        })
-        
-        console.log(`💾 Loaded ${Object.keys(spellDetailsCache.value).length} cached spell details from localStorage`)
-      } catch (error) {
-        console.error('Failed to load spell details from localStorage:', error)
-      }
-    }
-    
-    const clearExpiredSpellDetailsCache = () => {
-      try {
-        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
-        const now = Date.now()
-        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
-        const validCache = {}
-        
-        Object.keys(cachedDetails).forEach(spellId => {
-          const cached = cachedDetails[spellId]
-          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
-            validCache[spellId] = cached
-          }
-        })
-        
-        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(validCache))
-        console.log(`🧹 Cleaned spell details cache - kept ${Object.keys(validCache).length} valid entries`)
-      } catch (error) {
-        console.error('Failed to clean spell details cache:', error)
-      }
-    }
-    
-    // Check if circuit breaker is open
-    const isCircuitBreakerOpen = () => {
-      if (pricingFailureCount.value >= FAILURE_THRESHOLD) {
-        if (lastFailureTime.value && Date.now() - lastFailureTime.value < CIRCUIT_BREAKER_TIMEOUT) {
-          return true
-        } else {
-          // Reset circuit breaker after timeout
-          pricingFailureCount.value = 0
-          lastFailureTime.value = null
-          return false
-        }
-      }
-      return false
-    }
+    // Spell details come from backend API - no localStorage needed
     
     // Record pricing failure
     const recordPricingFailure = () => {
@@ -2050,8 +2565,7 @@ export default {
                 spell.pricing = pricing
                 // Cache immediately to prevent re-fetching
                 pricingCache.value[spell.spell_id] = pricing
-                // Save to localStorage immediately for persistence
-                savePricingToLocalStorage(spell.spell_id, pricing)
+                // Pricing cached in database via backend
                 console.log(`✅ Cached pricing for ${spell.name}:`, pricing)
               } else {
                 // Set unknown pricing to prevent re-fetching
@@ -2059,7 +2573,7 @@ export default {
                 spell.pricing = unknownPricing
                 // Cache the unknown pricing too
                 pricingCache.value[spell.spell_id] = unknownPricing
-                savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                // Pricing cached in database
                 console.log(`❓ No pricing data for ${spell.name} - marked as unknown`)
               }
               
@@ -2096,13 +2610,13 @@ export default {
                     spell.pricing = pricing
                     pricingCache.value[spell.spell_id] = pricing
                     // Save immediately to localStorage
-                    savePricingToLocalStorage(spell.spell_id, pricing)
+                    // Pricing cached in database
                     console.log(`✅ Individual retry succeeded for ${spell.name}:`, pricing)
                   } else {
                     const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
                     spell.pricing = unknownPricing
                     pricingCache.value[spell.spell_id] = unknownPricing
-                    savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                    // Pricing cached in database
                     console.log(`❓ Individual retry failed for ${spell.name} - no pricing data`)
                   }
                 } catch (individualError) {
@@ -2110,7 +2624,7 @@ export default {
                   const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
                   spell.pricing = unknownPricing
                   pricingCache.value[spell.spell_id] = unknownPricing
-                  savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                  // Pricing cached in database
                 }
                 
                 setPricingProgress(spell.spell_id, 100)
@@ -2133,6 +2647,9 @@ export default {
             await new Promise(resolve => setTimeout(resolve, 2500))
           }
         }
+        
+        // Reset counters after successful completion
+        processedSpellsForPricing.value = totalSpellsForPricing.value
       } catch (error) {
         console.error('Critical error in pricing fetch process:', error)
         // Set unknown pricing for any remaining spells to prevent endless loading
@@ -2163,19 +2680,27 @@ export default {
         clearTimeout(pricingFetchTimeout)
       }
       pricingFetchTimeout = setTimeout(() => {
-        fetchPricingForSpells()
+        // Pricing included with spell data
       }, 1000) // 1 second debounce to prevent rapid successive calls
     }
     
-    // Initialize caches from localStorage on component mount
+    // Database is single source of truth - no localStorage needed
     onMounted(() => {
-      loadPricingFromLocalStorage()
-      clearExpiredPricingCache()
-      loadSpellDetailsFromLocalStorage()
-      clearExpiredSpellDetailsCache()
+      // Pricing data now comes from the backend with spells
     })
     
-    watch(spells, debouncedFetchPricing, { immediate: true })
+    // Watch for spells changes to resume interrupted fetches
+    watch(() => spells.value, (newSpells, oldSpells) => {
+      // Only resume if spells actually changed (not just reactivity updates)
+      if (newSpells && newSpells.length > 0 && (!oldSpells || newSpells !== oldSpells)) {
+        // Small delay to allow UI to update first
+        nextTick(() => {
+          resumeInterruptedFetches()
+        })
+      }
+    }, { deep: false })
+    
+    // Pricing data now comes from backend - no separate fetching needed
 
     return {
       loading,
@@ -2200,6 +2725,9 @@ export default {
       handleIconError,
       handleIconLoad,
       handleScrollIconError,
+      // Data Status collapse functionality
+      isDataStatusExpanded,
+      toggleDataStatus,
       // Modal properties and methods
       showModal,
       selectedSpell,
@@ -2253,15 +2781,23 @@ export default {
       retryQueue,
       isFetchingPricing,
       // Cache status functionality
-      cacheStatus,
+      spellMetadata,
+      pricingMetadata,
+      isSpellDataExpired,
+      isPricingDataExpired,
+      realTimePricingStats,
+      hasPricingInconsistency,
+      shouldShowPricingRefresh,
+      spellsWithUIPricing,
       refreshingSpells,
       refreshingPricing,
-      fetchCacheStatus,
+      formatTimestamp,
+      getTimeDescription,
       refreshSpellData,
       refreshPricingData,
-      formatTimestamp,
-      formatExpiredTime,
-      formatExpiryTime
+      mergePricingData,
+      performRegularRefresh,
+      performSmartCacheSync
     }
   }
 }
@@ -2297,143 +2833,274 @@ export default {
 
 /* Cache Status Section */
 .cache-status-section {
-  margin: 0 auto 40px auto;
+  margin: 0 auto 30px auto;
   max-width: 1000px;
   padding: 0 20px;
 }
 
-.cache-status-container {
+.cache-info-container {
   background: rgba(var(--class-color-rgb), 0.1);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.cache-status-header {
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.cache-status-header h3 {
-  color: var(--class-color);
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin: 0;
-  text-shadow: 0 0 20px rgba(var(--class-color-rgb), 0.5);
-}
-
-.cache-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 20px;
-}
-
-.cache-status-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(var(--class-color-rgb), 0.15);
   border-radius: 12px;
   padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
   transition: all 0.3s ease;
 }
 
-.cache-status-card.expired {
+/* When collapsed, make container look like a button */
+.cache-info-container:not(:has(.cache-grid-container.expanded)) {
+  background: rgba(var(--class-color-rgb), 0.15);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(var(--class-color-rgb), 0.3);
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: 0 4px 20px rgba(var(--class-color-rgb), 0.1);
+}
+
+/* Enhanced hover effect for collapsed state */
+.cache-info-container:not(:has(.cache-grid-container.expanded)):hover {
+  background: rgba(var(--class-color-rgb), 0.2);
+  border: 1px solid rgba(var(--class-color-rgb), 0.4);
+  box-shadow: 0 6px 25px rgba(var(--class-color-rgb), 0.15);
+  transform: translateY(-1px);
+}
+
+/* Data Status Toggle Button */
+.cache-info-container .data-status-toggle {
+  background: none !important;
+  border: none !important;
+  padding: 8px 2px !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px !important;
+  color: var(--class-color);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 auto !important;
+  transition: all 0.3s ease;
+  border-radius: 16px;
+  width: auto !important;
+  min-width: fit-content;
+  max-width: max-content !important;
+}
+
+/* Collapsed state - ultra compact */
+.data-status-toggle.collapsed {
+  padding: 8px 1px !important;
+  gap: 1px !important;
+  width: auto !important;
+  max-width: max-content !important;
+}
+
+/* When expanded, use full width and reduce padding to fit with container */
+.data-status-toggle.expanded {
+  width: 100% !important;
+  padding: 12px 16px !important;
+  border-radius: 8px;
+  margin: 0 !important;
+  max-width: none !important;
+  gap: 12px !important;
+}
+
+.data-status-toggle:hover {
+  background: rgba(var(--class-color-rgb), 0.2);
+  transform: translateY(-2px);
+}
+
+.data-status-toggle.expanded:hover {
+  background: rgba(var(--class-color-rgb), 0.1);
+  transform: translateY(-1px);
+}
+
+.data-status-toggle:focus {
+  outline: 2px solid var(--class-color);
+  outline-offset: 2px;
+}
+
+.data-status-toggle:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.data-status-icon {
+  font-size: 1.2rem;
+}
+
+.data-status-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.expand-icon {
+  display: flex;
+  align-items: center;
+  transition: transform 0.3s ease;
+  color: var(--class-color);
+  opacity: 0.7;
+}
+
+.expand-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.expand-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Collapsible Container */
+.cache-grid-container {
+  max-height: 0;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  margin-top: 0;
+}
+
+.cache-grid-container.expanded {
+  max-height: 1000px;
+  opacity: 1;
+  margin-top: 20px;
+}
+
+.cache-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.cache-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(var(--class-color-rgb), 0.2);
+  border-radius: 10px;
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.cache-card.expired {
   border-color: rgba(255, 165, 0, 0.4);
   background: rgba(255, 165, 0, 0.05);
 }
 
-.cache-status-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(var(--class-color-rgb), 0.15);
+.cache-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(var(--class-color-rgb), 0.15);
 }
 
-.cache-status-icon {
-  font-size: 2rem;
-  text-align: center;
-  opacity: 0.8;
+.cache-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.cache-status-content {
-  flex: 1;
+.cache-icon {
+  font-size: 1.2rem;
 }
 
-.cache-status-title {
-  font-size: 1.1rem;
-  font-weight: 600;
+.cache-title {
   color: var(--class-color);
-  margin-bottom: 8px;
-  text-align: center;
+  font-weight: 600;
+  font-size: 1rem;
 }
 
-.cache-status-details {
+.cache-details {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 0.9rem;
+  margin-bottom: 12px;
 }
 
-.cache-status-timestamp {
+.cache-count {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.loading-indicator {
+  color: rgba(255, 215, 0, 0.9);
+  font-style: italic;
+  font-weight: 400;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.pricing-breakdown {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-unfetched {
+  color: rgba(108, 117, 125, 0.9);
+}
+
+.stat-failed {
+  color: rgba(220, 53, 69, 0.9);
+}
+
+.stat-unknown {
+  color: rgba(255, 165, 0, 0.9);
+}
+
+.cache-timestamp {
   color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
   font-family: monospace;
-  text-align: center;
 }
 
-.cache-status-info {
-  color: rgba(255, 255, 255, 0.8);
-  text-align: center;
-}
-
-.cache-status-expired {
-  color: #ffa500;
+.cache-status {
+  font-size: 0.85rem;
   font-weight: 500;
-  text-align: center;
 }
 
-.cache-status-fresh {
+.cache-status.fresh {
   color: #32cd32;
-  font-weight: 500;
-  text-align: center;
 }
 
-.cache-status-actions {
+.cache-status.expired {
+  color: #ffa500;
+}
+
+.cache-actions {
   display: flex;
   justify-content: center;
 }
 
-.refresh-button {
+.refresh-btn {
   background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.2), rgba(var(--class-color-rgb), 0.1));
   border: 1px solid rgba(var(--class-color-rgb), 0.3);
   color: var(--class-color);
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 500;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
-.refresh-button:hover:not(:disabled) {
+.refresh-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.3), rgba(var(--class-color-rgb), 0.2));
   border-color: rgba(var(--class-color-rgb), 0.5);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.2);
 }
 
-.refresh-button:disabled {
+.refresh-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.refresh-button:disabled span {
+.refresh-btn:disabled span {
   animation: spin 1s linear infinite;
 }
 
@@ -2442,28 +3109,46 @@ export default {
   to { transform: rotate(360deg); }
 }
 
-/* Responsive design for cache status */
 @media (max-width: 768px) {
   .cache-status-section {
     padding: 0 15px;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
   }
   
-  .cache-status-container {
-    padding: 20px;
+  .cache-info-container {
+    padding: 15px;
   }
   
-  .cache-status-grid {
+  .data-status-toggle {
+    padding: 14px 14px;
+    gap: 6px;
+  }
+  
+  .data-status-toggle.expanded {
+    width: 100%;
+    padding: 10px 12px;
+    margin: 0;
+  }
+  
+  .data-status-icon {
+    font-size: 1.1rem;
+  }
+  
+  .data-status-text {
+    font-size: 1rem;
+  }
+  
+  .cache-grid-container.expanded {
+    margin-top: 15px;
+  }
+  
+  .cache-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 15px;
   }
   
-  .cache-status-card {
-    padding: 16px;
-  }
-  
-  .cache-status-icon {
-    font-size: 1.5rem;
+  .cache-card {
+    padding: 14px;
   }
 }
 
@@ -4346,6 +5031,36 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.spell-pricing-failed {
+  color: rgba(220, 53, 69, 0.9);
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spell-pricing-not-fetched {
+  color: rgba(108, 117, 125, 0.8);
+  font-size: 0.8rem;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pricing-status.failed {
+  color: rgba(220, 53, 69, 1);
+}
+
+.pricing-status.unknown {
+  color: rgba(255, 165, 0, 1);
+}
+
+.pricing-status.not-fetched {
+  color: rgba(108, 117, 125, 1);
 }
 
 .retry-pricing-btn {

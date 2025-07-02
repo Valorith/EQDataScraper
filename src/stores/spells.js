@@ -3,7 +3,7 @@ import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5013')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
@@ -26,6 +26,7 @@ export const useSpellsStore = defineStore('spells', {
       { name: 'Berserker', id: 16, color: '#b22222', colorRgb: '178, 34, 34' }
     ],
     spellsData: {},
+    spellsMetadata: {}, // Store cache metadata (timestamps, expiry status)
     loading: false,
     error: null
   }),
@@ -39,16 +40,22 @@ export const useSpellsStore = defineStore('spells', {
       // Always normalize to lowercase for consistent lookups
       const normalizedClassName = className.toLowerCase()
       return state.spellsData[normalizedClassName] || []
+    },
+
+    getSpellsMetadata: (state) => (className) => {
+      // Get cache metadata (timestamps, expiry status) for a class
+      const normalizedClassName = className.toLowerCase()
+      return state.spellsMetadata[normalizedClassName] || null
     }
   },
 
   actions: {
-    async fetchSpellsForClass(className) {
+    async fetchSpellsForClass(className, forceRefresh = false) {
       // Normalize the className to lowercase for consistent caching
       const normalizedClassName = className.toLowerCase()
       
-      // Check for cached data first
-      if (this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
+      // Check for cached data first (skip if forcing refresh)
+      if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
         return this.spellsData[normalizedClassName]
       }
 
@@ -73,6 +80,15 @@ export const useSpellsStore = defineStore('spells', {
         
         if (!Array.isArray(spellsData)) {
           throw new Error('Invalid response format from server')
+        }
+        
+        // Store metadata (timestamps, cache status)
+        this.spellsMetadata[normalizedClassName] = {
+          last_updated: response.data.last_updated || new Date().toISOString(),
+          cached: response.data.cached || false,
+          expired: response.data.expired || false,
+          spell_count: response.data.spell_count || spellsData.length,
+          stale: response.data.stale || false
         }
         
         // Check for stale cache warning
@@ -134,6 +150,22 @@ export const useSpellsStore = defineStore('spells', {
       } catch (error) {
         this.error = error.message
         console.error('Error scraping all classes:', error)
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async scrapeSpecificClass(className) {
+      this.loading = true
+      this.error = null
+
+      try {
+        const response = await axios.post(`${API_BASE_URL}/api/refresh-spell-cache/${className}`)
+        return response.data
+      } catch (error) {
+        this.error = error.message
+        console.error('Error scraping specific class:', error)
         throw error
       } finally {
         this.loading = false
