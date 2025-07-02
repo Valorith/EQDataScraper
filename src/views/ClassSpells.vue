@@ -649,6 +649,12 @@ export default {
     const totalSpellsForPricing = ref(0)
     const processedSpellsForPricing = ref(0)
     const pricingCache = ref({})
+    
+    // Circuit breaker for pricing failures
+    const pricingFailureCount = ref(0)
+    const lastFailureTime = ref(null)
+    const FAILURE_THRESHOLD = 5
+    const CIRCUIT_BREAKER_TIMEOUT = 30000 // 30 seconds
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -1545,9 +1551,37 @@ export default {
       pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
     }
     
+    // Check if circuit breaker is open
+    const isCircuitBreakerOpen = () => {
+      if (pricingFailureCount.value >= FAILURE_THRESHOLD) {
+        if (lastFailureTime.value && Date.now() - lastFailureTime.value < CIRCUIT_BREAKER_TIMEOUT) {
+          return true
+        } else {
+          // Reset circuit breaker after timeout
+          pricingFailureCount.value = 0
+          lastFailureTime.value = null
+          return false
+        }
+      }
+      return false
+    }
+    
+    // Record pricing failure
+    const recordPricingFailure = () => {
+      pricingFailureCount.value++
+      lastFailureTime.value = Date.now()
+      console.warn(`Pricing failure count: ${pricingFailureCount.value}/${FAILURE_THRESHOLD}`)
+    }
+    
     // Fetch pricing for spells when component loads
     const fetchPricingForSpells = async () => {
       if (!spells.value || spells.value.length === 0) return
+      
+      // Check circuit breaker
+      if (isCircuitBreakerOpen()) {
+        console.warn('Circuit breaker is open - skipping pricing fetch to prevent server overload')
+        return
+      }
       
       // Get spell IDs that don't have pricing yet (including null pricing) and aren't cached
       const spellsNeedingPricing = spells.value.filter(spell => 
@@ -1572,8 +1606,8 @@ export default {
       })
       
       try {
-        // Use smaller batch size for better reliability and faster feedback
-        const batchSize = 3
+        // Use even smaller batch size for better reliability 
+        const batchSize = 2
         for (let i = 0; i < spellsNeedingPricing.length; i += batchSize) {
           const batch = spellsNeedingPricing.slice(i, i + batchSize)
           const spellIds = batch.map(spell => spell.spell_id)
@@ -1591,7 +1625,7 @@ export default {
             const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
               spell_ids: spellIds
             }, {
-              timeout: 15000, // Reduced timeout
+              timeout: 20000, // Increased timeout for reliability
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
@@ -1631,20 +1665,62 @@ export default {
             
           } catch (batchError) {
             console.error(`Batch ${currentBatch}/${totalBatches} failed:`, batchError.message || batchError)
+            recordPricingFailure()
             
-            // Handle individual spell failures in this batch
-            batch.forEach(spell => {
-              const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
-              spell.pricing = emptyPricing
-              pricingCache.value[spell.spell_id] = emptyPricing
-              setPricingProgress(spell.spell_id, 100)
-              processedSpellsForPricing.value++
-            })
+            // Check if it's a timeout error and potentially retry smaller batches
+            if (batchError.message && batchError.message.includes('timeout') && batch.length > 1) {
+              console.log(`Timeout detected, trying individual requests for batch ${currentBatch}`)
+              
+              // Try each spell individually with a delay
+              for (const spell of batch) {
+                try {
+                  await new Promise(resolve => setTimeout(resolve, 500)) // Small delay between individual retries
+                  
+                  const singleResponse = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+                    spell_ids: [spell.spell_id]
+                  }, {
+                    timeout: 10000, // Shorter timeout for individual requests
+                    headers: {
+                      'Accept': 'application/json',
+                      'Content-Type': 'application/json'
+                    }
+                  })
+                  
+                  const pricing = singleResponse.data.pricing[spell.spell_id]
+                  if (pricing) {
+                    spell.pricing = pricing
+                    pricingCache.value[spell.spell_id] = pricing
+                    console.log(`Individual retry succeeded for ${spell.name}`)
+                  } else {
+                    const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                    spell.pricing = unknownPricing
+                    pricingCache.value[spell.spell_id] = unknownPricing
+                  }
+                } catch (individualError) {
+                  console.error(`Individual retry failed for ${spell.name}:`, individualError.message)
+                  const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                  spell.pricing = unknownPricing
+                  pricingCache.value[spell.spell_id] = unknownPricing
+                }
+                
+                setPricingProgress(spell.spell_id, 100)
+                processedSpellsForPricing.value++
+              }
+            } else {
+              // Handle non-timeout errors or single-spell batches normally
+              batch.forEach(spell => {
+                const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                spell.pricing = unknownPricing
+                pricingCache.value[spell.spell_id] = unknownPricing
+                setPricingProgress(spell.spell_id, 100)
+                processedSpellsForPricing.value++
+              })
+            }
           }
           
-          // Shorter delay between batches for faster overall completion
+          // Longer delay between batches to prevent server overload
           if (i + batchSize < spellsNeedingPricing.length) {
-            await new Promise(resolve => setTimeout(resolve, 800))
+            await new Promise(resolve => setTimeout(resolve, 1500))
           }
         }
       } catch (error) {
@@ -1666,8 +1742,18 @@ export default {
       }
     }
 
-    // Watch for spell changes and fetch pricing
-    watch(spells, fetchPricingForSpells, { immediate: true })
+    // Watch for spell changes and fetch pricing with debouncing
+    let pricingFetchTimeout = null
+    const debouncedFetchPricing = () => {
+      if (pricingFetchTimeout) {
+        clearTimeout(pricingFetchTimeout)
+      }
+      pricingFetchTimeout = setTimeout(() => {
+        fetchPricingForSpells()
+      }, 1000) // 1 second debounce to prevent rapid successive calls
+    }
+    
+    watch(spells, debouncedFetchPricing, { immediate: true })
 
     return {
       loading,
