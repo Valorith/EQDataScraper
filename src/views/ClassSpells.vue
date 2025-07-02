@@ -1160,55 +1160,43 @@ export default {
 
     const performIntelligentPricingCheck = async () => {
       try {
-        console.log('Starting intelligent pricing check...')
+        // Reset progress for spells that already have pricing data and identify spells needing pricing in one pass
+        const spellsNeedingPricing = []
+        let withPricing = 0, failed = 0, noPricing = 0
         
-        // Reset progress for spells that already have pricing data
         spells.value.forEach(spell => {
           if (spell.pricing) {
-            // Clear any lingering progress for spells that already have pricing
-            setPricingProgress(spell.spell_id, 100)
+            if (spell.pricing.unknown === true) {
+              failed++
+            } else {
+              withPricing++
+              // Clear any lingering progress for spells that already have pricing
+              setPricingProgress(spell.spell_id, 100)
+            }
           } else {
+            noPricing++
             const progress = getPricingProgress(spell.spell_id)
             if (progress >= 100) {
               // If progress is 100% but no pricing, set as failed
               spell.pricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
-              console.log(`Spell ${spell.spell_id} had 100% progress but no pricing - marking as failed`)
+              failed++
+              noPricing--
+            } else {
+              spellsNeedingPricing.push(spell)
             }
           }
         })
         
-        // Identify spells that need pricing (no pricing data at all or null/undefined)
-        // Do NOT re-fetch spells that have unknown: true (previously failed)
-        const spellsNeedingPricing = spells.value.filter(spell => {
-          if (!spell.pricing) {
-            return true // No pricing data at all - needs fetch
-          }
-          if (spell.pricing.unknown === true) {
-            return false // Previously failed - don't re-fetch
-          }
-          return false // Has valid pricing - don't fetch
-        })
-        
-        // Count different types for debugging
         const totalSpells = spells.value.length
-        const withPricing = spells.value.filter(s => s.pricing && !s.pricing.unknown).length
-        const failed = spells.value.filter(s => 
-          s.pricing && s.pricing.unknown === true
-        ).length
-        const noPricing = spells.value.filter(s => !s.pricing).length
         
-        console.log(`📊 Pricing check: Total=${totalSpells}, WithPricing=${withPricing}, Failed=${failed}, NoPricing=${noPricing}, NeedingFetch=${spellsNeedingPricing.length}`)
-        
+        // Only log if there are spells needing pricing or in debug mode
         if (spellsNeedingPricing.length > 0) {
-          console.log(`Found ${spellsNeedingPricing.length} spells without pricing - queuing for auto-fetch`)
-          console.log(`Sample IDs needing fetch:`, spellsNeedingPricing.slice(0, 5).map(s => s.spell_id))
+          console.log(`📊 Pricing check: Total=${totalSpells}, WithPricing=${withPricing}, Failed=${failed}, NoPricing=${noPricing}, NeedingFetch=${spellsNeedingPricing.length}`)
           
           // Queue all spells that don't have pricing for fetching
           const spellIds = spellsNeedingPricing.map(spell => spell.spell_id)
-          console.log(`🎯 Queueing ${spellIds.length} cleric spells for pricing: ${spellIds.slice(0, 10)}${spellIds.length > 10 ? '...' : ''}`)
+          console.log(`🎯 Queueing ${spellIds.length} spells for pricing: ${spellIds.slice(0, 5).join(', ')}${spellIds.length > 5 ? '...' : ''}`)
           addToQueueAndProcess(spellIds)
-        } else {
-          console.log('✅ All spells already have pricing data (cached, failed, or unknown) - no fetch needed')
         }
         
       } catch (error) {
@@ -1430,49 +1418,28 @@ export default {
       // Clear any stale pricing queue data from previous classes/sessions
       pricingFetchQueue.value.clear()
       activePricingFetches.value.clear()
-      console.log('🧹 Cleared stale pricing queue and active fetches')
       
       try {
         console.log(`🔄 Loading spells for ${props.className}...`)
         const result = await spellsStore.fetchSpellsForClass(props.className)
         
-        // Debug: Check what pricing data we received from backend
+        // Quick debug: Check pricing data from backend
         if (result && result.length > 0) {
-          const pricingStats = {
-            total: result.length,
-            withPricing: result.filter(s => s.pricing && !s.pricing.unknown).length,
-            failed: result.filter(s => s.pricing && s.pricing.unknown === true).length,
-            noPricing: result.filter(s => !s.pricing).length
+          const withPricing = result.filter(s => s.pricing && !s.pricing.unknown).length
+          const noPricing = result.filter(s => !s.pricing).length
+          if (noPricing > 0) {
+            console.log(`📦 Backend: ${result.length} spells, ${withPricing} with pricing, ${noPricing} without`)
           }
-          console.log(`📦 Backend provided: Total=${pricingStats.total}, WithPricing=${pricingStats.withPricing}, Failed=${pricingStats.failed}, NoPricing=${pricingStats.noPricing}`)
-          
-          // Show sample of spells with different pricing states
-          const sampleWithPricing = result.find(s => s.pricing && !s.pricing.unknown)
-          const sampleFailed = result.find(s => s.pricing && s.pricing.unknown === true)
-          const sampleNoPricing = result.find(s => !s.pricing)
-          
-          if (sampleWithPricing) console.log(`  Sample WITH pricing: ${sampleWithPricing.spell_id} = ${JSON.stringify(sampleWithPricing.pricing)}`)
-          if (sampleFailed) console.log(`  Sample FAILED: ${sampleFailed.spell_id} = ${JSON.stringify(sampleFailed.pricing)}`)
-          if (sampleNoPricing) console.log(`  Sample NO pricing: ${sampleNoPricing.spell_id} = ${JSON.stringify(sampleNoPricing.pricing)}`)
         }
         
-        // Load pricing metadata
-        await loadPricingMetadata()
-        
-        // Wait for DOM updates to ensure spell data is available
-        await nextTick()
-        
-        // Allow Vue reactivity to update computed properties
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        // Intelligent pricing detection and auto-fetch
-        await performIntelligentPricingCheck()
+        // Load pricing metadata and perform pricing check in parallel
+        await Promise.all([
+          loadPricingMetadata(),
+          performIntelligentPricingCheck()
+        ])
         
         // Resume any interrupted pricing fetches
         resumeInterruptedFetches()
-        
-        // Wait for DOM updates before hiding loading
-        await nextTick()
         
         // Check if we actually got data
         const currentSpells = spellsStore.getSpellsForClass(props.className)
@@ -1515,7 +1482,7 @@ export default {
     }
 
     // Debounced loading function to prevent rapid API calls
-    const debouncedLoad = debounce(loadSpells, 300)
+    const debouncedLoad = debounce(loadSpells, 100)
 
     // Utility functions
     const formatTimestamp = (timestamp) => {
