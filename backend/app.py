@@ -23,7 +23,9 @@ def load_config():
         'backend_port': 5001,
         'frontend_port': 3000,
         'cache_expiry_hours': 24,
-        'min_scrape_interval_minutes': 5
+        'min_scrape_interval_minutes': 5,
+        'use_production_database': False,
+        'production_database_url': ''
     }
     
     try:
@@ -51,9 +53,27 @@ logger = logging.getLogger(__name__)
 # Load configuration
 config = load_config()
 
+# Environment detection
+IS_PRODUCTION = os.environ.get('RAILWAY_ENVIRONMENT') == 'production' or os.environ.get('PORT') is not None
+IS_LOCAL = not IS_PRODUCTION
+
 # Database connection setup
 DATABASE_URL = os.environ.get('DATABASE_URL')
-USE_DATABASE_CACHE = DATABASE_URL is not None
+
+# Only allow config.json database override in local environment
+if IS_LOCAL and not DATABASE_URL and config.get('use_production_database', False):
+    DATABASE_URL = config.get('production_database_url', '')
+    if DATABASE_URL:
+        logger.info("Using production database from config.json (local development)")
+        logger.warning("⚠️  Connecting to PRODUCTION database from LOCAL environment")
+
+# Log environment info
+if IS_PRODUCTION:
+    logger.info("Running in PRODUCTION environment")
+else:
+    logger.info("Running in LOCAL DEVELOPMENT environment")
+
+USE_DATABASE_CACHE = DATABASE_URL is not None and DATABASE_URL != ''
 
 if USE_DATABASE_CACHE:
     logger.info("Using PostgreSQL database for cache storage")
