@@ -655,6 +655,10 @@ export default {
     const lastFailureTime = ref(null)
     const FAILURE_THRESHOLD = 5
     const CIRCUIT_BREAKER_TIMEOUT = 30000 // 30 seconds
+    
+    // Retry queue system
+    const retryQueue = ref(new Set())
+    const isFetchingPricing = ref(false)
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -1459,7 +1463,7 @@ export default {
     }
     
     const retryPricingFetch = async (spellId) => {
-      console.log(`Retrying pricing fetch for spell ${spellId}`)
+      console.log(`🔄 Queueing retry for spell ${spellId}`)
       
       // Find the spell object
       const spell = spells.value.find(s => s.spell_id === spellId)
@@ -1468,61 +1472,21 @@ export default {
         return
       }
       
-      // Clear existing pricing and cache
+      // Clear existing pricing and cache to force re-fetch
       spell.pricing = null
       delete pricingCache.value[spellId]
       delete pricingProgress.value[spellId]
       
-      // Reset progress
-      setPricingProgress(spellId, 0)
+      // Add to retry queue
+      retryQueue.value.add(spellId)
+      console.log(`📋 Added spell ${spellId} to retry queue (queue size: ${retryQueue.value.size})`)
       
-      try {
-        console.log(`Fetching pricing for spell ${spellId} (retry)`)
-        
-        // Set progress to 25% for retry attempt
-        setPricingProgress(spellId, 25)
-        
-        const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
-          spell_ids: [spellId]
-        }, {
-          timeout: 15000,
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        console.log('Retry pricing response:', response.data)
-        
-        // Set progress to 75% after successful response
-        setPricingProgress(spellId, 75)
-        
-        // Update spell with pricing data
-        const pricing = response.data.pricing[spellId]
-        if (pricing) {
-          spell.pricing = pricing
-          // Cache the pricing to prevent re-fetching
-          pricingCache.value[spellId] = pricing
-          console.log(`Successfully retried pricing for ${spell.name}:`, pricing)
-        } else {
-          // Set unknown pricing indicator
-          const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
-          spell.pricing = unknownPricing
-          pricingCache.value[spellId] = unknownPricing
-          console.log(`Retry failed - no pricing data for ${spell.name}`)
-        }
-        
-        // Set progress to 100% for completed retry
-        setPricingProgress(spellId, 100)
-        
-      } catch (error) {
-        console.error(`Retry failed for spell ${spellId}:`, error.message || error)
-        
-        // Set unknown pricing on retry failure
-        const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
-        spell.pricing = unknownPricing
-        pricingCache.value[spellId] = unknownPricing
-        setPricingProgress(spellId, 100)
+      // If no pricing fetch is currently running, trigger one
+      if (!isFetchingPricing.value) {
+        console.log('🚀 Starting pricing fetch for retry queue')
+        fetchPricingForSpells()
+      } else {
+        console.log('⏳ Pricing fetch in progress - retry will be processed next')
       }
     }
 
@@ -1549,6 +1513,64 @@ export default {
     // Set progress for a specific spell
     const setPricingProgress = (spellId, progress) => {
       pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
+    }
+    
+    // localStorage functions for persistent pricing cache
+    const PRICING_CACHE_KEY = 'eq-spell-pricing-cache'
+    
+    const savePricingToLocalStorage = (spellId, pricing) => {
+      try {
+        const existingCache = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        existingCache[spellId] = {
+          ...pricing,
+          cached_at: Date.now()
+        }
+        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(existingCache))
+      } catch (error) {
+        console.error('Failed to save pricing to localStorage:', error)
+      }
+    }
+    
+    const loadPricingFromLocalStorage = () => {
+      try {
+        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        
+        // Filter out expired entries and load valid ones
+        Object.keys(cachedPricing).forEach(spellId => {
+          const cached = cachedPricing[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            const { cached_at, ...pricing } = cached
+            pricingCache.value[spellId] = pricing
+          }
+        })
+        
+        console.log(`💾 Loaded ${Object.keys(pricingCache.value).length} cached pricing entries from localStorage`)
+      } catch (error) {
+        console.error('Failed to load pricing from localStorage:', error)
+      }
+    }
+    
+    const clearExpiredPricingCache = () => {
+      try {
+        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        const validCache = {}
+        
+        Object.keys(cachedPricing).forEach(spellId => {
+          const cached = cachedPricing[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            validCache[spellId] = cached
+          }
+        })
+        
+        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(validCache))
+        console.log(`🧹 Cleaned pricing cache - kept ${Object.keys(validCache).length} valid entries`)
+      } catch (error) {
+        console.error('Failed to clean pricing cache:', error)
+      }
     }
     
     // Check if circuit breaker is open
@@ -1583,10 +1605,41 @@ export default {
         return
       }
       
+      // Prevent concurrent pricing fetches
+      if (isFetchingPricing.value) {
+        console.log('Pricing fetch already in progress - skipping')
+        return
+      }
+      
+      isFetchingPricing.value = true
+      
+      // Apply cached pricing to spells that don't have it yet
+      spells.value.forEach(spell => {
+        if (spell.spell_id && (!spell.pricing || spell.pricing === null) && pricingCache.value[spell.spell_id]) {
+          spell.pricing = pricingCache.value[spell.spell_id]
+          console.log(`📦 Applied cached pricing for ${spell.name}:`, spell.pricing)
+        }
+      })
+      
       // Get spell IDs that don't have pricing yet (including null pricing) and aren't cached
-      const spellsNeedingPricing = spells.value.filter(spell => 
+      let spellsNeedingPricing = spells.value.filter(spell => 
         spell.spell_id && (!spell.pricing || spell.pricing === null) && !pricingCache.value[spell.spell_id]
       )
+      
+      // Add retry queue items to the list
+      const retrySpells = Array.from(retryQueue.value).map(spellId => 
+        spells.value.find(spell => spell.spell_id === spellId)
+      ).filter(Boolean)
+      
+      // Combine and deduplicate
+      const allSpellIds = new Set([...spellsNeedingPricing.map(s => s.spell_id), ...retrySpells.map(s => s.spell_id)])
+      spellsNeedingPricing = spells.value.filter(spell => allSpellIds.has(spell.spell_id))
+      
+      // Clear retry queue as we're processing it
+      if (retryQueue.value.size > 0) {
+        console.log(`🔄 Processing ${retryQueue.value.size} retry requests`)
+        retryQueue.value.clear()
+      }
       
       console.log(`Found ${spellsNeedingPricing.length} spells needing pricing out of ${spells.value.length} total spells`)
       console.log(`${Object.keys(pricingCache.value).length} spells already cached`)
@@ -1642,20 +1695,24 @@ export default {
               setPricingProgress(spell.spell_id, 75)
             })
             
-            // Update spells with pricing data
+            // Update spells with pricing data and cache immediately
             batch.forEach(spell => {
               const pricing = response.data.pricing[spell.spell_id]
               if (pricing) {
                 spell.pricing = pricing
-                // Cache the pricing to prevent re-fetching
+                // Cache immediately to prevent re-fetching
                 pricingCache.value[spell.spell_id] = pricing
-                console.log(`Set pricing for ${spell.name}:`, pricing)
+                // Save to localStorage immediately for persistence
+                savePricingToLocalStorage(spell.spell_id, pricing)
+                console.log(`✅ Cached pricing for ${spell.name}:`, pricing)
               } else {
-                // Set empty pricing to prevent re-fetching
-                const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
-                spell.pricing = emptyPricing
-                // Cache the empty pricing too
-                pricingCache.value[spell.spell_id] = emptyPricing
+                // Set unknown pricing to prevent re-fetching
+                const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                spell.pricing = unknownPricing
+                // Cache the unknown pricing too
+                pricingCache.value[spell.spell_id] = unknownPricing
+                savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                console.log(`❓ No pricing data for ${spell.name} - marked as unknown`)
               }
               
               // Set progress to 100% for completed spells
@@ -1690,17 +1747,22 @@ export default {
                   if (pricing) {
                     spell.pricing = pricing
                     pricingCache.value[spell.spell_id] = pricing
-                    console.log(`Individual retry succeeded for ${spell.name}`)
+                    // Save immediately to localStorage
+                    savePricingToLocalStorage(spell.spell_id, pricing)
+                    console.log(`✅ Individual retry succeeded for ${spell.name}:`, pricing)
                   } else {
                     const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
                     spell.pricing = unknownPricing
                     pricingCache.value[spell.spell_id] = unknownPricing
+                    savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                    console.log(`❓ Individual retry failed for ${spell.name} - no pricing data`)
                   }
                 } catch (individualError) {
-                  console.error(`Individual retry failed for ${spell.name}:`, individualError.message)
+                  console.error(`❌ Individual retry failed for ${spell.name}:`, individualError.message)
                   const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
                   spell.pricing = unknownPricing
                   pricingCache.value[spell.spell_id] = unknownPricing
+                  savePricingToLocalStorage(spell.spell_id, unknownPricing)
                 }
                 
                 setPricingProgress(spell.spell_id, 100)
@@ -1740,6 +1802,9 @@ export default {
         // Reset counters
         processedSpellsForPricing.value = totalSpellsForPricing.value
       }
+      
+      // Mark fetching as complete
+      isFetchingPricing.value = false
     }
 
     // Watch for spell changes and fetch pricing with debouncing
@@ -1752,6 +1817,12 @@ export default {
         fetchPricingForSpells()
       }, 1000) // 1 second debounce to prevent rapid successive calls
     }
+    
+    // Initialize pricing cache from localStorage on component mount
+    onMounted(() => {
+      loadPricingFromLocalStorage()
+      clearExpiredPricingCache()
+    })
     
     watch(spells, debouncedFetchPricing, { immediate: true })
 
