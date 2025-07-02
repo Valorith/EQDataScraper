@@ -350,7 +350,7 @@ def load_cache_from_storage():
 
 def load_cache_from_database():
     """Load cached data from PostgreSQL database"""
-    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache
+    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache, pricing_cache_timestamp
     
     logger.info(f"=== DATABASE CACHE LOADING ===")
     
@@ -407,7 +407,7 @@ def load_cache_from_database():
 
 def load_cache_from_files():
     """Load cached data from JSON files (fallback for local development)"""
-    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache
+    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache, pricing_cache_timestamp
     
     logger.info(f"=== FILE CACHE LOADING ===")
     logger.info(f"Cache directory: {CACHE_DIR}")
