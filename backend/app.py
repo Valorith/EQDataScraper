@@ -49,12 +49,82 @@ logger = logging.getLogger(__name__)
 # Load configuration
 config = load_config()
 
+# Cache file paths
+CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
+PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
+METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
+
+# Create cache directory if it doesn't exist
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # Data storage
 spells_cache = {}
 cache_timestamp = {}
 last_scrape_time = {}
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
+
+def load_cache_from_disk():
+    """Load cached data from JSON files"""
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache
+    
+    try:
+        # Load spells cache
+        if os.path.exists(SPELLS_CACHE_FILE):
+            with open(SPELLS_CACHE_FILE, 'r') as f:
+                spells_cache = json.load(f)
+                logger.info(f"Loaded {len(spells_cache)} classes from spells cache")
+        
+        # Load pricing cache
+        if os.path.exists(PRICING_CACHE_FILE):
+            with open(PRICING_CACHE_FILE, 'r') as f:
+                pricing_cache = json.load(f)
+                logger.info(f"Loaded {len(pricing_cache)} spells from pricing cache")
+        
+        # Load metadata
+        if os.path.exists(METADATA_CACHE_FILE):
+            with open(METADATA_CACHE_FILE, 'r') as f:
+                metadata = json.load(f)
+                cache_timestamp.update(metadata.get('cache_timestamp', {}))
+                last_scrape_time.update(metadata.get('last_scrape_time', {}))
+                logger.info(f"Loaded cache metadata for {len(cache_timestamp)} classes")
+                
+    except Exception as e:
+        logger.error(f"Error loading cache from disk: {e}")
+        # Initialize empty caches if loading fails
+        spells_cache = {}
+        pricing_cache = {}
+        cache_timestamp = {}
+        last_scrape_time = {}
+
+def save_cache_to_disk():
+    """Save cached data to JSON files"""
+    try:
+        # Save spells cache
+        with open(SPELLS_CACHE_FILE, 'w') as f:
+            json.dump(spells_cache, f, indent=2)
+        
+        # Save pricing cache
+        with open(PRICING_CACHE_FILE, 'w') as f:
+            json.dump(pricing_cache, f, indent=2)
+        
+        # Save metadata
+        metadata = {
+            'cache_timestamp': cache_timestamp,
+            'last_scrape_time': last_scrape_time,
+            'last_updated': datetime.now().isoformat()
+        }
+        with open(METADATA_CACHE_FILE, 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        logger.info(f"Saved cache to disk: {len(spells_cache)} classes, {len(pricing_cache)} pricing entries")
+        
+    except Exception as e:
+        logger.error(f"Error saving cache to disk: {e}")
+
+# Load existing cache on startup
+load_cache_from_disk()
 
 
 def is_cache_expired(class_name):
@@ -77,6 +147,10 @@ def clear_expired_cache():
         spells_cache.pop(class_name, None)
         cache_timestamp.pop(class_name, None)
         logger.info(f"Cleared expired cache for {class_name}")
+    
+    # Save changes to disk if any classes were cleared
+    if expired_classes:
+        save_cache_to_disk()
 
 def can_scrape_class(class_name):
     """Check if enough time has passed since last scrape for rate limiting"""
@@ -181,6 +255,9 @@ def get_spells(class_name):
         cache_timestamp[class_name] = current_time
         last_scrape_time[class_name] = current_time
         
+        # Save to disk after successful scrape
+        save_cache_to_disk()
+        
         logger.info(f"Successfully scraped {len(spells)} spells for {class_name} in {scrape_time:.2f}s")
         
         return jsonify({
@@ -247,6 +324,9 @@ def scrape_all_classes():
                     cache_timestamp[class_name] = datetime.now().isoformat()
             except Exception as e:
                 print(f"Error scraping {class_name}: {e}")
+        
+        # Save to disk after scraping all classes
+        save_cache_to_disk()
         
         return jsonify({
             'message': 'All classes scraped successfully',
@@ -1028,11 +1108,17 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
                 
                 # Cache the result
                 pricing_cache[str(spell_id)] = result
+                # Save pricing cache periodically (every 10 new entries)
+                if len(pricing_cache) % 10 == 0:
+                    save_cache_to_disk()
                 return result
             else:
                 if attempt == max_retries:
                     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                     pricing_cache[str(spell_id)] = result
+                    # Save on failure too
+                    if len(pricing_cache) % 10 == 0:
+                        save_cache_to_disk()
                     return result
                 
         except Exception as e:
@@ -1040,6 +1126,9 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
             if attempt == max_retries:
                 result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
                 pricing_cache[str(spell_id)] = result
+                # Save on failure too
+                if len(pricing_cache) % 10 == 0:
+                    save_cache_to_disk()
                 return result
             
             # Exponential backoff: 0.5s, 1s, 2s
@@ -1048,6 +1137,9 @@ def fetch_single_spell_pricing(spell_id, max_retries=2):
     # Fallback
     result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
     pricing_cache[str(spell_id)] = result
+    # Save fallback too
+    if len(pricing_cache) % 10 == 0:
+        save_cache_to_disk()
     return result
 
 @app.route('/api/spell-pricing', methods=['POST'])
@@ -1087,6 +1179,9 @@ def get_spell_pricing():
                 # Rate limiting between requests
                 time.sleep(0.2)
         
+        # Save cache after batch processing
+        save_cache_to_disk()
+        
         return jsonify({
             'pricing': pricing_results,
             'fetched_count': len(pricing_results),
@@ -1103,7 +1198,80 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'cached_classes': len(spells_cache)
+        'cached_classes': len(spells_cache),
+        'cached_pricing': len(pricing_cache)
+    })
+
+@app.route('/api/cache/save', methods=['POST'])
+def save_cache():
+    """Manually save cache to disk"""
+    try:
+        save_cache_to_disk()
+        return jsonify({
+            'message': 'Cache saved successfully',
+            'timestamp': datetime.now().isoformat(),
+            'cached_classes': len(spells_cache),
+            'cached_pricing': len(pricing_cache)
+        })
+    except Exception as e:
+        logger.error(f"Error saving cache: {e}")
+        return jsonify({'error': 'Failed to save cache'}), 500
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    """Clear all cached data"""
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache
+    
+    try:
+        spells_cache.clear()
+        cache_timestamp.clear()
+        last_scrape_time.clear()
+        pricing_cache.clear()
+        
+        # Remove cache files
+        for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, METADATA_CACHE_FILE]:
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+        
+        return jsonify({
+            'message': 'Cache cleared successfully',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return jsonify({'error': 'Failed to clear cache'}), 500
+
+@app.route('/api/cache/status', methods=['GET'])
+def cache_status():
+    """Get detailed cache status"""
+    cache_files_exist = {
+        'spells': os.path.exists(SPELLS_CACHE_FILE),
+        'pricing': os.path.exists(PRICING_CACHE_FILE),
+        'metadata': os.path.exists(METADATA_CACHE_FILE)
+    }
+    
+    cache_sizes = {}
+    for name, path in [('spells', SPELLS_CACHE_FILE), ('pricing', PRICING_CACHE_FILE), ('metadata', METADATA_CACHE_FILE)]:
+        if os.path.exists(path):
+            cache_sizes[name] = os.path.getsize(path)
+        else:
+            cache_sizes[name] = 0
+    
+    return jsonify({
+        'memory_cache': {
+            'classes': len(spells_cache),
+            'pricing_entries': len(pricing_cache),
+            'timestamps': len(cache_timestamp)
+        },
+        'disk_cache': {
+            'files_exist': cache_files_exist,
+            'file_sizes_bytes': cache_sizes,
+            'cache_directory': CACHE_DIR
+        },
+        'config': {
+            'cache_expiry_hours': CACHE_EXPIRY_HOURS,
+            'min_scrape_interval_minutes': MIN_SCRAPE_INTERVAL_MINUTES
+        }
     })
 
 if __name__ == '__main__':
