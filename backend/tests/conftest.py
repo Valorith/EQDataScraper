@@ -43,19 +43,40 @@ def temp_cache_dir():
     # Cleanup
     shutil.rmtree(temp_dir, ignore_errors=True)
 
+@pytest.fixture(autouse=True)
+def setup_clean_cache():
+    """Ensure clean cache state for each test."""
+    # Clear any cached data before each test
+    try:
+        import app as flask_app
+        flask_app.spells_cache.clear()
+        flask_app.spell_details_cache.clear()
+        flask_app.cache_timestamp.clear()
+        flask_app.pricing_cache_timestamp.clear()
+        flask_app.last_scrape_time.clear()
+        flask_app.pricing_lookup.clear()
+    except ImportError:
+        pass  # App not imported yet
+    
+    yield
+    
+    # Clean up after test
+    try:
+        import app as flask_app
+        flask_app.spells_cache.clear()
+        flask_app.spell_details_cache.clear()
+        flask_app.cache_timestamp.clear()
+        flask_app.pricing_cache_timestamp.clear()
+        flask_app.last_scrape_time.clear()
+        flask_app.pricing_lookup.clear()
+    except ImportError:
+        pass
+
 @pytest.fixture
 def mock_app():
     """Create a Flask test client."""
     # Import app after environment is set
     import app as flask_app
-    
-    # Clear any existing cache data
-    flask_app.spells_cache.clear()
-    flask_app.spell_details_cache.clear()
-    flask_app.cache_timestamp.clear()
-    flask_app.pricing_cache_timestamp.clear()
-    flask_app.last_scrape_time.clear()
-    flask_app.pricing_lookup.clear()
     
     flask_app.app.config['TESTING'] = True
     return flask_app.app.test_client()
