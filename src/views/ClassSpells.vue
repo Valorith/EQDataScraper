@@ -239,8 +239,12 @@
                   :disabled="isFetchingPricing && retryQueue.has(spell.spell_id)"
                   :title="getRetryButtonTitle(spell.spell_id)"
                 >
-                  <span v-if="retryQueue.has(spell.spell_id)">⏳</span>
-                  <span v-else>🔄</span>
+                  <svg v-if="retryQueue.has(spell.spell_id)" class="retry-icon hourglass-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C13.1 2 14 2.9 14 4V5H16C16.55 5 17 5.45 17 6S16.55 7 16 7H14V8C14 10.21 12.21 12 10 12C12.21 12 14 13.79 14 16V17H16C16.55 17 17 17.45 17 18S16.55 19 16 19H14V20C14 21.1 13.1 22 12 22S10 21.1 10 20V19H8C7.45 19 7 18.55 7 18S7.45 17 8 17H10V16C10 13.79 11.79 12 14 12C11.79 12 10 10.21 10 8V7H8C7.45 7 7 6.55 7 6S7.45 5 8 5H10V4C10 2.9 10.9 2 12 2Z"/>
+                  </svg>
+                  <svg v-else class="retry-icon refresh-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                  </svg>
                 </button>
               </div>
               <div v-else class="spell-pricing-loading">
@@ -3986,54 +3990,54 @@ export default {
 
 .retry-pricing-btn {
   background: rgba(255, 165, 0, 0.2);
-  border: 1px solid rgba(255, 165, 0, 0.4);
-  border-radius: 4px;
-  color: rgba(255, 165, 0, 0.9);
+  border: 2px solid rgba(255, 165, 0, 0.8);
+  border-radius: 8px;
+  color: rgba(255, 165, 0, 1);
   cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0.2rem 0.3rem;
+  padding: 0.25rem;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
+  min-width: 24px;
+  height: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .retry-pricing-btn:hover:not(.disabled) {
-  background: rgba(255, 165, 0, 0.3);
-  border-color: rgba(255, 165, 0, 0.6);
-  transform: rotate(180deg);
-  box-shadow: 0 2px 4px rgba(255, 165, 0, 0.2);
+  background: rgba(255, 165, 0, 0.25);
+  border-color: rgba(255, 165, 0, 0.8);
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(255, 165, 0, 0.3);
 }
 
 /* Queued retry button state */
 .retry-pricing-btn.queued {
   background: rgba(52, 152, 219, 0.2);
-  border-color: rgba(52, 152, 219, 0.4);
-  color: rgba(52, 152, 219, 0.9);
+  border-color: rgba(52, 152, 219, 0.8);
+  color: rgba(52, 152, 219, 1);
   cursor: wait;
 }
 
 .retry-pricing-btn.queued:hover {
-  background: rgba(52, 152, 219, 0.3);
-  border-color: rgba(52, 152, 219, 0.6);
+  background: rgba(52, 152, 219, 0.25);
+  border-color: rgba(52, 152, 219, 0.8);
   transform: none;
-  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.2);
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
 }
 
 /* Disabled retry button state */
 .retry-pricing-btn.disabled {
-  background: rgba(108, 117, 125, 0.2);
-  border-color: rgba(108, 117, 125, 0.4);
-  color: rgba(108, 117, 125, 0.6);
+  background: rgba(108, 117, 125, 0.1);
+  border-color: rgba(108, 117, 125, 0.3);
+  color: rgba(108, 117, 125, 0.5);
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .retry-pricing-btn.disabled:hover {
-  background: rgba(108, 117, 125, 0.2);
-  border-color: rgba(108, 117, 125, 0.4);
+  background: rgba(108, 117, 125, 0.1);
+  border-color: rgba(108, 117, 125, 0.3);
   transform: none;
   box-shadow: none;
 }
@@ -4044,14 +4048,32 @@ export default {
   font-weight: 600;
 }
 
+/* SVG icon styles */
+.retry-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.3s ease;
+}
+
+/* Refresh icon animation on hover */
+.retry-pricing-btn:hover:not(.disabled):not(.queued) .refresh-icon {
+  transform: rotate(180deg);
+}
+
 /* Hourglass animation for queued retry button */
-.retry-pricing-btn.queued span {
+.retry-pricing-btn.queued .hourglass-icon {
   animation: hourglass 2s ease-in-out infinite;
 }
 
 @keyframes hourglass {
-  0%, 100% { transform: scale(1) rotate(0deg); }
-  50% { transform: scale(1.1) rotate(180deg); }
+  0%, 100% { 
+    transform: scale(1) rotate(0deg); 
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1) rotate(180deg); 
+    opacity: 0.8;
+  }
 }
 
 .add-to-cart-btn {
