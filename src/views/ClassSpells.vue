@@ -104,7 +104,8 @@
       </div>
 
       <!-- Level Matrix Navigation -->
-      <nav class="level-navigator" aria-label="Level navigation">
+      <div class="level-navigator-container">
+        <nav class="level-navigator" aria-label="Level navigation">
         <h2 class="level-nav-title">Quick Level Navigation</h2>
         <div class="level-matrix" role="grid" aria-label="Level selection grid">
           <button
@@ -123,7 +124,8 @@
             {{ level }}
           </button>
         </div>
-      </nav>
+        </nav>
+      </div>
 
       <div 
         v-for="(levelGroup, level) in groupedSpells" 
@@ -2275,15 +2277,21 @@ export default {
 }
 
 /* Level Navigator Styles */
+.level-navigator-container {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
 .level-navigator {
   background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 20px;
-  padding: 2rem;
-  margin-bottom: 3rem;
+  padding: 1rem 0.75rem;
+  margin: 0;
   position: relative;
   overflow: hidden;
+  display: inline-block;
 }
 
 .level-nav-title {
@@ -2300,8 +2308,8 @@ export default {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(6, 1fr);
-  gap: 0.5rem;
-  max-width: 600px;
+  gap: 0.75rem;
+  width: fit-content;
   margin: 0 auto;
 }
 
@@ -2314,13 +2322,14 @@ export default {
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.5);
-  min-height: 40px;
+  min-height: 48px;
+  min-width: 48px;
   font-family: 'Inter', sans-serif;
   text-align: center;
   user-select: none;
@@ -3875,6 +3884,21 @@ export default {
     left: 1rem;
     max-width: none;
     font-size: 0.9rem;
+  }
+  
+  /* Mobile level navigation adjustments */
+  .level-navigator {
+    padding: 1rem;
+    margin-bottom: 2rem;
+  }
+  
+  .level-matrix {
+    gap: 0.375rem;
+  }
+  
+  .level-cell {
+    min-height: 36px;
+    font-size: 0.8rem;
   }
 }
 
