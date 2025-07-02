@@ -1,0 +1,9 @@
+{
+  "backend_port": 5001,
+  "frontend_port": 3000,
+  "cache_expiry_hours": 24,
+  "min_scrape_interval_minutes": 5,
+  "use_production_database": false,
+  "production_database_url": "",
+  "_comment": "To connect to production database locally, set use_production_database to true and add your Railway DATABASE_URL"
+}

@@ -13,6 +13,9 @@ node_modules/
 # User-specific configuration files
 config.json
 
+# Environment variables (contains sensitive database URLs)
+.env
+
 # Cache directory - contains persistent spell and pricing data
 cache/
 
