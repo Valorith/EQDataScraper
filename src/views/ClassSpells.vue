@@ -5,8 +5,18 @@
         ← Back to Classes
       </button>
       
-      <h1 class="class-title" :style="titleStyles">{{ className }} Spells</h1>
-      <p class="class-subtitle">Norrath Compendium</p>
+      <div class="hero-content">
+        <h1 class="class-title" :style="titleStyles">{{ className }} Spells</h1>
+        <p class="class-subtitle">Norrath Compendium</p>
+      </div>
+      
+      <!-- Cart Button -->
+      <div class="cart-container">
+        <button @click="openCart" class="cart-button" title="View Cart">
+          <span class="cart-icon">🛒</span>
+          <span v-if="cartStore.itemCount > 0" class="cart-counter">{{ cartStore.itemCount }}</span>
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="loading-container" :class="{ 'transitioning': isTransitioning }">
@@ -187,6 +197,54 @@
                   <span class="attribute-value">{{ spell.mana }}</span>
                 </div>
               </div>
+            </div>
+            
+            <!-- Pricing and Cart Section -->
+            <div class="spell-footer">
+              <div v-if="spell.pricing && hasAnyPrice(spell.pricing)" class="spell-pricing">
+                <div class="coin-display">
+                  <div v-if="spell.pricing.platinum > 0" class="coin-item">
+                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.platinum }}</span>
+                  </div>
+                  <div v-if="spell.pricing.gold > 0" class="coin-item">
+                    <img src="/icons/coins/gold.svg" alt="Gold" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.gold }}</span>
+                  </div>
+                  <div v-if="spell.pricing.silver > 0" class="coin-item">
+                    <img src="/icons/coins/silver.svg" alt="Silver" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.silver }}</span>
+                  </div>
+                  <div v-if="spell.pricing.bronze > 0" class="coin-item">
+                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.bronze }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="spell.pricing && !hasAnyPrice(spell.pricing)" class="spell-pricing-free">
+                <span class="pricing-status">Free</span>
+              </div>
+              <div v-else class="spell-pricing-loading">
+                <div class="pricing-progress-container">
+                  <div class="pricing-progress-bar">
+                    <div 
+                      class="pricing-progress-fill" 
+                      :style="{ width: `${getPricingProgress(spell.spell_id)}%` }"
+                    ></div>
+                    <span class="pricing-loading-text">Loading Price</span>
+                  </div>
+                  <span class="pricing-progress-text">{{ getPricingProgress(spell.spell_id) }}%</span>
+                </div>
+              </div>
+              
+              <button 
+                @click.stop="addToCart(spell)" 
+                :class="['add-to-cart-btn', { 'in-cart': isInCart(spell.spell_id) }]"
+                :title="isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'"
+              >
+                <span v-if="isInCart(spell.spell_id)">✓</span>
+                <span v-else>🛒</span>
+              </button>
             </div>
           </div>
         </div>
@@ -396,6 +454,124 @@
         </div>
       </div>
     </div>
+
+    <!-- Cart Modal -->
+    <div v-if="cartStore.isOpen" class="cart-modal-overlay" @click="cartStore.closeCart()">
+      <div class="cart-modal" @click.stop>
+        <div class="cart-modal-header">
+          <h3>Shopping Cart</h3>
+          <button @click="cartStore.closeCart()" class="modal-close-btn">×</button>
+        </div>
+        
+        <div class="cart-modal-content">
+          <!-- Empty Cart State -->
+          <div v-if="cartStore.itemCount === 0" class="cart-empty">
+            <div class="cart-empty-icon">🛒</div>
+            <h4>Your cart is empty</h4>
+            <p>Browse spells and add them to your cart to see them here.</p>
+            <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+              Continue Shopping
+            </button>
+          </div>
+          
+          <!-- Cart Items -->
+          <div v-else>
+            <div class="cart-items">
+              <div 
+                v-for="item in cartStore.items" 
+                :key="item.spell_id"
+                class="cart-item"
+              >
+                <div class="cart-item-info">
+                  <img 
+                    v-if="item.icon" 
+                    :src="item.icon" 
+                    :alt="item.name"
+                    class="cart-item-icon"
+                    @error="handleIconError"
+                  />
+                  <div class="cart-item-details">
+                    <h4 class="cart-item-name">{{ item.name }}</h4>
+                    <div class="cart-item-meta">
+                      Level {{ item.level }}
+                      <span v-if="item.class_names && item.class_names.length">
+                        • {{ item.class_names.join(', ') }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="cart-item-pricing">
+                  <div v-if="item.pricing && hasAnyPrice(item.pricing)" class="cart-coin-display">
+                    <div v-if="item.pricing.platinum > 0" class="cart-coin-item">
+                      <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.platinum }}</span>
+                    </div>
+                    <div v-if="item.pricing.gold > 0" class="cart-coin-item">
+                      <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.gold }}</span>
+                    </div>
+                    <div v-if="item.pricing.silver > 0" class="cart-coin-item">
+                      <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.silver }}</span>
+                    </div>
+                    <div v-if="item.pricing.bronze > 0" class="cart-coin-item">
+                      <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.bronze }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="cart-pricing-free">Free</div>
+                </div>
+                
+                <button 
+                  @click="removeFromCart(item.spell_id)" 
+                  class="remove-item-btn"
+                  title="Remove from cart"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+            
+            <!-- Cart Total -->
+            <div class="cart-total">
+              <div class="cart-total-header">
+                <h4>Total Cost</h4>
+                <div class="cart-total-coins">
+                  <div v-if="cartStore.optimizedTotal.platinum > 0" class="cart-coin-item">
+                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.platinum }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.gold > 0" class="cart-coin-item">
+                    <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.gold }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.silver > 0" class="cart-coin-item">
+                    <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.silver }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.bronze > 0" class="cart-coin-item">
+                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.bronze }}</span>
+                  </div>
+                  <div v-if="cartStore.totalInBronze === 0" class="cart-total-free">No cost</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Cart Actions -->
+            <div class="cart-actions">
+              <button @click="clearCart()" class="clear-cart-btn">
+                Clear Cart
+              </button>
+              <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+                Continue Shopping
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- Share Toast Notification -->
     <div v-if="shareToastVisible" class="share-toast">
@@ -409,6 +585,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSpellsStore } from '../stores/spells'
+import { useCartStore } from '../stores/cart'
+import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
@@ -435,6 +613,7 @@ export default {
     const router = useRouter()
     const route = useRoute()
     const spellsStore = useSpellsStore()
+    const cartStore = useCartStore()
     const loading = ref(false)
     const error = ref(null)
     const isTransitioning = ref(false)
@@ -454,6 +633,12 @@ export default {
     const spellDetails = ref(null)
     const loadingSpellDetails = ref(false)
     const spellDetailsError = ref(null)
+    
+    // Pricing progress tracking
+    const pricingProgress = ref({})
+    const totalSpellsForPricing = ref(0)
+    const processedSpellsForPricing = ref(0)
+    const pricingCache = ref({})
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -1185,6 +1370,164 @@ export default {
       }
     }
 
+    // Cart functionality
+    const addToCart = (spell) => {
+      // Check if item is already in cart
+      if (isInCart(spell.spell_id)) {
+        // Remove from cart if already in cart
+        cartStore.removeItem(spell.spell_id)
+        console.log(`Removed ${spell.name} from cart`)
+      } else {
+        // Add to cart if not in cart
+        const success = cartStore.addItem(spell)
+        if (success) {
+          console.log(`Added ${spell.name} to cart`)
+        } else {
+          console.log(`Failed to add ${spell.name} to cart`)
+        }
+      }
+    }
+
+    const isInCart = (spellId) => {
+      return cartStore.items.some(item => item.spell_id === spellId)
+    }
+
+    const hasAnyPrice = (pricing) => {
+      if (!pricing) return false
+      return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
+    }
+
+    const openCart = () => {
+      cartStore.openCart()
+    }
+
+    const removeFromCart = (spellId) => {
+      cartStore.removeItem(spellId)
+    }
+
+    const clearCart = () => {
+      if (confirm('Are you sure you want to clear your cart?')) {
+        cartStore.clearCart()
+      }
+    }
+
+    // Get pricing progress for a specific spell
+    const getPricingProgress = (spellId) => {
+      // If we have cached pricing, don't show progress
+      if (pricingCache.value[spellId]) {
+        return 100
+      }
+      
+      if (pricingProgress.value[spellId] !== undefined) {
+        return pricingProgress.value[spellId]
+      }
+      
+      // If we have no individual progress, calculate based on overall progress
+      if (totalSpellsForPricing.value > 0) {
+        return Math.floor((processedSpellsForPricing.value / totalSpellsForPricing.value) * 100)
+      }
+      
+      return 0
+    }
+    
+    // Set progress for a specific spell
+    const setPricingProgress = (spellId, progress) => {
+      pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
+    }
+    
+    // Fetch pricing for spells when component loads
+    const fetchPricingForSpells = async () => {
+      if (!spells.value || spells.value.length === 0) return
+      
+      // Get spell IDs that don't have pricing yet (including null pricing) and aren't cached
+      const spellsNeedingPricing = spells.value.filter(spell => 
+        spell.spell_id && (!spell.pricing || spell.pricing === null) && !pricingCache.value[spell.spell_id]
+      )
+      
+      console.log(`Found ${spellsNeedingPricing.length} spells needing pricing out of ${spells.value.length} total spells`)
+      
+      if (spellsNeedingPricing.length === 0) return
+      
+      // Initialize progress tracking
+      totalSpellsForPricing.value = spellsNeedingPricing.length
+      processedSpellsForPricing.value = 0
+      
+      // Initialize individual spell progress
+      spellsNeedingPricing.forEach(spell => {
+        setPricingProgress(spell.spell_id, 0)
+      })
+      
+      try {
+        // Batch fetch pricing (max 10 at a time to avoid overwhelming)
+        const batchSize = 10
+        for (let i = 0; i < spellsNeedingPricing.length; i += batchSize) {
+          const batch = spellsNeedingPricing.slice(i, i + batchSize)
+          const spellIds = batch.map(spell => spell.spell_id)
+          
+          console.log(`Fetching pricing for batch ${Math.floor(i/batchSize) + 1}:`, spellIds)
+          
+          // Set progress to 50% for spells being processed
+          batch.forEach(spell => {
+            setPricingProgress(spell.spell_id, 50)
+          })
+          
+          const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+            spell_ids: spellIds
+          }, {
+            timeout: 30000,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          })
+          
+          console.log('Pricing response:', response.data)
+          
+          // Update spells with pricing data
+          batch.forEach(spell => {
+            const pricing = response.data.pricing[spell.spell_id]
+            if (pricing) {
+              spell.pricing = pricing
+              // Cache the pricing to prevent re-fetching
+              pricingCache.value[spell.spell_id] = pricing
+              console.log(`Set pricing for ${spell.name}:`, pricing)
+            } else {
+              // Set empty pricing to prevent re-fetching
+              const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
+              spell.pricing = emptyPricing
+              // Cache the empty pricing too
+              pricingCache.value[spell.spell_id] = emptyPricing
+            }
+            
+            // Set progress to 100% for completed spells
+            setPricingProgress(spell.spell_id, 100)
+            processedSpellsForPricing.value++
+          })
+          
+          // Small delay between batches to avoid overwhelming the server
+          if (i + batchSize < spellsNeedingPricing.length) {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching pricing data:', error)
+        // Set empty pricing for spells that failed to prevent endless loading
+        spellsNeedingPricing.forEach(spell => {
+          if (!spell.pricing) {
+            const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
+            spell.pricing = emptyPricing
+            // Cache the empty pricing to prevent re-fetching
+            pricingCache.value[spell.spell_id] = emptyPricing
+          }
+          // Set progress to 100% even for failed spells to stop loading state
+          setPricingProgress(spell.spell_id, 100)
+        })
+      }
+    }
+
+    // Watch for spell changes and fetch pricing
+    watch(spells, fetchPricingForSpells, { immediate: true })
+
     return {
       loading,
       error,
@@ -1238,7 +1581,17 @@ export default {
       highlightMatch,
       // Share functionality
       shareSpell,
-      shareToastVisible
+      shareToastVisible,
+      // Cart functionality
+      cartStore,
+      addToCart,
+      isInCart,
+      hasAnyPrice,
+      openCart,
+      removeFromCart,
+      clearCart,
+      // Pricing progress
+      getPricingProgress
     }
   }
 }
@@ -2979,6 +3332,577 @@ export default {
     left: 1rem;
     max-width: none;
     font-size: 0.9rem;
+  }
+}
+
+/* Spell Footer and Pricing Styles */
+.spell-footer {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spell-pricing {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.coin-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.coin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.coin-icon {
+  width: 20px;
+  height: 20px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.coin-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.spell-pricing-loading {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.pricing-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 100px;
+}
+
+.pricing-progress-bar {
+  flex: 1;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pricing-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.4);
+  z-index: 1;
+}
+
+.pricing-loading-text {
+  position: relative;
+  z-index: 2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+.pricing-progress-text {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 30px;
+  text-align: right;
+}
+
+.spell-pricing-free {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.add-to-cart-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+.add-to-cart-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838, #1ea080);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+}
+
+.add-to-cart-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Add to cart button in cart state - different color to show it's in cart */
+.add-to-cart-btn.in-cart {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.add-to-cart-btn.in-cart:hover {
+  background: linear-gradient(135deg, #5a6268, #495057);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+/* Mobile adjustments for spell footer */
+@media (max-width: 768px) {
+  .spell-footer {
+    gap: 0.5rem;
+  }
+  
+  .coin-display {
+    gap: 0.375rem;
+  }
+  
+  .coin-item {
+    padding: 0.2rem 0.4rem;
+  }
+  
+  .coin-icon {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .coin-value {
+    font-size: 0.8rem;
+  }
+  
+  .add-to-cart-btn {
+    font-size: 0.9rem;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Cart Header Button Styles */
+.hero-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 60px;
+  position: relative;
+}
+
+.hero-content {
+  text-align: center;
+  flex: 1;
+}
+
+.cart-container {
+  position: relative;
+}
+
+.cart-button {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.8), rgba(147, 112, 219, 0.6));
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.cart-button:hover {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 1), rgba(147, 112, 219, 0.8));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(147, 112, 219, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.cart-icon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.cart-counter {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(145deg, #ff4757, #ff3742);
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Cart Modal Styles */
+.cart-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.cart-modal {
+  background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 24px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+
+.cart-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-modal-header h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+}
+
+.cart-modal-content {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.cart-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.cart-empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.6;
+}
+
+.cart-empty h4 {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 1rem 0;
+}
+
+.cart-empty p {
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 2rem 0;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-item-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.cart-item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.cart-item-details h4 {
+  margin: 0 0 0.25rem 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+}
+
+.cart-item-meta {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.cart-item-pricing {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+
+.cart-coin-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cart-coin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-coin-icon {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.cart-coin-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.cart-pricing-free {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.remove-item-btn {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.remove-item-btn:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.cart-total {
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.cart-total-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cart-total-header h4 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.3rem;
+}
+
+.cart-total-coins {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cart-total-free {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+.cart-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.clear-cart-btn {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.clear-cart-btn:hover {
+  background: linear-gradient(135deg, #5a6268, #495057);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.continue-shopping-btn {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.continue-shopping-btn:hover {
+  background: linear-gradient(135deg, #0056b3, #004085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+/* Mobile cart adjustments */
+@media (max-width: 768px) {
+  .hero-section {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .cart-button {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .cart-icon {
+    font-size: 1.25rem;
+  }
+  
+  .cart-counter {
+    width: 20px;
+    height: 20px;
+    font-size: 0.7rem;
+  }
+  
+  .cart-modal {
+    margin: 0.5rem;
+    max-height: 90vh;
+  }
+  
+  .cart-modal-header {
+    padding: 1rem;
+  }
+  
+  .cart-modal-content {
+    padding: 1rem;
+  }
+  
+  .cart-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .cart-item-info {
+    width: 100%;
+  }
+  
+  .cart-item-pricing {
+    margin-right: 0;
+    align-self: flex-end;
+  }
+  
+  .cart-total-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  
+  .cart-actions {
+    flex-direction: column;
+  }
+  
+  .cart-coin-display {
+    gap: 0.375rem;
+  }
+  
+  .cart-total-coins {
+    gap: 0.5rem;
   }
 }
 </style> 
