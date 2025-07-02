@@ -187,23 +187,28 @@ class TestAPIEndpoints:
     
     def test_spells_endpoint_with_pricing(self, mock_app, sample_spell_data, sample_spell_details):
         """Test spells endpoint returns pricing data."""
-        # Set up cache data
-        app.spells_cache['cleric'] = sample_spell_data
-        app.cache_timestamp['cleric'] = datetime.now().isoformat()
-        
-        # Add pricing data
-        for spell_id in ['202', '203']:
-            app.spell_details_cache[spell_id] = sample_spell_details[spell_id]
-            app.pricing_lookup[spell_id] = sample_spell_details[spell_id]['pricing']
-        
-        response = mock_app.get('/api/spells/cleric')
-        
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        
-        # Verify spells have pricing data applied
-        spells = data['spells']
-        assert len(spells) == 2
+        with patch('app.scrape_class') as mock_scrape:
+            # Set up cache data with proper class name
+            app.spells_cache.clear()
+            app.spells_cache['Cleric'] = sample_spell_data
+            app.cache_timestamp['Cleric'] = datetime.now().isoformat()
+            
+            # Add pricing data
+            for spell_id in ['202', '203']:
+                app.spell_details_cache[spell_id] = sample_spell_details[spell_id]
+                app.pricing_lookup[spell_id] = sample_spell_details[spell_id]['pricing']
+            
+            response = mock_app.get('/api/spells/cleric')
+            
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            
+            # Verify spells have pricing data applied
+            spells = data['spells']
+            assert len(spells) == len(sample_spell_data)
+            
+            # Verify scraping was not called (using cache)
+            mock_scrape.assert_not_called()
         
         # Find spells by ID and check pricing
         spell_202 = next(s for s in spells if s['spell_id'] == '202')
