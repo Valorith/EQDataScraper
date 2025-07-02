@@ -57,7 +57,12 @@ SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
 METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
 
 # Create cache directory if it doesn't exist
-os.makedirs(CACHE_DIR, exist_ok=True)
+try:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    logger.info(f"Cache directory created/verified: {CACHE_DIR}")
+    logger.info(f"Cache directory is writable: {os.access(CACHE_DIR, os.W_OK)}")
+except Exception as e:
+    logger.error(f"Failed to create cache directory {CACHE_DIR}: {e}")
 
 # Data storage
 spells_cache = {}
@@ -72,18 +77,46 @@ def load_cache_from_disk():
     """Load cached data from JSON files"""
     global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
     
+    logger.info(f"=== CACHE LOADING DEBUG INFO ===")
+    logger.info(f"Cache directory: {CACHE_DIR}")
+    logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
+    logger.info(f"Working directory: {os.getcwd()}")
+    logger.info(f"Python path: {os.path.dirname(os.path.abspath(__file__))}")
+    
+    # List contents of parent directory to see what's available
+    parent_dir = os.path.dirname(CACHE_DIR)
+    logger.info(f"Parent directory ({parent_dir}) contents: {os.listdir(parent_dir) if os.path.exists(parent_dir) else 'Does not exist'}")
+    
+    # List cache directory contents if it exists
+    if os.path.exists(CACHE_DIR):
+        cache_contents = os.listdir(CACHE_DIR)
+        logger.info(f"Cache directory contents: {cache_contents}")
+        for item in cache_contents:
+            item_path = os.path.join(CACHE_DIR, item)
+            logger.info(f"  {item}: {os.path.getsize(item_path)} bytes")
+    else:
+        logger.info("Cache directory does not exist")
+    
     try:
         # Load spells cache
+        logger.info(f"Checking spells cache file: {SPELLS_CACHE_FILE}")
+        logger.info(f"Spells cache file exists: {os.path.exists(SPELLS_CACHE_FILE)}")
         if os.path.exists(SPELLS_CACHE_FILE):
             with open(SPELLS_CACHE_FILE, 'r') as f:
                 spells_cache = json.load(f)
-                logger.info(f"Loaded {len(spells_cache)} classes from spells cache")
+                logger.info(f"✓ Successfully loaded {len(spells_cache)} classes from spells cache")
+        else:
+            logger.warning(f"✗ Spells cache file not found: {SPELLS_CACHE_FILE}")
         
         # Load pricing cache
+        logger.info(f"Checking pricing cache file: {PRICING_CACHE_FILE}")
+        logger.info(f"Pricing cache file exists: {os.path.exists(PRICING_CACHE_FILE)}")
         if os.path.exists(PRICING_CACHE_FILE):
             with open(PRICING_CACHE_FILE, 'r') as f:
                 pricing_cache = json.load(f)
-                logger.info(f"Loaded {len(pricing_cache)} spells from pricing cache")
+                logger.info(f"✓ Successfully loaded {len(pricing_cache)} spells from pricing cache")
+        else:
+            logger.warning(f"✗ Pricing cache file not found: {PRICING_CACHE_FILE}")
         
         # Load spell details cache
         if os.path.exists(SPELL_DETAILS_CACHE_FILE):
@@ -92,12 +125,22 @@ def load_cache_from_disk():
                 logger.info(f"Loaded {len(spell_details_cache)} spell details from cache")
         
         # Load metadata
+        logger.info(f"Checking metadata cache file: {METADATA_CACHE_FILE}")
+        logger.info(f"Metadata cache file exists: {os.path.exists(METADATA_CACHE_FILE)}")
         if os.path.exists(METADATA_CACHE_FILE):
             with open(METADATA_CACHE_FILE, 'r') as f:
                 metadata = json.load(f)
                 cache_timestamp.update(metadata.get('cache_timestamp', {}))
                 last_scrape_time.update(metadata.get('last_scrape_time', {}))
-                logger.info(f"Loaded cache metadata for {len(cache_timestamp)} classes")
+                logger.info(f"✓ Successfully loaded cache metadata for {len(cache_timestamp)} classes")
+        else:
+            logger.warning(f"✗ Metadata cache file not found: {METADATA_CACHE_FILE}")
+            
+        logger.info(f"=== CACHE LOADING SUMMARY ===")
+        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: {len(pricing_cache)} spells, Details: {len(spell_details_cache)} spells")
+        logger.info(f"Cache timestamps: {len(cache_timestamp)} classes")
+        logger.info(f"=== END CACHE LOADING ===")
+                
                 
     except Exception as e:
         logger.error(f"Error loading cache from disk: {e}")
@@ -110,18 +153,28 @@ def load_cache_from_disk():
 
 def save_cache_to_disk():
     """Save cached data to JSON files"""
+    logger.info(f"=== SAVING CACHE TO DISK ===")
+    logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
+    logger.info(f"Cache directory writable: {os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else 'Directory does not exist'}")
+    
     try:
         # Save spells cache
+        logger.info(f"Saving spells cache ({len(spells_cache)} classes) to {SPELLS_CACHE_FILE}")
         with open(SPELLS_CACHE_FILE, 'w') as f:
             json.dump(spells_cache, f, indent=2)
+        logger.info(f"✓ Spells cache saved successfully")
         
         # Save pricing cache
+        logger.info(f"Saving pricing cache ({len(pricing_cache)} entries) to {PRICING_CACHE_FILE}")
         with open(PRICING_CACHE_FILE, 'w') as f:
             json.dump(pricing_cache, f, indent=2)
+        logger.info(f"✓ Pricing cache saved successfully")
         
         # Save spell details cache
+        logger.info(f"Saving spell details cache ({len(spell_details_cache)} entries) to {SPELL_DETAILS_CACHE_FILE}")
         with open(SPELL_DETAILS_CACHE_FILE, 'w') as f:
             json.dump(spell_details_cache, f, indent=2)
+        logger.info(f"✓ Spell details cache saved successfully")
         
         # Save metadata
         metadata = {
@@ -129,13 +182,19 @@ def save_cache_to_disk():
             'last_scrape_time': last_scrape_time,
             'last_updated': datetime.now().isoformat()
         }
+        logger.info(f"Saving metadata ({len(cache_timestamp)} classes) to {METADATA_CACHE_FILE}")
         with open(METADATA_CACHE_FILE, 'w') as f:
             json.dump(metadata, f, indent=2)
+        logger.info(f"✓ Metadata cache saved successfully")
             
-        logger.info(f"Saved cache to disk: {len(spells_cache)} classes, {len(pricing_cache)} pricing entries, {len(spell_details_cache)} spell details")
+        logger.info(f"✓ Successfully saved all cache files to disk")
+        logger.info(f"=== CACHE SAVE COMPLETE ===")
         
     except Exception as e:
-        logger.error(f"Error saving cache to disk: {e}")
+        logger.error(f"✗ Error saving cache to disk: {e}")
+        logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Load existing cache on startup
 load_cache_from_disk()
@@ -1291,12 +1350,21 @@ def cache_status():
         'memory_cache': {
             'classes': len(spells_cache),
             'pricing_entries': len(pricing_cache),
-            'timestamps': len(cache_timestamp)
+            'spell_details': len(spell_details_cache),
+            'timestamps': len(cache_timestamp),
+            'last_scrape_times': len(last_scrape_time)
         },
         'disk_cache': {
             'files_exist': cache_files_exist,
             'file_sizes_bytes': cache_sizes,
-            'cache_directory': CACHE_DIR
+            'cache_directory': CACHE_DIR,
+            'cache_directory_exists': os.path.exists(CACHE_DIR),
+            'cache_directory_writable': os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else False
+        },
+        'environment': {
+            'working_directory': os.getcwd(),
+            'python_path': os.path.dirname(os.path.abspath(__file__)),
+            'cache_dir_absolute': os.path.abspath(CACHE_DIR)
         },
         'config': {
             'cache_expiry_hours': CACHE_EXPIRY_HOURS,
