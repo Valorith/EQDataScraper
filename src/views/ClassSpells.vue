@@ -1424,7 +1424,8 @@ export default {
       
       // If we have no individual progress, calculate based on overall progress
       if (totalSpellsForPricing.value > 0) {
-        return Math.floor((processedSpellsForPricing.value / totalSpellsForPricing.value) * 100)
+        const overallProgress = Math.floor((processedSpellsForPricing.value / totalSpellsForPricing.value) * 100)
+        return Math.min(overallProgress, 95) // Cap at 95% until individual spell completes
       }
       
       return 0
@@ -1445,8 +1446,12 @@ export default {
       )
       
       console.log(`Found ${spellsNeedingPricing.length} spells needing pricing out of ${spells.value.length} total spells`)
+      console.log(`${Object.keys(pricingCache.value).length} spells already cached`)
       
-      if (spellsNeedingPricing.length === 0) return
+      if (spellsNeedingPricing.length === 0) {
+        console.log('All spells already have pricing data or are cached')
+        return
+      }
       
       // Initialize progress tracking
       totalSpellsForPricing.value = spellsNeedingPricing.length
@@ -1458,60 +1463,84 @@ export default {
       })
       
       try {
-        // Batch fetch pricing (max 10 at a time to avoid overwhelming)
-        const batchSize = 10
+        // Use smaller batch size for better reliability and faster feedback
+        const batchSize = 3
         for (let i = 0; i < spellsNeedingPricing.length; i += batchSize) {
           const batch = spellsNeedingPricing.slice(i, i + batchSize)
           const spellIds = batch.map(spell => spell.spell_id)
           
-          console.log(`Fetching pricing for batch ${Math.floor(i/batchSize) + 1}:`, spellIds)
+          const currentBatch = Math.floor(i/batchSize) + 1
+          const totalBatches = Math.ceil(spellsNeedingPricing.length/batchSize)
+          console.log(`Fetching pricing for batch ${currentBatch}/${totalBatches}:`, spellIds)
           
-          // Set progress to 50% for spells being processed
+          // Set progress to 25% for spells being processed
           batch.forEach(spell => {
-            setPricingProgress(spell.spell_id, 50)
+            setPricingProgress(spell.spell_id, 25)
           })
           
-          const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
-            spell_ids: spellIds
-          }, {
-            timeout: 30000,
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
-          })
-          
-          console.log('Pricing response:', response.data)
-          
-          // Update spells with pricing data
-          batch.forEach(spell => {
-            const pricing = response.data.pricing[spell.spell_id]
-            if (pricing) {
-              spell.pricing = pricing
-              // Cache the pricing to prevent re-fetching
-              pricingCache.value[spell.spell_id] = pricing
-              console.log(`Set pricing for ${spell.name}:`, pricing)
-            } else {
-              // Set empty pricing to prevent re-fetching
+          try {
+            const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+              spell_ids: spellIds
+            }, {
+              timeout: 15000, // Reduced timeout
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              }
+            })
+            
+            console.log(`Batch ${currentBatch}/${totalBatches} completed:`, response.data)
+            
+            // Log cache stats
+            console.log(`Cache now contains ${Object.keys(pricingCache.value).length} spells`)
+            
+            // Set progress to 75% after successful response
+            batch.forEach(spell => {
+              setPricingProgress(spell.spell_id, 75)
+            })
+            
+            // Update spells with pricing data
+            batch.forEach(spell => {
+              const pricing = response.data.pricing[spell.spell_id]
+              if (pricing) {
+                spell.pricing = pricing
+                // Cache the pricing to prevent re-fetching
+                pricingCache.value[spell.spell_id] = pricing
+                console.log(`Set pricing for ${spell.name}:`, pricing)
+              } else {
+                // Set empty pricing to prevent re-fetching
+                const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
+                spell.pricing = emptyPricing
+                // Cache the empty pricing too
+                pricingCache.value[spell.spell_id] = emptyPricing
+              }
+              
+              // Set progress to 100% for completed spells
+              setPricingProgress(spell.spell_id, 100)
+              processedSpellsForPricing.value++
+            })
+            
+          } catch (batchError) {
+            console.error(`Batch ${currentBatch}/${totalBatches} failed:`, batchError.message || batchError)
+            
+            // Handle individual spell failures in this batch
+            batch.forEach(spell => {
               const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
               spell.pricing = emptyPricing
-              // Cache the empty pricing too
               pricingCache.value[spell.spell_id] = emptyPricing
-            }
-            
-            // Set progress to 100% for completed spells
-            setPricingProgress(spell.spell_id, 100)
-            processedSpellsForPricing.value++
-          })
+              setPricingProgress(spell.spell_id, 100)
+              processedSpellsForPricing.value++
+            })
+          }
           
-          // Small delay between batches to avoid overwhelming the server
+          // Shorter delay between batches for faster overall completion
           if (i + batchSize < spellsNeedingPricing.length) {
-            await new Promise(resolve => setTimeout(resolve, 2000))
+            await new Promise(resolve => setTimeout(resolve, 800))
           }
         }
       } catch (error) {
-        console.error('Error fetching pricing data:', error)
-        // Set empty pricing for spells that failed to prevent endless loading
+        console.error('Critical error in pricing fetch process:', error)
+        // Set empty pricing for any remaining spells to prevent endless loading
         spellsNeedingPricing.forEach(spell => {
           if (!spell.pricing) {
             const emptyPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0 }
@@ -1522,6 +1551,9 @@ export default {
           // Set progress to 100% even for failed spells to stop loading state
           setPricingProgress(spell.spell_id, 100)
         })
+        
+        // Reset counters
+        processedSpellsForPricing.value = totalSpellsForPricing.value
       }
     }
 

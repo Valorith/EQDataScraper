@@ -991,50 +991,106 @@ def search_spells():
             'results': []
         }), 500
 
+# Global session for connection pooling
+import requests
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Connection': 'keep-alive'
+})
+
+# Pricing cache for the backend
+pricing_cache = {}
+
+def fetch_single_spell_pricing(spell_id, max_retries=2):
+    """Fetch pricing for a single spell with retry logic"""
+    # Check cache first
+    if str(spell_id) in pricing_cache:
+        return pricing_cache[str(spell_id)]
+    
+    for attempt in range(max_retries + 1):
+        try:
+            from bs4 import BeautifulSoup
+            
+            url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
+            response = session.get(url, timeout=5)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                details = parse_spell_details_from_html(soup)
+                
+                if details.get('pricing'):
+                    result = details['pricing']
+                else:
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                
+                # Cache the result
+                pricing_cache[str(spell_id)] = result
+                return result
+            else:
+                if attempt == max_retries:
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                    pricing_cache[str(spell_id)] = result
+                    return result
+                
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed for spell {spell_id}: {e}")
+            if attempt == max_retries:
+                result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                pricing_cache[str(spell_id)] = result
+                return result
+            
+            # Exponential backoff: 0.5s, 1s, 2s
+            time.sleep(0.5 * (2 ** attempt))
+    
+    # Fallback
+    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    pricing_cache[str(spell_id)] = result
+    return result
+
 @app.route('/api/spell-pricing', methods=['POST'])
 def get_spell_pricing():
-    """Get pricing for multiple spells"""
+    """Get pricing for multiple spells with optimized fetching"""
     try:
         spell_ids = request.json.get('spell_ids', [])
         if not spell_ids:
             return jsonify({'error': 'No spell IDs provided'}), 400
         
-        if len(spell_ids) > 20:
-            return jsonify({'error': 'Maximum 20 spell IDs allowed per request'}), 400
+        # Reduce batch size for better reliability
+        if len(spell_ids) > 5:
+            return jsonify({'error': 'Maximum 5 spell IDs allowed per request'}), 400
         
         pricing_results = {}
         
-        for spell_id in spell_ids:
-            try:
-                import requests
-                from bs4 import BeautifulSoup
-                
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-                }
-                
-                url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
-                response = requests.get(url, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    details = parse_spell_details_from_html(soup)
-                    
-                    if details.get('pricing'):
-                        pricing_results[str(spell_id)] = details['pricing']
-                    else:
-                        pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
-                else:
+        # Use threading for concurrent requests (but still rate limited)
+        import threading
+        import queue
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # Use smaller thread pool to avoid overwhelming the server
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit all tasks
+            future_to_spell = {executor.submit(fetch_single_spell_pricing, spell_id): spell_id for spell_id in spell_ids}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_spell):
+                spell_id = future_to_spell[future]
+                try:
+                    result = future.result(timeout=8)  # Individual timeout
+                    pricing_results[str(spell_id)] = result
+                except Exception as e:
+                    logger.error(f"Failed to get pricing for spell {spell_id}: {e}")
                     pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
-                    
-            except Exception as e:
-                logger.warning(f"Error fetching pricing for spell {spell_id}: {e}")
-                pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+                
+                # Rate limiting between requests
+                time.sleep(0.2)
         
         return jsonify({
             'pricing': pricing_results,
-            'fetched_count': len(pricing_results)
+            'fetched_count': len(pricing_results),
+            'cached_count': len([s for s in spell_ids if str(s) in pricing_cache])
         })
         
     except Exception as e:
