@@ -1402,6 +1402,21 @@ export default {
       if (!pricing) return false
       return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
     }
+    
+    const hasValidPricing = (spell) => {
+      // A spell has valid pricing if it has pricing data AND it's not loading AND it's not marked as unknown
+      return spell.pricing && 
+             (spell.pricing !== null) && 
+             getPricingProgress(spell.spell_id) === 100 && 
+             !spell.pricing.unknown
+    }
+    
+    const getCartButtonTitle = (spell) => {
+      if (!hasValidPricing(spell)) {
+        return 'Price unknown - cannot add to cart'
+      }
+      return isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'
+    }
 
     const openCart = () => {
       cartStore.openCart()
@@ -1625,6 +1640,8 @@ export default {
       addToCart,
       isInCart,
       hasAnyPrice,
+      hasValidPricing,
+      getCartButtonTitle,
       openCart,
       removeFromCart,
       clearCart,
