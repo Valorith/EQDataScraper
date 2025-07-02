@@ -502,16 +502,16 @@ def get_spells(class_name):
                 'available_classes': list(CLASSES.keys())
             }), 404
         
-        # Clear expired cache entries
-        clear_expired_cache()
-        
-        # Check if we have valid cached data
-        if class_name in spells_cache and not is_cache_expired(class_name):
-            logger.info(f"Serving cached data for {class_name}")
+        # Check if we have cached data (don't auto-clear expired)
+        if class_name in spells_cache:
+            is_expired = is_cache_expired(class_name)
+            logger.info(f"Serving cached data for {class_name} (expired: {is_expired})")
             return jsonify({
                 'spells': spells_cache[class_name],
                 'cached': True,
-                'last_updated': cache_timestamp[class_name]
+                'expired': is_expired,
+                'last_updated': cache_timestamp[class_name],
+                'spell_count': len(spells_cache[class_name])
             })
         
         # Check rate limiting before scraping
@@ -522,9 +522,11 @@ def get_spells(class_name):
             
             # Return stale cache if available, or error
             if class_name in spells_cache:
+                is_expired = is_cache_expired(class_name)
                 return jsonify({
                     'spells': spells_cache[class_name],
                     'cached': True,
+                    'expired': is_expired,
                     'stale': True,
                     'message': f'Using stale cache data. Please wait {wait_time:.1f} minutes before requesting fresh data.',
                     'last_updated': cache_timestamp[class_name]
@@ -687,6 +689,125 @@ def get_cache_status():
     }
     
     return jsonify(status)
+
+@app.route('/api/cache-expiry-status/<class_name>', methods=['GET'])
+def get_cache_expiry_status(class_name):
+    """Get cache expiry status for a specific class"""
+    class_name = class_name.lower()
+    
+    if class_name not in CLASSES:
+        return jsonify({'error': 'Invalid class name'}), 400
+    
+    # Check spell cache status
+    spell_cached = class_name in spells_cache
+    spell_expired = is_cache_expired(class_name) if spell_cached else True
+    spell_timestamp = cache_timestamp.get(class_name)
+    
+    # Count pricing entries for this class (approximation based on spell count)
+    class_spells = spells_cache.get(class_name, [])
+    pricing_count = 0
+    pricing_expired_count = 0
+    
+    for spell in class_spells:
+        spell_id = str(spell.get('id', ''))
+        if spell_id in pricing_cache:
+            pricing_count += 1
+            if is_pricing_cache_expired(spell_id):
+                pricing_expired_count += 1
+    
+    return jsonify({
+        'class_name': class_name,
+        'spells': {
+            'cached': spell_cached,
+            'expired': spell_expired,
+            'timestamp': spell_timestamp,
+            'count': len(class_spells)
+        },
+        'pricing': {
+            'cached_count': pricing_count,
+            'expired_count': pricing_expired_count,
+            'total_spells': len(class_spells)
+        },
+        'expiry_config': {
+            'spell_cache_hours': CACHE_EXPIRY_HOURS,
+            'pricing_cache_hours': PRICING_CACHE_EXPIRY_HOURS
+        }
+    })
+
+@app.route('/api/refresh-spell-cache/<class_name>', methods=['POST'])
+def refresh_spell_cache(class_name):
+    """Manually refresh spell cache for a specific class"""
+    class_name = class_name.lower()
+    
+    if class_name not in CLASSES:
+        return jsonify({'error': 'Invalid class name'}), 400
+    
+    try:
+        # Force refresh by removing from cache
+        spells_cache.pop(class_name, None)
+        cache_timestamp.pop(class_name, None)
+        
+        # Trigger fresh scrape
+        from scrape_spells import scrape_class
+        new_spells = scrape_class(class_name)
+        
+        if new_spells:
+            spells_cache[class_name] = new_spells
+            cache_timestamp[class_name] = datetime.now().isoformat()
+            save_cache_to_storage()
+            
+            return jsonify({
+                'success': True,
+                'class_name': class_name,
+                'spell_count': len(new_spells),
+                'timestamp': cache_timestamp[class_name]
+            })
+        else:
+            return jsonify({'error': 'Failed to scrape new data'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error refreshing spell cache for {class_name}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/refresh-pricing-cache/<class_name>', methods=['POST'])
+def refresh_pricing_cache_for_class(class_name):
+    """Manually refresh pricing cache for all spells in a class"""
+    class_name = class_name.lower()
+    
+    if class_name not in CLASSES:
+        return jsonify({'error': 'Invalid class name'}), 400
+    
+    try:
+        class_spells = spells_cache.get(class_name, [])
+        if not class_spells:
+            return jsonify({'error': 'No spells found for class. Refresh spell data first.'}), 400
+        
+        # Get spell IDs to refresh
+        spell_ids = [spell.get('id') for spell in class_spells if spell.get('id')]
+        
+        if not spell_ids:
+            return jsonify({'error': 'No valid spell IDs found'}), 400
+        
+        # Clear existing pricing cache for these spells
+        refreshed_count = 0
+        for spell_id in spell_ids:
+            spell_id_str = str(spell_id)
+            if spell_id_str in pricing_cache:
+                pricing_cache.pop(spell_id_str, None)
+                pricing_cache_timestamp.pop(spell_id_str, None)
+                refreshed_count += 1
+        
+        return jsonify({
+            'success': True,
+            'class_name': class_name,
+            'cleared_count': refreshed_count,
+            'total_spells': len(spell_ids),
+            'message': f'Cleared pricing cache for {refreshed_count} spells. New pricing will be fetched on next request.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error refreshing pricing cache for {class_name}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/spell-details/<int:spell_id>', methods=['GET'])
 def get_spell_details(spell_id):
@@ -1424,8 +1545,8 @@ session.headers.update({
 
 def fetch_single_spell_pricing(spell_id, max_retries=2):
     """Fetch pricing for a single spell with retry logic"""
-    # Check cache first and verify it's not expired
-    if str(spell_id) in pricing_cache and not is_pricing_cache_expired(spell_id):
+    # Check cache first (return even if expired - let frontend decide)
+    if str(spell_id) in pricing_cache:
         return pricing_cache[str(spell_id)]
     
     for attempt in range(max_retries + 1):
