@@ -49,8 +49,11 @@ logger = logging.getLogger(__name__)
 # Load configuration
 config = load_config()
 
-# Cache file paths
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+# Cache file paths - use Railway volume mount if available, fallback to local
+if os.path.exists('/app/cache'):
+    CACHE_DIR = '/app/cache'  # Railway volume mount
+else:
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')  # Local development
 SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
 PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
 SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
