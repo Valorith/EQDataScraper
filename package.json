@@ -10,7 +10,16 @@
     "start": "npm run build && npm run serve",
     "stop": "python3 run.py stop",
     "status": "python3 run.py status",
-    "install:all": "python3 run.py install"
+    "install:all": "python3 run.py install",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:backend": "cd backend && python -m pytest",
+    "test:backend:coverage": "cd backend && python -m pytest --cov",
+    "test:backend:railway": "cd backend && python -m pytest -c pytest-railway.ini",
+    "test:railway": "bash scripts/railway-test.sh",
+    "test:all": "npm run test:backend && npm run test:run"
   },
   "dependencies": {
     "axios": "^1.10.0",
@@ -21,6 +30,12 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.5.0",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^1.1.0",
+    "@vue/test-utils": "^2.4.3",
+    "jsdom": "^23.0.1",
+    "@vitest/ui": "^1.1.0",
+    "@vitest/coverage-v8": "^1.1.0",
+    "happy-dom": "^12.10.3"
   }
 }

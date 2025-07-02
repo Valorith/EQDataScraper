@@ -1,0 +1,20 @@
+# Railway Environment Variables for Testing
+# Set these in your Railway dashboard under Variables
+
+# Testing Configuration
+TESTING=1
+RAILWAY_TESTING=true
+
+# Cache Configuration (use file-based cache for testing)
+DATABASE_URL=
+CACHE_EXPIRY_HOURS=1
+PRICING_CACHE_EXPIRY_HOURS=1
+
+# Deployment Configuration
+NODE_ENV=production
+PYTHONUNBUFFERED=1
+
+# Add your actual environment variables in Railway dashboard:
+# - PORT (automatically set by Railway)
+# - DATABASE_URL (your actual production database for the app)
+# - Any other custom environment variables your app needs

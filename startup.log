@@ -1,0 +1,30 @@
+/Users/rgagnier/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+[96m[1m============================================================[0m
+[96m[1m  Starting EQDataScraper Application[0m
+[96m[1m============================================================[0m
+
+[94mℹ Checking dependencies...[0m
+[92m✅ Python dependencies: OK[0m
+[92m✅ Node.js: v22.17.0[0m
+[92m✅ npm command: npm (WSL: False)[0m
+[92m✅ Node modules: OK[0m
+[94mℹ Starting backend server...[0m
+[92m✅ Backend server started on http://localhost:5008[0m
+[94mℹ Starting frontend development server...[0m
+[94mℹ Trying command: npm run dev[0m
+[92m✅ Frontend server started on port 3000 (or next available)[0m
+[94mℹ Saved PIDs: {'backend': 40564, 'frontend': 40571}[0m
+[92m✅ 
+🎉 Application started successfully![0m
+[94mℹ Frontend: http://localhost:3000[0m
+[94mℹ Backend API: http://localhost:5008[0m
+[94mℹ 
+Press Ctrl+C to stop all services[0m
+[94mℹ Verifying service health...[0m
+[92m✅ ✓ Backend API is responding[0m
+[92m✅ ✓ Frontend server is accepting connections[0m
+[91m❌ Services stopped unexpectedly: backend[0m
+[94mℹ Saved PIDs: {'frontend': 40571}[0m
+[91m❌ Services stopped unexpectedly: frontend[0m
