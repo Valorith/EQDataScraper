@@ -201,7 +201,7 @@
             
             <!-- Pricing and Cart Section -->
             <div class="spell-footer">
-              <div v-if="spell.pricing && hasAnyPrice(spell.pricing)" class="spell-pricing">
+              <div v-if="spell.pricing && hasAnyPrice(spell.pricing) && !spell.pricing.unknown" class="spell-pricing">
                 <div class="coin-display">
                   <div v-if="spell.pricing.platinum > 0" class="coin-item">
                     <img src="/icons/coins/platinum.svg" alt="Platinum" class="coin-icon" />
@@ -221,8 +221,15 @@
                   </div>
                 </div>
               </div>
-              <div v-else-if="spell.pricing && !hasAnyPrice(spell.pricing)" class="spell-pricing-free">
-                <span class="pricing-status">Free</span>
+              <div v-else-if="spell.pricing && (spell.pricing.unknown || !hasAnyPrice(spell.pricing))" class="spell-pricing-unknown">
+                <span class="pricing-status">Unknown Cost</span>
+                <button 
+                  @click.stop="retryPricingFetch(spell.spell_id)"
+                  class="retry-pricing-btn"
+                  title="Retry fetching price"
+                >
+                  🔄
+                </button>
               </div>
               <div v-else class="spell-pricing-loading">
                 <div class="pricing-progress-container">
@@ -1444,6 +1451,74 @@ export default {
         cartStore.clearCart()
       }
     }
+    
+    const retryPricingFetch = async (spellId) => {
+      console.log(`Retrying pricing fetch for spell ${spellId}`)
+      
+      // Find the spell object
+      const spell = spells.value.find(s => s.spell_id === spellId)
+      if (!spell) {
+        console.error(`Spell with ID ${spellId} not found`)
+        return
+      }
+      
+      // Clear existing pricing and cache
+      spell.pricing = null
+      delete pricingCache.value[spellId]
+      delete pricingProgress.value[spellId]
+      
+      // Reset progress
+      setPricingProgress(spellId, 0)
+      
+      try {
+        console.log(`Fetching pricing for spell ${spellId} (retry)`)
+        
+        // Set progress to 25% for retry attempt
+        setPricingProgress(spellId, 25)
+        
+        const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+          spell_ids: [spellId]
+        }, {
+          timeout: 15000,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        console.log('Retry pricing response:', response.data)
+        
+        // Set progress to 75% after successful response
+        setPricingProgress(spellId, 75)
+        
+        // Update spell with pricing data
+        const pricing = response.data.pricing[spellId]
+        if (pricing) {
+          spell.pricing = pricing
+          // Cache the pricing to prevent re-fetching
+          pricingCache.value[spellId] = pricing
+          console.log(`Successfully retried pricing for ${spell.name}:`, pricing)
+        } else {
+          // Set unknown pricing indicator
+          const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+          spell.pricing = unknownPricing
+          pricingCache.value[spellId] = unknownPricing
+          console.log(`Retry failed - no pricing data for ${spell.name}`)
+        }
+        
+        // Set progress to 100% for completed retry
+        setPricingProgress(spellId, 100)
+        
+      } catch (error) {
+        console.error(`Retry failed for spell ${spellId}:`, error.message || error)
+        
+        // Set unknown pricing on retry failure
+        const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+        spell.pricing = unknownPricing
+        pricingCache.value[spellId] = unknownPricing
+        setPricingProgress(spellId, 100)
+      }
+    }
 
     // Get pricing progress for a specific spell
     const getPricingProgress = (spellId) => {
@@ -1658,6 +1733,7 @@ export default {
       openCart,
       removeFromCart,
       clearCart,
+      retryPricingFetch,
       // Pricing progress
       getPricingProgress
     }
@@ -3508,6 +3584,32 @@ export default {
   color: rgba(255, 165, 0, 0.8);
   font-size: 0.8rem;
   font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.retry-pricing-btn {
+  background: rgba(255, 165, 0, 0.2);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  border-radius: 4px;
+  color: rgba(255, 165, 0, 0.9);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+}
+
+.retry-pricing-btn:hover {
+  background: rgba(255, 165, 0, 0.3);
+  border-color: rgba(255, 165, 0, 0.6);
+  transform: rotate(180deg);
+  box-shadow: 0 2px 4px rgba(255, 165, 0, 0.2);
 }
 
 .add-to-cart-btn {
