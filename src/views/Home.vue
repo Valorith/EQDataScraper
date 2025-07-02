@@ -1,8 +1,18 @@
 <template>
   <div class="main-container">
     <div class="hero-section">
-      <h1 class="main-title">Clumsy's World</h1>
-      <p class="main-subtitle">Class Information</p>
+      <div class="hero-content">
+        <h1 class="main-title">Clumsy's World</h1>
+        <p class="main-subtitle">Class Information</p>
+      </div>
+      
+      <!-- Cart Button -->
+      <div class="cart-container">
+        <button @click="openCart" class="cart-button" title="View Cart">
+          <span class="cart-icon">🛒</span>
+          <span v-if="cartStore.itemCount > 0" class="cart-counter">{{ cartStore.itemCount }}</span>
+        </button>
+      </div>
     </div>
     
     <!-- Global Spell Search -->
@@ -141,6 +151,124 @@
       </router-link>
     </div>
     
+    <!-- Cart Modal -->
+    <div v-if="cartStore.isOpen" class="cart-modal-overlay" @click="cartStore.closeCart()">
+      <div class="cart-modal" @click.stop>
+        <div class="cart-modal-header">
+          <h3>Shopping Cart</h3>
+          <button @click="cartStore.closeCart()" class="modal-close-btn">×</button>
+        </div>
+        
+        <div class="cart-modal-content">
+          <!-- Empty Cart State -->
+          <div v-if="cartStore.itemCount === 0" class="cart-empty">
+            <div class="cart-empty-icon">🛒</div>
+            <h4>Your cart is empty</h4>
+            <p>Browse spells and add them to your cart to see them here.</p>
+            <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+              Continue Shopping
+            </button>
+          </div>
+          
+          <!-- Cart Items -->
+          <div v-else>
+            <div class="cart-items">
+              <div 
+                v-for="item in cartStore.items" 
+                :key="item.spell_id"
+                class="cart-item"
+              >
+                <div class="cart-item-info">
+                  <img 
+                    v-if="item.icon" 
+                    :src="item.icon" 
+                    :alt="item.name"
+                    class="cart-item-icon"
+                    @error="handleIconError"
+                  />
+                  <div class="cart-item-details">
+                    <h4 class="cart-item-name">{{ item.name }}</h4>
+                    <div class="cart-item-meta">
+                      Level {{ item.level }}
+                      <span v-if="item.class_names && item.class_names.length">
+                        • {{ item.class_names.join(', ') }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="cart-item-pricing">
+                  <div v-if="item.pricing && hasAnyPrice(item.pricing)" class="cart-coin-display">
+                    <div v-if="item.pricing.platinum > 0" class="cart-coin-item">
+                      <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.platinum }}</span>
+                    </div>
+                    <div v-if="item.pricing.gold > 0" class="cart-coin-item">
+                      <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.gold }}</span>
+                    </div>
+                    <div v-if="item.pricing.silver > 0" class="cart-coin-item">
+                      <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.silver }}</span>
+                    </div>
+                    <div v-if="item.pricing.bronze > 0" class="cart-coin-item">
+                      <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.bronze }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="cart-pricing-free">Free</div>
+                </div>
+                
+                <button 
+                  @click="removeFromCart(item.spell_id)" 
+                  class="remove-item-btn"
+                  title="Remove from cart"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+            
+            <!-- Cart Total -->
+            <div class="cart-total">
+              <div class="cart-total-header">
+                <h4>Total Cost</h4>
+                <div class="cart-total-coins">
+                  <div v-if="cartStore.optimizedTotal.platinum > 0" class="cart-coin-item">
+                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.platinum }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.gold > 0" class="cart-coin-item">
+                    <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.gold }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.silver > 0" class="cart-coin-item">
+                    <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.silver }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.bronze > 0" class="cart-coin-item">
+                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.bronze }}</span>
+                  </div>
+                  <div v-if="cartStore.totalInBronze === 0" class="cart-total-free">No cost</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Cart Actions -->
+            <div class="cart-actions">
+              <button @click="clearCart()" class="clear-cart-btn">
+                Clear Cart
+              </button>
+              <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+                Continue Shopping
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading Modal -->
     <div v-if="showRefreshModal" class="refresh-modal-overlay" @click="closeRefreshModal">
       <div class="refresh-modal" @click.stop>
@@ -190,6 +318,7 @@
 
 <script>
 import { useSpellsStore } from '../stores/spells'
+import { useCartStore } from '../stores/cart'
 import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
@@ -219,9 +348,14 @@ export default {
   },
   setup() {
     const spellsStore = useSpellsStore()
+    const cartStore = useCartStore()
+    
+    // Load cart from localStorage on component mount
+    cartStore.loadFromLocalStorage()
     
     return {
-      classes: spellsStore.classes
+      classes: spellsStore.classes,
+      cartStore
     }
   },
   computed: {
@@ -533,6 +667,25 @@ export default {
         this.currentPage++
         this.selectedIndex = -1
       }
+    },
+    
+    openCart() {
+      this.cartStore.openCart()
+    },
+
+    removeFromCart(spellId) {
+      this.cartStore.removeItem(spellId)
+    },
+
+    clearCart() {
+      if (confirm('Are you sure you want to clear your cart?')) {
+        this.cartStore.clearCart()
+      }
+    },
+
+    hasAnyPrice(pricing) {
+      if (!pricing) return false
+      return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
     }
   }
 }
@@ -540,6 +693,9 @@ export default {
 
 <style scoped>
 .hero-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   text-align: center;
   margin-bottom: 80px;
   position: relative;
@@ -1534,6 +1690,408 @@ export default {
   .refresh-modal-header,
   .refresh-modal-content {
     padding: 1.5rem;
+  }
+}
+
+/* Cart Styles */
+.hero-content {
+  flex: 1;
+}
+
+.cart-container {
+  position: relative;
+}
+
+.cart-button {
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.2), rgba(147, 112, 219, 0.1));
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.cart-button:hover {
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.3), rgba(147, 112, 219, 0.2));
+  border-color: rgba(147, 112, 219, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(147, 112, 219, 0.2);
+}
+
+.cart-icon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.cart-counter {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(145deg, #ff4757, #ff3742);
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Cart Modal Styles */
+.cart-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.cart-modal {
+  background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 24px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+
+.cart-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-modal-header h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 2rem;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close-btn:hover {
+  color: rgba(255, 255, 255, 1);
+}
+
+.cart-modal-content {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.cart-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.cart-empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.6;
+}
+
+.cart-empty h4 {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 1rem 0;
+}
+
+.cart-empty p {
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 2rem 0;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-item-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.cart-item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.cart-item-details h4 {
+  margin: 0 0 0.25rem 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+}
+
+.cart-item-meta {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.cart-item-pricing {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+
+.cart-coin-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cart-coin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-coin-icon {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.cart-coin-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.cart-pricing-free {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.remove-item-btn {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.remove-item-btn:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.cart-total {
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.cart-total-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cart-total-header h4 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.3rem;
+}
+
+.cart-total-coins {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cart-total-free {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+.cart-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.clear-cart-btn {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.clear-cart-btn:hover {
+  background: linear-gradient(135deg, #5a6268, #495057);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.continue-shopping-btn {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.continue-shopping-btn:hover {
+  background: linear-gradient(135deg, #0056b3, #004085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .cart-button {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .cart-icon {
+    font-size: 1.25rem;
+  }
+  
+  .cart-counter {
+    width: 20px;
+    height: 20px;
+    font-size: 0.7rem;
+  }
+  
+  .cart-modal {
+    margin: 0.5rem;
+    max-height: 90vh;
+  }
+  
+  .cart-modal-header {
+    padding: 1rem;
+  }
+  
+  .cart-modal-content {
+    padding: 1rem;
+  }
+  
+  .cart-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .cart-item-info {
+    width: 100%;
+  }
+  
+  .cart-item-pricing {
+    margin-right: 0;
+    align-self: flex-end;
+  }
+  
+  .cart-total-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  
+  .cart-actions {
+    flex-direction: column;
+  }
+  
+  .cart-coin-display {
+    gap: 0.375rem;
+  }
+  
+  .cart-total-coins {
+    gap: 0.5rem;
   }
 }
 </style> 

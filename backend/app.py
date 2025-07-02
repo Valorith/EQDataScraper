@@ -49,12 +49,96 @@ logger = logging.getLogger(__name__)
 # Load configuration
 config = load_config()
 
+# Cache file paths
+CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
+PRICING_CACHE_FILE = os.path.join(CACHE_DIR, 'pricing_cache.json')
+SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
+METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
+
+# Create cache directory if it doesn't exist
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # Data storage
 spells_cache = {}
+pricing_cache = {}
+spell_details_cache = {}
 cache_timestamp = {}
 last_scrape_time = {}
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
+
+def load_cache_from_disk():
+    """Load cached data from JSON files"""
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    
+    try:
+        # Load spells cache
+        if os.path.exists(SPELLS_CACHE_FILE):
+            with open(SPELLS_CACHE_FILE, 'r') as f:
+                spells_cache = json.load(f)
+                logger.info(f"Loaded {len(spells_cache)} classes from spells cache")
+        
+        # Load pricing cache
+        if os.path.exists(PRICING_CACHE_FILE):
+            with open(PRICING_CACHE_FILE, 'r') as f:
+                pricing_cache = json.load(f)
+                logger.info(f"Loaded {len(pricing_cache)} spells from pricing cache")
+        
+        # Load spell details cache
+        if os.path.exists(SPELL_DETAILS_CACHE_FILE):
+            with open(SPELL_DETAILS_CACHE_FILE, 'r') as f:
+                spell_details_cache = json.load(f)
+                logger.info(f"Loaded {len(spell_details_cache)} spell details from cache")
+        
+        # Load metadata
+        if os.path.exists(METADATA_CACHE_FILE):
+            with open(METADATA_CACHE_FILE, 'r') as f:
+                metadata = json.load(f)
+                cache_timestamp.update(metadata.get('cache_timestamp', {}))
+                last_scrape_time.update(metadata.get('last_scrape_time', {}))
+                logger.info(f"Loaded cache metadata for {len(cache_timestamp)} classes")
+                
+    except Exception as e:
+        logger.error(f"Error loading cache from disk: {e}")
+        # Initialize empty caches if loading fails
+        spells_cache = {}
+        pricing_cache = {}
+        spell_details_cache = {}
+        cache_timestamp = {}
+        last_scrape_time = {}
+
+def save_cache_to_disk():
+    """Save cached data to JSON files"""
+    try:
+        # Save spells cache
+        with open(SPELLS_CACHE_FILE, 'w') as f:
+            json.dump(spells_cache, f, indent=2)
+        
+        # Save pricing cache
+        with open(PRICING_CACHE_FILE, 'w') as f:
+            json.dump(pricing_cache, f, indent=2)
+        
+        # Save spell details cache
+        with open(SPELL_DETAILS_CACHE_FILE, 'w') as f:
+            json.dump(spell_details_cache, f, indent=2)
+        
+        # Save metadata
+        metadata = {
+            'cache_timestamp': cache_timestamp,
+            'last_scrape_time': last_scrape_time,
+            'last_updated': datetime.now().isoformat()
+        }
+        with open(METADATA_CACHE_FILE, 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        logger.info(f"Saved cache to disk: {len(spells_cache)} classes, {len(pricing_cache)} pricing entries, {len(spell_details_cache)} spell details")
+        
+    except Exception as e:
+        logger.error(f"Error saving cache to disk: {e}")
+
+# Load existing cache on startup
+load_cache_from_disk()
 
 
 def is_cache_expired(class_name):
@@ -77,6 +161,10 @@ def clear_expired_cache():
         spells_cache.pop(class_name, None)
         cache_timestamp.pop(class_name, None)
         logger.info(f"Cleared expired cache for {class_name}")
+    
+    # Save changes to disk if any classes were cleared
+    if expired_classes:
+        save_cache_to_disk()
 
 def can_scrape_class(class_name):
     """Check if enough time has passed since last scrape for rate limiting"""
@@ -170,7 +258,8 @@ def get_spells(class_name):
                 'target_type': row.get('target_type', ''),
                 'spell_id': row.get('spell_id', ''),
                 'effects': row.get('effects', ''),
-                'icon': row.get('icon', '')
+                'icon': row.get('icon', ''),
+                'pricing': None  # Will be populated when spell details are requested
             }
             spells.append(spell)
         
@@ -179,6 +268,9 @@ def get_spells(class_name):
         spells_cache[class_name] = spells
         cache_timestamp[class_name] = current_time
         last_scrape_time[class_name] = current_time
+        
+        # Save to disk after successful scrape
+        save_cache_to_disk()
         
         logger.info(f"Successfully scraped {len(spells)} spells for {class_name} in {scrape_time:.2f}s")
         
@@ -237,7 +329,8 @@ def scrape_all_classes():
                             'target_type': row.get('target_type', ''),
                             'spell_id': row.get('spell_id', ''),
                             'effects': row.get('effects', ''),
-                            'icon': row.get('icon', '')
+                            'icon': row.get('icon', ''),
+                            'pricing': None  # Will be populated when spell details are requested
                         }
                         spells.append(spell)
                     
@@ -245,6 +338,9 @@ def scrape_all_classes():
                     cache_timestamp[class_name] = datetime.now().isoformat()
             except Exception as e:
                 print(f"Error scraping {class_name}: {e}")
+        
+        # Save to disk after scraping all classes
+        save_cache_to_disk()
         
         return jsonify({
             'message': 'All classes scraped successfully',
@@ -285,6 +381,13 @@ def get_cache_status():
 def get_spell_details(spell_id):
     """Get detailed spell information from alla website"""
     try:
+        spell_id_str = str(spell_id)
+        
+        # Check cache first
+        if spell_id_str in spell_details_cache:
+            logger.info(f"Serving cached spell details for ID {spell_id}")
+            return jsonify(spell_details_cache[spell_id_str])
+        
         import requests
         from bs4 import BeautifulSoup
         
@@ -299,7 +402,7 @@ def get_spell_details(spell_id):
         }
         
         url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
-        logger.info(f"Fetching spell details for ID {spell_id} from {url}")
+        logger.info(f"Fetching fresh spell details for ID {spell_id} from {url}")
         
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -307,7 +410,14 @@ def get_spell_details(spell_id):
         soup = BeautifulSoup(response.text, 'html.parser')
         details = parse_spell_details_from_html(soup)
         
-        logger.info(f"Successfully parsed spell details for ID {spell_id}")
+        # Cache the result
+        spell_details_cache[spell_id_str] = details
+        
+        # Save cache periodically (every 5 new entries)
+        if len(spell_details_cache) % 5 == 0:
+            save_cache_to_disk()
+        
+        logger.info(f"Successfully parsed and cached spell details for ID {spell_id}")
         return jsonify(details)
         
     except requests.exceptions.Timeout:
@@ -324,6 +434,270 @@ def get_spell_details(spell_id):
     except Exception as e:
         logger.error(f"Unexpected error fetching spell details for ID {spell_id}: {e}")
         return jsonify({'error': 'Failed to fetch spell details'}), 500
+
+def extract_scroll_pricing(items_with_spell):
+    """Extract pricing from scroll/spell items"""
+    import requests
+    from bs4 import BeautifulSoup
+    import re
+    
+    if not items_with_spell:
+        return None
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+    }
+    
+    # Prioritize spell items first, then scrolls, then other items
+    spell_items = [item for item in items_with_spell if item.get('name', '').lower().startswith('spell:')]
+    scroll_items = [item for item in items_with_spell if 'scroll' in item.get('name', '').lower()]
+    other_items = [item for item in items_with_spell if not item.get('name', '').lower().startswith('spell:') and 'scroll' not in item.get('name', '').lower()]
+    
+    # Check items in priority order: spell items first, then scrolls, then others
+    items_to_check = spell_items + scroll_items + other_items[:3]
+    
+    logger.info(f"Found {len(spell_items)} spell items, {len(scroll_items)} scroll items, {len(other_items)} other items")
+    if spell_items:
+        logger.info(f"Prioritizing spell items: {[item.get('name') for item in spell_items]}")
+    
+    for item in items_to_check:
+        try:
+            if not item.get('item_id'):
+                continue
+                
+            item_url = f"https://alla.clumsysworld.com/?a=item&id={item['item_id']}"
+            logger.info(f"Fetching pricing from item: {item_url}")
+            
+            response = requests.get(item_url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                continue
+                
+            soup = BeautifulSoup(response.text, 'html.parser')
+            pricing = parse_item_pricing(soup)
+            
+            if pricing and any(pricing.values()):
+                logger.info(f"Found pricing for {item.get('name')}: {pricing}")
+                return pricing
+                
+        except Exception as e:
+            logger.warning(f"Error extracting pricing from {item.get('name', 'unknown')}: {e}")
+            continue
+    
+    return None
+
+def parse_item_pricing(soup):
+    """Parse pricing information from an item page"""
+    import re
+    
+    pricing = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    
+    try:
+        # Look for vendor pricing in format like "(4s)" or "(2g 5s)" - this is what players pay
+        page_text = soup.get_text()
+        
+        # Pattern to match pricing like (4s), (2g), (1p 5g 10s), etc.
+        price_patterns = [
+            r'\((\d+)p\s+(\d+)g\s+(\d+)s\s+(\d+)c\)',  # full format
+            r'\((\d+)p\s+(\d+)g\s+(\d+)s\)',  # plat gold silver
+            r'\((\d+)g\s+(\d+)s\s+(\d+)c\)',  # gold silver copper
+            r'\((\d+)p\s+(\d+)g\)',  # plat gold
+            r'\((\d+)g\s+(\d+)s\)',  # gold silver  
+            r'\((\d+)p\s+(\d+)s\)',  # plat silver
+            r'\((\d+)s\s+(\d+)c\)',  # silver copper
+            r'\((\d+)p\)',  # platinum only
+            r'\((\d+)g\)',  # gold only
+            r'\((\d+)s\)',  # silver only
+            r'\((\d+)c\)',  # copper only
+        ]
+        
+        for pattern in price_patterns:
+            matches = re.findall(pattern, page_text)
+            if matches:
+                match = matches[0]  # Take the first match
+                
+                if pattern == r'\((\d+)p\s+(\d+)g\s+(\d+)s\s+(\d+)c\)':
+                    pricing['platinum'] = int(match[0])
+                    pricing['gold'] = int(match[1])
+                    pricing['silver'] = int(match[2])
+                    pricing['bronze'] = int(match[3])
+                elif pattern == r'\((\d+)p\s+(\d+)g\s+(\d+)s\)':
+                    pricing['platinum'] = int(match[0])
+                    pricing['gold'] = int(match[1])
+                    pricing['silver'] = int(match[2])
+                elif pattern == r'\((\d+)g\s+(\d+)s\s+(\d+)c\)':
+                    pricing['gold'] = int(match[0])
+                    pricing['silver'] = int(match[1])
+                    pricing['bronze'] = int(match[2])
+                elif pattern == r'\((\d+)p\s+(\d+)g\)':
+                    pricing['platinum'] = int(match[0])
+                    pricing['gold'] = int(match[1])
+                elif pattern == r'\((\d+)g\s+(\d+)s\)':
+                    pricing['gold'] = int(match[0])
+                    pricing['silver'] = int(match[1])
+                elif pattern == r'\((\d+)p\s+(\d+)s\)':
+                    pricing['platinum'] = int(match[0])
+                    pricing['silver'] = int(match[1])
+                elif pattern == r'\((\d+)s\s+(\d+)c\)':
+                    pricing['silver'] = int(match[0])
+                    pricing['bronze'] = int(match[1])
+                elif pattern == r'\((\d+)p\)':
+                    pricing['platinum'] = int(match)
+                elif pattern == r'\((\d+)g\)':
+                    pricing['gold'] = int(match)
+                elif pattern == r'\((\d+)s\)':
+                    pricing['silver'] = int(match)
+                elif pattern == r'\((\d+)c\)':
+                    pricing['bronze'] = int(match)
+                
+                # If we found any pricing, return it
+                if any(pricing.values()):
+                    logger.info(f"Found vendor pricing: {pricing}")
+                    return pricing
+        
+        # Fallback: Look for price/value information in tables
+        tables = soup.find_all('table')
+        
+        for table in tables:
+            rows = table.find_all('tr')
+            
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    label = cells[0].get_text(strip=True).lower()
+                    value_cell = cells[1]
+                    
+                    # Look for price/value/cost labels
+                    if any(keyword in label for keyword in ['price', 'value', 'cost', 'worth']):
+                        # Look for coin images and associated values
+                        coins_found = extract_coins_from_cell(value_cell)
+                        if coins_found:
+                            pricing.update(coins_found)
+                            return pricing
+                        
+                        # Fallback: try to parse text for coin values
+                        value_text = value_cell.get_text(strip=True)
+                        text_coins = parse_coin_text(value_text)
+                        if text_coins:
+                            pricing.update(text_coins)
+                            return pricing
+        
+        # Alternative approach: look for coin images anywhere on the page with associated numbers
+        coin_images = soup.find_all('img')
+        for img in coin_images:
+            src = img.get('src', '').lower()
+            if any(coin in src for coin in ['plat', 'gold', 'silver', 'bronze', 'copper']):
+                # Look for numbers near this coin image
+                parent = img.find_parent(['td', 'div', 'span'])
+                if parent:
+                    coins_found = extract_coins_from_cell(parent)
+                    if coins_found and any(coins_found.values()):
+                        pricing.update(coins_found)
+                        return pricing
+        
+    except Exception as e:
+        logger.warning(f"Error parsing item pricing: {e}")
+    
+    return pricing
+
+def extract_coins_from_cell(cell):
+    """Extract coin values from a table cell containing coin images and values"""
+    import re
+    
+    coins = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    
+    try:
+        # Look for images with coin-related src attributes
+        images = cell.find_all('img')
+        
+        for img in images:
+            src = img.get('src', '').lower()
+            
+            # Identify coin type from image source
+            coin_type = None
+            if 'plat' in src:
+                coin_type = 'platinum'
+            elif 'gold' in src:
+                coin_type = 'gold'
+            elif 'silver' in src:
+                coin_type = 'silver'
+            elif 'bronze' in src or 'copper' in src:
+                coin_type = 'bronze'
+            
+            if coin_type:
+                # Look for a number near this coin image
+                # Check previous and next siblings
+                current = img
+                value = None
+                
+                # Look backwards for a number
+                for _ in range(3):  # Check up to 3 elements back
+                    prev = current.previous_sibling
+                    if prev:
+                        if hasattr(prev, 'get_text'):
+                            text = prev.get_text(strip=True)
+                        else:
+                            text = str(prev).strip()
+                        
+                        numbers = re.findall(r'\d+', text)
+                        if numbers:
+                            value = int(numbers[-1])  # Take the last number found
+                            break
+                        current = prev
+                    else:
+                        break
+                
+                # If no number found backwards, try forwards
+                if value is None:
+                    current = img
+                    for _ in range(3):  # Check up to 3 elements forward
+                        next_elem = current.next_sibling
+                        if next_elem:
+                            if hasattr(next_elem, 'get_text'):
+                                text = next_elem.get_text(strip=True)
+                            else:
+                                text = str(next_elem).strip()
+                            
+                            numbers = re.findall(r'\d+', text)
+                            if numbers:
+                                value = int(numbers[0])  # Take the first number found
+                                break
+                            current = next_elem
+                        else:
+                            break
+                
+                if value is not None:
+                    coins[coin_type] = value
+                    
+    except Exception as e:
+        logger.warning(f"Error extracting coins from cell: {e}")
+    
+    return coins
+
+def parse_coin_text(text):
+    """Parse coin values from text like '5 platinum, 10 gold, 20 silver'"""
+    import re
+    
+    coins = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    
+    try:
+        # Look for patterns like "5 platinum", "10pp", etc.
+        patterns = [
+            (r'(\d+)\s*(?:platinum|plat|pp)', 'platinum'),
+            (r'(\d+)\s*(?:gold|gp)', 'gold'),
+            (r'(\d+)\s*(?:silver|sp)', 'silver'),
+            (r'(\d+)\s*(?:bronze|copper|cp)', 'bronze')
+        ]
+        
+        for pattern, coin_type in patterns:
+            matches = re.findall(pattern, text.lower())
+            if matches:
+                coins[coin_type] = int(matches[0])
+                
+    except Exception as e:
+        logger.warning(f"Error parsing coin text: {e}")
+    
+    return coins
 
 def enhance_reagents_with_icons(components):
     """Enhance reagent components with icons from their individual item pages"""
@@ -625,6 +999,11 @@ def parse_spell_details_from_html(soup):
         if items_with_spell:
             details['items_with_spell'] = items_with_spell[:20]  # Limit to 20 items to avoid clutter
             
+            # Extract pricing from the first scroll/spell item
+            scroll_pricing = extract_scroll_pricing(items_with_spell)
+            if scroll_pricing:
+                details['pricing'] = scroll_pricing
+            
         # If we didn't find much detail, try to get basic description from title or headers
         if not details.get('description'):
             title_element = soup.find('title')
@@ -720,13 +1099,209 @@ def search_spells():
             'results': []
         }), 500
 
+# Global session for connection pooling
+import requests
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Connection': 'keep-alive'
+})
+
+# Pricing cache is already declared at the top with other global storage variables
+
+def fetch_single_spell_pricing(spell_id, max_retries=2):
+    """Fetch pricing for a single spell with retry logic"""
+    # Check cache first
+    if str(spell_id) in pricing_cache:
+        return pricing_cache[str(spell_id)]
+    
+    for attempt in range(max_retries + 1):
+        try:
+            from bs4 import BeautifulSoup
+            
+            url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
+            response = session.get(url, timeout=8)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                details = parse_spell_details_from_html(soup)
+                
+                if details.get('pricing'):
+                    result = details['pricing']
+                else:
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+                
+                # Cache the result
+                pricing_cache[str(spell_id)] = result
+                # Save pricing cache periodically (every 10 new entries)
+                if len(pricing_cache) % 10 == 0:
+                    save_cache_to_disk()
+                return result
+            else:
+                if attempt == max_retries:
+                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+                    pricing_cache[str(spell_id)] = result
+                    # Save on failure too
+                    if len(pricing_cache) % 10 == 0:
+                        save_cache_to_disk()
+                    return result
+                
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed for spell {spell_id}: {e}")
+            if attempt == max_retries:
+                result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+                pricing_cache[str(spell_id)] = result
+                # Save on failure too
+                if len(pricing_cache) % 10 == 0:
+                    save_cache_to_disk()
+                return result
+            
+            # Exponential backoff: 0.5s, 1s, 2s
+            time.sleep(0.5 * (2 ** attempt))
+    
+    # Fallback
+    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+    pricing_cache[str(spell_id)] = result
+    # Save fallback too
+    if len(pricing_cache) % 10 == 0:
+        save_cache_to_disk()
+    return result
+
+@app.route('/api/spell-pricing', methods=['POST'])
+def get_spell_pricing():
+    """Get pricing for multiple spells with optimized fetching"""
+    try:
+        spell_ids = request.json.get('spell_ids', [])
+        if not spell_ids:
+            return jsonify({'error': 'No spell IDs provided'}), 400
+        
+        # Reduce batch size for better reliability
+        if len(spell_ids) > 5:
+            return jsonify({'error': 'Maximum 5 spell IDs allowed per request'}), 400
+        
+        pricing_results = {}
+        
+        # Use threading for concurrent requests (but still rate limited)
+        import threading
+        import queue
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # Use single thread to avoid overwhelming the server
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            # Submit all tasks
+            future_to_spell = {executor.submit(fetch_single_spell_pricing, spell_id): spell_id for spell_id in spell_ids}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_spell):
+                spell_id = future_to_spell[future]
+                try:
+                    result = future.result(timeout=12)  # Individual timeout
+                    pricing_results[str(spell_id)] = result
+                except Exception as e:
+                    logger.error(f"Failed to get pricing for spell {spell_id}: {e}")
+                    pricing_results[str(spell_id)] = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
+                
+                # Rate limiting between requests
+                time.sleep(0.5)
+        
+        # Save cache after batch processing
+        save_cache_to_disk()
+        
+        return jsonify({
+            'pricing': pricing_results,
+            'fetched_count': len(pricing_results),
+            'cached_count': len([s for s in spell_ids if str(s) in pricing_cache])
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in spell pricing endpoint: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'cached_classes': len(spells_cache)
+        'cached_classes': len(spells_cache),
+        'cached_pricing': len(pricing_cache),
+        'cached_spell_details': len(spell_details_cache)
+    })
+
+@app.route('/api/cache/save', methods=['POST'])
+def save_cache():
+    """Manually save cache to disk"""
+    try:
+        save_cache_to_disk()
+        return jsonify({
+            'message': 'Cache saved successfully',
+            'timestamp': datetime.now().isoformat(),
+            'cached_classes': len(spells_cache),
+            'cached_pricing': len(pricing_cache),
+        'cached_spell_details': len(spell_details_cache)
+        })
+    except Exception as e:
+        logger.error(f"Error saving cache: {e}")
+        return jsonify({'error': 'Failed to save cache'}), 500
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    """Clear all cached data"""
+    global spells_cache, cache_timestamp, last_scrape_time, pricing_cache, spell_details_cache
+    
+    try:
+        spells_cache.clear()
+        cache_timestamp.clear()
+        last_scrape_time.clear()
+        pricing_cache.clear()
+        spell_details_cache.clear()
+        
+        # Remove cache files
+        for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, SPELL_DETAILS_CACHE_FILE, METADATA_CACHE_FILE]:
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+        
+        return jsonify({
+            'message': 'Cache cleared successfully',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return jsonify({'error': 'Failed to clear cache'}), 500
+
+@app.route('/api/cache/status', methods=['GET'])
+def cache_status():
+    """Get detailed cache status"""
+    cache_files_exist = {
+        'spells': os.path.exists(SPELLS_CACHE_FILE),
+        'pricing': os.path.exists(PRICING_CACHE_FILE),
+        'metadata': os.path.exists(METADATA_CACHE_FILE)
+    }
+    
+    cache_sizes = {}
+    for name, path in [('spells', SPELLS_CACHE_FILE), ('pricing', PRICING_CACHE_FILE), ('metadata', METADATA_CACHE_FILE)]:
+        if os.path.exists(path):
+            cache_sizes[name] = os.path.getsize(path)
+        else:
+            cache_sizes[name] = 0
+    
+    return jsonify({
+        'memory_cache': {
+            'classes': len(spells_cache),
+            'pricing_entries': len(pricing_cache),
+            'timestamps': len(cache_timestamp)
+        },
+        'disk_cache': {
+            'files_exist': cache_files_exist,
+            'file_sizes_bytes': cache_sizes,
+            'cache_directory': CACHE_DIR
+        },
+        'config': {
+            'cache_expiry_hours': CACHE_EXPIRY_HOURS,
+            'min_scrape_interval_minutes': MIN_SCRAPE_INTERVAL_MINUTES
+        }
     })
 
 if __name__ == '__main__':

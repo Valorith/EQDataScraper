@@ -13,6 +13,9 @@ node_modules/
 # User-specific configuration files
 config.json
 
+# Cache directory - contains persistent spell and pricing data
+cache/
+
 # Build artifacts (generated during deployment)
 dist/
 

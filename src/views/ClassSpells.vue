@@ -5,8 +5,18 @@
         ← Back to Classes
       </button>
       
-      <h1 class="class-title" :style="titleStyles">{{ className }} Spells</h1>
-      <p class="class-subtitle">Norrath Compendium</p>
+      <div class="hero-content">
+        <h1 class="class-title" :style="titleStyles">{{ className }} Spells</h1>
+        <p class="class-subtitle">Norrath Compendium</p>
+      </div>
+      
+      <!-- Cart Button -->
+      <div class="cart-container">
+        <button @click="openCart" class="cart-button" title="View Cart">
+          <span class="cart-icon">🛒</span>
+          <span v-if="cartStore.itemCount > 0" class="cart-counter">{{ cartStore.itemCount }}</span>
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="loading-container" :class="{ 'transitioning': isTransitioning }">
@@ -125,6 +135,15 @@
           <h2 class="level-title">Level {{ level }}</h2>
           <div class="level-header-right">
             <span class="level-count">{{ levelGroup.length }} {{ levelGroup.length === 1 ? 'Spell' : 'Spells' }}</span>
+            <button 
+              class="buy-all-btn" 
+              @click="buyAllSpellsAtLevel(levelGroup)" 
+              :disabled="!canBuyAllSpellsAtLevel(levelGroup)"
+              :title="getBuyAllButtonTitle(levelGroup)"
+            >
+              <span>🛒</span>
+              <span>Buy All</span>
+            </button>
             <button class="go-to-top-btn" @click="scrollToTop" title="Go to top of page">
               <span>Top</span>
               <span class="top-arrow">↑</span>
@@ -187,6 +206,67 @@
                   <span class="attribute-value">{{ spell.mana }}</span>
                 </div>
               </div>
+            </div>
+            
+            <!-- Pricing and Cart Section -->
+            <div class="spell-footer">
+              <div v-if="spell.pricing && hasAnyPrice(spell.pricing) && !spell.pricing.unknown" class="spell-pricing">
+                <div class="coin-display">
+                  <div v-if="spell.pricing.platinum > 0" class="coin-item">
+                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.platinum }}</span>
+                  </div>
+                  <div v-if="spell.pricing.gold > 0" class="coin-item">
+                    <img src="/icons/coins/gold.svg" alt="Gold" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.gold }}</span>
+                  </div>
+                  <div v-if="spell.pricing.silver > 0" class="coin-item">
+                    <img src="/icons/coins/silver.svg" alt="Silver" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.silver }}</span>
+                  </div>
+                  <div v-if="spell.pricing.bronze > 0" class="coin-item">
+                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="coin-icon" />
+                    <span class="coin-value">{{ spell.pricing.bronze }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="spell.pricing && (spell.pricing.unknown || !hasAnyPrice(spell.pricing))" class="spell-pricing-unknown">
+                <span v-if="retryQueue.has(spell.spell_id)" class="pricing-status queued">Queued for retry</span>
+                <span v-else class="pricing-status">Unknown Cost</span>
+                <button 
+                  @click.stop="retryPricingFetch(spell.spell_id)"
+                  :class="['retry-pricing-btn', { 'queued': retryQueue.has(spell.spell_id), 'disabled': isFetchingPricing && retryQueue.has(spell.spell_id) }]"
+                  :disabled="isFetchingPricing && retryQueue.has(spell.spell_id)"
+                  :title="getRetryButtonTitle(spell.spell_id)"
+                >
+                  <span v-if="retryQueue.has(spell.spell_id)">⏳</span>
+                  <span v-else>🔄</span>
+                </button>
+              </div>
+              <div v-else class="spell-pricing-loading">
+                <div class="pricing-progress-container">
+                  <div class="pricing-progress-bar">
+                    <div 
+                      class="pricing-progress-fill" 
+                      :style="{ width: `${getPricingProgress(spell.spell_id)}%` }"
+                    ></div>
+                    <span class="pricing-loading-text">Loading Price</span>
+                  </div>
+                  <span class="pricing-progress-text">{{ getPricingProgress(spell.spell_id) }}%</span>
+                </div>
+              </div>
+              
+              <button 
+                @click.stop="addToCart(spell)" 
+                :class="['add-to-cart-btn', { 'in-cart': isInCart(spell.spell_id), 'disabled': !hasValidPricing(spell), 'loading': !spell.pricing || getPricingProgress(spell.spell_id) < 100 }]"
+                :disabled="!hasValidPricing(spell)"
+                :title="getCartButtonTitle(spell)"
+              >
+                <span v-if="isInCart(spell.spell_id)">✓</span>
+                <span v-else-if="!spell.pricing || getPricingProgress(spell.spell_id) < 100">⏳</span>
+                <span v-else-if="spell.pricing && spell.pricing.unknown">❌</span>
+                <span v-else>🛒</span>
+              </button>
             </div>
           </div>
         </div>
@@ -396,6 +476,124 @@
         </div>
       </div>
     </div>
+
+    <!-- Cart Modal -->
+    <div v-if="cartStore.isOpen" class="cart-modal-overlay" @click="cartStore.closeCart()">
+      <div class="cart-modal" @click.stop>
+        <div class="cart-modal-header">
+          <h3>Shopping Cart</h3>
+          <button @click="cartStore.closeCart()" class="modal-close-btn">×</button>
+        </div>
+        
+        <div class="cart-modal-content">
+          <!-- Empty Cart State -->
+          <div v-if="cartStore.itemCount === 0" class="cart-empty">
+            <div class="cart-empty-icon">🛒</div>
+            <h4>Your cart is empty</h4>
+            <p>Browse spells and add them to your cart to see them here.</p>
+            <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+              Continue Shopping
+            </button>
+          </div>
+          
+          <!-- Cart Items -->
+          <div v-else>
+            <div class="cart-items">
+              <div 
+                v-for="item in cartStore.items" 
+                :key="item.spell_id"
+                class="cart-item"
+              >
+                <div class="cart-item-info">
+                  <img 
+                    v-if="item.icon" 
+                    :src="item.icon" 
+                    :alt="item.name"
+                    class="cart-item-icon"
+                    @error="handleIconError"
+                  />
+                  <div class="cart-item-details">
+                    <h4 class="cart-item-name">{{ item.name }}</h4>
+                    <div class="cart-item-meta">
+                      Level {{ item.level }}
+                      <span v-if="item.class_names && item.class_names.length">
+                        • {{ item.class_names.join(', ') }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="cart-item-pricing">
+                  <div v-if="item.pricing && hasAnyPrice(item.pricing)" class="cart-coin-display">
+                    <div v-if="item.pricing.platinum > 0" class="cart-coin-item">
+                      <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.platinum }}</span>
+                    </div>
+                    <div v-if="item.pricing.gold > 0" class="cart-coin-item">
+                      <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.gold }}</span>
+                    </div>
+                    <div v-if="item.pricing.silver > 0" class="cart-coin-item">
+                      <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.silver }}</span>
+                    </div>
+                    <div v-if="item.pricing.bronze > 0" class="cart-coin-item">
+                      <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                      <span class="cart-coin-value">{{ item.pricing.bronze }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="cart-pricing-free">Free</div>
+                </div>
+                
+                <button 
+                  @click="removeFromCart(item.spell_id)" 
+                  class="remove-item-btn"
+                  title="Remove from cart"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+            
+            <!-- Cart Total -->
+            <div class="cart-total">
+              <div class="cart-total-header">
+                <h4>Total Cost</h4>
+                <div class="cart-total-coins">
+                  <div v-if="cartStore.optimizedTotal.platinum > 0" class="cart-coin-item">
+                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.platinum }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.gold > 0" class="cart-coin-item">
+                    <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.gold }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.silver > 0" class="cart-coin-item">
+                    <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.silver }}</span>
+                  </div>
+                  <div v-if="cartStore.optimizedTotal.bronze > 0" class="cart-coin-item">
+                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
+                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.bronze }}</span>
+                  </div>
+                  <div v-if="cartStore.totalInBronze === 0" class="cart-total-free">No cost</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Cart Actions -->
+            <div class="cart-actions">
+              <button @click="clearCart()" class="clear-cart-btn">
+                Clear Cart
+              </button>
+              <button @click="cartStore.closeCart()" class="continue-shopping-btn">
+                Continue Shopping
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- Share Toast Notification -->
     <div v-if="shareToastVisible" class="share-toast">
@@ -409,6 +607,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSpellsStore } from '../stores/spells'
+import { useCartStore } from '../stores/cart'
+import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, relative path in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
@@ -435,6 +635,7 @@ export default {
     const router = useRouter()
     const route = useRoute()
     const spellsStore = useSpellsStore()
+    const cartStore = useCartStore()
     const loading = ref(false)
     const error = ref(null)
     const isTransitioning = ref(false)
@@ -454,6 +655,25 @@ export default {
     const spellDetails = ref(null)
     const loadingSpellDetails = ref(false)
     const spellDetailsError = ref(null)
+    
+    // Pricing progress tracking
+    const pricingProgress = ref({})
+    const totalSpellsForPricing = ref(0)
+    const processedSpellsForPricing = ref(0)
+    const pricingCache = ref({})
+    
+    // Spell details cache
+    const spellDetailsCache = ref({})
+    
+    // Circuit breaker for pricing failures
+    const pricingFailureCount = ref(0)
+    const lastFailureTime = ref(null)
+    const FAILURE_THRESHOLD = 5
+    const CIRCUIT_BREAKER_TIMEOUT = 30000 // 30 seconds
+    
+    // Retry queue system
+    const retryQueue = ref(new Set())
+    const isFetchingPricing = ref(false)
 
     const classInfo = computed(() => {
       return spellsStore.getClassByName(props.className)
@@ -778,14 +998,22 @@ export default {
     }
 
     const fetchSpellDetails = async (spellId) => {
+      // Check cache first
+      if (spellDetailsCache.value[spellId]) {
+        console.log(`📦 Using cached spell details for ${spellId}`)
+        spellDetails.value = spellDetailsCache.value[spellId]
+        return
+      }
+      
       loadingSpellDetails.value = true
       spellDetailsError.value = null
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}?_t=${Date.now()}`, {
+        console.log(`🌐 Fetching fresh spell details for ${spellId}`)
+        const response = await fetch(`${API_BASE_URL}/api/spell-details/${spellId}`, {
           headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           }
         })
         if (!response.ok) {
@@ -802,6 +1030,11 @@ export default {
         if (details.components && Array.isArray(details.components)) {
           details.components = details.components.filter(c => c && typeof c === 'object' && c.name && c.url)
         }
+        
+        // Cache the details
+        spellDetailsCache.value[spellId] = details
+        saveSpellDetailsToLocalStorage(spellId, details)
+        console.log(`✅ Cached spell details for ${spellId}`)
         
         spellDetails.value = details
         
@@ -1185,6 +1418,605 @@ export default {
       }
     }
 
+    // Cart functionality
+    const addToCart = (spell) => {
+      // Prevent adding spells with unknown pricing
+      if (!hasValidPricing(spell)) {
+        console.log(`Cannot add ${spell.name} to cart - unknown pricing`)
+        return
+      }
+      
+      // Check if item is already in cart
+      if (isInCart(spell.spell_id)) {
+        // Remove from cart if already in cart
+        cartStore.removeItem(spell.spell_id)
+        console.log(`Removed ${spell.name} from cart`)
+      } else {
+        // Add to cart if not in cart
+        const success = cartStore.addItem(spell)
+        if (success) {
+          console.log(`Added ${spell.name} to cart`)
+        } else {
+          console.log(`Failed to add ${spell.name} to cart`)
+        }
+      }
+    }
+
+    const isInCart = (spellId) => {
+      return cartStore.items.some(item => item.spell_id === spellId)
+    }
+
+    const hasAnyPrice = (pricing) => {
+      if (!pricing) return false
+      return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
+    }
+    
+    const hasValidPricing = (spell) => {
+      // A spell has valid pricing if:
+      // 1. It has pricing data and pricing is not null
+      // 2. Pricing has finished loading (progress = 100%)
+      // 3. Pricing is not marked as unknown (failed fetch)
+      // 4. At least one currency value is greater than 0 (has actual price)
+      return spell.pricing && 
+             (spell.pricing !== null) && 
+             getPricingProgress(spell.spell_id) === 100 && 
+             !spell.pricing.unknown &&
+             hasAnyPrice(spell.pricing)
+    }
+    
+    const getCartButtonTitle = (spell) => {
+      if (!spell.pricing) {
+        return 'Loading price - please wait'
+      }
+      if (getPricingProgress(spell.spell_id) < 100) {
+        return `Loading price (${getPricingProgress(spell.spell_id)}%) - please wait`
+      }
+      if (spell.pricing.unknown) {
+        return 'Price unknown - cannot add to cart'
+      }
+      if (spell.pricing && !hasAnyPrice(spell.pricing)) {
+        return 'No price available - cannot add to cart'
+      }
+      return isInCart(spell.spell_id) ? 'Remove from cart' : 'Add to cart'
+    }
+    
+    const getRetryButtonTitle = (spellId) => {
+      if (retryQueue.value.has(spellId)) {
+        if (isFetchingPricing.value) {
+          return 'Retry queued - click again if stuck after 10 seconds'
+        }
+        return 'Retry queued - will fetch shortly'
+      }
+      return 'Retry fetching price'
+    }
+    
+    const forceProcessRetryQueue = () => {
+      if (retryQueue.value.size > 0) {
+        console.log(`🔥 Force processing retry queue with ${retryQueue.value.size} items`)
+        isFetchingPricing.value = false // Reset the flag
+        fetchPricingForSpells()
+      }
+    }
+
+    const openCart = () => {
+      cartStore.openCart()
+    }
+
+    const removeFromCart = (spellId) => {
+      cartStore.removeItem(spellId)
+    }
+
+    const clearCart = () => {
+      if (confirm('Are you sure you want to clear your cart?')) {
+        cartStore.clearCart()
+      }
+    }
+    
+    // Buy All functionality for level groups
+    const canBuyAllSpellsAtLevel = (levelGroup) => {
+      // Can buy all if at least one spell has valid pricing
+      return levelGroup.some(spell => hasValidPricing(spell))
+    }
+    
+    const getBuyAllButtonTitle = (levelGroup) => {
+      const validSpells = levelGroup.filter(spell => hasValidPricing(spell))
+      const invalidSpells = levelGroup.filter(spell => !hasValidPricing(spell))
+      
+      if (validSpells.length === 0) {
+        return 'No spells available for purchase at this level'
+      }
+      
+      if (invalidSpells.length === 0) {
+        return `Add all ${validSpells.length} spells to cart`
+      }
+      
+      return `Add ${validSpells.length} of ${levelGroup.length} spells to cart (${invalidSpells.length} unavailable)`
+    }
+    
+    const buyAllSpellsAtLevel = (levelGroup) => {
+      const validSpells = levelGroup.filter(spell => hasValidPricing(spell))
+      
+      if (validSpells.length === 0) {
+        console.log('No valid spells to add at this level')
+        return
+      }
+      
+      let addedCount = 0
+      let skippedCount = 0
+      
+      validSpells.forEach(spell => {
+        if (!isInCart(spell.spell_id)) {
+          const success = cartStore.addItem(spell)
+          if (success) {
+            addedCount++
+          } else {
+            skippedCount++
+          }
+        } else {
+          skippedCount++ // Already in cart
+        }
+      })
+      
+      console.log(`Buy All: Added ${addedCount} spells, skipped ${skippedCount} spells`)
+      
+      // Optional: Show user feedback
+      if (addedCount > 0) {
+        console.log(`✅ Added ${addedCount} spells to cart!`)
+      }
+      if (skippedCount > 0) {
+        console.log(`ℹ️ Skipped ${skippedCount} spells (already in cart or invalid pricing)`)
+      }
+    }
+    
+    const retryPricingFetch = async (spellId) => {
+      // If this spell is already queued and user clicks again, force process the queue
+      if (retryQueue.value.has(spellId)) {
+        console.log(`🔥 Force processing retry queue for spell ${spellId} (user clicked again)`)
+        forceProcessRetryQueue()
+        return
+      }
+      
+      console.log(`🔄 Queueing retry for spell ${spellId}`)
+      
+      // Find the spell object
+      const spell = spells.value.find(s => s.spell_id === spellId)
+      if (!spell) {
+        console.error(`Spell with ID ${spellId} not found`)
+        return
+      }
+      
+      // Clear existing pricing and cache to force re-fetch
+      spell.pricing = null
+      delete pricingCache.value[spellId]
+      delete pricingProgress.value[spellId]
+      
+      // Add to retry queue
+      retryQueue.value.add(spellId)
+      console.log(`📋 Added spell ${spellId} to retry queue (queue size: ${retryQueue.value.size})`)
+      
+      // If no pricing fetch is currently running, trigger one immediately
+      if (!isFetchingPricing.value) {
+        console.log('🚀 Starting pricing fetch for retry queue')
+        fetchPricingForSpells()
+      } else {
+        console.log('⏳ Pricing fetch in progress - will try to process retry in 5 seconds')
+        // Set a timeout to try again if the current fetch seems stuck
+        setTimeout(() => {
+          if (retryQueue.value.has(spellId) && !isFetchingPricing.value) {
+            console.log(`⏰ Timeout triggered - processing queued retry for spell ${spellId}`)
+            fetchPricingForSpells()
+          } else if (retryQueue.value.has(spellId)) {
+            console.log(`⚠️ Retry still queued for spell ${spellId} after timeout - forcing new fetch`)
+            // Force a new fetch even if one seems to be running
+            isFetchingPricing.value = false
+            fetchPricingForSpells()
+          }
+        }, 5000)
+      }
+    }
+
+    // Get pricing progress for a specific spell
+    const getPricingProgress = (spellId) => {
+      // If we have cached pricing, don't show progress
+      if (pricingCache.value[spellId]) {
+        return 100
+      }
+      
+      if (pricingProgress.value[spellId] !== undefined) {
+        return pricingProgress.value[spellId]
+      }
+      
+      // If we have no individual progress, calculate based on overall progress
+      if (totalSpellsForPricing.value > 0) {
+        const overallProgress = Math.floor((processedSpellsForPricing.value / totalSpellsForPricing.value) * 100)
+        return Math.min(overallProgress, 95) // Cap at 95% until individual spell completes
+      }
+      
+      return 0
+    }
+    
+    // Set progress for a specific spell
+    const setPricingProgress = (spellId, progress) => {
+      pricingProgress.value[spellId] = Math.min(100, Math.max(0, progress))
+    }
+    
+    // localStorage functions for persistent caching
+    const PRICING_CACHE_KEY = 'eq-spell-pricing-cache'
+    const SPELL_DETAILS_CACHE_KEY = 'eq-spell-details-cache'
+    
+    const savePricingToLocalStorage = (spellId, pricing) => {
+      try {
+        const existingCache = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        existingCache[spellId] = {
+          ...pricing,
+          cached_at: Date.now()
+        }
+        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(existingCache))
+      } catch (error) {
+        console.error('Failed to save pricing to localStorage:', error)
+      }
+    }
+    
+    const loadPricingFromLocalStorage = () => {
+      try {
+        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        
+        // Filter out expired entries and load valid ones
+        Object.keys(cachedPricing).forEach(spellId => {
+          const cached = cachedPricing[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            const { cached_at, ...pricing } = cached
+            pricingCache.value[spellId] = pricing
+          }
+        })
+        
+        console.log(`💾 Loaded ${Object.keys(pricingCache.value).length} cached pricing entries from localStorage`)
+      } catch (error) {
+        console.error('Failed to load pricing from localStorage:', error)
+      }
+    }
+    
+    const clearExpiredPricingCache = () => {
+      try {
+        const cachedPricing = JSON.parse(localStorage.getItem(PRICING_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        const validCache = {}
+        
+        Object.keys(cachedPricing).forEach(spellId => {
+          const cached = cachedPricing[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            validCache[spellId] = cached
+          }
+        })
+        
+        localStorage.setItem(PRICING_CACHE_KEY, JSON.stringify(validCache))
+        console.log(`🧹 Cleaned pricing cache - kept ${Object.keys(validCache).length} valid entries`)
+      } catch (error) {
+        console.error('Failed to clean pricing cache:', error)
+      }
+    }
+    
+    // Spell details caching functions
+    const saveSpellDetailsToLocalStorage = (spellId, details) => {
+      try {
+        const existingCache = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        existingCache[spellId] = {
+          ...details,
+          cached_at: Date.now()
+        }
+        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(existingCache))
+      } catch (error) {
+        console.error('Failed to save spell details to localStorage:', error)
+      }
+    }
+    
+    const loadSpellDetailsFromLocalStorage = () => {
+      try {
+        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        
+        // Filter out expired entries and load valid ones
+        Object.keys(cachedDetails).forEach(spellId => {
+          const cached = cachedDetails[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            const { cached_at, ...details } = cached
+            spellDetailsCache.value[spellId] = details
+          }
+        })
+        
+        console.log(`💾 Loaded ${Object.keys(spellDetailsCache.value).length} cached spell details from localStorage`)
+      } catch (error) {
+        console.error('Failed to load spell details from localStorage:', error)
+      }
+    }
+    
+    const clearExpiredSpellDetailsCache = () => {
+      try {
+        const cachedDetails = JSON.parse(localStorage.getItem(SPELL_DETAILS_CACHE_KEY) || '{}')
+        const now = Date.now()
+        const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
+        const validCache = {}
+        
+        Object.keys(cachedDetails).forEach(spellId => {
+          const cached = cachedDetails[spellId]
+          if (cached.cached_at && (now - cached.cached_at) < CACHE_EXPIRY) {
+            validCache[spellId] = cached
+          }
+        })
+        
+        localStorage.setItem(SPELL_DETAILS_CACHE_KEY, JSON.stringify(validCache))
+        console.log(`🧹 Cleaned spell details cache - kept ${Object.keys(validCache).length} valid entries`)
+      } catch (error) {
+        console.error('Failed to clean spell details cache:', error)
+      }
+    }
+    
+    // Check if circuit breaker is open
+    const isCircuitBreakerOpen = () => {
+      if (pricingFailureCount.value >= FAILURE_THRESHOLD) {
+        if (lastFailureTime.value && Date.now() - lastFailureTime.value < CIRCUIT_BREAKER_TIMEOUT) {
+          return true
+        } else {
+          // Reset circuit breaker after timeout
+          pricingFailureCount.value = 0
+          lastFailureTime.value = null
+          return false
+        }
+      }
+      return false
+    }
+    
+    // Record pricing failure
+    const recordPricingFailure = () => {
+      pricingFailureCount.value++
+      lastFailureTime.value = Date.now()
+      console.warn(`Pricing failure count: ${pricingFailureCount.value}/${FAILURE_THRESHOLD}`)
+    }
+    
+    // Fetch pricing for spells when component loads
+    const fetchPricingForSpells = async () => {
+      if (!spells.value || spells.value.length === 0) return
+      
+      // Check circuit breaker
+      if (isCircuitBreakerOpen()) {
+        console.warn('Circuit breaker is open - skipping pricing fetch to prevent server overload')
+        return
+      }
+      
+      // Prevent concurrent pricing fetches
+      if (isFetchingPricing.value) {
+        console.log('Pricing fetch already in progress - skipping')
+        return
+      }
+      
+      isFetchingPricing.value = true
+      
+      // Set a timeout to reset the flag if the fetch hangs
+      const fetchTimeout = setTimeout(() => {
+        console.warn('⚠️ Pricing fetch timed out after 60 seconds - resetting state')
+        isFetchingPricing.value = false
+      }, 60000) // 60 second timeout
+      
+      // Apply cached pricing to spells that don't have it yet
+      spells.value.forEach(spell => {
+        if (spell.spell_id && (!spell.pricing || spell.pricing === null) && pricingCache.value[spell.spell_id]) {
+          spell.pricing = pricingCache.value[spell.spell_id]
+          console.log(`📦 Applied cached pricing for ${spell.name}:`, spell.pricing)
+        }
+      })
+      
+      // Get spell IDs that don't have pricing yet (including null pricing) and aren't cached
+      let spellsNeedingPricing = spells.value.filter(spell => 
+        spell.spell_id && (!spell.pricing || spell.pricing === null) && !pricingCache.value[spell.spell_id]
+      )
+      
+      // Add retry queue items to the list
+      const retrySpells = Array.from(retryQueue.value).map(spellId => 
+        spells.value.find(spell => spell.spell_id === spellId)
+      ).filter(Boolean)
+      
+      // Combine and deduplicate
+      const allSpellIds = new Set([...spellsNeedingPricing.map(s => s.spell_id), ...retrySpells.map(s => s.spell_id)])
+      spellsNeedingPricing = spells.value.filter(spell => allSpellIds.has(spell.spell_id))
+      
+      // Clear retry queue as we're processing it
+      if (retryQueue.value.size > 0) {
+        console.log(`🔄 Processing ${retryQueue.value.size} retry requests`)
+        retryQueue.value.clear()
+      }
+      
+      console.log(`Found ${spellsNeedingPricing.length} spells needing pricing out of ${spells.value.length} total spells`)
+      console.log(`${Object.keys(pricingCache.value).length} spells already cached`)
+      
+      if (spellsNeedingPricing.length === 0) {
+        console.log('All spells already have pricing data or are cached')
+        return
+      }
+      
+      // Initialize progress tracking
+      totalSpellsForPricing.value = spellsNeedingPricing.length
+      processedSpellsForPricing.value = 0
+      
+      // Initialize individual spell progress
+      spellsNeedingPricing.forEach(spell => {
+        setPricingProgress(spell.spell_id, 0)
+      })
+      
+      try {
+        // Use very small batch size for maximum reliability 
+        const batchSize = 1
+        for (let i = 0; i < spellsNeedingPricing.length; i += batchSize) {
+          const batch = spellsNeedingPricing.slice(i, i + batchSize)
+          const spellIds = batch.map(spell => spell.spell_id)
+          
+          const currentBatch = Math.floor(i/batchSize) + 1
+          const totalBatches = Math.ceil(spellsNeedingPricing.length/batchSize)
+          console.log(`Fetching pricing for batch ${currentBatch}/${totalBatches}:`, spellIds)
+          
+          // Set progress to 25% for spells being processed
+          batch.forEach(spell => {
+            setPricingProgress(spell.spell_id, 25)
+          })
+          
+          try {
+            const response = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+              spell_ids: spellIds
+            }, {
+              timeout: 15000, // Balanced timeout for better reliability
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              }
+            })
+            
+            console.log(`Batch ${currentBatch}/${totalBatches} completed:`, response.data)
+            
+            // Log cache stats
+            console.log(`Cache now contains ${Object.keys(pricingCache.value).length} spells`)
+            
+            // Set progress to 75% after successful response
+            batch.forEach(spell => {
+              setPricingProgress(spell.spell_id, 75)
+            })
+            
+            // Update spells with pricing data and cache immediately
+            batch.forEach(spell => {
+              const pricing = response.data.pricing[spell.spell_id]
+              if (pricing) {
+                spell.pricing = pricing
+                // Cache immediately to prevent re-fetching
+                pricingCache.value[spell.spell_id] = pricing
+                // Save to localStorage immediately for persistence
+                savePricingToLocalStorage(spell.spell_id, pricing)
+                console.log(`✅ Cached pricing for ${spell.name}:`, pricing)
+              } else {
+                // Set unknown pricing to prevent re-fetching
+                const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                spell.pricing = unknownPricing
+                // Cache the unknown pricing too
+                pricingCache.value[spell.spell_id] = unknownPricing
+                savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                console.log(`❓ No pricing data for ${spell.name} - marked as unknown`)
+              }
+              
+              // Set progress to 100% for completed spells
+              setPricingProgress(spell.spell_id, 100)
+              processedSpellsForPricing.value++
+            })
+            
+          } catch (batchError) {
+            console.error(`Batch ${currentBatch}/${totalBatches} failed:`, batchError.message || batchError)
+            recordPricingFailure()
+            
+            // Check if it's a timeout error and potentially retry smaller batches
+            if (batchError.message && batchError.message.includes('timeout') && batch.length > 1) {
+              console.log(`Timeout detected, trying individual requests for batch ${currentBatch}`)
+              
+              // Try each spell individually with a delay
+              for (const spell of batch) {
+                try {
+                  await new Promise(resolve => setTimeout(resolve, 1000)) // Longer delay between individual retries
+                  
+                  const singleResponse = await axios.post(`${API_BASE_URL}/api/spell-pricing`, {
+                    spell_ids: [spell.spell_id]
+                  }, {
+                    timeout: 12000, // Moderate timeout for individual requests
+                    headers: {
+                      'Accept': 'application/json',
+                      'Content-Type': 'application/json'
+                    }
+                  })
+                  
+                  const pricing = singleResponse.data.pricing[spell.spell_id]
+                  if (pricing) {
+                    spell.pricing = pricing
+                    pricingCache.value[spell.spell_id] = pricing
+                    // Save immediately to localStorage
+                    savePricingToLocalStorage(spell.spell_id, pricing)
+                    console.log(`✅ Individual retry succeeded for ${spell.name}:`, pricing)
+                  } else {
+                    const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                    spell.pricing = unknownPricing
+                    pricingCache.value[spell.spell_id] = unknownPricing
+                    savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                    console.log(`❓ Individual retry failed for ${spell.name} - no pricing data`)
+                  }
+                } catch (individualError) {
+                  console.error(`❌ Individual retry failed for ${spell.name}:`, individualError.message)
+                  const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                  spell.pricing = unknownPricing
+                  pricingCache.value[spell.spell_id] = unknownPricing
+                  savePricingToLocalStorage(spell.spell_id, unknownPricing)
+                }
+                
+                setPricingProgress(spell.spell_id, 100)
+                processedSpellsForPricing.value++
+              }
+            } else {
+              // Handle non-timeout errors or single-spell batches normally
+              batch.forEach(spell => {
+                const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+                spell.pricing = unknownPricing
+                pricingCache.value[spell.spell_id] = unknownPricing
+                setPricingProgress(spell.spell_id, 100)
+                processedSpellsForPricing.value++
+              })
+            }
+          }
+          
+          // Longer delay between batches to prevent server overload
+          if (i + batchSize < spellsNeedingPricing.length) {
+            await new Promise(resolve => setTimeout(resolve, 2500))
+          }
+        }
+      } catch (error) {
+        console.error('Critical error in pricing fetch process:', error)
+        // Set unknown pricing for any remaining spells to prevent endless loading
+        spellsNeedingPricing.forEach(spell => {
+          if (!spell.pricing) {
+            const unknownPricing = { platinum: 0, gold: 0, silver: 0, bronze: 0, unknown: true }
+            spell.pricing = unknownPricing
+            // Cache the unknown pricing to prevent re-fetching
+            pricingCache.value[spell.spell_id] = unknownPricing
+          }
+          // Set progress to 100% even for failed spells to stop loading state
+          setPricingProgress(spell.spell_id, 100)
+        })
+        
+        // Reset counters
+        processedSpellsForPricing.value = totalSpellsForPricing.value
+      }
+      
+      // Clear the timeout and mark fetching as complete
+      clearTimeout(fetchTimeout)
+      isFetchingPricing.value = false
+    }
+
+    // Watch for spell changes and fetch pricing with debouncing
+    let pricingFetchTimeout = null
+    const debouncedFetchPricing = () => {
+      if (pricingFetchTimeout) {
+        clearTimeout(pricingFetchTimeout)
+      }
+      pricingFetchTimeout = setTimeout(() => {
+        fetchPricingForSpells()
+      }, 1000) // 1 second debounce to prevent rapid successive calls
+    }
+    
+    // Initialize caches from localStorage on component mount
+    onMounted(() => {
+      loadPricingFromLocalStorage()
+      clearExpiredPricingCache()
+      loadSpellDetailsFromLocalStorage()
+      clearExpiredSpellDetailsCache()
+    })
+    
+    watch(spells, debouncedFetchPricing, { immediate: true })
+
     return {
       loading,
       error,
@@ -1238,7 +2070,28 @@ export default {
       highlightMatch,
       // Share functionality
       shareSpell,
-      shareToastVisible
+      shareToastVisible,
+      // Cart functionality
+      cartStore,
+      addToCart,
+      isInCart,
+      hasAnyPrice,
+      hasValidPricing,
+      getCartButtonTitle,
+      openCart,
+      removeFromCart,
+      clearCart,
+      canBuyAllSpellsAtLevel,
+      getBuyAllButtonTitle,
+      buyAllSpellsAtLevel,
+      retryPricingFetch,
+      getRetryButtonTitle,
+      forceProcessRetryQueue,
+      // Pricing progress
+      getPricingProgress,
+      // Retry queue state
+      retryQueue,
+      isFetchingPricing
     }
   }
 }
@@ -1660,6 +2513,45 @@ export default {
   padding: 0.5rem 1rem;
   border-radius: 20px;
   border: 1px solid rgba(var(--class-color-rgb), 0.2);
+}
+
+.buy-all-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  font-family: 'Inter', sans-serif;
+}
+
+.buy-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838, #1ea080);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(40, 167, 69, 0.5);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.buy-all-btn:disabled {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: 0 2px 6px rgba(108, 117, 125, 0.2);
+}
+
+.buy-all-btn:disabled:hover {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  transform: none;
+  box-shadow: 0 2px 6px rgba(108, 117, 125, 0.2);
 }
 
 .go-to-top-btn {
@@ -2979,6 +3871,688 @@ export default {
     left: 1rem;
     max-width: none;
     font-size: 0.9rem;
+  }
+}
+
+/* Spell Footer and Pricing Styles */
+.spell-footer {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spell-pricing {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.coin-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.coin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.coin-icon {
+  width: 20px;
+  height: 20px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.coin-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.spell-pricing-loading {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.pricing-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 100px;
+}
+
+.pricing-progress-bar {
+  flex: 1;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pricing-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(var(--class-color-rgb), 0.4);
+  z-index: 1;
+}
+
+.pricing-loading-text {
+  position: relative;
+  z-index: 2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+.pricing-progress-text {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 30px;
+  text-align: right;
+}
+
+.spell-pricing-unknown {
+  color: rgba(255, 165, 0, 0.8);
+  font-size: 0.8rem;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.retry-pricing-btn {
+  background: rgba(255, 165, 0, 0.2);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  border-radius: 4px;
+  color: rgba(255, 165, 0, 0.9);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+}
+
+.retry-pricing-btn:hover:not(.disabled) {
+  background: rgba(255, 165, 0, 0.3);
+  border-color: rgba(255, 165, 0, 0.6);
+  transform: rotate(180deg);
+  box-shadow: 0 2px 4px rgba(255, 165, 0, 0.2);
+}
+
+/* Queued retry button state */
+.retry-pricing-btn.queued {
+  background: rgba(52, 152, 219, 0.2);
+  border-color: rgba(52, 152, 219, 0.4);
+  color: rgba(52, 152, 219, 0.9);
+  cursor: wait;
+}
+
+.retry-pricing-btn.queued:hover {
+  background: rgba(52, 152, 219, 0.3);
+  border-color: rgba(52, 152, 219, 0.6);
+  transform: none;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.2);
+}
+
+/* Disabled retry button state */
+.retry-pricing-btn.disabled {
+  background: rgba(108, 117, 125, 0.2);
+  border-color: rgba(108, 117, 125, 0.4);
+  color: rgba(108, 117, 125, 0.6);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.retry-pricing-btn.disabled:hover {
+  background: rgba(108, 117, 125, 0.2);
+  border-color: rgba(108, 117, 125, 0.4);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Queued pricing status text */
+.pricing-status.queued {
+  color: rgba(52, 152, 219, 0.9);
+  font-weight: 600;
+}
+
+/* Hourglass animation for queued retry button */
+.retry-pricing-btn.queued span {
+  animation: hourglass 2s ease-in-out infinite;
+}
+
+@keyframes hourglass {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.1) rotate(180deg); }
+}
+
+.add-to-cart-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+.add-to-cart-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838, #1ea080);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+}
+
+.add-to-cart-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Add to cart button in cart state - different color to show it's in cart */
+.add-to-cart-btn.in-cart {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.add-to-cart-btn.in-cart:hover {
+  background: linear-gradient(135deg, #5a6268, #495057);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+/* Disabled add to cart button for unknown pricing */
+.add-to-cart-btn.disabled {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: 0 1px 3px rgba(108, 117, 125, 0.2);
+}
+
+.add-to-cart-btn.disabled:hover {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  transform: none;
+  box-shadow: 0 1px 3px rgba(108, 117, 125, 0.2);
+}
+
+/* Loading state for add to cart button */
+.add-to-cart-btn.loading {
+  background: linear-gradient(135deg, #ffc107, #e0a800);
+  cursor: wait;
+  opacity: 0.8;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+.add-to-cart-btn.loading:hover {
+  background: linear-gradient(135deg, #e0a800, #d39e00);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4);
+}
+
+/* Animation for loading hourglass */
+.add-to-cart-btn.loading span {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Mobile adjustments for spell footer */
+@media (max-width: 768px) {
+  .spell-footer {
+    gap: 0.5rem;
+  }
+  
+  .coin-display {
+    gap: 0.375rem;
+  }
+  
+  .coin-item {
+    padding: 0.2rem 0.4rem;
+  }
+  
+  .coin-icon {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .coin-value {
+    font-size: 0.8rem;
+  }
+  
+  .add-to-cart-btn {
+    font-size: 0.9rem;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Cart Header Button Styles */
+.hero-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 60px;
+  position: relative;
+}
+
+.hero-content {
+  text-align: center;
+  flex: 1;
+}
+
+.cart-container {
+  position: relative;
+}
+
+.cart-button {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.8), rgba(147, 112, 219, 0.6));
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.cart-button:hover {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 1), rgba(147, 112, 219, 0.8));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(147, 112, 219, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.cart-icon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.cart-counter {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(145deg, #ff4757, #ff3742);
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Cart Modal Styles */
+.cart-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.cart-modal {
+  background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+  backdrop-filter: blur(25px);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 24px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+
+.cart-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-modal-header h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+}
+
+.cart-modal-content {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.cart-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.cart-empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.6;
+}
+
+.cart-empty h4 {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 1rem 0;
+}
+
+.cart-empty p {
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 2rem 0;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-item-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.cart-item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.cart-item-details h4 {
+  margin: 0 0 0.25rem 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+}
+
+.cart-item-meta {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.cart-item-pricing {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+
+.cart-coin-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cart-coin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cart-coin-icon {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.cart-coin-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.cart-pricing-unknown {
+  color: rgba(255, 165, 0, 0.8);
+  font-style: italic;
+}
+
+.remove-item-btn {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.remove-item-btn:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.cart-total {
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.cart-total-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cart-total-header h4 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.3rem;
+}
+
+.cart-total-coins {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cart-total-none {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+.cart-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.clear-cart-btn {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.clear-cart-btn:hover {
+  background: linear-gradient(135deg, #5a6268, #495057);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.continue-shopping-btn {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.continue-shopping-btn:hover {
+  background: linear-gradient(135deg, #0056b3, #004085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+/* Mobile cart adjustments */
+@media (max-width: 768px) {
+  .hero-section {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .cart-button {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .cart-icon {
+    font-size: 1.25rem;
+  }
+  
+  .cart-counter {
+    width: 20px;
+    height: 20px;
+    font-size: 0.7rem;
+  }
+  
+  .cart-modal {
+    margin: 0.5rem;
+    max-height: 90vh;
+  }
+  
+  .cart-modal-header {
+    padding: 1rem;
+  }
+  
+  .cart-modal-content {
+    padding: 1rem;
+  }
+  
+  .cart-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .cart-item-info {
+    width: 100%;
+  }
+  
+  .cart-item-pricing {
+    margin-right: 0;
+    align-self: flex-end;
+  }
+  
+  .cart-total-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  
+  .cart-actions {
+    flex-direction: column;
+  }
+  
+  .cart-coin-display {
+    gap: 0.375rem;
+  }
+  
+  .cart-total-coins {
+    gap: 0.5rem;
   }
 }
 </style> 

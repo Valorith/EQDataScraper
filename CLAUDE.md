@@ -76,10 +76,27 @@ python scrape_spells.py --loop --interval 3600
 ## Data Flow
 
 1. Vue frontend requests spell data via Axios
-2. Flask backend checks cache (24-hour expiry)
+2. Flask backend checks persistent cache (24-hour expiry)
 3. If cache miss, scrapes alla.clumsysworld.com with BeautifulSoup
-4. Data cached and returned as JSON
+4. Data cached in memory and saved to JSON files on disk
 5. Frontend stores in Pinia with class-specific theming
+
+## Persistent Cache System
+
+- **Location**: `cache/` directory (gitignored)
+- **Files**: 
+  - `spells_cache.json` - All scraped spell data by class
+  - `pricing_cache.json` - Individual spell pricing data
+  - `cache_metadata.json` - Timestamps and cache management data
+- **Benefits**: 
+  - Survives server restarts
+  - Eliminates re-scraping on deployment
+  - Faster startup times with existing data
+- **Management Endpoints**:
+  - `GET /api/cache/status` - View cache statistics
+  - `POST /api/cache/save` - Manually save cache to disk
+  - `POST /api/cache/clear` - Clear all cached data
+- **Auto-Save**: Cache automatically saves after successful scrapes and every 10 pricing updates
 
 ## Class System
 
