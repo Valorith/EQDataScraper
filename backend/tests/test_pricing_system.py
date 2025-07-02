@@ -254,7 +254,7 @@ class TestDataConsistency:
         app.spell_details_cache['202'] = sample_spell_details['202']
         
         # Rebuild pricing lookup
-        app.rebuild_pricing_lookup_index()
+        app.rebuild_pricing_lookup()
         
         # Verify sync
         assert '202' in app.pricing_lookup
