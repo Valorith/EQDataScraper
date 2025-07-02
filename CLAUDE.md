@@ -148,7 +148,8 @@ docs/description-of-update       # Documentation updates
 2. Make changes and commit with descriptive messages
 3. Push branch to origin: `git push -u origin feature/feature-name`
 4. Create pull request to master via GitHub CLI: `gh pr create`
-5. Review, test, and merge via pull request
+5. **IMPORTANT**: After creating a PR, automatically open the PR page in Chrome using: `open -a "Google Chrome" <PR_URL>`
+6. Review, test, and merge via pull request
 
 ### Commit Guidelines
 - **All commits and pull requests should be attributed solely to the repository owner**
