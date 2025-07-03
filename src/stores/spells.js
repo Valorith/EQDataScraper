@@ -84,35 +84,69 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
-    // Pre-hydrate spell data cache for all available classes
+    // Two-phase cache system: update cache DB, then hydrate memory for instant access
     async preHydrateCache() {
       try {
         this.isPreHydrating = true
-        console.log('🚀 Starting comprehensive spell cache pre-hydration...')
+        console.log('🚀 Starting two-phase cache system: DB validation → Memory hydration...')
         
-        // Check cache status first to see what's available
+        // Phase 1: Validate and update cache database (single source of truth)
+        console.log('📋 Phase 1: Validating cache database as single source of truth...')
         const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
           timeout: 5000,
           headers: { 'Accept': 'application/json' }
         })
         
-        const availableClasses = Object.keys(cacheStatus.data).filter(key => 
-          key !== '_config' && cacheStatus.data[key].cached === true
-        )
+        const allClasses = Object.keys(cacheStatus.data).filter(key => key !== '_config')
+        const cachedClasses = allClasses.filter(cls => cacheStatus.data[cls].cached === true)
+        const uncachedClasses = allClasses.filter(cls => cacheStatus.data[cls].cached === false)
         
-        console.log(`📊 Found ${availableClasses.length} cached classes:`, availableClasses)
+        console.log(`📊 Cache DB Status: ${cachedClasses.length} cached, ${uncachedClasses.length} uncached`)
         
-        // Pre-load ALL available cached classes for instant navigation
-        const classesToPreload = availableClasses.map(cls => cls.toLowerCase())
+        // If there are uncached classes, update the cache database first
+        if (uncachedClasses.length > 0) {
+          console.log(`🔄 Updating cache database for ${uncachedClasses.length} uncached classes...`)
+          try {
+            await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
+              timeout: 180000, // 3 minutes for cache updates
+              headers: { 'Accept': 'application/json' }
+            })
+            console.log('✅ Cache database updated successfully')
+            
+            // Re-check cache status after update
+            const updatedStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+              timeout: 5000,
+              headers: { 'Accept': 'application/json' }
+            })
+            const updatedCachedClasses = Object.keys(updatedStatus.data)
+              .filter(key => key !== '_config' && updatedStatus.data[key].cached === true)
+            console.log(`📊 Updated cache: ${updatedCachedClasses.length} classes now cached in database`)
+          } catch (cacheUpdateError) {
+            console.warn('⚠️ Cache database update failed, proceeding with existing cache:', cacheUpdateError.message)
+          }
+        }
         
-        console.log(`🎯 Pre-loading ALL ${classesToPreload.length} cached classes for instant navigation:`, classesToPreload)
+        // Phase 2: Load cached data from DB into memory for instant access
+        console.log('💾 Phase 2: Loading validated cache data into memory for instant access...')
         
-        this.preHydrationProgress = { loaded: 0, total: classesToPreload.length }
+        // Get final cache status for memory hydration
+        const finalCacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+          timeout: 5000,
+          headers: { 'Accept': 'application/json' }
+        })
+        
+        const classesToHydrate = Object.keys(finalCacheStatus.data)
+          .filter(key => key !== '_config' && finalCacheStatus.data[key].cached === true)
+          .map(cls => cls.toLowerCase())
+        
+        console.log(`🎯 Hydrating ${classesToHydrate.length} cached classes into memory:`, classesToHydrate)
+        
+        this.preHydrationProgress = { loaded: 0, total: classesToHydrate.length }
         
         // Load classes in parallel with concurrency limit
         const batchSize = 4 // Load 4 classes at a time for comprehensive caching
-        for (let i = 0; i < classesToPreload.length; i += batchSize) {
-          const batch = classesToPreload.slice(i, i + batchSize)
+        for (let i = 0; i < classesToHydrate.length; i += batchSize) {
+          const batch = classesToHydrate.slice(i, i + batchSize)
           
           await Promise.all(batch.map(async (className) => {
             try {
@@ -126,12 +160,12 @@ export const useSpellsStore = defineStore('spells', {
           }))
           
           // Small delay between batches to be backend-friendly
-          if (i + batchSize < classesToPreload.length) {
+          if (i + batchSize < classesToHydrate.length) {
             await new Promise(resolve => setTimeout(resolve, 500))
           }
         }
         
-        console.log(`🎉 Comprehensive cache pre-hydration complete! All ${Object.keys(this.spellsData).length} available classes loaded for instant navigation`)
+        console.log(`🎉 Two-phase cache system complete! Database validated → ${Object.keys(this.spellsData).length} classes hydrated into memory for instant navigation`)
         return true
         
       } catch (error) {
@@ -139,6 +173,36 @@ export const useSpellsStore = defineStore('spells', {
         return false
       } finally {
         this.isPreHydrating = false
+      }
+    },
+
+    // Force refresh: clear memory, update cache DB, then re-hydrate
+    async forceRefreshAllData() {
+      try {
+        console.log('🔄 Force refresh initiated: clearing memory and updating cache database...')
+        
+        // Clear all memory data
+        this.spellsData = {}
+        this.spellsMetadata = {}
+        
+        // Force update the cache database
+        console.log('📋 Forcing cache database update...')
+        await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
+          timeout: 300000, // 5 minutes for full refresh
+          headers: { 'Accept': 'application/json' }
+        })
+        
+        console.log('✅ Cache database updated, starting memory re-hydration...')
+        
+        // Re-hydrate memory with fresh data
+        await this.preHydrateCache()
+        
+        console.log('🎉 Force refresh complete: cache updated and memory re-hydrated')
+        return true
+        
+      } catch (error) {
+        console.error('❌ Force refresh failed:', error.message)
+        throw error
       }
     },
 
