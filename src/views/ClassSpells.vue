@@ -1,8 +1,8 @@
 <template>
   <div class="main-container" :class="classInfo?.name.toLowerCase() || 'default'" :style="containerStyles">
     <div class="hero-section">
-      <button @click="goHome" class="home-button">
-        ← Back to Classes
+      <button @click="goHome" class="home-button" title="Back to Classes">
+        ←
       </button>
       
       <div class="hero-content">
@@ -3449,32 +3449,23 @@ export default {
   background: linear-gradient(135deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
   color: white;
   border: none;
-  border-radius: 12px;
-  padding: 12px 20px;
-  font-size: 0.9em;
+  border-radius: 50%;
+  padding: 12px;
+  font-size: 1.2em;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: 0 4px 12px rgba(var(--class-color-rgb), 0.3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   font-family: 'Inter', sans-serif;
   z-index: 1000;
 }
 
-.home-button::before {
-  content: '';
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-right: 8px solid white;
-  transition: all 0.3s ease;
-}
 
 .home-button:hover {
   background: linear-gradient(135deg, rgba(var(--class-color-rgb), 0.95), var(--class-color));
