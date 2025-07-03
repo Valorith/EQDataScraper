@@ -2018,8 +2018,21 @@ export default {
     const openSpellModal = async (spell) => {
       selectedSpell.value = spell
       showModal.value = true
-      spellDetails.value = null
       spellDetailsError.value = null
+      
+      // Show basic spell info immediately
+      spellDetails.value = {
+        basic: {
+          name: spell.name,
+          level: spell.level,
+          icon: spell.icon,
+          mana: spell.mana,
+          school: spell.school,
+          target: spell.target,
+          spell_id: spell.spell_id
+        },
+        loading: true
+      }
       
       if (spell.spell_id) {
         await fetchSpellDetails(spell.spell_id)
@@ -2037,7 +2050,18 @@ export default {
       // Check cache first
       if (spellDetailsCache.value[spellId]) {
         console.log(`📦 Using cached spell details for ${spellId}`)
-        spellDetails.value = spellDetailsCache.value[spellId]
+        const cachedDetails = spellDetailsCache.value[spellId]
+        
+        // Merge with existing basic info if present
+        if (spellDetails.value && spellDetails.value.basic) {
+          spellDetails.value = {
+            ...cachedDetails,
+            basic: spellDetails.value.basic,
+            loading: false
+          }
+        } else {
+          spellDetails.value = cachedDetails
+        }
         return
       }
       
@@ -2072,11 +2096,29 @@ export default {
         // Spell details cached in database via backend
         console.log(`✅ Cached spell details for ${spellId}`)
         
-        spellDetails.value = details
+        // Merge with existing basic info if present
+        if (spellDetails.value && spellDetails.value.basic) {
+          spellDetails.value = {
+            ...details,
+            basic: spellDetails.value.basic,
+            loading: false
+          }
+        } else {
+          spellDetails.value = details
+        }
         
       } catch (error) {
         console.error('Error fetching spell details:', error)
         spellDetailsError.value = error.message || 'Failed to load spell details. Please try again.'
+        
+        // Keep basic info but mark as error
+        if (spellDetails.value && spellDetails.value.basic) {
+          spellDetails.value = {
+            ...spellDetails.value,
+            loading: false,
+            error: true
+          }
+        }
       } finally {
         loadingSpellDetails.value = false
       }
