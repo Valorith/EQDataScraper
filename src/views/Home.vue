@@ -130,13 +130,14 @@
       <router-link 
         v-for="cls in classes" 
         :key="cls.name"
-        :to="isClassHydrated(cls.name) ? { name: 'ClassSpells', params: { className: cls.name.toLowerCase() } } : ''"
+        :to="(isClassHydrated(cls.name) || allowFallbackNavigation) ? { name: 'ClassSpells', params: { className: cls.name.toLowerCase() } } : ''"
         :class="[
           'class-card', 
           cls.name.toLowerCase(),
           {
             'hydrated': isClassHydrated(cls.name),
-            'not-hydrated': !isClassHydrated(cls.name),
+            'not-hydrated': !isClassHydrated(cls.name) && !allowFallbackNavigation,
+            'fallback-enabled': !isClassHydrated(cls.name) && allowFallbackNavigation,
             'cached': getCacheStatusForClass(cls.name).cached,
             'uncached': !getCacheStatusForClass(cls.name).cached
           }
@@ -151,10 +152,11 @@
           >
         </div>
         <div class="class-name">{{ cls.name }}</div>
-        <div v-if="!isClassHydrated(cls.name)" class="loading-indicator">
+        <div v-if="!isClassHydrated(cls.name) && !allowFallbackNavigation" class="loading-indicator">
           <div class="loading-spinner"></div>
         </div>
-        <div v-if="!isClassHydrated(cls.name)" class="loading-label">Loading</div>
+        <div v-if="!isClassHydrated(cls.name) && !allowFallbackNavigation" class="loading-label">Loading</div>
+        <div v-if="!isClassHydrated(cls.name) && allowFallbackNavigation" class="loading-label fallback">Click to Load</div>
       </router-link>
     </div>
     
@@ -350,7 +352,9 @@ export default {
       isRefreshing: false,
       currentPage: 0,
       resultsPerPage: 10,
-      showRightArrowGlow: false
+      showRightArrowGlow: false,
+      allowFallbackNavigation: false,
+      fallbackTimer: null
     }
   },
   setup() {
@@ -400,11 +404,22 @@ export default {
   async mounted() {
     document.addEventListener('click', this.handleOutsideClick)
     await this.checkCacheStatus()
+    
+    // Enable fallback navigation after 60 seconds if pre-hydration hasn't completed
+    this.fallbackTimer = setTimeout(() => {
+      if (!this.spellsStore.getHydratedClasses.length) {
+        console.log('⏰ Pre-hydration timeout reached. Enabling fallback navigation...')
+        this.allowFallbackNavigation = true
+      }
+    }, 60000)
   },
   beforeUnmount() {
     document.removeEventListener('click', this.handleOutsideClick)
     if (this.searchTimeout) {
       clearTimeout(this.searchTimeout)
+    }
+    if (this.fallbackTimer) {
+      clearTimeout(this.fallbackTimer)
     }
   },
   methods: {
@@ -602,14 +617,18 @@ export default {
     },
 
     handleClassClick(className, event) {
-      // Prevent navigation if class is not hydrated
-      if (!this.isClassHydrated(className)) {
-        event.preventDefault()
-        console.log(`Class ${className} not yet hydrated - navigation prevented`)
-        return false
+      // Allow navigation if class is hydrated OR fallback navigation is enabled
+      if (this.isClassHydrated(className) || this.allowFallbackNavigation) {
+        if (!this.isClassHydrated(className) && this.allowFallbackNavigation) {
+          console.log(`🔄 Fallback navigation enabled for ${className} - will load on demand`)
+        }
+        return true
       }
-      // Allow normal navigation for hydrated classes
-      return true
+      
+      // Prevent navigation if class is not hydrated and fallback not yet enabled
+      event.preventDefault()
+      console.log(`Class ${className} not yet hydrated - navigation prevented (fallback in ${60 - Math.floor((Date.now() - this.$options.mounted) / 1000)}s)`)
+      return false
     },
     
     
@@ -1371,6 +1390,14 @@ export default {
   position: relative;
 }
 
+.class-card.fallback-enabled {
+  border-color: #f59e0b !important; /* Orange for fallback-enabled (click to load) */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px #f59e0b;
+  opacity: 0.8;
+  cursor: pointer;
+  position: relative;
+}
+
 /* Cache Status Borders - Secondary Indicators */
 .class-card.cached {
   /* Hydrated classes will override this with green */
@@ -1391,6 +1418,13 @@ export default {
 .class-card.not-hydrated:hover {
   /* No hover effect for disabled cards */
   transform: none;
+}
+
+.class-card.fallback-enabled:hover {
+  border-color: #d97706 !important;
+  box-shadow: 0 25px 60px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.2);
+  transform: translateY(-4px);
+  transition: all 0.3s ease;
 }
 
 /* Loading Indicator for Non-Hydrated Classes */
@@ -1431,6 +1465,23 @@ export default {
   border: 1px solid rgba(255, 255, 255, 0.2);
   z-index: 11;
   animation: pulse 2s ease-in-out infinite;
+}
+
+.loading-label.fallback {
+  background: rgba(245, 158, 11, 0.9);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  animation: pulseOrange 2s ease-in-out infinite;
+}
+
+@keyframes pulseOrange {
+  0%, 100% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.1);
+  }
 }
 
 @keyframes pulse {

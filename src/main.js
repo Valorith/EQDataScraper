@@ -17,16 +17,27 @@ app.mount('#app')
 // Initialize store and warmup backend after mounting
 const spellsStore = useSpellsStore()
 
-// Sequential initialization: warmup first, then pre-hydrate cache
+// Resilient initialization: try warmup and pre-hydration, but don't block the app
+console.log('🚀 Starting EQDataScraper initialization...')
+
 spellsStore.warmupBackend()
   .then(success => {
     if (success) {
+      console.log('✅ Backend connection established, starting cache pre-hydration...')
       // Start cache pre-hydration in background (non-blocking)
-      spellsStore.preHydrateCache().catch(error => {
-        console.warn('Cache pre-hydration failed, will load on demand:', error)
-      })
+      return spellsStore.preHydrateCache()
+    } else {
+      console.log('⚠️ Backend warmup failed, app will use on-demand loading')
+      return Promise.resolve(false)
+    }
+  })
+  .then(hydrationSuccess => {
+    if (hydrationSuccess) {
+      console.log('🎉 Cache pre-hydration complete! All classes ready for instant loading.')
+    } else {
+      console.log('📱 App ready with on-demand loading. Classes will load when clicked.')
     }
   })
   .catch(error => {
-    console.warn('Initial backend warmup failed, will retry on first request:', error)
+    console.warn('🔄 Initialization encountered issues, falling back to on-demand loading:', error.message)
   }) 

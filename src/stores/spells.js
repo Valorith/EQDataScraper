@@ -68,20 +68,36 @@ export const useSpellsStore = defineStore('spells', {
   },
 
   actions: {
-    // Warmup the backend connection on store initialization
+    // Warmup the backend connection with resilient retry strategy
     async warmupBackend() {
-      try {
-        console.log('Warming up backend connection...')
-        await axios.get(`${API_BASE_URL}/api/health`, { 
-          timeout: 3000,
-          headers: { 'Accept': 'application/json' }
-        })
-        console.log('Backend warmup successful')
-        return true
-      } catch (error) {
-        console.warn('Backend warmup failed:', error.message)
-        return false
+      const maxRetries = 3
+      const timeouts = [10000, 20000, 30000] // Progressive timeouts for Railway cold starts
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🔗 Backend warmup attempt ${attempt}/${maxRetries} (${timeouts[attempt-1]/1000}s timeout)...`)
+          
+          await axios.get(`${API_BASE_URL}/api/health`, { 
+            timeout: timeouts[attempt - 1],
+            headers: { 'Accept': 'application/json' }
+          })
+          
+          console.log(`✅ Backend warmup successful on attempt ${attempt}`)
+          return true
+        } catch (error) {
+          console.warn(`⚠️ Backend warmup attempt ${attempt} failed:`, error.message)
+          
+          if (attempt === maxRetries) {
+            console.error('❌ All backend warmup attempts failed. App will function with on-demand loading.')
+            return false
+          }
+          
+          // Brief delay before retry (Railway container might be starting)
+          await new Promise(resolve => setTimeout(resolve, 2000))
+        }
       }
+      
+      return false
     },
 
     // Two-phase cache system: update cache DB, then hydrate memory for instant access
