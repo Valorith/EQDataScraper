@@ -19,6 +19,7 @@ test_port_management.py
 demo_smart_ports.py
 test_deployment_detection.py
 SMART_PORT_MANAGEMENT_SUMMARY.md
+RAILWAY_COMPATIBILITY_SUMMARY.md
 
 # Environment variables (contains sensitive database URLs)
 .env
