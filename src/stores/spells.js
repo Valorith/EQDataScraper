@@ -71,14 +71,11 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
-    // Pre-hydrate spell data cache for popular classes
+    // Pre-hydrate spell data cache for all available classes
     async preHydrateCache() {
       try {
         this.isPreHydrating = true
-        console.log('🚀 Starting spell cache pre-hydration...')
-        
-        // Priority classes to cache (most commonly viewed)
-        const priorityClasses = ['cleric', 'druid', 'enchanter', 'wizard', 'necromancer', 'paladin', 'ranger']
+        console.log('🚀 Starting comprehensive spell cache pre-hydration...')
         
         // Check cache status first to see what's available
         const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
@@ -90,19 +87,17 @@ export const useSpellsStore = defineStore('spells', {
           key !== '_config' && cacheStatus.data[key].cached === true
         )
         
-        console.log(`📊 Found ${availableClasses.length} cached classes:`, availableClasses.slice(0, 5))
+        console.log(`📊 Found ${availableClasses.length} cached classes:`, availableClasses)
         
-        // Pre-load priority classes that are cached
-        const classesToPreload = priorityClasses.filter(cls => 
-          availableClasses.some(cached => cached.toLowerCase() === cls.toLowerCase())
-        )
+        // Pre-load ALL available cached classes for instant navigation
+        const classesToPreload = availableClasses.map(cls => cls.toLowerCase())
         
-        console.log(`🎯 Pre-loading ${classesToPreload.length} priority classes:`, classesToPreload)
+        console.log(`🎯 Pre-loading ALL ${classesToPreload.length} cached classes for instant navigation:`, classesToPreload)
         
         this.preHydrationProgress = { loaded: 0, total: classesToPreload.length }
         
         // Load classes in parallel with concurrency limit
-        const batchSize = 3 // Load 3 classes at a time to avoid overwhelming backend
+        const batchSize = 4 // Load 4 classes at a time for comprehensive caching
         for (let i = 0; i < classesToPreload.length; i += batchSize) {
           const batch = classesToPreload.slice(i, i + batchSize)
           
@@ -123,7 +118,7 @@ export const useSpellsStore = defineStore('spells', {
           }
         }
         
-        console.log(`🎉 Cache pre-hydration complete! Loaded ${Object.keys(this.spellsData).length} classes`)
+        console.log(`🎉 Comprehensive cache pre-hydration complete! All ${Object.keys(this.spellsData).length} available classes loaded for instant navigation`)
         return true
         
       } catch (error) {

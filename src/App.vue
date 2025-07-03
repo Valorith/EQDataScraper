@@ -4,7 +4,7 @@
     <div v-if="spellsStore.isPreHydrating" class="cache-prehydration-indicator">
       <div class="prehydration-content">
         <div class="prehydration-spinner"></div>
-        <span>Pre-loading spell data... ({{ spellsStore.preHydrationProgress.loaded }}/{{ spellsStore.preHydrationProgress.total }})</span>
+        <span>Pre-loading all spell classes... ({{ spellsStore.preHydrationProgress.loaded }}/{{ spellsStore.preHydrationProgress.total }})</span>
       </div>
     </div>
     
