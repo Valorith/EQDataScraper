@@ -8,10 +8,10 @@
       </div>
     </div>
     
-    <router-view />
+    <router-view @toggle-debug-panel="toggleDebugPanel" />
     
     <!-- Debug Panel for production debugging -->
-    <DebugPanel />
+    <DebugPanel ref="debugPanel" />
   </div>
 </template>
 
@@ -27,6 +27,13 @@ export default {
   setup() {
     const spellsStore = useSpellsStore()
     return { spellsStore }
+  },
+  methods: {
+    toggleDebugPanel() {
+      if (this.$refs.debugPanel) {
+        this.$refs.debugPanel.toggleDebugPanel()
+      }
+    }
   },
   async mounted() {
     console.log('🔧 Environment Variables Debug v4:')

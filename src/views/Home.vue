@@ -373,6 +373,15 @@ export default {
     },
     
     handleSearchInput() {
+      // Immediately clear results if typing a slash command
+      if (this.searchQuery.trim().startsWith('/')) {
+        this.searchResults = []
+        this.showDropdown = false
+        this.currentPage = 0
+        this.searchLoading = false
+        return
+      }
+      
       if (this.searchTimeout) {
         clearTimeout(this.searchTimeout)
       }
@@ -384,6 +393,14 @@ export default {
     
     async performSearch() {
       if (!this.searchQuery || this.searchQuery.length < 2) {
+        this.searchResults = []
+        this.showDropdown = false
+        this.currentPage = 0
+        return
+      }
+      
+      // Skip search if user is typing a slash command
+      if (this.searchQuery.trim().startsWith('/')) {
         this.searchResults = []
         this.showDropdown = false
         this.currentPage = 0
@@ -439,7 +456,23 @@ export default {
     },
     
     handleKeyDown(event) {
-      if (!this.showDropdown || this.searchResults.length === 0) return
+      if (!this.showDropdown || this.searchResults.length === 0) {
+        // Allow Enter key to process commands even when dropdown is hidden
+        if (event.key === 'Enter' && this.searchQuery.trim().startsWith('/')) {
+          event.preventDefault()
+          
+          const command = this.searchQuery.trim()
+          
+          if (command === '/debug') {
+            this.toggleDebugPanel()
+          }
+          // Future commands can be added here
+          
+          this.clearSearch()
+          return
+        }
+        return
+      }
       
       const maxIndex = Math.min(this.paginatedResults.length - 1, 9)
       
@@ -492,6 +525,21 @@ export default {
           break
         case 'Enter':
           event.preventDefault()
+          
+          // Check for slash commands
+          if (this.searchQuery.trim().startsWith('/')) {
+            const command = this.searchQuery.trim()
+            
+            if (command === '/debug') {
+              this.toggleDebugPanel()
+            }
+            // Future commands can be added here
+            
+            this.clearSearch()
+            return
+          }
+          
+          // Handle normal search results selection
           if (this.selectedIndex >= 0 && this.selectedIndex <= maxIndex) {
             this.selectSpell(this.paginatedResults[this.selectedIndex])
           }
@@ -594,6 +642,11 @@ export default {
     hasAnyPrice(pricing) {
       if (!pricing) return false
       return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
+    },
+
+    toggleDebugPanel() {
+      // Emit event to App.vue to toggle debug panel
+      this.$emit('toggle-debug-panel')
     }
   }
 }

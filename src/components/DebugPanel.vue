@@ -137,14 +137,14 @@ export default {
     }
   },
   mounted() {
-    // Show debug panel if debug mode is enabled
-    this.showDebugPanel = this.isProd || localStorage.getItem('debug-panel') === 'true'
+    // Only show debug panel when explicitly enabled via localStorage
+    this.showDebugPanel = localStorage.getItem('debug-panel') === 'true'
     
     // Listen for network activity from the stores
     this.setupNetworkLogging()
     
-    // Auto-run tests on mount in production
-    if (this.isProd) {
+    // Auto-run tests on mount only if debug panel is showing
+    if (this.showDebugPanel) {
       this.$nextTick(() => {
         this.runFullTest()
       })
@@ -158,6 +158,18 @@ export default {
     closePanel() {
       this.showDebugPanel = false
       localStorage.setItem('debug-panel', 'false')
+    },
+    
+    toggleDebugPanel() {
+      this.showDebugPanel = !this.showDebugPanel
+      localStorage.setItem('debug-panel', this.showDebugPanel ? 'true' : 'false')
+      
+      // Auto-run tests when opening
+      if (this.showDebugPanel) {
+        this.$nextTick(() => {
+          this.runFullTest()
+        })
+      }
     },
     
     setupNetworkLogging() {
