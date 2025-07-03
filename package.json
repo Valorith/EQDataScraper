@@ -1,6 +1,6 @@
 {
   "name": "eq-data-scraper-vue",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "EverQuest Spell Data Scraper - Vue 3 Edition with Railway Docker deployment - v5 (resilient warmup)",
   "scripts": {
     "dev": "vite",
