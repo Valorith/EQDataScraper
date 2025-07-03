@@ -2659,8 +2659,8 @@ def refresh_expired_spell_caches(expired_classes):
             spells_cache.pop(class_key, None)
             cache_timestamp.pop(class_key, None)
             
-            # Trigger fresh scrape
-            df = scrape_class(class_key, 'https://alla.clumsysworld.com/', None)
+            # Trigger fresh scrape (use original class name, not lowercase)
+            df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
             
             if df is not None and not df.empty:
                 new_spells = df.to_dict('records')
