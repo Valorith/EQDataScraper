@@ -9,6 +9,9 @@ export const useSpellsStore = defineStore('spells', {
   state: () => ({
     // Track active requests to prevent duplicate API calls
     activeRequests: new Map(),
+    // Cache pre-hydration status
+    isPreHydrating: false,
+    preHydrationProgress: { loaded: 0, total: 0 },
     classes: [
       { name: 'Warrior', id: 1, color: '#8e2d2d', colorRgb: '142, 45, 45' },
       { name: 'Cleric', id: 2, color: '#ccccff', colorRgb: '204, 204, 255' },
@@ -65,6 +68,69 @@ export const useSpellsStore = defineStore('spells', {
       } catch (error) {
         console.warn('Backend warmup failed:', error.message)
         return false
+      }
+    },
+
+    // Pre-hydrate spell data cache for popular classes
+    async preHydrateCache() {
+      try {
+        this.isPreHydrating = true
+        console.log('🚀 Starting spell cache pre-hydration...')
+        
+        // Priority classes to cache (most commonly viewed)
+        const priorityClasses = ['cleric', 'druid', 'enchanter', 'wizard', 'necromancer', 'paladin', 'ranger']
+        
+        // Check cache status first to see what's available
+        const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+          timeout: 5000,
+          headers: { 'Accept': 'application/json' }
+        })
+        
+        const availableClasses = Object.keys(cacheStatus.data).filter(key => 
+          key !== '_config' && cacheStatus.data[key].cached === true
+        )
+        
+        console.log(`📊 Found ${availableClasses.length} cached classes:`, availableClasses.slice(0, 5))
+        
+        // Pre-load priority classes that are cached
+        const classesToPreload = priorityClasses.filter(cls => 
+          availableClasses.some(cached => cached.toLowerCase() === cls.toLowerCase())
+        )
+        
+        console.log(`🎯 Pre-loading ${classesToPreload.length} priority classes:`, classesToPreload)
+        
+        this.preHydrationProgress = { loaded: 0, total: classesToPreload.length }
+        
+        // Load classes in parallel with concurrency limit
+        const batchSize = 3 // Load 3 classes at a time to avoid overwhelming backend
+        for (let i = 0; i < classesToPreload.length; i += batchSize) {
+          const batch = classesToPreload.slice(i, i + batchSize)
+          
+          await Promise.all(batch.map(async (className) => {
+            try {
+              await this.fetchSpellsForClass(className)
+              this.preHydrationProgress.loaded++
+              console.log(`✅ Pre-loaded ${className} (${this.preHydrationProgress.loaded}/${this.preHydrationProgress.total})`)
+            } catch (error) {
+              this.preHydrationProgress.loaded++
+              console.warn(`⚠️ Failed to pre-load ${className}:`, error.message)
+            }
+          }))
+          
+          // Small delay between batches to be backend-friendly
+          if (i + batchSize < classesToPreload.length) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+        
+        console.log(`🎉 Cache pre-hydration complete! Loaded ${Object.keys(this.spellsData).length} classes`)
+        return true
+        
+      } catch (error) {
+        console.warn('Cache pre-hydration failed:', error.message)
+        return false
+      } finally {
+        this.isPreHydrating = false
       }
     },
 
