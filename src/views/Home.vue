@@ -1415,8 +1415,10 @@ export default {
 .loading-label {
   position: absolute;
   bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
   background: rgba(107, 114, 128, 0.9);
   color: #fff;
   padding: 4px 12px;
