@@ -1609,6 +1609,22 @@ export default {
 
     
     onMounted(async () => {
+      // Wait for route to be fully resolved
+      await nextTick()
+      
+      // Validate className prop is available
+      if (!props.className) {
+        console.warn('className prop not available, waiting for route resolution')
+        await new Promise(resolve => {
+          const unwatch = watch(() => props.className, (newValue) => {
+            if (newValue) {
+              unwatch()
+              resolve()
+            }
+          }, { immediate: true })
+        })
+      }
+      
       await loadSpells()
       window.addEventListener('scroll', handleScroll, { passive: true })
       window.addEventListener('keydown', handleKeydown)
@@ -1712,11 +1728,13 @@ export default {
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
-      if (newClassName !== oldClassName) {
+      if (newClassName !== oldClassName && newClassName) {
         isTransitioning.value = true
         
-        // Use debounced loading for route changes
-        debouncedLoad()
+        // Only use debounced loading if not the initial mount
+        if (oldClassName) {
+          debouncedLoad()
+        }
         
         // Reset transition state after a delay
         setTimeout(() => {

@@ -7,6 +7,8 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ||
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
+    // Track active requests to prevent duplicate API calls
+    activeRequests: new Map(),
     classes: [
       { name: 'Warrior', id: 1, color: '#8e2d2d', colorRgb: '142, 45, 45' },
       { name: 'Cleric', id: 2, color: '#ccccff', colorRgb: '204, 204, 255' },
@@ -53,6 +55,13 @@ export const useSpellsStore = defineStore('spells', {
     async fetchSpellsForClass(className, forceRefresh = false) {
       // Normalize the className to lowercase for consistent caching
       const normalizedClassName = className.toLowerCase()
+      const requestKey = `${normalizedClassName}-${forceRefresh}`
+      
+      // Return existing promise if request is already in flight
+      if (this.activeRequests.has(requestKey)) {
+        console.log(`Returning existing request for ${requestKey}`)
+        return this.activeRequests.get(requestKey)
+      }
       
       // Check for cached data first (skip if forcing refresh)
       if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
@@ -61,9 +70,29 @@ export const useSpellsStore = defineStore('spells', {
 
       this.loading = true
       this.error = null
-
+      
+      // Create and cache the request promise
+      const requestPromise = this._fetchSpellsInternal(normalizedClassName, forceRefresh)
+      this.activeRequests.set(requestKey, requestPromise)
+      
       try {
-        const apiUrl = `${API_BASE_URL}/api/spells/${className}`
+        const result = await requestPromise
+        return result
+      } finally {
+        this.activeRequests.delete(requestKey)
+      }
+    },
+
+    async _fetchSpellsInternal(normalizedClassName, forceRefresh) {
+      try {
+        // Quick backend readiness check for better first-load reliability
+        try {
+          await axios.get(`${API_BASE_URL}/api/health`, { timeout: 2000 })
+        } catch (healthError) {
+          console.warn('Backend health check failed, proceeding anyway:', healthError.message)
+        }
+        
+        const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
         
