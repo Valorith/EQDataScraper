@@ -9,20 +9,27 @@
     </div>
     
     <router-view />
+    
+    <!-- Debug Panel for production debugging -->
+    <DebugPanel />
   </div>
 </template>
 
 <script>
 import { useSpellsStore } from './stores/spells'
+import DebugPanel from './components/DebugPanel.vue'
 
 export default {
   name: 'App',
+  components: {
+    DebugPanel
+  },
   setup() {
     const spellsStore = useSpellsStore()
     return { spellsStore }
   },
-  mounted() {
-    console.log('🔧 Environment Variables Debug v3:')
+  async mounted() {
+    console.log('🔧 Environment Variables Debug v4:')
     console.log('VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
     console.log('import.meta.env.PROD:', import.meta.env.PROD)
     console.log('All Vite env vars:', import.meta.env)
@@ -45,6 +52,29 @@ export default {
     })()
     console.log('Computed API_BASE_URL:', API_BASE_URL)
     console.log('Build timestamp:', new Date().toISOString())
+    
+    // Initialize cache system
+    try {
+      console.log('🚀 Initializing cache system...')
+      
+      // Start backend warmup and cache pre-hydration in parallel
+      const [warmupResult, preHydrationResult] = await Promise.allSettled([
+        this.spellsStore.warmupBackend(),
+        this.spellsStore.preHydrateCache()
+      ])
+      
+      console.log('Warmup result:', warmupResult.status === 'fulfilled' ? warmupResult.value : warmupResult.reason)
+      console.log('Pre-hydration result:', preHydrationResult.status === 'fulfilled' ? preHydrationResult.value : preHydrationResult.reason)
+      
+      if (warmupResult.status === 'fulfilled' && warmupResult.value) {
+        console.log('✅ Backend is warmed up and ready')
+      } else {
+        console.warn('⚠️ Backend warmup failed, but application will continue with on-demand loading')
+      }
+      
+    } catch (error) {
+      console.error('❌ Cache initialization failed:', error)
+    }
   }
 }
 </script>

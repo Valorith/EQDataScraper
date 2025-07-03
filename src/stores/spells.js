@@ -8,15 +8,66 @@ const API_BASE_URL = (() => {
     const envUrl = import.meta.env.VITE_BACKEND_URL
     // Only use env URL if it's a valid production URL (not localhost)
     if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      console.log('🔧 Using environment variable VITE_BACKEND_URL:', envUrl)
       return envUrl
     }
     // Default production backend URL
-    return 'https://eqdatascraper-backend-production.up.railway.app'
+    const defaultUrl = 'https://eqdatascraper-backend-production.up.railway.app'
+    console.log('🔧 Using default production backend URL:', defaultUrl)
+    return defaultUrl
   }
   
   // In development, use env variable or default to localhost
-  return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+  const devUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+  console.log('🔧 Using development backend URL:', devUrl)
+  return devUrl
 })()
+
+// Global debugging for network requests
+const DEBUG_NETWORK = import.meta.env.PROD || localStorage.getItem('debug-network') === 'true'
+
+// Network request logger
+function logNetworkRequest(method, url, data = null) {
+  if (DEBUG_NETWORK) {
+    console.log(`🌐 [${method.toUpperCase()}] ${url}`)
+    if (data) {
+      console.log('📤 Request data:', data)
+    }
+    console.log('📍 Full URL breakdown:', {
+      API_BASE_URL,
+      endpoint: url.replace(API_BASE_URL, ''),
+      fullUrl: url,
+      timestamp: new Date().toISOString()
+    })
+  }
+}
+
+function logNetworkResponse(method, url, response, duration) {
+  if (DEBUG_NETWORK) {
+    console.log(`📥 [${method.toUpperCase()}] ${url} - ${response.status} (${duration}ms)`)
+    console.log('📤 Response headers:', response.headers)
+    if (response.data) {
+      const preview = typeof response.data === 'string' 
+        ? response.data.substring(0, 200) + '...'
+        : JSON.stringify(response.data).substring(0, 200) + '...'
+      console.log('📤 Response preview:', preview)
+    }
+  }
+}
+
+function logNetworkError(method, url, error, duration) {
+  if (DEBUG_NETWORK) {
+    console.error(`💥 [${method.toUpperCase()}] ${url} - FAILED (${duration}ms)`)
+    console.error('💥 Error details:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      responseData: error.response?.data,
+      responseHeaders: error.response?.headers
+    })
+  }
+}
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
@@ -87,17 +138,25 @@ export const useSpellsStore = defineStore('spells', {
       const timeouts = [10000, 20000, 30000] // Progressive timeouts for Railway cold starts
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const startTime = Date.now()
+        const healthUrl = `${API_BASE_URL}/api/health`
+        
         try {
           console.log(`🔗 Backend warmup attempt ${attempt}/${maxRetries} (${timeouts[attempt-1]/1000}s timeout)...`)
+          logNetworkRequest('GET', healthUrl)
           
-          await axios.get(`${API_BASE_URL}/api/health`, { 
+          const response = await axios.get(healthUrl, { 
             timeout: timeouts[attempt - 1],
             headers: { 'Accept': 'application/json' }
           })
           
+          const duration = Date.now() - startTime
+          logNetworkResponse('GET', healthUrl, response, duration)
           console.log(`✅ Backend warmup successful on attempt ${attempt}`)
           return true
         } catch (error) {
+          const duration = Date.now() - startTime
+          logNetworkError('GET', healthUrl, error, duration)
           console.warn(`⚠️ Backend warmup attempt ${attempt} failed:`, error.message)
           
           if (attempt === maxRetries) {
@@ -121,10 +180,17 @@ export const useSpellsStore = defineStore('spells', {
         
         // First check if server has already preloaded data on startup
         console.log('🔍 Checking server memory status...')
-        const healthCheck = await axios.get(`${API_BASE_URL}/api/health`, {
+        const healthUrl = `${API_BASE_URL}/api/health`
+        const startTime = Date.now()
+        logNetworkRequest('GET', healthUrl)
+        
+        const healthCheck = await axios.get(healthUrl, {
           timeout: 5000,
           headers: { 'Accept': 'application/json' }
         })
+        
+        const duration = Date.now() - startTime
+        logNetworkResponse('GET', healthUrl, healthCheck, duration)
         
         if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
           console.log('✅ Server already has spell data preloaded in memory!')
@@ -313,10 +379,13 @@ export const useSpellsStore = defineStore('spells', {
     },
 
     async _fetchSpellsInternal(normalizedClassName, forceRefresh) {
+      const startTime = Date.now()
+      const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
+      
       try {
-        const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
+        logNetworkRequest('GET', apiUrl)
         
         // Check if server has data preloaded for faster timeout
         const isServerOptimized = this.spellsData[normalizedClassName] && 
@@ -333,6 +402,9 @@ export const useSpellsStore = defineStore('spells', {
           maxRedirects: 3,
           validateStatus: (status) => status >= 200 && status < 300
         })
+        
+        const duration = Date.now() - startTime
+        logNetworkResponse('GET', apiUrl, response, duration)
         
         // Handle the new API response format
         const spellsData = response.data.spells || response.data
@@ -359,6 +431,9 @@ export const useSpellsStore = defineStore('spells', {
         this.spellsData[normalizedClassName] = spellsData
         return spellsData
       } catch (error) {
+        const duration = Date.now() - startTime
+        logNetworkError('GET', apiUrl, error, duration)
+        
         let errorMessage = 'An unexpected error occurred'
         
         if (error.response) {
