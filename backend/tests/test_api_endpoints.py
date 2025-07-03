@@ -447,6 +447,131 @@ class TestErrorHandling:
         assert response.status_code in [400, 500]
 
 
+class TestClassNameHandling:
+    """Test class name handling and normalization - critical for shadowknight issue."""
+    
+    def test_shadowknight_camelcase_normalization(self, mock_app, sample_spell_data):
+        """Test that ShadowKnight (camelCase) is properly normalized to shadowknight."""
+        with patch('app.scrape_class') as mock_scrape:
+            app.spells_cache.clear()
+            app.spells_cache['shadowknight'] = sample_spell_data  # Store with lowercase key
+            app.cache_timestamp['shadowknight'] = datetime.now().isoformat()
+            
+            # Test all variations of shadowknight class name
+            test_cases = [
+                'shadowknight',
+                'ShadowKnight', 
+                'SHADOWKNIGHT',
+                'Shadowknight',
+                'shadowKnight',
+                'sHaDoWkNiGhT'
+            ]
+            
+            for class_name in test_cases:
+                response = mock_app.get(f'/api/spells/{class_name}')
+                assert response.status_code == 200, f"Failed for class name: {class_name}"
+                
+                data = json.loads(response.data)
+                assert 'spells' in data, f"No spells key in response for: {class_name}"
+                assert isinstance(data['spells'], list), f"Spells not a list for: {class_name}"
+                assert len(data['spells']) > 0, f"No spells returned for: {class_name}"
+                
+            # Verify scraping was not called (using cache)
+            mock_scrape.assert_not_called()
+    
+    def test_all_eq_classes_return_json_not_html(self, mock_app, sample_spell_data):
+        """Test that all EQ classes return JSON, never HTML - prevents shadowknight HTML issue."""
+        from app import CLASSES
+        
+        with patch('app.scrape_class') as mock_scrape:
+            app.spells_cache.clear()
+            
+            # Set up cache for all classes
+            for class_name in CLASSES.keys():
+                cache_key = class_name.lower()
+                app.spells_cache[cache_key] = sample_spell_data
+                app.cache_timestamp[cache_key] = datetime.now().isoformat()
+            
+            # Test each class returns proper JSON structure
+            for class_name in CLASSES.keys():
+                response = mock_app.get(f'/api/spells/{class_name.lower()}')
+                
+                # Must return 200 status
+                assert response.status_code == 200, f"Status code {response.status_code} for {class_name}"
+                
+                # Must be JSON, not HTML
+                assert response.content_type.startswith('application/json'), f"Not JSON for {class_name}: {response.content_type}"
+                
+                # Response must not contain HTML doctype
+                response_text = response.get_data(as_text=True)
+                assert '<!DOCTYPE html>' not in response_text, f"HTML returned for {class_name}"
+                assert '<html>' not in response_text, f"HTML returned for {class_name}"
+                
+                # Must parse as valid JSON
+                data = json.loads(response.data)
+                assert isinstance(data, dict), f"Response not dict for {class_name}"
+                assert 'spells' in data, f"No spells key for {class_name}"
+                assert isinstance(data['spells'], list), f"Spells not list for {class_name}"
+    
+    def test_shadowknight_specific_api_response_format(self, mock_app, sample_spell_data):
+        """Test shadowknight specifically returns proper API response format."""
+        with patch('app.scrape_class') as mock_scrape:
+            app.spells_cache.clear()
+            app.spells_cache['shadowknight'] = sample_spell_data
+            app.cache_timestamp['shadowknight'] = datetime.now().isoformat()
+            
+            response = mock_app.get('/api/spells/shadowknight')
+            
+            # Verify response format matches expected API structure
+            assert response.status_code == 200
+            assert response.content_type.startswith('application/json')
+            
+            data = json.loads(response.data)
+            
+            # Verify API response structure
+            expected_keys = ['spells', 'cached', 'last_updated', 'spell_count']
+            for key in expected_keys:
+                assert key in data, f"Missing key '{key}' in shadowknight response"
+            
+            # Verify spells array structure
+            assert isinstance(data['spells'], list)
+            if len(data['spells']) > 0:
+                spell = data['spells'][0]
+                required_spell_fields = ['name', 'level', 'spell_id']
+                for field in required_spell_fields:
+                    assert field in spell, f"Missing field '{field}' in spell data"
+    
+    def test_class_name_to_cache_key_mapping(self, mock_app, sample_spell_data):
+        """Test that class name normalization correctly maps to cache keys."""
+        from app import CLASSES
+        
+        app.spells_cache.clear()
+        
+        # Set up cache with lowercase keys (as the backend does)
+        for class_name in CLASSES.keys():
+            cache_key = class_name.lower()
+            app.spells_cache[cache_key] = sample_spell_data
+            app.cache_timestamp[cache_key] = datetime.now().isoformat()
+        
+        # Test that requests with various cases map to correct cache keys
+        test_mappings = {
+            'ShadowKnight': 'shadowknight',
+            'SHADOWKNIGHT': 'shadowknight', 
+            'shadowknight': 'shadowknight',
+            'Cleric': 'cleric',
+            'WIZARD': 'wizard',
+            'beastlord': 'beastlord'
+        }
+        
+        for input_name, expected_cache_key in test_mappings.items():
+            response = mock_app.get(f'/api/spells/{input_name}')
+            assert response.status_code == 200, f"Failed for input: {input_name} -> {expected_cache_key}"
+            
+            # Verify the response contains data (proving cache lookup worked)
+            data = json.loads(response.data)
+            assert len(data['spells']) > 0, f"No spells found for {input_name} -> {expected_cache_key}"
+
+
 class TestDataValidation:
     """Test data validation in API responses."""
     

@@ -1033,12 +1033,22 @@ def get_cache_status():
 @app.route('/api/cache-expiry-status/<class_name>', methods=['GET'])
 def get_cache_expiry_status(class_name):
     """Get cache expiry status for a specific class"""
-    # Normalize class name to title case for CLASSES lookup
-    normalized_class_name = class_name.title()
-    class_name = class_name.lower()  # Keep lowercase for cache lookups
+    # Normalize class name - handle special cases (same logic as /api/spells endpoint)
+    class_name_lower = class_name.lower()
+    
+    # Map common variations to correct case
+    class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+    
+    if class_name_lower in class_name_map:
+        normalized_class_name = class_name_map[class_name_lower]
+    else:
+        # Fallback to title case for unknown names
+        normalized_class_name = class_name.title()
     
     if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
+    
+    class_name = class_name_lower  # Use lowercase for cache lookups
     
     # Check spell cache status
     spell_cached = class_name in spells_cache
@@ -1112,12 +1122,22 @@ def get_refresh_progress(class_name):
 @app.route('/api/refresh-spell-cache/<class_name>', methods=['POST'])
 def refresh_spell_cache(class_name):
     """Manually refresh spell cache for a specific class with progress tracking"""
-    # Normalize class name to title case for CLASSES lookup
-    normalized_class_name = class_name.title()
-    class_name = class_name.lower()  # Keep lowercase for cache lookups
+    # Normalize class name - handle special cases (same logic as /api/spells endpoint)
+    class_name_lower = class_name.lower()
+    
+    # Map common variations to correct case
+    class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+    
+    if class_name_lower in class_name_map:
+        normalized_class_name = class_name_map[class_name_lower]
+    else:
+        # Fallback to title case for unknown names
+        normalized_class_name = class_name.title()
     
     if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
+    
+    class_name = class_name_lower  # Use lowercase for cache lookups
     
     try:
         # Initialize progress tracking
@@ -1192,12 +1212,22 @@ def refresh_spell_cache(class_name):
 @app.route('/api/refresh-pricing-cache/<class_name>', methods=['POST'])
 def refresh_pricing_cache_for_class(class_name):
     """Manually refresh pricing cache for all spells in a class"""
-    # Normalize class name to title case for CLASSES lookup
-    normalized_class_name = class_name.title()
-    class_name = class_name.lower()  # Keep lowercase for cache lookups
+    # Normalize class name - handle special cases (same logic as /api/spells endpoint)
+    class_name_lower = class_name.lower()
+    
+    # Map common variations to correct case
+    class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+    
+    if class_name_lower in class_name_map:
+        normalized_class_name = class_name_map[class_name_lower]
+    else:
+        # Fallback to title case for unknown names
+        normalized_class_name = class_name.title()
     
     if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
+    
+    class_name = class_name_lower  # Use lowercase for cache lookups
     
     try:
         class_spells = spells_cache.get(class_name, [])
@@ -1245,12 +1275,22 @@ def refresh_pricing_cache_for_class(class_name):
 @app.route('/api/retry-failed-pricing/<class_name>', methods=['POST'])
 def retry_failed_pricing_for_class(class_name):
     """Retry pricing fetch for all previously failed spells in a class"""
-    # Normalize class name to title case for CLASSES lookup
-    normalized_class_name = class_name.title()
-    class_name = class_name.lower()  # Keep lowercase for cache lookups
+    # Normalize class name - handle special cases (same logic as /api/spells endpoint)
+    class_name_lower = class_name.lower()
+    
+    # Map common variations to correct case
+    class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+    
+    if class_name_lower in class_name_map:
+        normalized_class_name = class_name_map[class_name_lower]
+    else:
+        # Fallback to title case for unknown names
+        normalized_class_name = class_name.title()
     
     if normalized_class_name not in CLASSES:
         return jsonify({'error': 'Invalid class name'}), 400
+    
+    class_name = class_name_lower  # Use lowercase for cache lookups
     
     try:
         class_spells = spells_cache.get(class_name, [])
@@ -1324,8 +1364,15 @@ def merge_pricing_cache():
         if not class_name or not pricing_data:
             return jsonify({'error': 'Missing class_name or pricing_data'}), 400
         
-        # Normalize class name for validation
-        normalized_class_name = class_name.title()
+        # Normalize class name for validation - handle special cases
+        class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
+        
+        if class_name in class_name_map:
+            normalized_class_name = class_name_map[class_name]
+        else:
+            # Fallback to title case for unknown names
+            normalized_class_name = class_name.title()
+        
         if normalized_class_name not in CLASSES:
             return jsonify({'error': 'Invalid class name'}), 400
         
