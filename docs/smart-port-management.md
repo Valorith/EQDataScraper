@@ -11,12 +11,18 @@ The EQDataScraper application now includes a smart port management system that a
 - Identifies which process is using the conflicting port
 - Special handling for known conflicts (e.g., macOS AirPlay Receiver on port 5000)
 
-### 2. **Intelligent Port Allocation**
+### 2. **Port Drift Prevention**
+- Always attempts to use default ports (5001 and 3000) first
+- Automatically reverts to defaults when they become available
+- Only uses alternative ports when absolutely necessary
+- Prevents gradual drift to higher port numbers over time
+
+### 3. **Intelligent Port Allocation**
 - Automatically finds available alternative ports when conflicts are detected
 - Ensures frontend and backend ports don't conflict with each other
 - Updates configuration files persistently
 
-### 3. **Configuration Synchronization**
+### 4. **Configuration Synchronization**
 - Automatically updates all frontend files that reference the backend port:
   - `src/stores/spells.js`
   - `src/App.vue`
@@ -24,7 +30,7 @@ The EQDataScraper application now includes a smart port management system that a
   - `.env.development` (created if doesn't exist)
 - Ensures frontend always connects to the correct backend port
 
-### 4. **Restart Functionality**
+### 5. **Restart Functionality**
 - **Command Line**: `python3 run.py restart`
 - **Keyboard Shortcut**: Press `Ctrl+R` while services are running
 - Gracefully stops and restarts all services with fresh port allocation
@@ -49,6 +55,13 @@ python3 run.py start
 # ✅ Updated App.vue
 # ✅ Updated vite.config.js
 # ✅ Created .env.development
+
+# Example output when default ports become available again:
+# 🔍 Smart port management: Checking for conflicts...
+# ✅ Reverting to default backend port: 5001
+# ✅ Reverting to default frontend port: 3000
+# ✅ Reverted to default ports configuration
+# 🔄 Syncing backend port 5001 to frontend files...
 ```
 
 ### Restarting Services
@@ -98,12 +111,24 @@ Active port allocations are tracked in `.port_mapping.json`:
 
 ## How It Works
 
-1. **Pre-Start Check**: Before starting services, the system checks if configured ports are available
-2. **Conflict Resolution**: If ports are in use, it finds the next available port (up to 20 attempts)
-3. **Configuration Update**: Updates `config.json` with new ports for persistence
-4. **Frontend Sync**: Updates all frontend files to use the new backend port
-5. **Service Start**: Starts services on the allocated ports
-6. **Runtime Monitoring**: Monitors for restart requests (Ctrl+R) and handles them gracefully
+1. **Default Port Check**: Always checks if default ports (5001, 3000) are available first
+2. **Port Reversion**: Automatically reverts to defaults when they become free
+3. **Conflict Resolution**: If defaults are busy, finds the next available port
+4. **Configuration Update**: Updates `config.json` with new ports for persistence
+5. **Frontend Sync**: Updates all frontend files to use the new backend port
+6. **Service Start**: Starts services on the allocated ports
+7. **Runtime Monitoring**: Monitors for restart requests (Ctrl+R) and handles them gracefully
+
+## Port Drift Prevention
+
+The system actively prevents "port drift" - the gradual movement to higher port numbers over time:
+
+1. **Default Preference**: Always tries to use ports 5001 (backend) and 3000 (frontend) first
+2. **Automatic Reversion**: When default ports become available, the system automatically switches back
+3. **Smart Allocation**: Only uses alternative ports when absolutely necessary
+4. **Restart Benefits**: Each restart checks if defaults are available again
+
+This ensures your application stays on familiar ports whenever possible, making it easier to remember URLs and maintain consistency.
 
 ## Troubleshooting
 

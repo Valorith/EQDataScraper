@@ -135,47 +135,73 @@ class AppRunner:
         """Smart port allocation with conflict detection and resolution"""
         self.print_status("🔍 Smart port management: Checking for conflicts...", "info")
         
-        # Start with configured ports
-        backend_port = self.config['backend_port']
-        frontend_port = self.config['frontend_port']
+        # Define default ports to prevent drift
+        DEFAULT_BACKEND_PORT = 5001
+        DEFAULT_FRONTEND_PORT = 3000
+        
+        # Try to use defaults first, then fall back to configured ports
+        backend_port = DEFAULT_BACKEND_PORT
+        frontend_port = DEFAULT_FRONTEND_PORT
+        
+        # Check if we can use default ports
+        default_backend_available = not self.is_port_in_use(DEFAULT_BACKEND_PORT)
+        default_frontend_available = not self.is_port_in_use(DEFAULT_FRONTEND_PORT)
         
         # Track allocated ports
         allocated_ports = {}
         ports_changed = False
         
-        # Check backend port
-        if self.is_port_in_use(backend_port):
-            process_info = self.get_port_conflict_process(backend_port)
-            self.print_status(f"Backend port {backend_port} is in use by: {process_info or 'unknown'}", "warning")
-            
-            # Find alternative
-            new_backend_port = self.find_available_port(backend_port + 1, max_attempts=20)
-            if new_backend_port != backend_port:
-                self.print_status(f"Allocating new backend port: {new_backend_port}", "success")
-                backend_port = new_backend_port
+        # Backend port allocation
+        if default_backend_available:
+            # Prefer default port
+            backend_port = DEFAULT_BACKEND_PORT
+            if self.config['backend_port'] != DEFAULT_BACKEND_PORT:
+                self.print_status(f"Reverting to default backend port: {DEFAULT_BACKEND_PORT}", "success")
                 ports_changed = True
+        else:
+            # Default is not available, check configured port
+            backend_port = self.config['backend_port']
+            if self.is_port_in_use(backend_port):
+                process_info = self.get_port_conflict_process(backend_port)
+                self.print_status(f"Backend port {backend_port} is in use by: {process_info or 'unknown'}", "warning")
+                
+                # Find alternative
+                new_backend_port = self.find_available_port(backend_port + 1, max_attempts=20)
+                if new_backend_port != backend_port:
+                    self.print_status(f"Allocating new backend port: {new_backend_port}", "success")
+                    backend_port = new_backend_port
+                    ports_changed = True
         
         allocated_ports['backend'] = backend_port
         
-        # Check frontend port (make sure it's different from backend)
-        if self.is_port_in_use(frontend_port) or frontend_port == backend_port:
-            if frontend_port == backend_port:
-                self.print_status(f"Frontend port conflicts with backend port", "warning")
-            else:
-                process_info = self.get_port_conflict_process(frontend_port)
-                self.print_status(f"Frontend port {frontend_port} is in use by: {process_info or 'unknown'}", "warning")
-            
-            # Find alternative (avoid backend port)
-            new_frontend_port = frontend_port + 1
-            while new_frontend_port == backend_port or self.is_port_in_use(new_frontend_port):
-                new_frontend_port += 1
-                if new_frontend_port > frontend_port + 20:  # Safety limit
-                    break
-            
-            if new_frontend_port != frontend_port:
-                self.print_status(f"Allocating new frontend port: {new_frontend_port}", "success")
-                frontend_port = new_frontend_port
+        # Frontend port allocation
+        if default_frontend_available and frontend_port != backend_port:
+            # Prefer default port
+            frontend_port = DEFAULT_FRONTEND_PORT
+            if self.config['frontend_port'] != DEFAULT_FRONTEND_PORT:
+                self.print_status(f"Reverting to default frontend port: {DEFAULT_FRONTEND_PORT}", "success")
                 ports_changed = True
+        else:
+            # Default is not available or conflicts with backend
+            frontend_port = self.config['frontend_port']
+            if self.is_port_in_use(frontend_port) or frontend_port == backend_port:
+                if frontend_port == backend_port:
+                    self.print_status(f"Frontend port conflicts with backend port", "warning")
+                else:
+                    process_info = self.get_port_conflict_process(frontend_port)
+                    self.print_status(f"Frontend port {frontend_port} is in use by: {process_info or 'unknown'}", "warning")
+                
+                # Find alternative (avoid backend port)
+                new_frontend_port = frontend_port + 1
+                while new_frontend_port == backend_port or self.is_port_in_use(new_frontend_port):
+                    new_frontend_port += 1
+                    if new_frontend_port > frontend_port + 20:  # Safety limit
+                        break
+                
+                if new_frontend_port != frontend_port:
+                    self.print_status(f"Allocating new frontend port: {new_frontend_port}", "success")
+                    frontend_port = new_frontend_port
+                    ports_changed = True
         
         allocated_ports['frontend'] = frontend_port
         
@@ -184,10 +210,19 @@ class AppRunner:
             self.config['backend_port'] = backend_port
             self.config['frontend_port'] = frontend_port
             self.save_config(self.config)
-            self.print_status("✅ Updated config.json with new port allocations", "success")
+            
+            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
+                self.print_status("✅ Reverted to default ports configuration", "success")
+            else:
+                self.print_status("✅ Updated config.json with new port allocations", "success")
             
             # Update all frontend files that reference the backend port
             self.sync_frontend_config(backend_port)
+        else:
+            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
+                self.print_status("✅ Using default ports (no conflicts detected)", "success")
+            else:
+                self.print_status("✅ Using previously configured ports", "info")
         
         # Save port mapping
         self.save_port_mapping(allocated_ports)
@@ -243,6 +278,21 @@ class AppRunner:
     
     def find_available_port(self, start_port: int, max_attempts: int = 10) -> int:
         """Find an available port starting from start_port"""
+        # First, check if the preferred default ports are available
+        DEFAULT_BACKEND_PORT = 5001
+        DEFAULT_FRONTEND_PORT = 3000
+        
+        # If we're looking for a backend port and default is free, prefer it
+        if start_port > DEFAULT_BACKEND_PORT and not self.is_port_in_use(DEFAULT_BACKEND_PORT):
+            self.print_status(f"Default backend port {DEFAULT_BACKEND_PORT} is now available", "info")
+            return DEFAULT_BACKEND_PORT
+            
+        # If we're looking for a frontend port and default is free, prefer it
+        if start_port > DEFAULT_FRONTEND_PORT and start_port < 5000 and not self.is_port_in_use(DEFAULT_FRONTEND_PORT):
+            self.print_status(f"Default frontend port {DEFAULT_FRONTEND_PORT} is now available", "info")
+            return DEFAULT_FRONTEND_PORT
+        
+        # Otherwise, find next available port
         for port in range(start_port, start_port + max_attempts):
             if not self.is_port_in_use(port):
                 return port
