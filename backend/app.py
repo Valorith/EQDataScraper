@@ -2189,13 +2189,17 @@ def get_spell_pricing():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with server memory status"""
+    pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
+    
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'cached_classes': len(spells_cache),
-        'cached_pricing': 0,  # pricing_cache deprecated
-        'cached_spell_details': len(spell_details_cache)
+        'cached_pricing': pricing_count,  # Now shows actual pricing count
+        'cached_spell_details': len(spell_details_cache),
+        'server_memory_loaded': len(spells_cache) > 0 or pricing_count > 0,
+        'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0
     })
 
 @app.route('/api/cache/save', methods=['POST'])
@@ -2426,5 +2430,38 @@ def debug_pricing_lookup(class_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def preload_spell_data_on_startup():
+    """Load all spell data into server memory on startup for optimal performance"""
+    logger.info("🚀 Preloading spell data into server memory on startup...")
+    
+    try:
+        # Load existing cache from storage (files or database)
+        logger.info("📂 Loading existing cache from storage...")
+        load_cache_from_storage()
+        
+        # Load all pricing data into memory for instant lookups
+        logger.info("💰 Loading pricing data into memory...")
+        load_all_pricing_to_memory()
+        
+        # Report what was loaded
+        spell_classes_count = len(spells_cache)
+        pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
+        spell_details_count = len(spell_details_cache)
+        
+        logger.info(f"✅ Server memory preloading complete!")
+        logger.info(f"   📊 Spell classes cached: {spell_classes_count}")
+        logger.info(f"   💎 Pricing entries cached: {pricing_count}")
+        logger.info(f"   📋 Spell details cached: {spell_details_count}")
+        logger.info(f"🎯 Server ready for instant spell data responses!")
+        
+        return True
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Server startup preloading encountered issues: {e}")
+        logger.info("🔄 Server will still function with on-demand loading")
+        return False
+
 if __name__ == '__main__':
+    # Preload spell data before starting server for optimal performance
+    preload_spell_data_on_startup()
     app.run(debug=True, host='0.0.0.0', port=config['backend_port']) 
