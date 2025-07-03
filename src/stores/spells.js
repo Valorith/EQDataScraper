@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
-// Configure API base URL - use environment variable in production, relative path in development
+// Configure API base URL - use environment variable in production, proxy in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5016')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
@@ -67,13 +67,31 @@ export const useSpellsStore = defineStore('spells', {
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
         
-        const response = await axios.get(apiUrl, {
-          timeout: 30000, // 30 second timeout
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        })
+        // Try with shorter timeout first, then fallback to longer timeout
+        let response
+        try {
+          response = await axios.get(apiUrl, {
+            timeout: 5000, // 5 second timeout for first attempt
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          })
+        } catch (firstError) {
+          console.warn('First attempt failed, retrying with longer timeout:', firstError.message)
+          
+          // Add a small delay before retry to allow backend to stabilize
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          // Retry with longer timeout for cold cache scenarios
+          response = await axios.get(apiUrl, {
+            timeout: 45000, // 45 second timeout for retry (cold cache scraping)
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          })
+        }
         
         // Handle the new API response format
         const spellsData = response.data.spells || response.data
