@@ -1744,6 +1744,16 @@ export default {
       
       // Clear stats cache
       pricingStatsCache.value = { cached: 0, loading: 0, failed: 0, unfetched: 0, total: 0 }
+      
+      // Clear any pending timeouts to prevent callbacks after component destruction
+      if (activeFetchTimeout) {
+        clearTimeout(activeFetchTimeout)
+        activeFetchTimeout = null
+      }
+      if (pricingFetchTimeout) {
+        clearTimeout(pricingFetchTimeout)
+        pricingFetchTimeout = null
+      }
     })
 
     watch(() => props.className, (newClassName, oldClassName) => {
@@ -2486,9 +2496,10 @@ export default {
       isFetchingPricing.value = true
       
       // Set a timeout to reset the flag if the fetch hangs
-      const fetchTimeout = setTimeout(() => {
+      activeFetchTimeout = setTimeout(() => {
         console.warn('⚠️ Pricing fetch timed out after 60 seconds - resetting state')
         isFetchingPricing.value = false
+        activeFetchTimeout = null
       }, 60000) // 60 second timeout
       
       // Apply cached pricing to spells that don't have it yet
@@ -2684,12 +2695,17 @@ export default {
       }
       
       // Clear the timeout and mark fetching as complete
-      clearTimeout(fetchTimeout)
+      if (activeFetchTimeout) {
+        clearTimeout(activeFetchTimeout)
+        activeFetchTimeout = null
+      }
       isFetchingPricing.value = false
     }
 
     // Watch for spell changes and fetch pricing with debouncing
     let pricingFetchTimeout = null
+    let activeFetchTimeout = null // Track the main fetch timeout for cleanup
+    
     const debouncedFetchPricing = () => {
       if (pricingFetchTimeout) {
         clearTimeout(pricingFetchTimeout)
