@@ -16,8 +16,8 @@ class TestSpellEndpoints:
         with patch('app.scrape_class') as mock_scrape:
             # Clear and set up cached data using proper class name
             app.spells_cache.clear()
-            app.spells_cache['Cleric'] = sample_spell_data
-            app.cache_timestamp['Cleric'] = datetime.now().isoformat()
+            app.spells_cache['cleric'] = sample_spell_data  # Use lowercase for consistency
+            app.cache_timestamp['cleric'] = datetime.now().isoformat()
             
             response = mock_app.get('/api/spells/cleric')
             
@@ -53,8 +53,8 @@ class TestSpellEndpoints:
         """Test class name case insensitivity."""
         with patch('app.scrape_class') as mock_scrape:
             app.spells_cache.clear()
-            app.spells_cache['Cleric'] = sample_spell_data  # Use proper case for cache key
-            app.cache_timestamp['Cleric'] = datetime.now().isoformat()
+            app.spells_cache['cleric'] = sample_spell_data  # Use lowercase for cache key
+            app.cache_timestamp['cleric'] = datetime.now().isoformat()
             
             # Test various cases
             for class_name in ['cleric', 'CLERIC', 'Cleric', 'cLeRiC']:
@@ -239,46 +239,184 @@ class TestSearchEndpoints:
 class TestRefreshEndpoints:
     """Test cache refresh endpoints."""
     
-    def test_refresh_spell_cache_endpoint(self, mock_app):
-        """Test refresh spell cache endpoint."""
-        # Test that endpoint exists and handles errors gracefully
+    def test_refresh_spell_cache_endpoint_success(self, mock_app):
+        """Test refresh spell cache endpoint with valid class."""
+        # Clear refresh progress first
+        app.refresh_progress.clear()
+        
         response = mock_app.post('/api/refresh-spell-cache/cleric')
         
-        # Should return valid JSON response (even if error)
-        assert response.status_code in [200, 400, 500]
+        assert response.status_code == 200
+        data = json.loads(response.data)
         
-        try:
-            data = json.loads(response.data)
-            # If successful, should have success field
-            if response.status_code == 200:
-                assert 'success' in data
-            # If error, should have error field
-            elif response.status_code in [400, 500]:
-                assert 'error' in data or 'success' in data
-        except json.JSONDecodeError:
-            # Response might not be JSON in some error cases
-            pass
+        # Should have success response
+        assert data['success'] == True
+        assert data['message'] == 'Refresh started'
+        assert data['class_name'] == 'cleric'
+        
+        # Should have initiated progress tracking
+        assert 'cleric' in app.refresh_progress
+        progress = app.refresh_progress['cleric']
+        assert progress['stage'] == 'initializing'
+        assert progress['progress_percentage'] == 5
+        assert 'start_time' in progress
+        assert 'last_updated' in progress
     
-    def test_refresh_pricing_cache_endpoint(self, mock_app, sample_spell_data):
-        """Test refresh pricing cache endpoint."""
+    def test_refresh_spell_cache_endpoint_invalid_class(self, mock_app):
+        """Test refresh spell cache endpoint with invalid class."""
+        response = mock_app.post('/api/refresh-spell-cache/invalidclass')
+        
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert 'Invalid class name' in data['error']
+    
+    def test_refresh_spell_cache_endpoint_case_insensitive(self, mock_app):
+        """Test refresh spell cache endpoint is case insensitive."""
+        app.refresh_progress.clear()
+        
+        # Test different case variations
+        test_cases = ['cleric', 'CLERIC', 'Cleric', 'cLeRiC']
+        
+        for class_name in test_cases:
+            response = mock_app.post(f'/api/refresh-spell-cache/{class_name}')
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            assert data['success'] == True
+            assert data['class_name'] == 'cleric'  # Always normalized to lowercase
+    
+    def test_refresh_pricing_cache_endpoint_success(self, mock_app, sample_spell_data):
+        """Test refresh pricing cache endpoint with valid data."""
         # Set up test data
         app.spells_cache.clear()
-        app.spells_cache['Cleric'] = sample_spell_data  # Use proper case
+        app.spell_details_cache.clear()
+        app.pricing_cache_timestamp.clear()
+        app.pricing_lookup.clear()
+        
+        # Use proper case for cache key
+        app.spells_cache['cleric'] = sample_spell_data
+        
+        # Add some existing pricing data to clear
         app.pricing_cache_timestamp['202'] = datetime.now().isoformat()
+        app.pricing_cache_timestamp['203'] = datetime.now().isoformat()
+        app.pricing_lookup['202'] = {'silver': 4}
+        app.pricing_lookup['203'] = {'silver': 4}
         
         response = mock_app.post('/api/refresh-pricing-cache/cleric')
         
-        # Should return valid response
-        assert response.status_code in [200, 400, 500]
+        assert response.status_code == 200
+        data = json.loads(response.data)
         
-        try:
+        assert data['success'] == True
+        assert 'cleared_count' in data
+        assert data['cleared_count'] == 2
+        assert 'message' in data
+        
+        # Verify data was actually cleared
+        assert '202' not in app.pricing_cache_timestamp
+        assert '203' not in app.pricing_cache_timestamp
+        assert '202' not in app.pricing_lookup
+        assert '203' not in app.pricing_lookup
+    
+    def test_refresh_pricing_cache_endpoint_invalid_class(self, mock_app):
+        """Test refresh pricing cache endpoint with invalid class."""
+        response = mock_app.post('/api/refresh-pricing-cache/invalidclass')
+        
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert 'Invalid class name' in data['error']
+    
+    def test_refresh_pricing_cache_endpoint_no_spells(self, mock_app):
+        """Test refresh pricing cache endpoint when no spells exist."""
+        app.spells_cache.clear()
+        
+        response = mock_app.post('/api/refresh-pricing-cache/cleric')
+        
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert 'No spells found for class' in data['error']
+    
+    def test_refresh_pricing_cache_endpoint_case_insensitive(self, mock_app, sample_spell_data):
+        """Test refresh pricing cache endpoint is case insensitive."""
+        app.spells_cache.clear()
+        app.spells_cache['cleric'] = sample_spell_data
+        
+        # Test different case variations
+        test_cases = ['cleric', 'CLERIC', 'Cleric', 'cLeRiC']
+        
+        for class_name in test_cases:
+            response = mock_app.post(f'/api/refresh-pricing-cache/{class_name}')
+            assert response.status_code == 200
             data = json.loads(response.data)
-            if response.status_code == 200:
-                assert 'success' in data
-            else:
-                assert 'error' in data or 'success' in data
-        except json.JSONDecodeError:
-            pass
+            assert data['success'] == True
+
+
+class TestRefreshProgressEndpoints:
+    """Test refresh progress tracking endpoints."""
+    
+    def test_refresh_progress_endpoint_success(self, mock_app):
+        """Test getting refresh progress for active refresh."""
+        # Clear and set up progress
+        app.refresh_progress.clear()
+        app.update_refresh_progress('cleric', 'scraping', estimated_time_remaining=30)
+        
+        response = mock_app.get('/api/refresh-progress/cleric')
+        
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        
+        assert data['stage'] == 'scraping'
+        assert data['progress_percentage'] == 20
+        assert data['message'] == '🌐 Scraping fresh spell data...'
+        assert data['estimated_time_remaining'] == 30
+        assert 'start_time' in data
+        assert 'last_updated' in data
+    
+    def test_refresh_progress_endpoint_not_found(self, mock_app):
+        """Test getting refresh progress for non-existent refresh."""
+        app.refresh_progress.clear()
+        
+        response = mock_app.get('/api/refresh-progress/nonexistent')
+        
+        assert response.status_code == 404
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert 'No refresh in progress' in data['error']
+    
+    def test_refresh_progress_endpoint_case_insensitive(self, mock_app):
+        """Test refresh progress endpoint is case insensitive."""
+        app.refresh_progress.clear()
+        app.update_refresh_progress('cleric', 'processing')
+        
+        # Test various cases
+        test_cases = ['cleric', 'CLERIC', 'Cleric', 'cLeRiC']
+        
+        for class_name in test_cases:
+            response = mock_app.get(f'/api/refresh-progress/{class_name}')
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            assert data['stage'] == 'processing'
+            assert data['progress_percentage'] == 60
+    
+    def test_refresh_progress_integration_with_refresh_endpoint(self, mock_app):
+        """Test that refresh endpoints properly create progress tracking."""
+        app.refresh_progress.clear()
+        
+        # Start a refresh
+        response = mock_app.post('/api/refresh-spell-cache/cleric')
+        assert response.status_code == 200
+        
+        # Should be able to get progress
+        response = mock_app.get('/api/refresh-progress/cleric')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        
+        assert data['stage'] == 'initializing'
+        assert data['progress_percentage'] == 5
+        assert 'start_time' in data
+        assert 'last_updated' in data
 
 
 class TestErrorHandling:
