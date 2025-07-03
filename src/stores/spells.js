@@ -115,8 +115,33 @@ export const useSpellsStore = defineStore('spells', {
         
         if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
           console.log('✅ Server already has spell data preloaded in memory!')
-          console.log('⚡ Skipping frontend pre-hydration - server memory is ready for instant responses')
+          console.log('⚡ Loading class metadata for instant UI updates...')
+          
+          // Load minimal dataset to populate local store for UI state consistency
+          // This ensures class cards show as "hydrated" while maintaining server optimization
+          const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+            timeout: 5000,
+            headers: { 'Accept': 'application/json' }
+          })
+          
+          const classesToHydrate = Object.keys(cacheStatus.data)
+            .filter(key => key !== '_config' && cacheStatus.data[key].cached === true)
+            .slice(0, 3) // Load just 3 classes for UI state consistency
+            .map(cls => cls.toLowerCase())
+          
+          console.log(`🎯 Loading metadata for ${classesToHydrate.length} classes to update UI state:`, classesToHydrate)
+          
+          for (const className of classesToHydrate) {
+            try {
+              await this.fetchSpellsForClass(className)
+              console.log(`✅ Loaded metadata for ${className}`)
+            } catch (error) {
+              console.warn(`⚠️ Failed to load metadata for ${className}:`, error.message)
+            }
+          }
+          
           this.isPreHydrating = false
+          console.log('🎉 Server optimization + UI state loading complete!')
           return true
         }
         
