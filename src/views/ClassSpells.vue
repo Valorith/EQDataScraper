@@ -1432,14 +1432,33 @@ export default {
           }
         }
         
-        // Load pricing metadata and perform pricing check in parallel
-        await Promise.all([
-          loadPricingMetadata(),
-          performIntelligentPricingCheck()
-        ])
+        // Check if this was loaded from pre-hydrated memory
+        const isFromMemory = spellsStore.isClassHydrated(props.className)
         
-        // Resume any interrupted pricing fetches
-        resumeInterruptedFetches()
+        if (isFromMemory) {
+          // For pre-hydrated classes: Show spells immediately, load pricing in background
+          console.log(`⚡ Instant load from memory for ${props.className}`)
+          
+          // Start pricing operations in background (non-blocking)
+          Promise.all([
+            loadPricingMetadata(),
+            performIntelligentPricingCheck()
+          ]).then(() => {
+            resumeInterruptedFetches()
+          }).catch(error => {
+            console.warn('Background pricing operations failed:', error)
+          })
+        } else {
+          // For non-hydrated classes: Wait for all operations to complete
+          console.log(`🐌 Full load required for ${props.className}`)
+          await Promise.all([
+            loadPricingMetadata(),
+            performIntelligentPricingCheck()
+          ])
+          
+          // Resume any interrupted pricing fetches
+          resumeInterruptedFetches()
+        }
         
         // Check if we actually got data
         const currentSpells = spellsStore.getSpellsForClass(props.className)
@@ -1733,7 +1752,18 @@ export default {
         
         // Only use debounced loading if not the initial mount
         if (oldClassName) {
-          debouncedLoad()
+          // Check if new class is pre-hydrated for instant loading
+          const isHydrated = spellsStore.isClassHydrated(newClassName)
+          
+          if (isHydrated) {
+            // Instant load for hydrated classes - no debounce delay
+            console.log(`⚡ Instant route change to hydrated class: ${newClassName}`)
+            loadSpells()
+          } else {
+            // Use debounced loading for non-hydrated classes
+            console.log(`🐌 Debounced route change to non-hydrated class: ${newClassName}`)
+            debouncedLoad()
+          }
         }
         
         // Reset transition state after a delay
