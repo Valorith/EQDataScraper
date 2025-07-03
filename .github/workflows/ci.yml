@@ -59,6 +59,21 @@ jobs:
         CACHE_EXPIRY_HOURS: 1
         PRICING_CACHE_EXPIRY_HOURS: 1
     
+    - name: Test cache refresh functionality (unit tests only)
+      working-directory: ./backend
+      run: |
+        echo "Testing cache refresh logic without actual web scraping..."
+        python -m pytest \
+          tests/test_startup_cache.py::TestCachePreloading \
+          tests/test_startup_cache.py::TestCacheIntegrityChecks \
+          tests/test_startup_cache.py::TestStartupErrorHandling \
+          -v --tb=short --disable-warnings
+      env:
+        TESTING: 1
+        DATABASE_URL: ""
+        CACHE_EXPIRY_HOURS: 1
+        SKIP_STARTUP_CACHE_REFRESH: 1
+    
     - name: Test API integration
       working-directory: ./backend
       run: |

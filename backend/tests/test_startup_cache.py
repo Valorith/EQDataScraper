@@ -47,6 +47,61 @@ class TestCachePreloading:
         assert hasattr(app, 'preload_spell_data_on_startup')
         assert callable(app.preload_spell_data_on_startup)
     
+    def test_cache_refresh_functions_exist(self):
+        """Test that cache refresh functions exist and are callable."""
+        assert hasattr(app, 'get_expired_spell_cache_classes')
+        assert callable(app.get_expired_spell_cache_classes)
+        assert hasattr(app, 'refresh_expired_spell_caches')
+        assert callable(app.refresh_expired_spell_caches)
+    
+    @patch('app.scrape_class')
+    def test_refresh_expired_spell_caches_with_mocked_scraping(self, mock_scrape):
+        """Test cache refresh logic without actual web scraping."""
+        # Mock successful scraping
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_df.to_dict.return_value = [
+            {'name': 'Test Spell', 'spell_id': '123', 'level': 1}
+        ]
+        mock_scrape.return_value = mock_df
+        
+        # Set up expired cache
+        expired_time = (datetime.now() - timedelta(hours=25)).isoformat()
+        app.spells_cache.clear()
+        app.cache_timestamp.clear()
+        app.spells_cache['warrior'] = [{'name': 'Old Spell', 'spell_id': '999'}]
+        app.cache_timestamp['warrior'] = expired_time
+        
+        # Test the refresh function
+        expired_classes = ['Warrior']  # Note: proper case
+        refreshed, failed = app.refresh_expired_spell_caches(expired_classes)
+        
+        # Verify results
+        assert 'Warrior' in refreshed
+        assert len(failed) == 0
+        assert mock_scrape.called
+        assert mock_scrape.call_args[0] == ('Warrior', 'https://alla.clumsysworld.com/', None)
+        
+        # Verify cache was updated
+        assert 'warrior' in app.spells_cache
+        assert len(app.spells_cache['warrior']) == 1
+        assert app.spells_cache['warrior'][0]['name'] == 'Test Spell'
+    
+    @patch('app.scrape_class')
+    def test_refresh_expired_spell_caches_handles_scraping_failure(self, mock_scrape):
+        """Test cache refresh handles scraping failures gracefully."""
+        # Mock failed scraping
+        mock_scrape.side_effect = Exception("Network timeout")
+        
+        # Test the refresh function
+        expired_classes = ['Warrior']
+        refreshed, failed = app.refresh_expired_spell_caches(expired_classes)
+        
+        # Verify error handling
+        assert len(refreshed) == 0
+        assert 'Warrior' in failed
+        assert mock_scrape.called
+    
     @patch('app.save_cache_to_storage')
     @patch('app.clear_expired_cache')
     @patch('app.load_cache_from_storage')
