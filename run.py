@@ -12,8 +12,24 @@ import subprocess
 import argparse
 import json
 import socket
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict
+
+# Import platform-specific modules conditionally
+try:
+    import termios
+    import tty
+    import select
+    HAS_UNIX_TERMINAL = True
+except ImportError:
+    HAS_UNIX_TERMINAL = False
+
+try:
+    import msvcrt
+    HAS_WINDOWS_TERMINAL = True
+except ImportError:
+    HAS_WINDOWS_TERMINAL = False
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -34,10 +50,14 @@ class AppRunner:
         self.frontend_dir = self.root_dir
         self.pids_file = self.root_dir / ".app_pids.json"
         self.config_file = self.root_dir / "config.json"
+        self.port_map_file = self.root_dir / ".port_mapping.json"
         self.processes = {}
         self.skip_dependency_check = False
         self.npm_command = None
         self.config = self.load_config()
+        self.running = False
+        self.restart_requested = False
+        self.old_termios = None
         
     def print_header(self, title: str):
         """Print a formatted header"""
@@ -45,23 +65,32 @@ class AppRunner:
         print(f"{Colors.CYAN}{Colors.BOLD}  {title}{Colors.END}")
         print(f"{Colors.CYAN}{Colors.BOLD}{'='*60}{Colors.END}\n")
         
-    def print_status(self, message: str, status: str = "info"):
-        """Print a status message with color coding"""
+    def print_status(self, message: str, status: str = "info", indent: int = 0):
+        """Print a status message with color coding and optional indentation"""
         color = {
             "info": Colors.BLUE,
             "success": Colors.GREEN,
             "warning": Colors.YELLOW,
-            "error": Colors.RED
+            "error": Colors.RED,
+            "step": Colors.CYAN,
+            "detail": Colors.WHITE
         }.get(status, Colors.WHITE)
         
         prefix = {
             "info": "ℹ",
             "success": "✅",
             "warning": "⚠",
-            "error": "❌"
+            "error": "❌",
+            "step": "🔧",
+            "detail": "  •"
         }.get(status, "•")
         
-        print(f"{color}{prefix} {message}{Colors.END}")
+        indent_str = "  " * indent
+        print(f"{indent_str}{color}{prefix} {message}{Colors.END}")
+    
+    def print_section(self, title: str):
+        """Print a section separator"""
+        print(f"\n{Colors.CYAN}{Colors.BOLD}─── {title} ───{Colors.END}")
     
     def load_config(self) -> Dict:
         """Load configuration from config.json"""
@@ -93,6 +122,175 @@ class AppRunner:
         except IOError as e:
             self.print_status(f"Error saving config.json: {e}", "error")
     
+    def load_port_mapping(self) -> Dict[str, int]:
+        """Load port mapping that tracks actual ports in use"""
+        if self.port_map_file.exists():
+            try:
+                with open(self.port_map_file, 'r') as f:
+                    return json.load(f)
+            except:
+                pass
+        return {}
+    
+    def save_port_mapping(self, mapping: Dict[str, int]):
+        """Save actual port mapping"""
+        try:
+            with open(self.port_map_file, 'w') as f:
+                json.dump(mapping, f, indent=2)
+        except IOError:
+            pass
+    
+    def smart_port_allocation(self) -> Dict[str, int]:
+        """Smart port allocation with conflict detection and resolution"""
+        self.print_section("Port Management")
+        
+        # Check if we're in a deployment environment (Railway, etc.)
+        if self._is_deployment_environment():
+            self.print_status("Deployment environment detected - using environment variables", "info", 1)
+            return {
+                'backend': int(os.environ.get('BACKEND_PORT', self.config['backend_port'])),
+                'frontend': int(os.environ.get('PORT', os.environ.get('FRONTEND_PORT', self.config['frontend_port'])))
+            }
+        
+        self.print_status("Checking for port conflicts...", "step", 1)
+        
+        # Define default ports to prevent drift
+        DEFAULT_BACKEND_PORT = 5001
+        DEFAULT_FRONTEND_PORT = 3000
+        
+        # Try to use defaults first, then fall back to configured ports
+        backend_port = DEFAULT_BACKEND_PORT
+        frontend_port = DEFAULT_FRONTEND_PORT
+        
+        # Check if we can use default ports
+        default_backend_available = not self.is_port_in_use(DEFAULT_BACKEND_PORT)
+        default_frontend_available = not self.is_port_in_use(DEFAULT_FRONTEND_PORT)
+        
+        # Track allocated ports
+        allocated_ports = {}
+        ports_changed = False
+        
+        # Backend port allocation
+        if default_backend_available:
+            # Prefer default port
+            backend_port = DEFAULT_BACKEND_PORT
+            if self.config['backend_port'] != DEFAULT_BACKEND_PORT:
+                self.print_status(f"Using default backend port: {DEFAULT_BACKEND_PORT}", "success", 2)
+                ports_changed = True
+        else:
+            # Default is not available, check configured port
+            backend_port = self.config['backend_port']
+            if self.is_port_in_use(backend_port):
+                process_info = self.get_port_conflict_process(backend_port)
+                self.print_status(f"Port {backend_port} in use by: {process_info or 'unknown'}", "warning", 2)
+                
+                # Find alternative
+                new_backend_port = self.find_available_port(backend_port + 1, max_attempts=20)
+                if new_backend_port != backend_port:
+                    self.print_status(f"Allocated backend port: {new_backend_port}", "success", 2)
+                    backend_port = new_backend_port
+                    ports_changed = True
+        
+        allocated_ports['backend'] = backend_port
+        
+        # Frontend port allocation
+        if default_frontend_available and frontend_port != backend_port:
+            # Prefer default port
+            frontend_port = DEFAULT_FRONTEND_PORT
+            if self.config['frontend_port'] != DEFAULT_FRONTEND_PORT:
+                self.print_status(f"Using default frontend port: {DEFAULT_FRONTEND_PORT}", "success", 2)
+                ports_changed = True
+        else:
+            # Default is not available or conflicts with backend
+            frontend_port = self.config['frontend_port']
+            if self.is_port_in_use(frontend_port) or frontend_port == backend_port:
+                if frontend_port == backend_port:
+                    self.print_status(f"Frontend port conflicts with backend", "warning", 2)
+                else:
+                    process_info = self.get_port_conflict_process(frontend_port)
+                    self.print_status(f"Port {frontend_port} in use by: {process_info or 'unknown'}", "warning", 2)
+                
+                # Find alternative (avoid backend port)
+                new_frontend_port = frontend_port + 1
+                while new_frontend_port == backend_port or self.is_port_in_use(new_frontend_port):
+                    new_frontend_port += 1
+                    if new_frontend_port > frontend_port + 20:  # Safety limit
+                        break
+                
+                if new_frontend_port != frontend_port:
+                    self.print_status(f"Allocated frontend port: {new_frontend_port}", "success", 2)
+                    frontend_port = new_frontend_port
+                    ports_changed = True
+        
+        allocated_ports['frontend'] = frontend_port
+        
+        # Update config if ports changed
+        if ports_changed:
+            self.config['backend_port'] = backend_port
+            self.config['frontend_port'] = frontend_port
+            self.save_config(self.config)
+            
+            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
+                self.print_status("Reverted to default ports configuration", "success", 2)
+            else:
+                self.print_status("Updated config.json with new port allocations", "success", 2)
+            
+            # Update all frontend files that reference the backend port
+            self.sync_frontend_config(backend_port)
+        else:
+            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
+                self.print_status("Using default ports (no conflicts detected)", "success", 2)
+            else:
+                self.print_status("Using previously configured ports", "info", 2)
+        
+        # Save port mapping
+        self.save_port_mapping(allocated_ports)
+        self.print_status(f"Backend: {backend_port}, Frontend: {frontend_port}", "info", 2)
+        
+        return allocated_ports
+    
+    def sync_frontend_config(self, backend_port: int):
+        """Synchronize backend port across all frontend configuration files"""
+        # Skip file syncing in deployment environments
+        if self._is_deployment_environment():
+            self.print_status("Deployment environment - skipping file sync", "info", 2)
+            return
+            
+        self.print_status(f"Syncing backend port {backend_port} to frontend files...", "step", 2)
+        
+        # Files that need updating (only localhost references - don't touch production URLs)
+        files_to_update = [
+            (self.frontend_dir / "src" / "stores" / "spells.js", 
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "App.vue",
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "vite.config.js",
+             r"target:\s*['\"]http://localhost:\d+['\"]", f"target: 'http://localhost:{backend_port}'"),
+            (self.frontend_dir / ".env.development",
+             r"VITE_BACKEND_URL=http://localhost:\d+", f"VITE_BACKEND_URL=http://localhost:{backend_port}")
+        ]
+        
+        for file_path, pattern, replacement in files_to_update:
+            if file_path.exists():
+                try:
+                    import re
+                    content = file_path.read_text()
+                    updated_content = re.sub(pattern, replacement, content)
+                    if content != updated_content:
+                        file_path.write_text(updated_content)
+                        self.print_status(f"Updated {file_path.name}", "success", 3)
+                except Exception as e:
+                    self.print_status(f"Failed to update {file_path.name}: {e}", "warning", 3)
+        
+        # Create .env.development if it doesn't exist
+        env_file = self.frontend_dir / ".env.development"
+        if not env_file.exists():
+            try:
+                env_file.write_text(f"VITE_BACKEND_URL=http://localhost:{backend_port}\n")
+                self.print_status("Created .env.development", "success", 3)
+            except Exception as e:
+                self.print_status(f"Failed to create .env.development: {e}", "warning", 3)
+    
     def is_port_in_use(self, port: int) -> bool:
         """Check if a port is already in use"""
         try:
@@ -105,6 +303,19 @@ class AppRunner:
     
     def find_available_port(self, start_port: int, max_attempts: int = 10) -> int:
         """Find an available port starting from start_port"""
+        # First, check if the preferred default ports are available
+        DEFAULT_BACKEND_PORT = 5001
+        DEFAULT_FRONTEND_PORT = 3000
+        
+        # If we're looking for a backend port and default is free, prefer it
+        if start_port > DEFAULT_BACKEND_PORT and not self.is_port_in_use(DEFAULT_BACKEND_PORT):
+            return DEFAULT_BACKEND_PORT
+            
+        # If we're looking for a frontend port and default is free, prefer it
+        if start_port > DEFAULT_FRONTEND_PORT and start_port < 5000 and not self.is_port_in_use(DEFAULT_FRONTEND_PORT):
+            return DEFAULT_FRONTEND_PORT
+        
+        # Otherwise, find next available port
         for port in range(start_port, start_port + max_attempts):
             if not self.is_port_in_use(port):
                 return port
@@ -336,22 +547,22 @@ class AppRunner:
         if platform.system() == "Windows" and not is_wsl:
             rollup_native = self.frontend_dir / "node_modules" / "@rollup" / "rollup-win32-x64-msvc"
             if not rollup_native.exists():
-                self.print_status("Windows Rollup dependency issue detected", "warning")
-                self.print_status("This is a known npm bug. Attempting to fix...", "info")
+                self.print_status("Windows Rollup dependency issue detected", "warning", 1)
+                self.print_status("This is a known npm bug. Attempting to fix...", "info", 2)
                 return self._fix_windows_dependencies(npm_cmd)
         elif is_wsl:
             rollup_native = self.frontend_dir / "node_modules" / "@rollup" / "rollup-linux-x64-gnu"
             if not rollup_native.exists():
-                self.print_status("WSL Rollup dependency issue detected", "warning")
-                self.print_status("This is a known npm bug. Attempting to fix...", "info")
+                self.print_status("WSL Rollup dependency issue detected", "warning", 1)
+                self.print_status("This is a known npm bug. Attempting to fix...", "info", 2)
                 return self._fix_windows_dependencies(npm_cmd)
         
-        self.print_status("Node modules: OK", "success")
+        self.print_status("Node modules installed", "success", 1)
         
         # Check network connectivity for web scraping
         if not self._check_network_connectivity():
-            self.print_status("⚠ Network connectivity issue detected", "warning")
-            self.print_status("   The app will start but may have issues scraping spell data", "warning")
+            self.print_status("Network connectivity issue detected", "warning", 1)
+            self.print_status("App will start but may have issues scraping spell data", "detail", 2)
             
         return True
         
@@ -515,15 +726,11 @@ class AppRunner:
             except (OSError, ProcessLookupError):
                 pass
             
-    def start_backend(self, retry_count: int = 0) -> bool:
+    def start_backend(self, allocated_ports: Dict[str, int]) -> bool:
         """Start the Flask backend server"""
-        self.print_status("Starting backend server...", "info")
+        self.print_status("Starting backend server...", "step", 1)
         
-        backend_port = self.config['backend_port']
-        
-        # Check for port conflicts
-        if self.is_port_in_use(backend_port):
-            backend_port = self.handle_port_conflict("backend", backend_port)
+        backend_port = allocated_ports.get('backend', self.config['backend_port'])
         
         try:
             # Change to backend directory and start Flask app
@@ -553,33 +760,24 @@ class AppRunner:
             # Wait a moment and check if it started successfully
             time.sleep(3)
             if process.poll() is None:
-                self.print_status(f"Backend server started on http://localhost:{backend_port}", "success")
+                self.print_status(f"Backend ready on port {backend_port}", "success", 2)
                 return True
             else:
                 stdout, stderr = process.communicate()
                 error_msg = stderr.strip()
-                
-                # Check for port-related errors
-                if "Address already in use" in error_msg or "Port" in error_msg and retry_count < 2:
-                    self.print_status("Port conflict detected after startup attempt", "warning")
-                    new_port = self.handle_port_conflict("backend", backend_port)
-                    if new_port != backend_port:
-                        self.print_status("Retrying with new port...", "info")
-                        # Reload config and retry once
-                        self.config = self.load_config()
-                        return self.start_backend(retry_count + 1)  # Recursive retry with new port
-                
-                self.print_status(f"Backend failed to start: {error_msg}", "error")
+                self.print_status(f"Backend failed to start: {error_msg}", "error", 2)
                 return False
                 
         except Exception as e:
-            self.print_status(f"Error starting backend: {e}", "error")
+            self.print_status(f"Error starting backend: {e}", "error", 2)
             return False
             
-    def start_frontend(self) -> bool:
+    def start_frontend(self, allocated_ports: Dict[str, int]) -> bool:
         """Start the Vite frontend development server"""
         import platform
-        self.print_status("Starting frontend development server...", "info")
+        self.print_status("Starting frontend development server...", "step", 1)
+        
+        frontend_port = allocated_ports.get('frontend', self.config['frontend_port'])
         
         # Ensure we have npm command available
         if not self.npm_command:
@@ -594,11 +792,16 @@ class AppRunner:
             is_wsl = os.path.exists('/mnt/c') and platform.system() == "Linux"
             vite_js_path = self.frontend_dir / "node_modules" / "vite" / "bin" / "vite.js"
             
+            # Set environment variable for Vite port
+            env = os.environ.copy()
+            env['PORT'] = str(frontend_port)
+            env['VITE_PORT'] = str(frontend_port)
+            
             # Always use list format for better cross-platform compatibility
             commands_to_try = [
-                [self.npm_command, "run", "dev"],
-                ["npx", "vite"],
-                ["node", str(vite_js_path)] if vite_js_path.exists() else ["npx", "vite"]
+                [self.npm_command, "run", "dev", "--", "--port", str(frontend_port)],
+                ["npx", "vite", "--port", str(frontend_port)],
+                ["node", str(vite_js_path), "--port", str(frontend_port)] if vite_js_path.exists() else ["npx", "vite", "--port", str(frontend_port)]
             ]
             
             use_shell = False  # Use shell=False for better compatibility
@@ -606,7 +809,7 @@ class AppRunner:
             for cmd in commands_to_try:
                 try:
                     cmd_str = ' '.join(cmd)
-                    self.print_status(f"Trying command: {cmd_str}", "info")
+                    self.print_status(f"Trying: {cmd_str}", "detail", 2)
                     
                     # Platform-specific subprocess creation
                     creation_flags = 0
@@ -621,6 +824,7 @@ class AppRunner:
                         stderr=subprocess.PIPE,
                         text=True,
                         shell=use_shell,
+                        env=env,
                         creationflags=creation_flags if platform.system() == "Windows" else 0
                     )
                     
@@ -628,24 +832,24 @@ class AppRunner:
                     time.sleep(5)  # Give more time for Vite to start
                     if process.poll() is None:
                         self.processes["frontend"] = process
-                        self.print_status("Frontend server started on port 3000 (or next available)", "success")
+                        self.print_status(f"Frontend ready on port {frontend_port}", "success", 2)
                         return True
                     else:
                         # Process failed - get error output
                         stdout, stderr = process.communicate()
                         error_msg = stderr.strip() if stderr and stderr.strip() else stdout.strip()
-                        self.print_status(f"Command {cmd_str} failed: {error_msg}", "warning")
+                        self.print_status(f"Command failed: {error_msg}", "warning", 3)
                         continue
                         
                 except Exception as e:
-                    self.print_status(f"Error with command {cmd_str}: {e}", "warning")
+                    self.print_status(f"Error: {e}", "warning", 3)
                     continue
             
-            self.print_status("All frontend start commands failed", "error")
+            self.print_status("All frontend start commands failed", "error", 2)
             return False
                 
         except Exception as e:
-            self.print_status(f"Error starting frontend: {e}", "error")
+            self.print_status(f"Error starting frontend: {e}", "error", 2)
             return False
             
     def start_services(self):
@@ -653,35 +857,47 @@ class AppRunner:
         self.print_header("Starting EQDataScraper Application")
         
         if self.skip_dependency_check:
-            self.print_status("⚠️  Skipping dependency check as requested", "warning")
+            self.print_status("Skipping dependency check as requested", "warning")
         elif not self.check_dependencies():
+            print()
             self.print_status("Dependency check failed. Please resolve issues and try again.", "error")
-            self.print_status("Use --skip-deps to bypass this check (not recommended)", "info")
+            self.print_status("Use --skip-deps to bypass this check (not recommended)", "detail")
             return
-            
+        
+        # Smart port allocation
+        allocated_ports = self.smart_port_allocation()
+        
         success = True
+        self.running = True
         
         # Start backend first
-        if not self.start_backend():
+        if not self.start_backend(allocated_ports):
             success = False
             
         # Start frontend
-        if success and not self.start_frontend():
+        if success and not self.start_frontend(allocated_ports):
             success = False
             
         if success:
             self.save_pids()
-            self.print_status("\n🎉 Application started successfully!", "success")
-            self.print_status(f"Frontend: http://localhost:{self.config['frontend_port']}", "info")
-            self.print_status(f"Backend API: http://localhost:{self.config['backend_port']}", "info")
-            self.print_status("\nPress Ctrl+C to stop all services", "info")
+            print()
+            self.print_section("Application Ready")
+            self.print_status(f"Frontend: http://localhost:{allocated_ports['frontend']}", "success", 1)
+            self.print_status(f"Backend API: http://localhost:{allocated_ports['backend']}", "success", 1)
+            print()
+            self.print_status("Press Ctrl+C to stop all services", "info")
+            self.print_status("Press Ctrl+R to restart all services", "info")
             
             # Verify services are actually responding
+            print()
             self._verify_services_health()
+            
+            # Start keyboard listener
+            self.setup_keyboard_handler()
             
             try:
                 # Wait for processes and handle Ctrl+C
-                while True:
+                while self.running:
                     # Check if processes are still running
                     dead_processes = []
                     for name, proc in self.processes.items():
@@ -701,12 +917,23 @@ class AppRunner:
                         if not self.processes:
                             break
                     
-                    time.sleep(2)  # Check every 2 seconds
+                    # Check if restart was requested
+                    if self.restart_requested:
+                        self.print_status("\n🔄 Restart requested...", "info")
+                        self.restart_services()
+                        self.restart_requested = False
+                    
+                    time.sleep(0.5)  # Check more frequently for keyboard input
             except KeyboardInterrupt:
                 self.print_status("\nShutting down services...", "info")
                 self.stop_services()
+            finally:
+                self.cleanup_keyboard_handler()
+                self.running = False
         else:
             self.stop_services()
+            self.cleanup_keyboard_handler()
+            self.running = False
             
     def stop_services(self):
         """Stop all running services"""
@@ -717,42 +944,42 @@ class AppRunner:
             pids = self.load_pids()
             for name, pid in pids.items():
                 if self.is_process_running(pid):
-                    self.print_status(f"Found running {name} service (PID: {pid})", "info")
+                    self.print_status(f"Found running {name} service (PID: {pid})", "info", 1)
                     try:
                         self._terminate_process_by_pid(pid)
-                        self.print_status(f"Stopped {name} service", "success")
+                        self.print_status(f"Stopped {name} service", "success", 1)
                     except (OSError, ProcessLookupError):
-                        self.print_status(f"Could not stop {name} service", "warning")
+                        self.print_status(f"Could not stop {name} service", "warning", 1)
         else:
             # Stop processes from current session
             for name, process in self.processes.items():
                 try:
                     if process and process.poll() is None:  # Process is still running
-                        self.print_status(f"Stopping {name}...", "info")
+                        self.print_status(f"Stopping {name}...", "step", 1)
                         process.terminate()
                         
                         # Wait for graceful shutdown
                         try:
                             process.wait(timeout=5)
                         except subprocess.TimeoutExpired:
-                            self.print_status(f"Force killing {name}...", "warning")
+                            self.print_status(f"Force killing {name}...", "warning", 2)
                             process.kill()
                             try:
                                 process.wait(timeout=2)
                             except subprocess.TimeoutExpired:
                                 pass  # Process might be forcefully killed
                         
-                        self.print_status(f"Stopped {name}", "success")
+                        self.print_status(f"Stopped {name}", "success", 1)
                     else:
-                        self.print_status(f"{name} was already stopped", "info")
+                        self.print_status(f"{name} was already stopped", "info", 1)
                 except Exception as e:
-                    self.print_status(f"Error stopping {name}: {e}", "error")
+                    self.print_status(f"Error stopping {name}: {e}", "error", 1)
                     
         # Clean up PID file
         if self.pids_file.exists():
             self.pids_file.unlink()
             
-        self.print_status("All services stopped", "success")
+        self.print_status("All services stopped", "success", 1)
         
     def status(self):
         """Check status of services"""
@@ -761,7 +988,7 @@ class AppRunner:
         pids = self.load_pids()
         
         if not pids:
-            self.print_status("No services are currently tracked", "info")
+            self.print_status("No services are currently tracked", "info", 1)
             # Check if services might be running without tracking
             self._check_untracked_services()
             return
@@ -769,18 +996,18 @@ class AppRunner:
         services_running = False
         for name, pid in pids.items():
             if self.is_process_running(pid):
-                self.print_status(f"{name.capitalize()} service: Running (PID: {pid})", "success")
+                self.print_status(f"{name.capitalize()}: Running (PID: {pid})", "success", 1)
                 services_running = True
             else:
-                self.print_status(f"{name.capitalize()} service: Not running", "error")
+                self.print_status(f"{name.capitalize()}: Not running", "error", 1)
         
         if services_running:
-            self.print_status("", "info")  # Blank line
+            print()
             self._verify_services_health()
     
     def _check_untracked_services(self):
         """Check if services are running but not tracked"""
-        self.print_status("Checking for untracked services...", "info")
+        self.print_status("Checking for untracked services...", "step", 1)
         
         # Check if ports are in use
         backend_port = self.config['backend_port']
@@ -789,15 +1016,186 @@ class AppRunner:
         if self.is_port_in_use(backend_port):
             process_info = self.get_port_conflict_process(backend_port)
             if process_info and "Python" in process_info:
-                self.print_status(f"Backend may be running on port {backend_port} (untracked)", "warning")
+                self.print_status(f"Backend may be running on port {backend_port} (untracked)", "warning", 2)
         
         if self.is_port_in_use(frontend_port):
             process_info = self.get_port_conflict_process(frontend_port)
             if process_info and ("node" in process_info or "vite" in process_info):
-                self.print_status(f"Frontend may be running on port {frontend_port} (untracked)", "warning")
+                self.print_status(f"Frontend may be running on port {frontend_port} (untracked)", "warning", 2)
         
         if self.is_port_in_use(backend_port) or self.is_port_in_use(frontend_port):
-            self.print_status("Use 'python3 run.py stop' to clean up untracked services", "info")
+            self.print_status("Use 'python3 run.py stop' to clean up untracked services", "detail", 2)
+    
+    def _is_deployment_environment(self) -> bool:
+        """Check if we're running in a deployment environment"""
+        # Railway provides these environment variables
+        railway_indicators = ['RAILWAY_ENVIRONMENT', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID']
+        
+        # Common deployment environment indicators
+        deployment_indicators = ['DYNO', 'HEROKU_APP_NAME', 'RENDER', 'VERCEL', 'NETLIFY']
+        
+        # Check for Railway
+        if any(os.environ.get(var) for var in railway_indicators):
+            return True
+            
+        # Check for other deployment platforms
+        if any(os.environ.get(var) for var in deployment_indicators):
+            return True
+            
+        # Check if PORT is set (common in deployments)
+        if os.environ.get('PORT') and os.environ.get('NODE_ENV') == 'production':
+            return True
+            
+        return False
+    
+    def setup_keyboard_handler(self):
+        """Setup keyboard handler for Ctrl+R restart functionality"""
+        # Skip keyboard handlers in deployment environments
+        if self._is_deployment_environment():
+            return
+            
+        try:
+            import platform
+            if platform.system() == "Windows":
+                # Windows-specific keyboard handling
+                self._setup_windows_keyboard_handler()
+            else:
+                # Unix-like systems
+                self._setup_unix_keyboard_handler()
+        except Exception as e:
+            # Silently fail keyboard handler setup
+            pass
+    
+    def _setup_unix_keyboard_handler(self):
+        """Setup keyboard handler for Unix-like systems"""
+        if not HAS_UNIX_TERMINAL:
+            return
+        
+        try:
+            # Save current terminal settings
+            self.old_termios = termios.tcgetattr(sys.stdin)
+            
+            # Set terminal to raw mode for capturing key presses
+            new_settings = termios.tcgetattr(sys.stdin)
+            new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, new_settings)
+            
+            # Start keyboard listener thread
+            keyboard_thread = threading.Thread(target=self._keyboard_listener_unix, daemon=True)
+            keyboard_thread.start()
+        except Exception:
+            # Fallback if terminal manipulation fails
+            pass
+    
+    def _setup_windows_keyboard_handler(self):
+        """Setup keyboard handler for Windows"""
+        if not HAS_WINDOWS_TERMINAL:
+            return
+            
+        try:
+            keyboard_thread = threading.Thread(target=self._keyboard_listener_windows, daemon=True)
+            keyboard_thread.start()
+        except Exception:
+            pass
+    
+    def _keyboard_listener_unix(self):
+        """Keyboard listener for Unix-like systems"""
+        try:
+            while self.running:
+                # Check if input is available
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    char = sys.stdin.read(1)
+                    if char == '\x12':  # Ctrl+R
+                        self.restart_requested = True
+        except Exception:
+            pass
+    
+    def _keyboard_listener_windows(self):
+        """Keyboard listener for Windows"""
+        if not HAS_WINDOWS_TERMINAL:
+            return
+            
+        try:
+            while self.running:
+                if msvcrt.kbhit():
+                    key = msvcrt.getch()
+                    if key == b'\x12':  # Ctrl+R
+                        self.restart_requested = True
+                time.sleep(0.1)
+        except Exception:
+            pass
+    
+    def cleanup_keyboard_handler(self):
+        """Cleanup keyboard handler"""
+        if HAS_UNIX_TERMINAL:
+            try:
+                if self.old_termios and sys.stdin.isatty():
+                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_termios)
+            except Exception:
+                pass
+    
+    def restart_services(self):
+        """Restart all services"""
+        self.print_status("Stopping services for restart...", "info")
+        
+        # Stop current services
+        for name, process in self.processes.items():
+            try:
+                if process and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=2)
+            except Exception:
+                pass
+        
+        # Clear processes
+        self.processes.clear()
+        
+        # Clean up PID file
+        if self.pids_file.exists():
+            self.pids_file.unlink()
+        
+        time.sleep(2)  # Brief pause before restart
+        
+        # Restart with smart port allocation
+        self.print_status("Starting services...", "info")
+        allocated_ports = self.smart_port_allocation()
+        
+        # Start backend
+        if self.start_backend(allocated_ports):
+            # Start frontend
+            if self.start_frontend(allocated_ports):
+                self.save_pids()
+                self.print_status("\n🎉 Services restarted successfully!", "success")
+                self.print_status(f"Frontend: http://localhost:{allocated_ports['frontend']}", "info")
+                self.print_status(f"Backend API: http://localhost:{allocated_ports['backend']}", "info")
+                self.print_status("\nPress Ctrl+C to stop all services", "info")
+                self.print_status("Press Ctrl+R to restart all services", "info")
+                self._verify_services_health()
+            else:
+                self.print_status("Failed to restart frontend", "error")
+                self.stop_services()
+                self.running = False
+        else:
+            self.print_status("Failed to restart backend", "error")
+            self.stop_services()
+            self.running = False
+    
+    def restart_command(self):
+        """Restart services from command line"""
+        self.print_header("Restarting EQDataScraper Application")
+        
+        # First stop any running services
+        self.stop_services()
+        
+        # Wait a moment
+        time.sleep(2)
+        
+        # Start services again
+        self.start_services()
                 
     def install_deps(self):
         """Install all dependencies"""
@@ -879,6 +1277,15 @@ class AppRunner:
         self.print_status("", "info")
 
 def main():
+    # Check if we're in a deployment environment and warn about usage
+    runner = AppRunner()
+    if runner._is_deployment_environment() and len(sys.argv) > 1 and sys.argv[1] == "start":
+        print("⚠️  Deployment environment detected")
+        print("   Smart port management will use environment variables only")
+        print("   For production, consider starting services directly:")
+        print("   Backend: python backend/app.py")
+        print("   Frontend: npm run build && npm run preview")
+    
     parser = argparse.ArgumentParser(description="EQDataScraper Application Runner",
                                    formatter_class=argparse.RawDescriptionHelpFormatter,
                                    epilog="""
@@ -887,6 +1294,7 @@ Examples:
   python3 run.py start      # Start both frontend and backend services
   python3 run.py status     # Check if services are running
   python3 run.py stop       # Stop all services
+  python3 run.py restart    # Restart all services
 
 Platform-specific shortcuts:
   Windows: run.bat [command]
@@ -899,7 +1307,7 @@ First-time setup:
 
 For help with common issues, see the README.md file.
 """)
-    parser.add_argument("command", choices=["start", "stop", "status", "install"], 
+    parser.add_argument("command", choices=["start", "stop", "status", "install", "restart"], 
                        help="Command to execute")
     parser.add_argument("--skip-deps", "--ignore-deps", action="store_true",
                        help="Skip dependency checking (use with caution)")
@@ -920,6 +1328,8 @@ For help with common issues, see the README.md file.
         runner.status()
     elif args.command == "install":
         runner.install_deps()
+    elif args.command == "restart":
+        runner.restart_command()
 
 if __name__ == "__main__":
     main()
