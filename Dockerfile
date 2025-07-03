@@ -13,11 +13,7 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Set build-time environment variables
-ARG VITE_BACKEND_URL=https://eqdatascraper-backend-production.up.railway.app
-ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
-
-# Build the Vue app
+# Build the Vue app (Railway automatically provides environment variables)
 RUN npm run build
 
 # Production stage - use Alpine for runtime
