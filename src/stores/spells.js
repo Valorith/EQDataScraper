@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
-// Configure API base URL - use environment variable in production, proxy in development
+// Configure API base URL - use environment variable in production, direct connection in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5016')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
@@ -52,6 +52,22 @@ export const useSpellsStore = defineStore('spells', {
   },
 
   actions: {
+    // Warmup the backend connection on store initialization
+    async warmupBackend() {
+      try {
+        console.log('Warming up backend connection...')
+        await axios.get(`${API_BASE_URL}/api/health`, { 
+          timeout: 3000,
+          headers: { 'Accept': 'application/json' }
+        })
+        console.log('Backend warmup successful')
+        return true
+      } catch (error) {
+        console.warn('Backend warmup failed:', error.message)
+        return false
+      }
+    },
+
     async fetchSpellsForClass(className, forceRefresh = false) {
       // Normalize the className to lowercase for consistent caching
       const normalizedClassName = className.toLowerCase()
@@ -85,42 +101,21 @@ export const useSpellsStore = defineStore('spells', {
 
     async _fetchSpellsInternal(normalizedClassName, forceRefresh) {
       try {
-        // Quick backend readiness check for better first-load reliability
-        try {
-          await axios.get(`${API_BASE_URL}/api/health`, { timeout: 2000 })
-        } catch (healthError) {
-          console.warn('Backend health check failed, proceeding anyway:', healthError.message)
-        }
-        
         const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
         
-        // Try with shorter timeout first, then fallback to longer timeout
-        let response
-        try {
-          response = await axios.get(apiUrl, {
-            timeout: 5000, // 5 second timeout for first attempt
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
-          })
-        } catch (firstError) {
-          console.warn('First attempt failed, retrying with longer timeout:', firstError.message)
-          
-          // Add a small delay before retry to allow backend to stabilize
-          await new Promise(resolve => setTimeout(resolve, 500))
-          
-          // Retry with longer timeout for cold cache scenarios
-          response = await axios.get(apiUrl, {
-            timeout: 45000, // 45 second timeout for retry (cold cache scraping)
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
-          })
-        }
+        // Use optimized single request with longer initial timeout to avoid failed first attempts
+        const response = await axios.get(apiUrl, {
+          timeout: 60000, // 60 second timeout to handle both cached and fresh scraping
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          // Add connection pooling settings for better reliability
+          maxRedirects: 3,
+          validateStatus: (status) => status >= 200 && status < 300
+        })
         
         // Handle the new API response format
         const spellsData = response.data.spells || response.data
