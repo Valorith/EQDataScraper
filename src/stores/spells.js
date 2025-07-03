@@ -3,7 +3,7 @@ import axios from 'axios'
 
 // Configure API base URL - use environment variable in production, direct connection in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5001')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5002')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
@@ -115,33 +115,46 @@ export const useSpellsStore = defineStore('spells', {
         
         if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
           console.log('✅ Server already has spell data preloaded in memory!')
-          console.log('⚡ Loading class metadata for instant UI updates...')
+          console.log('⚡ Marking all cached classes as hydrated for instant UI updates...')
           
-          // Load minimal dataset to populate local store for UI state consistency
-          // This ensures class cards show as "hydrated" while maintaining server optimization
+          // Get cache status to identify all cached classes
           const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
             timeout: 5000,
             headers: { 'Accept': 'application/json' }
           })
           
-          const classesToHydrate = Object.keys(cacheStatus.data)
+          const cachedClasses = Object.keys(cacheStatus.data)
             .filter(key => key !== '_config' && cacheStatus.data[key].cached === true)
-            .slice(0, 3) // Load just 3 classes for UI state consistency
-            .map(cls => cls.toLowerCase())
           
-          console.log(`🎯 Loading metadata for ${classesToHydrate.length} classes to update UI state:`, classesToHydrate)
+          console.log(`🎯 Marking ${cachedClasses.length} cached classes as hydrated:`, cachedClasses)
           
-          for (const className of classesToHydrate) {
-            try {
-              await this.fetchSpellsForClass(className)
-              console.log(`✅ Loaded metadata for ${className}`)
-            } catch (error) {
-              console.warn(`⚠️ Failed to load metadata for ${className}:`, error.message)
+          // Mark all cached classes as hydrated with lightweight placeholder data
+          // This updates UI state without heavy data loading since server has everything ready
+          for (const className of cachedClasses) {
+            const normalizedClassName = className.toLowerCase()
+            
+            // Create lightweight placeholder that marks the class as "hydrated" for UI
+            // Real data will be loaded instantly from server when class is accessed
+            this.spellsData[normalizedClassName] = [{
+              _placeholder: true,
+              _serverReady: true,
+              name: `${className} spells ready on server`,
+              level: 0
+            }]
+            
+            // Store cache metadata
+            this.spellsMetadata[normalizedClassName] = {
+              last_updated: cacheStatus.data[className].last_updated,
+              cached: true,
+              expired: false,
+              spell_count: cacheStatus.data[className].spell_count,
+              stale: false,
+              _serverOptimized: true
             }
           }
           
           this.isPreHydrating = false
-          console.log('🎉 Server optimization + UI state loading complete!')
+          console.log(`🎉 Server optimization complete! All ${cachedClasses.length} classes marked as ready for instant loading`)
           return true
         }
         
@@ -276,8 +289,14 @@ export const useSpellsStore = defineStore('spells', {
       
       // Check for cached data first (skip if forcing refresh)
       if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
-        console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
-        return this.spellsData[normalizedClassName]
+        // Check if this is placeholder data from server optimization
+        if (this.spellsData[normalizedClassName][0]._placeholder && this.spellsData[normalizedClassName][0]._serverReady) {
+          console.log(`🔄 Replacing placeholder with real data for ${normalizedClassName} (server optimized)`)
+          // Continue to fetch real data from server
+        } else {
+          console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
+          return this.spellsData[normalizedClassName]
+        }
       }
 
       this.loading = true
