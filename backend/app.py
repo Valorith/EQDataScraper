@@ -187,6 +187,18 @@ pricing_cache_timestamp = {}  # Track when each spell's pricing was cached
 last_scrape_time = {}
 pricing_lookup = {}  # Fast lookup index for pricing data from spell_details_cache
 pricing_cache_loaded = False  # Track if we've loaded pricing from DB into memory
+
+# Server startup progress tracking
+server_startup_progress = {
+    'is_starting': True,
+    'current_step': 'Initializing server...',
+    'progress_percent': 0,
+    'steps_completed': 0,
+    'total_steps': 4,
+    'startup_complete': False,
+    'startup_time': None
+}
+
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
@@ -2187,6 +2199,11 @@ def get_spell_pricing():
         logger.error(f"Error in spell pricing endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/api/startup-status', methods=['GET'])
+def startup_status():
+    """Get server startup progress status"""
+    return jsonify(server_startup_progress)
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint with server memory status"""
@@ -2199,7 +2216,8 @@ def health_check():
         'cached_pricing': pricing_count,  # Now shows actual pricing count
         'cached_spell_details': len(spell_details_cache),
         'server_memory_loaded': len(spells_cache) > 0 or pricing_count > 0,
-        'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0
+        'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0,
+        'startup_complete': server_startup_progress['startup_complete']
     })
 
 @app.route('/api/cache/save', methods=['POST'])
@@ -2430,25 +2448,59 @@ def debug_pricing_lookup(class_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def update_startup_progress(step_name, step_number):
+    """Update server startup progress"""
+    global server_startup_progress
+    
+    server_startup_progress['current_step'] = step_name
+    server_startup_progress['steps_completed'] = step_number
+    server_startup_progress['progress_percent'] = int((step_number / server_startup_progress['total_steps']) * 100)
+    
+    logger.info(f"📈 Startup Progress: {server_startup_progress['progress_percent']}% - {step_name}")
+
 def preload_spell_data_on_startup():
     """Load all spell data into server memory on startup for optimal performance"""
+    global server_startup_progress
+    import time
+    
+    startup_start_time = time.time()
     logger.info("🚀 Preloading spell data into server memory on startup...")
     
     try:
-        # Load existing cache from storage (files or database)
-        logger.info("📂 Loading existing cache from storage...")
-        load_cache_from_storage()
+        # Step 1: Initialize cache storage
+        update_startup_progress("Setting up cache storage...", 1)
+        # (init_cache_storage already called earlier)
+        time.sleep(0.5)  # Brief pause for UI feedback
         
-        # Load all pricing data into memory for instant lookups
-        logger.info("💰 Loading pricing data into memory...")
+        # Step 2: Load existing cache from storage (files or database)
+        update_startup_progress("Loading existing cache from storage...", 2)
+        load_cache_from_storage()
+        time.sleep(0.5)  # Brief pause for UI feedback
+        
+        # Step 3: Load all pricing data into memory for instant lookups
+        update_startup_progress("Loading pricing data into memory...", 3)
         load_all_pricing_to_memory()
+        time.sleep(0.5)  # Brief pause for UI feedback
+        
+        # Step 4: Finalize and report
+        update_startup_progress("Finalizing server startup...", 4)
         
         # Report what was loaded
         spell_classes_count = len(spells_cache)
         pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
         spell_details_count = len(spell_details_cache)
         
-        logger.info(f"✅ Server memory preloading complete!")
+        # Mark startup as complete
+        startup_time = round(time.time() - startup_start_time, 2)
+        server_startup_progress.update({
+            'is_starting': False,
+            'current_step': 'Server ready for instant responses!',
+            'progress_percent': 100,
+            'startup_complete': True,
+            'startup_time': startup_time
+        })
+        
+        logger.info(f"✅ Server memory preloading complete in {startup_time}s!")
         logger.info(f"   📊 Spell classes cached: {spell_classes_count}")
         logger.info(f"   💎 Pricing entries cached: {pricing_count}")
         logger.info(f"   📋 Spell details cached: {spell_details_count}")
@@ -2457,6 +2509,15 @@ def preload_spell_data_on_startup():
         return True
         
     except Exception as e:
+        # Mark startup as failed but still functional
+        server_startup_progress.update({
+            'is_starting': False,
+            'current_step': 'Startup encountered issues - using on-demand loading',
+            'progress_percent': 100,
+            'startup_complete': True,
+            'startup_time': round(time.time() - startup_start_time, 2)
+        })
+        
         logger.warning(f"⚠️ Server startup preloading encountered issues: {e}")
         logger.info("🔄 Server will still function with on-demand loading")
         return False
