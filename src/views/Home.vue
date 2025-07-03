@@ -130,15 +130,18 @@
       <router-link 
         v-for="cls in classes" 
         :key="cls.name"
-        :to="{ name: 'ClassSpells', params: { className: cls.name.toLowerCase() } }"
+        :to="isClassHydrated(cls.name) ? { name: 'ClassSpells', params: { className: cls.name.toLowerCase() } } : ''"
         :class="[
           'class-card', 
           cls.name.toLowerCase(),
           {
+            'hydrated': isClassHydrated(cls.name),
+            'not-hydrated': !isClassHydrated(cls.name),
             'cached': getCacheStatusForClass(cls.name).cached,
             'uncached': !getCacheStatusForClass(cls.name).cached
           }
         ]"
+        @click="handleClassClick(cls.name, $event)"
       >
         <div class="class-icon">
           <img 
@@ -148,6 +151,9 @@
           >
         </div>
         <div class="class-name">{{ cls.name }}</div>
+        <div v-if="!isClassHydrated(cls.name)" class="loading-indicator">
+          <div class="loading-spinner"></div>
+        </div>
       </router-link>
     </div>
     
@@ -355,6 +361,7 @@ export default {
     
     return {
       classes: spellsStore.classes,
+      spellsStore,
       cartStore
     }
   },
@@ -586,6 +593,22 @@ export default {
     
     getCacheStatusForClass(className) {
       return this.cacheStatus[className] || { cached: false, spell_count: 0 }
+    },
+
+    isClassHydrated(className) {
+      // Check if a class has been hydrated (loaded into memory) using the store getter
+      return this.spellsStore.isClassHydrated(className)
+    },
+
+    handleClassClick(className, event) {
+      // Prevent navigation if class is not hydrated
+      if (!this.isClassHydrated(className)) {
+        event.preventDefault()
+        console.log(`Class ${className} not yet hydrated - navigation prevented`)
+        return false
+      }
+      // Allow normal navigation for hydrated classes
+      return true
     },
     
     
@@ -1332,25 +1355,59 @@ export default {
   }
 }
 
-/* Cache Status Borders */
-.class-card.cached {
-  border-color: #22c55e !important;
+/* Hydration Status Borders - Primary States */
+.class-card.hydrated {
+  border-color: #22c55e !important; /* Green for hydrated (ready for instant loading) */
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px #22c55e;
+  cursor: pointer;
+}
+
+.class-card.not-hydrated {
+  border-color: #6b7280 !important; /* Gray for not hydrated (disabled) */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 0 0 1px #6b7280;
+  opacity: 0.6;
+  cursor: not-allowed;
+  position: relative;
+}
+
+/* Cache Status Borders - Secondary Indicators */
+.class-card.cached {
+  /* Hydrated classes will override this with green */
 }
 
 .class-card.uncached {
-  border-color: #f59e0b !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px #f59e0b;
+  /* Not-hydrated classes will override this with gray */
 }
 
-.class-card.cached:hover {
+/* Hover States for Hydrated/Not-Hydrated */
+.class-card.hydrated:hover {
   border-color: #16a34a !important;
   box-shadow: 0 25px 60px rgba(34, 197, 94, 0.3), 0 0 40px rgba(34, 197, 94, 0.2);
+  transform: translateY(-8px);
+  transition: all 0.3s ease;
 }
 
-.class-card.uncached:hover {
-  border-color: #d97706 !important;
-  box-shadow: 0 25px 60px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.2);
+.class-card.not-hydrated:hover {
+  /* No hover effect for disabled cards */
+  transform: none;
+}
+
+/* Loading Indicator for Non-Hydrated Classes */
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s linear infinite;
 }
 
 /* Refresh Message */

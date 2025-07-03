@@ -51,6 +51,19 @@ export const useSpellsStore = defineStore('spells', {
       // Get cache metadata (timestamps, expiry status) for a class
       const normalizedClassName = className.toLowerCase()
       return state.spellsMetadata[normalizedClassName] || null
+    },
+
+    isClassHydrated: (state) => (className) => {
+      // Check if a class has been hydrated (loaded into memory)
+      const normalizedClassName = className.toLowerCase()
+      return state.spellsData[normalizedClassName] && state.spellsData[normalizedClassName].length > 0
+    },
+
+    getHydratedClasses: (state) => {
+      // Get list of all classes that have been hydrated into memory
+      return Object.keys(state.spellsData).filter(className => 
+        state.spellsData[className] && state.spellsData[className].length > 0
+      )
     }
   },
 
