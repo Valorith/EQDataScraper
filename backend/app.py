@@ -2960,5 +2960,9 @@ def cache_integrity():
 
 if __name__ == '__main__':
     # Preload spell data before starting server for optimal performance
-    preload_spell_data_on_startup()
+    # Skip during CI testing to avoid long startup times
+    if not os.environ.get('SKIP_STARTUP_CACHE_REFRESH'):
+        preload_spell_data_on_startup()
+    else:
+        logger.info("⚠️ Skipping startup cache refresh (SKIP_STARTUP_CACHE_REFRESH=1)")
     app.run(debug=True, host='0.0.0.0', port=config['backend_port']) 

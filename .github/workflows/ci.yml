@@ -65,7 +65,24 @@ jobs:
         echo "Starting backend service for integration test..."
         python app.py &
         echo $! > backend.pid
-        sleep 10
+        
+        echo "Waiting for backend to become ready (cache refresh skipped in CI)..."
+        # Wait up to 30 seconds for backend to start without cache loading
+        for i in {1..10}; do
+          if curl -f http://localhost:5999/api/health >/dev/null 2>&1; then
+            echo "✅ Backend is ready after ${i}3 seconds"
+            break
+          fi
+          if [ $i -eq 10 ]; then
+            echo "❌ Backend failed to start within 30 seconds"
+            echo "Backend logs:"
+            cat backend.log 2>/dev/null || echo "No backend logs available"
+            kill $(cat backend.pid) || true
+            exit 1
+          fi
+          echo "Waiting... (attempt $i/10)"
+          sleep 3
+        done
         
         echo "Testing API endpoints..."
         curl -f http://localhost:5999/api/health || exit 1
@@ -81,6 +98,7 @@ jobs:
         DATABASE_URL: ""
         PORT: 5999
         CACHE_EXPIRY_HOURS: 1
+        SKIP_STARTUP_CACHE_REFRESH: 1
     
     - name: Upload backend coverage
       uses: codecov/codecov-action@v3
