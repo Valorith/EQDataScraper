@@ -110,20 +110,6 @@
           <span>Searching...</span>
         </div>
       </div>
-      
-      <!-- Refresh Data Message -->
-      <div v-if="hasUncachedClasses" class="refresh-message">
-        <div class="refresh-content">
-          <span class="refresh-icon">⚠️</span>
-          <span class="refresh-text">
-            {{ uncachedClasses.length }} class{{ uncachedClasses.length === 1 ? '' : 'es' }} need spell data for search functionality.
-          </span>
-          <button @click="refreshAllSpellData" class="refresh-button" :disabled="isRefreshing">
-            <span v-if="isRefreshing" class="refresh-spinner"></span>
-            {{ isRefreshing ? 'Loading...' : 'Load All Spell Data' }}
-          </button>
-        </div>
-      </div>
     </div>
     
     <div class="classes-grid">
@@ -277,51 +263,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Loading Modal -->
-    <div v-if="showRefreshModal" class="refresh-modal-overlay" @click="closeRefreshModal">
-      <div class="refresh-modal" @click.stop>
-        <div class="refresh-modal-header">
-          <h3>Loading Spell Data</h3>
-          <button v-if="!isRefreshing" @click="closeRefreshModal" class="modal-close-btn">×</button>
-        </div>
-        
-        <div class="refresh-modal-content">
-          <div class="progress-container">
-            <div class="progress-bar">
-              <div 
-                class="progress-fill" 
-                :style="{ width: refreshProgress + '%' }"
-                :class="{ 'complete': loadingComplete }"
-              ></div>
-            </div>
-            <div class="progress-text">{{ refreshProgress }}%</div>
-          </div>
-          
-          <div class="status-text">
-            <span v-if="loadingComplete" class="status-complete">
-              ✅ All spell data loaded successfully!
-            </span>
-            <span v-else class="status-loading">
-              📚 Loading {{ currentlyLoading }}...
-            </span>
-          </div>
-          
-          <div class="loading-details">
-            <div class="loading-animation">
-              <img 
-                v-if="currentlyLoading && !loadingComplete"
-                :src="`/icons/${currentlyLoading.toLowerCase()}.gif`" 
-                :alt="`${currentlyLoading} icon`"
-                class="class-loading-icon"
-                @error="handleLoadingIconError"
-              />
-              <div v-else class="spell-icon-bounce">✅</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -345,11 +286,6 @@ export default {
       searchLoading: false,
       searchTimeout: null,
       cacheStatus: {},
-      showRefreshModal: false,
-      refreshProgress: 0,
-      currentlyLoading: '',
-      loadingComplete: false,
-      isRefreshing: false,
       currentPage: 0,
       resultsPerPage: 10,
       showRightArrowGlow: false,
@@ -371,14 +307,6 @@ export default {
     }
   },
   computed: {
-    uncachedClasses() {
-      return this.classes.filter(cls => !this.getCacheStatusForClass(cls.name).cached)
-    },
-    
-    hasUncachedClasses() {
-      return this.uncachedClasses.length > 0
-    },
-    
     totalPages() {
       return Math.ceil(this.searchResults.length / this.resultsPerPage)
     },
@@ -588,15 +516,6 @@ export default {
       event.target.style.display = 'none'
     },
     
-    handleLoadingIconError(event) {
-      // Fallback to generic icon if class icon fails to load
-      event.target.style.display = 'none'
-      const parent = event.target.parentElement
-      if (parent) {
-        parent.innerHTML = '<div class="spell-icon-bounce">🔮</div>'
-      }
-    },
-    
     async checkCacheStatus() {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/cache-status`)
@@ -629,73 +548,6 @@ export default {
       event.preventDefault()
       console.log(`Class ${className} not yet hydrated - navigation prevented (fallback in ${60 - Math.floor((Date.now() - this.$options.mounted) / 1000)}s)`)
       return false
-    },
-    
-    
-    async refreshAllSpellData() {
-      this.showRefreshModal = true
-      this.isRefreshing = true
-      this.refreshProgress = 0
-      this.loadingComplete = false
-      
-      const classesToLoad = this.uncachedClasses
-      const totalClasses = classesToLoad.length
-      
-      for (let i = 0; i < classesToLoad.length; i++) {
-        const cls = classesToLoad[i]
-        this.currentlyLoading = cls.name
-        
-        try {
-          console.log(`Loading spells for ${cls.name}...`)
-          const response = await axios.get(`${API_BASE_URL}/api/spells/${cls.name.toLowerCase()}`)
-          
-          // Check if we got HTML instead of JSON (proxy routing issue)
-          if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
-            throw new Error(`API returned HTML instead of JSON for ${cls.name} - possible proxy routing issue`)
-          }
-          
-          console.log(`Successfully loaded ${response.data.spell_count} spells for ${cls.name}`)
-          
-          // Update cache status for this class
-          this.cacheStatus[cls.name] = { 
-            cached: true, 
-            spell_count: response.data.spell_count || 0,
-            last_updated: response.data.last_updated || new Date().toISOString()
-          }
-          
-          this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
-          
-          // Small delay to show progress
-          await new Promise(resolve => setTimeout(resolve, 500))
-          
-        } catch (error) {
-          console.error(`Error loading ${cls.name}:`, error)
-          console.error('Error details:', error.response?.data || error.message)
-          console.error('Response type:', typeof error.response?.data)
-          
-          // Still update progress even on error
-          this.refreshProgress = Math.round(((i + 1) / totalClasses) * 100)
-        }
-      }
-      
-      this.loadingComplete = true
-      this.currentlyLoading = 'Complete!'
-      
-      // Refresh cache status to update the UI
-      await this.checkCacheStatus()
-      
-      // Keep modal open for a moment to show completion
-      setTimeout(() => {
-        this.showRefreshModal = false
-        this.isRefreshing = false
-        this.refreshProgress = 0
-      }, 1500)
-    },
-    
-    closeRefreshModal() {
-      if (!this.isRefreshing) {
-        this.showRefreshModal = false
-      }
     },
     
     goToPreviousPage() {
@@ -986,10 +838,6 @@ export default {
   position: relative;
   margin-bottom: 4rem;
   z-index: 100;
-}
-
-.global-search-container:has(.refresh-message) {
-  margin-bottom: 3rem;
 }
 
 .search-input-wrapper {
@@ -1490,346 +1338,6 @@ export default {
   }
   50% {
     opacity: 1;
-  }
-}
-
-/* Refresh Message */
-.refresh-message {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
-  backdrop-filter: blur(15px);
-  border: 1px solid rgba(147, 112, 219, 0.2);
-  border-top: none;
-  border-radius: 0 0 16px 16px;
-  padding: 0.75rem 1rem;
-  margin: 0 auto;
-  max-width: 540px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  opacity: 0.95;
-  position: relative;
-  z-index: 50;
-  animation: slideDown 0.3s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 0.95;
-    transform: translateY(0);
-  }
-}
-
-.refresh-content {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.refresh-icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-  opacity: 0.8;
-}
-
-.refresh-text {
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8rem;
-  font-weight: 400;
-  flex: 1;
-  min-width: 180px;
-}
-
-.refresh-button {
-  background: linear-gradient(135deg, rgba(147, 112, 219, 0.8), rgba(147, 112, 219, 0.6));
-  color: white;
-  border: 1px solid rgba(147, 112, 219, 0.4);
-  border-radius: 8px;
-  padding: 0.4rem 0.8rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 120px;
-  justify-content: center;
-  white-space: nowrap;
-}
-
-.refresh-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #9370db, rgba(147, 112, 219, 0.9));
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(147, 112, 219, 0.3);
-  border-color: rgba(147, 112, 219, 0.6);
-}
-
-.refresh-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.refresh-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top: 2px solid white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-/* Loading Modal */
-.refresh-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  animation: modalFadeIn 0.3s ease-out;
-}
-
-@keyframes modalFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.refresh-modal {
-  background: linear-gradient(145deg, rgba(30, 35, 50, 0.95), rgba(20, 25, 40, 0.98));
-  backdrop-filter: blur(25px);
-  border: 2px solid rgba(147, 112, 219, 0.3);
-  border-radius: 24px;
-  padding: 0;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 80px rgba(147, 112, 219, 0.3);
-  animation: modalSlideIn 0.3s ease-out;
-  overflow: hidden;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.refresh-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2rem 2rem 1rem;
-  border-bottom: 1px solid rgba(147, 112, 219, 0.2);
-}
-
-.refresh-modal-header h3 {
-  font-family: 'Cinzel', serif;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: white;
-  margin: 0;
-  text-shadow: 0 0 20px rgba(147, 112, 219, 0.4);
-}
-
-.modal-close-btn {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 2rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.modal-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.refresh-modal-content {
-  padding: 2rem;
-}
-
-.progress-container {
-  position: relative;
-  margin-bottom: 2rem;
-}
-
-.progress-bar {
-  width: 100%;
-  height: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid rgba(147, 112, 219, 0.3);
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #9370db, #c8a8ff);
-  border-radius: 6px;
-  transition: width 0.5s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  animation: progressShimmer 2s infinite;
-}
-
-.progress-fill.complete {
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-}
-
-@keyframes progressShimmer {
-  0% {
-    left: -100%;
-  }
-  100% {
-    left: 100%;
-  }
-}
-
-.progress-text {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  color: white;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-}
-
-.status-text {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  min-height: 24px;
-}
-
-.status-loading {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-.status-complete {
-  color: #22c55e;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.loading-details {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.loading-animation {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.spell-icon-bounce {
-  font-size: 2rem;
-  animation: bounce 1.5s ease-in-out infinite;
-}
-
-.class-loading-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  border: 2px solid rgba(147, 112, 219, 0.4);
-  background: rgba(255, 255, 255, 0.1);
-  object-fit: cover;
-  animation: bounce 1.5s ease-in-out infinite;
-}
-
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0) rotate(0deg);
-  }
-  25% {
-    transform: translateY(-8px) rotate(5deg);
-  }
-  50% {
-    transform: translateY(-4px) rotate(0deg);
-  }
-  75% {
-    transform: translateY(-12px) rotate(-5deg);
-  }
-}
-
-@media (max-width: 768px) {
-  .global-search-container {
-    margin-bottom: 3rem;
-  }
-  
-  .global-search-container:has(.refresh-message) {
-    margin-bottom: 2.5rem;
-  }
-  
-  .refresh-message {
-    max-width: calc(100% - 2rem);
-    margin: 0 1rem;
-  }
-  
-  .refresh-content {
-    flex-direction: column;
-    text-align: center;
-    gap: 0.5rem;
-  }
-  
-  .refresh-text {
-    min-width: auto;
-    font-size: 0.75rem;
-  }
-  
-  .refresh-button {
-    min-width: 100px;
-    font-size: 0.7rem;
-    padding: 0.35rem 0.7rem;
-  }
-  
-  .refresh-modal {
-    width: 95%;
-    margin: 1rem;
-  }
-  
-  .refresh-modal-header,
-  .refresh-modal-content {
-    padding: 1.5rem;
   }
 }
 

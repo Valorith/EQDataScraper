@@ -104,10 +104,26 @@ export const useSpellsStore = defineStore('spells', {
     async preHydrateCache() {
       try {
         this.isPreHydrating = true
-        console.log('🚀 Starting two-phase cache system: DB validation → Memory hydration...')
+        console.log('🚀 Starting intelligent cache pre-hydration...')
+        
+        // First check if server has already preloaded data on startup
+        console.log('🔍 Checking server memory status...')
+        const healthCheck = await axios.get(`${API_BASE_URL}/api/health`, {
+          timeout: 5000,
+          headers: { 'Accept': 'application/json' }
+        })
+        
+        if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
+          console.log('✅ Server already has spell data preloaded in memory!')
+          console.log('⚡ Skipping frontend pre-hydration - server memory is ready for instant responses')
+          this.isPreHydrating = false
+          return true
+        }
+        
+        // If server memory not ready, proceed with pre-hydration
+        console.log('📋 Server memory not fully loaded, proceeding with cache pre-hydration...')
         
         // Phase 1: Validate and update cache database (single source of truth)
-        console.log('📋 Phase 1: Validating cache database as single source of truth...')
         const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
           timeout: 5000,
           headers: { 'Accept': 'application/json' }
