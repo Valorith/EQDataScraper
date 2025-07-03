@@ -1,12 +1,17 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 
-// Configure API base URL - use environment variable in production, relative path in development
+// Configure API base URL - use environment variable in production, direct connection in development
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5013')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5016')
 
 export const useSpellsStore = defineStore('spells', {
   state: () => ({
+    // Track active requests to prevent duplicate API calls
+    activeRequests: new Map(),
+    // Cache pre-hydration status
+    isPreHydrating: false,
+    preHydrationProgress: { loaded: 0, total: 0 },
     classes: [
       { name: 'Warrior', id: 1, color: '#8e2d2d', colorRgb: '142, 45, 45' },
       { name: 'Cleric', id: 2, color: '#ccccff', colorRgb: '204, 204, 255' },
@@ -50,9 +55,90 @@ export const useSpellsStore = defineStore('spells', {
   },
 
   actions: {
+    // Warmup the backend connection on store initialization
+    async warmupBackend() {
+      try {
+        console.log('Warming up backend connection...')
+        await axios.get(`${API_BASE_URL}/api/health`, { 
+          timeout: 3000,
+          headers: { 'Accept': 'application/json' }
+        })
+        console.log('Backend warmup successful')
+        return true
+      } catch (error) {
+        console.warn('Backend warmup failed:', error.message)
+        return false
+      }
+    },
+
+    // Pre-hydrate spell data cache for all available classes
+    async preHydrateCache() {
+      try {
+        this.isPreHydrating = true
+        console.log('🚀 Starting comprehensive spell cache pre-hydration...')
+        
+        // Check cache status first to see what's available
+        const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+          timeout: 5000,
+          headers: { 'Accept': 'application/json' }
+        })
+        
+        const availableClasses = Object.keys(cacheStatus.data).filter(key => 
+          key !== '_config' && cacheStatus.data[key].cached === true
+        )
+        
+        console.log(`📊 Found ${availableClasses.length} cached classes:`, availableClasses)
+        
+        // Pre-load ALL available cached classes for instant navigation
+        const classesToPreload = availableClasses.map(cls => cls.toLowerCase())
+        
+        console.log(`🎯 Pre-loading ALL ${classesToPreload.length} cached classes for instant navigation:`, classesToPreload)
+        
+        this.preHydrationProgress = { loaded: 0, total: classesToPreload.length }
+        
+        // Load classes in parallel with concurrency limit
+        const batchSize = 4 // Load 4 classes at a time for comprehensive caching
+        for (let i = 0; i < classesToPreload.length; i += batchSize) {
+          const batch = classesToPreload.slice(i, i + batchSize)
+          
+          await Promise.all(batch.map(async (className) => {
+            try {
+              await this.fetchSpellsForClass(className)
+              this.preHydrationProgress.loaded++
+              console.log(`✅ Pre-loaded ${className} (${this.preHydrationProgress.loaded}/${this.preHydrationProgress.total})`)
+            } catch (error) {
+              this.preHydrationProgress.loaded++
+              console.warn(`⚠️ Failed to pre-load ${className}:`, error.message)
+            }
+          }))
+          
+          // Small delay between batches to be backend-friendly
+          if (i + batchSize < classesToPreload.length) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+        
+        console.log(`🎉 Comprehensive cache pre-hydration complete! All ${Object.keys(this.spellsData).length} available classes loaded for instant navigation`)
+        return true
+        
+      } catch (error) {
+        console.warn('Cache pre-hydration failed:', error.message)
+        return false
+      } finally {
+        this.isPreHydrating = false
+      }
+    },
+
     async fetchSpellsForClass(className, forceRefresh = false) {
       // Normalize the className to lowercase for consistent caching
       const normalizedClassName = className.toLowerCase()
+      const requestKey = `${normalizedClassName}-${forceRefresh}`
+      
+      // Return existing promise if request is already in flight
+      if (this.activeRequests.has(requestKey)) {
+        console.log(`Returning existing request for ${requestKey}`)
+        return this.activeRequests.get(requestKey)
+      }
       
       // Check for cached data first (skip if forcing refresh)
       if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
@@ -61,18 +147,35 @@ export const useSpellsStore = defineStore('spells', {
 
       this.loading = true
       this.error = null
-
+      
+      // Create and cache the request promise
+      const requestPromise = this._fetchSpellsInternal(normalizedClassName, forceRefresh)
+      this.activeRequests.set(requestKey, requestPromise)
+      
       try {
-        const apiUrl = `${API_BASE_URL}/api/spells/${className}`
+        const result = await requestPromise
+        return result
+      } finally {
+        this.activeRequests.delete(requestKey)
+      }
+    },
+
+    async _fetchSpellsInternal(normalizedClassName, forceRefresh) {
+      try {
+        const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
         
+        // Use optimized single request with longer initial timeout to avoid failed first attempts
         const response = await axios.get(apiUrl, {
-          timeout: 30000, // 30 second timeout
+          timeout: 60000, // 60 second timeout to handle both cached and fresh scraping
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json'
-          }
+          },
+          // Add connection pooling settings for better reliability
+          maxRedirects: 3,
+          validateStatus: (status) => status >= 200 && status < 300
         })
         
         // Handle the new API response format

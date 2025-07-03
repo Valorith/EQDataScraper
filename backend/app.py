@@ -675,26 +675,25 @@ def get_spells(class_name):
                 spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
                 pricing_data = get_bulk_pricing_from_db(spell_ids)
                 
-                logger.info(f"CACHED: Found {len(pricing_data)} pricing entries for {len(spell_ids)} spells")
-                
-                # Apply pricing to spells
+                # Apply pricing to spells efficiently using dictionary lookup
                 for spell in spells_cache[class_name]:
                     spell_id = str(spell.get('spell_id', ''))
-                    if spell_id in pricing_data:
-                        spell['pricing'] = pricing_data[spell_id]
+                    pricing = pricing_data.get(spell_id)
+                    if pricing:
+                        spell['pricing'] = pricing
                         applied_pricing_count += 1
-                        if pricing_data[spell_id].get('unknown') == True:
+                        if pricing.get('unknown') == True:
                             applied_failed_count += 1
             else:
                 # Fallback to in-memory lookup for file-based cache
                 if pricing_lookup:
-                    logger.info(f"CACHED: Using in-memory pricing lookup with {len(pricing_lookup)} entries")
                     for spell in spells_cache[class_name]:
                         spell_id = str(spell.get('spell_id', ''))
-                        if spell_id in pricing_lookup:
-                            spell['pricing'] = pricing_lookup[spell_id]
+                        pricing = pricing_lookup.get(spell_id)
+                        if pricing:
+                            spell['pricing'] = pricing
                             applied_pricing_count += 1
-                            if pricing_lookup[spell_id].get('unknown') == True:
+                            if pricing.get('unknown') == True:
                                 applied_failed_count += 1
             
             logger.info(f"CACHED: Applied pricing to {applied_pricing_count} spells (including {applied_failed_count} failed attempts)")
