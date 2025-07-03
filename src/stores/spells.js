@@ -219,6 +219,7 @@ export const useSpellsStore = defineStore('spells', {
       
       // Check for cached data first (skip if forcing refresh)
       if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
+        console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
         return this.spellsData[normalizedClassName]
       }
 
