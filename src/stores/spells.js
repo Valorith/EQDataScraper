@@ -192,7 +192,7 @@ export const useSpellsStore = defineStore('spells', {
         const duration = Date.now() - startTime
         logNetworkResponse('GET', healthUrl, healthCheck, duration)
         
-        if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
+        if (healthCheck.data.ready_for_instant_responses) {
           console.log('✅ Server already has spell data preloaded in memory!')
           console.log('⚡ Marking all cached classes as hydrated for instant UI updates...')
           
