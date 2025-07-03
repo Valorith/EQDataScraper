@@ -154,6 +154,7 @@
         <div v-if="!isClassHydrated(cls.name)" class="loading-indicator">
           <div class="loading-spinner"></div>
         </div>
+        <div v-if="!isClassHydrated(cls.name)" class="loading-label">Loading</div>
       </router-link>
     </div>
     
@@ -1395,7 +1396,7 @@ export default {
 /* Loading Indicator for Non-Hydrated Classes */
 .loading-indicator {
   position: absolute;
-  top: 50%;
+  top: 40%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 10;
@@ -1408,6 +1409,35 @@ export default {
   border-radius: 50%;
   border-top-color: #fff;
   animation: spin 1s linear infinite;
+}
+
+/* Stylized Loading Label */
+.loading-label {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(107, 114, 128, 0.9);
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 11;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* Refresh Message */
