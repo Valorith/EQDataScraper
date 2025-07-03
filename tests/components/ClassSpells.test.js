@@ -180,6 +180,30 @@ describe('ClassSpells Component', () => {
       
       expect(wrapper.vm.refreshingSpells).toBe(false)
     })
+
+    it('should track refresh progress when available', async () => {
+      // Mock refresh initiation
+      mockAxios.default.post.mockResolvedValueOnce({
+        data: { success: true, message: 'Refresh started', class_name: 'cleric' }
+      })
+
+      // Mock progress tracking
+      mockAxios.default.get.mockResolvedValueOnce({
+        data: {
+          stage: 'scraping',
+          progress_percentage: 20,
+          message: '🌐 Scraping fresh spell data...',
+          estimated_time_remaining: 30
+        }
+      })
+
+      await wrapper.vm.refreshSpellData()
+
+      // Should track progress if available
+      expect(mockAxios.default.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/refresh-spell-cache/cleric')
+      )
+    })
   })
 
   describe('Time Formatting', () => {
@@ -289,6 +313,138 @@ describe('ClassSpells Component', () => {
     })
   })
 
+  describe('Server Optimization Integration', () => {
+    it('should handle placeholder data correctly', async () => {
+      // Set up placeholder data from server optimization
+      store.spellsData = {
+        cleric: [{
+          _placeholder: true,
+          _serverReady: true,
+          _serverOptimized: true,
+          name: 'Cleric spells ready on server',
+          level: 0
+        }]
+      }
+      
+      store.spellsMetadata = {
+        cleric: {
+          cached: true,
+          spell_count: 219,
+          _serverOptimized: true
+        }
+      }
+
+      await wrapper.vm.$nextTick()
+
+      // Should recognize server-optimized state
+      expect(wrapper.vm.isServerOptimized).toBe(true)
+      expect(wrapper.vm.spellCount).toBe(219) // Should use metadata count, not placeholder
+    })
+
+    it('should display server optimization status', async () => {
+      store.spellsMetadata = {
+        cleric: {
+          cached: true,
+          _serverOptimized: true,
+          spell_count: 219
+        }
+      }
+
+      await wrapper.vm.$nextTick()
+
+      const statusSection = wrapper.find('.data-status-section')
+      expect(statusSection.exists()).toBe(true)
+      
+      // Should indicate server optimization
+      expect(wrapper.vm.isServerOptimized).toBe(true)
+    })
+
+    it('should handle transition from placeholder to real data', async () => {
+      // Start with placeholder
+      store.spellsData.cleric = [{
+        _placeholder: true,
+        _serverReady: true,
+        name: 'Loading...'
+      }]
+
+      await wrapper.vm.$nextTick()
+
+      // Transition to real data
+      store.spellsData.cleric = mockSpellData
+
+      await wrapper.vm.$nextTick()
+
+      // Should now show real data
+      expect(wrapper.vm.spells).toEqual(mockSpellData)
+      expect(wrapper.vm.spells[0]._placeholder).toBeUndefined()
+    })
+  })
+
+  describe('Enhanced Cache Status Display', () => {
+    it('should show comprehensive cache statistics', async () => {
+      store.spellsData.cleric = mockSpellData
+      store.spellsMetadata.cleric = {
+        cached: true,
+        last_updated: '2025-07-03T10:00:00Z',
+        spell_count: 219,
+        expired: false
+      }
+
+      // Mock cache status for pricing
+      store.cacheStatus = {
+        pricing: {
+          cached_count: 154,
+          total_spells: 219,
+          most_recent_timestamp: '2025-07-03T09:00:00Z'
+        }
+      }
+
+      await wrapper.vm.$nextTick()
+
+      const stats = wrapper.vm.realTimePricingStats
+      expect(stats.total).toBe(2) // From mockSpellData
+      expect(stats.cached).toBe(1) // Based on pricing data in mockSpellData
+    })
+
+    it('should calculate pricing statistics correctly', async () => {
+      // Set up spells with mixed pricing states
+      const mixedSpellData = [
+        { ...mockSpellData[0], pricing: { silver: 4, unknown: false } }, // Has pricing
+        { ...mockSpellData[1], pricing: { silver: 0, unknown: true } },  // Failed pricing
+        { name: 'Spell 3', spell_id: '204', pricing: null }               // No pricing
+      ]
+
+      store.spellsData.cleric = mixedSpellData
+
+      await wrapper.vm.$nextTick()
+
+      const stats = wrapper.vm.realTimePricingStats
+      expect(stats.total).toBe(3)
+      expect(stats.cached).toBe(1)      // One with actual pricing
+      expect(stats.failed).toBe(1)      // One with unknown: true
+      expect(stats.unfetched).toBe(1)   // One with null pricing
+    })
+
+    it('should update cache status in real-time', async () => {
+      // Initial state
+      store.spellsData.cleric = [{ name: 'Spell 1', spell_id: '202', pricing: null }]
+
+      await wrapper.vm.$nextTick()
+      
+      let stats = wrapper.vm.realTimePricingStats
+      expect(stats.unfetched).toBe(1)
+
+      // Update pricing data
+      store.spellsData.cleric[0].pricing = { silver: 4, unknown: false }
+
+      await wrapper.vm.$nextTick()
+
+      stats = wrapper.vm.realTimePricingStats
+      expect(stats.cached).toBe(1)
+      expect(stats.unfetched).toBe(0)
+    })
+  })
+
   describe('Performance', () => {
     it('should handle large spell datasets efficiently', async () => {
       const largeDataset = Array.from({ length: 500 }, (_, i) => ({
@@ -319,6 +475,28 @@ describe('ClassSpells Component', () => {
       
       // Should prevent multiple simultaneous refreshes
       expect(wrapper.vm.refreshingSpells).toBeDefined()
+    })
+
+    it('should handle rapid cache status updates efficiently', async () => {
+      // Simulate rapid updates
+      for (let i = 0; i < 100; i++) {
+        store.spellsData.cleric = [{ 
+          name: `Spell ${i}`, 
+          spell_id: i.toString(), 
+          pricing: { silver: i % 10, unknown: false } 
+        }]
+        
+        if (i % 10 === 0) {
+          await wrapper.vm.$nextTick()
+        }
+      }
+
+      await wrapper.vm.$nextTick()
+
+      // Should handle updates without performance issues
+      const stats = wrapper.vm.realTimePricingStats
+      expect(stats.total).toBe(1)
+      expect(stats.cached).toBe(1)
     })
   })
 })

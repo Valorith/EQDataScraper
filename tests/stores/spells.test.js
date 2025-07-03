@@ -259,4 +259,279 @@ describe('Spells Store', () => {
       expect(store.spellCount).toBe(1000)
     })
   })
+
+  describe('Cache Pre-hydration and Server Optimization', () => {
+    it('should handle server warmup with retry logic', async () => {
+      // First attempt fails, second succeeds
+      mockAxios.default.get.mockRejectedValueOnce(new Error('Connection failed'))
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse({ status: 'healthy' }))
+
+      const result = await store.warmupBackend()
+
+      expect(result).toBe(true)
+      expect(mockAxios.default.get).toHaveBeenCalledTimes(2)
+      expect(mockAxios.default.get).toHaveBeenCalledWith(
+        expect.stringContaining('/api/health'),
+        expect.objectContaining({ timeout: 10000 })
+      )
+    })
+
+    it('should handle server warmup complete failure', async () => {
+      // All attempts fail
+      mockAxios.default.get.mockRejectedValue(new Error('Server down'))
+
+      const result = await store.warmupBackend()
+
+      expect(result).toBe(false)
+      expect(mockAxios.default.get).toHaveBeenCalledTimes(3) // Max retries
+    })
+
+    it('should optimize cache when server is ready', async () => {
+      // Mock server ready response
+      const healthResponse = {
+        ready_for_instant_responses: true,
+        startup_complete: true
+      }
+      
+      const cacheStatusResponse = {
+        cleric: { cached: true, spell_count: 219, last_updated: '2025-07-03T10:00:00Z' },
+        wizard: { cached: true, spell_count: 213, last_updated: '2025-07-03T10:00:00Z' },
+        _config: { spell_cache_expiry_hours: 24 }
+      }
+
+      mockAxios.default.get
+        .mockResolvedValueOnce(mockAxiosResponse(healthResponse))
+        .mockResolvedValueOnce(mockAxiosResponse(cacheStatusResponse))
+
+      const result = await store.preHydrateCache()
+
+      expect(result).toBe(true)
+      expect(store.isPreHydrating).toBe(false)
+      
+      // Should mark cached classes as hydrated with placeholders
+      expect(store.isClassHydrated('cleric')).toBe(true)
+      expect(store.isClassHydrated('wizard')).toBe(true)
+      
+      // Check placeholder structure
+      const clericData = store.getSpellsForClass('cleric')
+      expect(clericData[0]._placeholder).toBe(true)
+      expect(clericData[0]._serverReady).toBe(true)
+      expect(clericData[0]._serverOptimized).toBe(true)
+      
+      // Check metadata
+      const clericMetadata = store.getSpellsMetadata('cleric')
+      expect(clericMetadata.cached).toBe(true)
+      expect(clericMetadata.spell_count).toBe(219)
+      expect(clericMetadata._serverOptimized).toBe(true)
+    })
+
+    it('should handle server not ready during pre-hydration', async () => {
+      // Mock server not ready
+      const healthResponse = {
+        ready_for_instant_responses: false,
+        startup_complete: false
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(healthResponse))
+      mockAxios.default.post.mockResolvedValueOnce(mockAxiosResponse({ success: true }))
+
+      const result = await store.preHydrateCache()
+
+      expect(result).toBe(true)
+      expect(mockAxios.default.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/scrape-all'),
+        {},
+        expect.objectContaining({ timeout: 180000 })
+      )
+    })
+
+    it('should handle pre-hydration errors gracefully', async () => {
+      mockAxios.default.get.mockRejectedValueOnce(new Error('Network error'))
+
+      const result = await store.preHydrateCache()
+
+      expect(result).toBe(false)
+      expect(store.isPreHydrating).toBe(false)
+    })
+
+    it('should track hydrated classes correctly', () => {
+      // Add some data
+      store.spellsData = {
+        cleric: [{ name: 'Spell 1' }],
+        wizard: [],
+        druid: [{ name: 'Spell 2' }, { name: 'Spell 3' }]
+      }
+
+      const hydratedClasses = store.getHydratedClasses
+
+      expect(hydratedClasses).toContain('cleric')
+      expect(hydratedClasses).toContain('druid')
+      expect(hydratedClasses).not.toContain('wizard') // Empty array
+    })
+  })
+
+  describe('Enhanced Spell Fetching', () => {
+    it('should detect placeholder data and fetch real data', async () => {
+      // Set up placeholder data
+      store.spellsData.cleric = [{
+        _placeholder: true,
+        _serverReady: true,
+        _serverOptimized: true,
+        name: 'Cleric spells ready on server',
+        level: 0
+      }]
+
+      const realSpellData = mockSpellData
+      const response = {
+        spells: realSpellData,
+        cached: true,
+        last_updated: '2025-07-03T10:00:00Z',
+        spell_count: 2
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+
+      const result = await store.fetchSpellsForClass('cleric')
+
+      expect(mockAxios.default.get).toHaveBeenCalledWith(
+        expect.stringContaining('/api/spells/cleric'),
+        expect.objectContaining({
+          timeout: 10000, // Shorter timeout for server-optimized data
+          headers: expect.objectContaining({
+            'Accept': 'application/json'
+          })
+        })
+      )
+
+      expect(result).toEqual(realSpellData)
+      expect(store.spellsData.cleric).toEqual(realSpellData)
+    })
+
+    it('should handle server optimization timeout differently', async () => {
+      // Non-optimized data should use longer timeout
+      const response = {
+        spells: mockSpellData,
+        cached: false,
+        spell_count: 2
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+
+      await store.fetchSpellsForClass('cleric')
+
+      expect(mockAxios.default.get).toHaveBeenCalledWith(
+        expect.stringContaining('/api/spells/cleric'),
+        expect.objectContaining({
+          timeout: 60000 // Longer timeout for fresh scraping
+        })
+      )
+    })
+
+    it('should prevent duplicate requests with active request tracking', async () => {
+      const response = {
+        spells: mockSpellData,
+        spell_count: 2
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+
+      // Start multiple requests simultaneously
+      const promise1 = store.fetchSpellsForClass('cleric')
+      const promise2 = store.fetchSpellsForClass('cleric')
+      const promise3 = store.fetchSpellsForClass('cleric')
+
+      const results = await Promise.all([promise1, promise2, promise3])
+
+      // Should only make one API call
+      expect(mockAxios.default.get).toHaveBeenCalledTimes(1)
+      
+      // All promises should resolve to the same data
+      expect(results[0]).toEqual(results[1])
+      expect(results[1]).toEqual(results[2])
+    })
+
+    it('should store comprehensive metadata from API response', async () => {
+      const response = {
+        spells: mockSpellData,
+        cached: true,
+        last_updated: '2025-07-03T10:00:00Z',
+        spell_count: 219,
+        expired: false,
+        stale: false
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+
+      await store.fetchSpellsForClass('cleric')
+
+      const metadata = store.getSpellsMetadata('cleric')
+      expect(metadata.cached).toBe(true)
+      expect(metadata.last_updated).toBe('2025-07-03T10:00:00Z')
+      expect(metadata.spell_count).toBe(219)
+      expect(metadata.expired).toBe(false)
+      expect(metadata.stale).toBe(false)
+    })
+
+    it('should handle stale cache warnings', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      
+      const response = {
+        spells: mockSpellData,
+        stale: true,
+        message: 'Cache is stale, consider refreshing'
+      }
+
+      mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+
+      await store.fetchSpellsForClass('cleric')
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Stale data warning: Cache is stale, consider refreshing')
+      
+      consoleWarnSpy.mockRestore()
+    })
+  })
+
+  describe('Force Refresh Functionality', () => {
+    it('should clear memory and trigger server refresh', async () => {
+      // Set up initial data
+      store.spellsData = { cleric: [{ name: 'Old spell' }] }
+      store.spellsMetadata = { cleric: { cached: true } }
+
+      // Mock successful server refresh
+      const healthResponse = {
+        ready_for_instant_responses: true,
+        startup_complete: true
+      }
+      
+      const cacheStatusResponse = {
+        cleric: { cached: true, spell_count: 219, last_updated: '2025-07-03T11:00:00Z' },
+        _config: {}
+      }
+
+      mockAxios.default.post.mockResolvedValueOnce(mockAxiosResponse({ success: true }))
+      mockAxios.default.get
+        .mockResolvedValueOnce(mockAxiosResponse(healthResponse))
+        .mockResolvedValueOnce(mockAxiosResponse(cacheStatusResponse))
+
+      const result = await store.forceRefreshAllData()
+
+      expect(result).toBe(true)
+      expect(mockAxios.default.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/scrape-all'),
+        {},
+        expect.objectContaining({ timeout: 300000 })
+      )
+
+      // Should have new placeholder data
+      expect(store.isClassHydrated('cleric')).toBe(true)
+      const clericData = store.getSpellsForClass('cleric')
+      expect(clericData[0]._placeholder).toBe(true)
+    })
+
+    it('should handle force refresh errors', async () => {
+      mockAxios.default.post.mockRejectedValueOnce(new Error('Server error'))
+
+      await expect(store.forceRefreshAllData()).rejects.toThrow('Server error')
+    })
+  })
 })

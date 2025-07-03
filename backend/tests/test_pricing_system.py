@@ -190,8 +190,8 @@ class TestAPIEndpoints:
         with patch('app.scrape_class') as mock_scrape:
             # Set up cache data with proper class name
             app.spells_cache.clear()
-            app.spells_cache['Cleric'] = sample_spell_data
-            app.cache_timestamp['Cleric'] = datetime.now().isoformat()
+            app.spells_cache['cleric'] = sample_spell_data  # Use lowercase for consistency
+            app.cache_timestamp['cleric'] = datetime.now().isoformat()
             
             # Add pricing data
             for spell_id in ['202', '203']:

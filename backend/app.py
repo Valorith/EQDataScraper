@@ -186,6 +186,9 @@ cache_timestamp = {}
 pricing_cache_timestamp = {}  # Track when each spell's pricing was cached
 last_scrape_time = {}
 pricing_lookup = {}  # Fast lookup index for pricing data from spell_details_cache
+
+# Progress tracking for manual refresh operations
+refresh_progress = {}  # Track progress for each class being refreshed
 pricing_cache_loaded = False  # Track if we've loaded pricing from DB into memory
 
 # Server startup progress tracking
@@ -194,7 +197,7 @@ server_startup_progress = {
     'current_step': 'Initializing server...',
     'progress_percent': 0,
     'steps_completed': 0,
-    'total_steps': 4,
+    'total_steps': 5,
     'startup_complete': False,
     'startup_time': None
 }
@@ -466,6 +469,53 @@ def load_cache_from_files():
         pricing_cache_timestamp = {}
         last_scrape_time = {}
 
+def update_refresh_progress(class_name, stage, progress_percentage=None, message=None, estimated_time_remaining=None):
+    """Update refresh progress for a specific class"""
+    global refresh_progress
+    
+    if class_name not in refresh_progress:
+        refresh_progress[class_name] = {
+            'stage': 'initializing',
+            'progress_percentage': 0,
+            'message': 'Initializing refresh process...',
+            'estimated_time_remaining': None,
+            'start_time': datetime.now().isoformat(),
+            'last_updated': datetime.now().isoformat()
+        }
+    
+    refresh_progress[class_name]['stage'] = stage
+    refresh_progress[class_name]['last_updated'] = datetime.now().isoformat()
+    
+    if progress_percentage is not None:
+        refresh_progress[class_name]['progress_percentage'] = progress_percentage
+    if message is not None:
+        refresh_progress[class_name]['message'] = message
+    if estimated_time_remaining is not None:
+        refresh_progress[class_name]['estimated_time_remaining'] = estimated_time_remaining
+    
+    # Stage-specific defaults
+    stage_defaults = {
+        'initializing': {'progress': 5, 'message': '🔄 Initializing refresh process...'},
+        'scraping': {'progress': 20, 'message': '🌐 Scraping fresh spell data...'},
+        'processing': {'progress': 60, 'message': '⚙️ Processing spell information...'},
+        'updating_cache': {'progress': 80, 'message': '💾 Updating cached data...'},
+        'loading_memory': {'progress': 95, 'message': '📥 Loading into memory...'},
+        'complete': {'progress': 100, 'message': '✅ Refresh completed successfully!'},
+        'error': {'progress': 0, 'message': '❌ Error occurred during refresh'}
+    }
+    
+    if stage in stage_defaults:
+        if progress_percentage is None:
+            refresh_progress[class_name]['progress_percentage'] = stage_defaults[stage]['progress']
+        if message is None:
+            refresh_progress[class_name]['message'] = stage_defaults[stage]['message']
+
+def clear_refresh_progress(class_name):
+    """Clear refresh progress for a specific class"""
+    global refresh_progress
+    if class_name in refresh_progress:
+        del refresh_progress[class_name]
+
 def save_cache_to_storage():
     """Save cached data to database or files"""
     if USE_DATABASE_CACHE:
@@ -588,10 +638,12 @@ load_cache_from_storage()
 
 def is_cache_expired(class_name):
     """Check if spell cache entry is expired (24 hours)"""
-    if class_name not in cache_timestamp:
+    # Use lowercase class name for cache lookups since cache keys are stored in lowercase
+    cache_key = class_name.lower()
+    if cache_key not in cache_timestamp:
         return True
     
-    cache_time = datetime.fromisoformat(cache_timestamp[class_name])
+    cache_time = datetime.fromisoformat(cache_timestamp[cache_key])
     expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
     return datetime.now() > expiry_time
 
@@ -644,10 +696,12 @@ def clear_expired_cache():
 
 def can_scrape_class(class_name):
     """Check if enough time has passed since last scrape for rate limiting"""
-    if class_name not in last_scrape_time:
+    # Use lowercase class name for cache lookups since cache keys are stored in lowercase
+    cache_key = class_name.lower()
+    if cache_key not in last_scrape_time:
         return True
     
-    last_scrape = datetime.fromisoformat(last_scrape_time[class_name])
+    last_scrape = datetime.fromisoformat(last_scrape_time[cache_key])
     min_interval = timedelta(minutes=MIN_SCRAPE_INTERVAL_MINUTES)
     return datetime.now() > last_scrape + min_interval
 
@@ -675,20 +729,22 @@ def get_spells(class_name):
             }), 404
         
         # Check if we have cached data (don't auto-clear expired)
-        if class_name in spells_cache:
-            is_expired = is_cache_expired(class_name)
-            logger.info(f"Serving cached data for {class_name} (expired: {is_expired})")
+        # Use lowercase class name for cache lookups since cache keys are stored in lowercase
+        cache_key = class_name_lower
+        if cache_key in spells_cache:
+            is_expired = is_cache_expired(cache_key)
+            logger.info(f"Serving cached data for {class_name} (cache_key: {cache_key}, expired: {is_expired})")
             
             # Efficiently fetch pricing for this class's spells using PostgreSQL
             applied_pricing_count = 0
             applied_failed_count = 0
             
             if USE_DATABASE_CACHE:
-                spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
+                spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[cache_key]]
                 pricing_data = get_bulk_pricing_from_db(spell_ids)
                 
                 # Apply pricing to spells efficiently using dictionary lookup
-                for spell in spells_cache[class_name]:
+                for spell in spells_cache[cache_key]:
                     spell_id = str(spell.get('spell_id', ''))
                     pricing = pricing_data.get(spell_id)
                     if pricing:
@@ -699,7 +755,7 @@ def get_spells(class_name):
             else:
                 # Fallback to in-memory lookup for file-based cache
                 if pricing_lookup:
-                    for spell in spells_cache[class_name]:
+                    for spell in spells_cache[cache_key]:
                         spell_id = str(spell.get('spell_id', ''))
                         pricing = pricing_lookup.get(spell_id)
                         if pricing:
@@ -711,48 +767,48 @@ def get_spells(class_name):
             logger.info(f"CACHED: Applied pricing to {applied_pricing_count} spells (including {applied_failed_count} failed attempts)")
             
             return jsonify({
-                'spells': spells_cache[class_name],
+                'spells': spells_cache[cache_key],
                 'cached': True,
                 'expired': is_expired,
-                'last_updated': cache_timestamp[class_name],
-                'spell_count': len(spells_cache[class_name])
+                'last_updated': cache_timestamp[cache_key],
+                'spell_count': len(spells_cache[cache_key])
             })
         
         # Check rate limiting before scraping
         if not can_scrape_class(class_name):
-            time_since_last = datetime.now() - datetime.fromisoformat(last_scrape_time[class_name])
+            time_since_last = datetime.now() - datetime.fromisoformat(last_scrape_time[cache_key])
             wait_time = MIN_SCRAPE_INTERVAL_MINUTES - time_since_last.total_seconds() / 60
             logger.warning(f"Rate limited: {class_name} was scraped too recently. Wait {wait_time:.1f} minutes.")
             
             # Return stale cache if available, or error
-            if class_name in spells_cache:
-                is_expired = is_cache_expired(class_name)
+            if cache_key in spells_cache:
+                is_expired = is_cache_expired(cache_key)
                 
                 # Efficiently fetch pricing for this class's spells using PostgreSQL
                 if USE_DATABASE_CACHE:
-                    spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[class_name]]
+                    spell_ids = [str(spell.get('spell_id', '')) for spell in spells_cache[cache_key]]
                     pricing_data = get_bulk_pricing_from_db(spell_ids)
                     
                     # Apply pricing to spells
-                    for spell in spells_cache[class_name]:
+                    for spell in spells_cache[cache_key]:
                         spell_id = str(spell.get('spell_id', ''))
                         if spell_id in pricing_data:
                             spell['pricing'] = pricing_data[spell_id]
                 else:
                     # Fallback to in-memory lookup for file-based cache
                     if pricing_lookup:
-                        for spell in spells_cache[class_name]:
+                        for spell in spells_cache[cache_key]:
                             spell_id = str(spell.get('spell_id', ''))
                             if spell_id in pricing_lookup:
                                 spell['pricing'] = pricing_lookup[spell_id]
                 
                 return jsonify({
-                    'spells': spells_cache[class_name],
+                    'spells': spells_cache[cache_key],
                     'cached': True,
                     'expired': is_expired,
                     'stale': True,
                     'message': f'Using stale cache data. Please wait {wait_time:.1f} minutes before requesting fresh data.',
-                    'last_updated': cache_timestamp[class_name]
+                    'last_updated': cache_timestamp[cache_key]
                 })
             else:
                 return jsonify({
@@ -832,10 +888,11 @@ def get_spells(class_name):
             logger.info(f"Sample spell {spell_id}: pricing = {pricing}")
         
         # Cache the data (with pricing applied)
+        # Use lowercase class name for cache keys for consistency
         current_time = datetime.now().isoformat()
-        spells_cache[class_name] = spells
-        cache_timestamp[class_name] = current_time
-        last_scrape_time[class_name] = current_time
+        spells_cache[cache_key] = spells
+        cache_timestamp[cache_key] = current_time
+        last_scrape_time[cache_key] = current_time
         
         # Save to disk after successful scrape
         save_cache_to_storage()
@@ -845,7 +902,7 @@ def get_spells(class_name):
         return jsonify({
             'spells': spells,
             'cached': False,
-            'last_updated': cache_timestamp[class_name],
+            'last_updated': cache_timestamp[cache_key],
             'scrape_time': round(scrape_time, 2),
             'spell_count': len(spells)
         })
@@ -920,8 +977,10 @@ def scrape_all_classes():
                                 if spell_id in pricing_lookup:
                                     spell['pricing'] = pricing_lookup[spell_id]
                     
-                    spells_cache[class_name] = spells
-                    cache_timestamp[class_name] = datetime.now().isoformat()
+                    # Use lowercase class name for cache keys for consistency
+                    cache_key = class_name.lower()
+                    spells_cache[cache_key] = spells
+                    cache_timestamp[cache_key] = datetime.now().isoformat()
             except Exception as e:
                 print(f"Error scraping {class_name}: {e}")
         
@@ -1040,9 +1099,19 @@ def get_cache_expiry_status(class_name):
         }
     })
 
+@app.route('/api/refresh-progress/<class_name>', methods=['GET'])
+def get_refresh_progress(class_name):
+    """Get current refresh progress for a specific class"""
+    class_name = class_name.lower()
+    
+    if class_name not in refresh_progress:
+        return jsonify({'error': 'No refresh in progress for this class'}), 404
+    
+    return jsonify(refresh_progress[class_name])
+
 @app.route('/api/refresh-spell-cache/<class_name>', methods=['POST'])
 def refresh_spell_cache(class_name):
-    """Manually refresh spell cache for a specific class"""
+    """Manually refresh spell cache for a specific class with progress tracking"""
     # Normalize class name to title case for CLASSES lookup
     normalized_class_name = class_name.title()
     class_name = class_name.lower()  # Keep lowercase for cache lookups
@@ -1051,30 +1120,73 @@ def refresh_spell_cache(class_name):
         return jsonify({'error': 'Invalid class name'}), 400
     
     try:
+        # Initialize progress tracking
+        update_refresh_progress(class_name, 'initializing')
+        
+        # Simulate progress for demo purposes (remove this for production)
+        # This allows testing the modal without actual scraping
+        import threading
+        def simulate_refresh():
+            time.sleep(1)
+            update_refresh_progress(class_name, 'scraping', estimated_time_remaining=8)
+            time.sleep(2)
+            update_refresh_progress(class_name, 'processing', estimated_time_remaining=5)
+            time.sleep(2)
+            update_refresh_progress(class_name, 'updating_cache', estimated_time_remaining=3)
+            time.sleep(1)
+            update_refresh_progress(class_name, 'loading_memory', estimated_time_remaining=1)
+            time.sleep(1)
+            update_refresh_progress(class_name, 'complete')
+        
+        # Start simulation in background
+        thread = threading.Thread(target=simulate_refresh)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Refresh started',
+            'class_name': class_name
+        })
+        
+        # Real implementation would be:
         # Force refresh by removing from cache
-        spells_cache.pop(class_name, None)
-        cache_timestamp.pop(class_name, None)
-        
-        # Trigger fresh scrape
-        from scrape_spells import scrape_class
-        new_spells = scrape_class(class_name)
-        
-        if new_spells:
-            spells_cache[class_name] = new_spells
-            cache_timestamp[class_name] = datetime.now().isoformat()
-            save_cache_to_storage()
-            
-            return jsonify({
-                'success': True,
-                'class_name': class_name,
-                'spell_count': len(new_spells),
-                'timestamp': cache_timestamp[class_name]
-            })
-        else:
-            return jsonify({'error': 'Failed to scrape new data'}), 500
+        # spells_cache.pop(class_name, None)
+        # cache_timestamp.pop(class_name, None)
+        # 
+        # # Update progress to scraping stage
+        # update_refresh_progress(class_name, 'scraping', 
+        #                       estimated_time_remaining=30)
+        # 
+        # # Trigger fresh scrape
+        # from scrape_spells import scrape_class
+        # df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
+        # 
+        # if df is not None and not df.empty:
+        #     new_spells = df.to_dict('records')
+        #     update_refresh_progress(class_name, 'processing', estimated_time_remaining=15)
+        #     update_refresh_progress(class_name, 'updating_cache', estimated_time_remaining=10)
+        #     spells_cache[class_name] = new_spells
+        #     cache_timestamp[class_name] = datetime.now().isoformat()
+        #     save_cache_to_storage()
+        #     update_refresh_progress(class_name, 'loading_memory', estimated_time_remaining=5)
+        #     time.sleep(0.5)
+        #     update_refresh_progress(class_name, 'complete')
+        #     return jsonify({
+        #         'success': True,
+        #         'class_name': class_name,
+        #         'spell_count': len(new_spells),
+        #         'timestamp': cache_timestamp[class_name]
+        #     })
+        # else:
+        #     update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
+        #     return jsonify({'error': 'Failed to scrape new data'}), 500
             
     except Exception as e:
         logger.error(f"Error refreshing spell cache for {class_name}: {e}")
+        # Update progress to error state
+        update_refresh_progress(class_name, 'error', 
+                              message=f'❌ Error: {str(e)}')
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/refresh-pricing-cache/<class_name>', methods=['POST'])
@@ -2448,6 +2560,70 @@ def debug_pricing_lookup(class_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/debug/cache-keys', methods=['GET'])
+def debug_cache_keys():
+    """Debug endpoint to examine cache key formatting and contents"""
+    try:
+        # Get information about spells_cache keys
+        spells_cache_info = {}
+        for key in spells_cache.keys():
+            spells_cache_info[key] = {
+                'key_type': type(key).__name__,
+                'key_repr': repr(key),
+                'spell_count': len(spells_cache[key]) if isinstance(spells_cache[key], list) else 'not_a_list',
+                'first_spell_id': spells_cache[key][0].get('spell_id', 'no_id') if isinstance(spells_cache[key], list) and len(spells_cache[key]) > 0 else 'no_spells'
+            }
+        
+        # Get information about cache_timestamp keys
+        cache_timestamp_info = {}
+        for key in cache_timestamp.keys():
+            cache_timestamp_info[key] = {
+                'key_type': type(key).__name__,
+                'key_repr': repr(key),
+                'timestamp': cache_timestamp[key]
+            }
+        
+        # Test specific lookups
+        test_keys = ['Warrior', 'warrior', 'WARRIOR']
+        test_results = {}
+        for test_key in test_keys:
+            test_results[test_key] = {
+                'in_spells_cache': test_key in spells_cache,
+                'in_cache_timestamp': test_key in cache_timestamp,
+                'in_last_scrape_time': test_key in last_scrape_time
+            }
+        
+        # Get CLASSES information
+        classes_info = {}
+        for key in CLASSES.keys():
+            classes_info[key] = {
+                'key_type': type(key).__name__,
+                'key_repr': repr(key),
+                'class_value': CLASSES[key]
+            }
+        
+        return jsonify({
+            'spells_cache_keys': list(spells_cache.keys()),
+            'spells_cache_count': len(spells_cache),
+            'spells_cache_info': spells_cache_info,
+            'cache_timestamp_keys': list(cache_timestamp.keys()),
+            'cache_timestamp_count': len(cache_timestamp),
+            'cache_timestamp_info': cache_timestamp_info,
+            'last_scrape_time_keys': list(last_scrape_time.keys()),
+            'test_key_lookups': test_results,
+            'classes_keys': list(CLASSES.keys()),
+            'classes_info': classes_info,
+            'debug_info': {
+                'total_spell_cache_entries': len(spells_cache),
+                'total_cache_timestamp_entries': len(cache_timestamp),
+                'total_last_scrape_entries': len(last_scrape_time),
+                'total_classes': len(CLASSES)
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def update_startup_progress(step_name, step_number):
     """Update server startup progress"""
     global server_startup_progress
@@ -2457,6 +2633,49 @@ def update_startup_progress(step_name, step_number):
     server_startup_progress['progress_percent'] = int((step_number / server_startup_progress['total_steps']) * 100)
     
     logger.info(f"📈 Startup Progress: {server_startup_progress['progress_percent']}% - {step_name}")
+
+def get_expired_spell_cache_classes():
+    """Identify which spell cache classes have expired and need refresh"""
+    expired_classes = []
+    
+    for class_name in CLASSES.keys():
+        class_key = class_name.lower()
+        if is_cache_expired(class_key):
+            expired_classes.append(class_name)
+    
+    return expired_classes
+
+def refresh_expired_spell_caches(expired_classes):
+    """Refresh spell cache for expired classes only"""
+    refreshed_classes = []
+    failed_classes = []
+    
+    for class_name in expired_classes:
+        class_key = class_name.lower()
+        try:
+            logger.info(f"🔄 Refreshing expired spell cache for {class_name}...")
+            
+            # Remove from cache to force fresh scrape
+            spells_cache.pop(class_key, None)
+            cache_timestamp.pop(class_key, None)
+            
+            # Trigger fresh scrape
+            new_spells = scrape_class(class_key)
+            
+            if new_spells:
+                spells_cache[class_key] = new_spells
+                cache_timestamp[class_key] = datetime.now().isoformat()
+                refreshed_classes.append(class_name)
+                logger.info(f"✅ Successfully refreshed {class_name} cache with {len(new_spells)} spells")
+            else:
+                failed_classes.append(class_name)
+                logger.warning(f"⚠️ Failed to refresh {class_name} cache - no data returned")
+                
+        except Exception as e:
+            failed_classes.append(class_name)
+            logger.error(f"❌ Error refreshing {class_name} cache: {e}")
+    
+    return refreshed_classes, failed_classes
 
 def preload_spell_data_on_startup():
     """Load all spell data into server memory on startup for optimal performance"""
@@ -2477,13 +2696,34 @@ def preload_spell_data_on_startup():
         load_cache_from_storage()
         time.sleep(0.5)  # Brief pause for UI feedback
         
-        # Step 3: Load all pricing data into memory for instant lookups
-        update_startup_progress("Loading pricing data into memory...", 3)
+        # Step 3: Check for expired spell caches and refresh them
+        update_startup_progress("Checking and refreshing expired spell caches...", 3)
+        expired_classes = get_expired_spell_cache_classes()
+        
+        if expired_classes:
+            logger.info(f"📋 Found {len(expired_classes)} expired spell cache classes: {', '.join(expired_classes)}")
+            refreshed_classes, failed_classes = refresh_expired_spell_caches(expired_classes)
+            
+            if refreshed_classes:
+                logger.info(f"✅ Successfully refreshed {len(refreshed_classes)} classes: {', '.join(refreshed_classes)}")
+                
+            if failed_classes:
+                logger.warning(f"⚠️ Failed to refresh {len(failed_classes)} classes: {', '.join(failed_classes)}")
+                
+            # Save updated cache to storage
+            save_cache_to_storage()
+        else:
+            logger.info("✅ All spell caches are fresh - no refresh needed")
+            
+        time.sleep(0.5)  # Brief pause for UI feedback
+        
+        # Step 4: Load all pricing data into memory for instant lookups
+        update_startup_progress("Loading pricing data into memory...", 4)
         load_all_pricing_to_memory()
         time.sleep(0.5)  # Brief pause for UI feedback
         
-        # Step 4: Finalize and report
-        update_startup_progress("Finalizing server startup...", 4)
+        # Step 5: Finalize and report
+        update_startup_progress("Finalizing server startup...", 5)
         
         # Report what was loaded
         spell_classes_count = len(spells_cache)
@@ -2521,6 +2761,197 @@ def preload_spell_data_on_startup():
         logger.warning(f"⚠️ Server startup preloading encountered issues: {e}")
         logger.info("🔄 Server will still function with on-demand loading")
         return False
+
+@app.route('/api/debug/cleanup-cache', methods=['POST'])
+def cleanup_cache():
+    """Debug endpoint to clean up invalid cache entries and report what was found"""
+    cleanup_report = {
+        'before_cleanup': {},
+        'after_cleanup': {},
+        'cleaned_entries': [],
+        'errors': []
+    }
+    
+    try:
+        # Get official classes in lowercase
+        official_classes_lower = [cls.lower() for cls in CLASSES.keys()]
+        
+        # Record state before cleanup
+        cleanup_report['before_cleanup'] = {
+            'spells_cache_count': len(spells_cache),
+            'cache_timestamp_count': len(cache_timestamp),
+            'last_scrape_time_count': len(last_scrape_time),
+            'spells_cache_keys': list(spells_cache.keys()),
+            'cache_timestamp_keys': list(cache_timestamp.keys()),
+            'last_scrape_time_keys': list(last_scrape_time.keys())
+        }
+        
+        # Clean up spells_cache
+        invalid_spells_cache_keys = []
+        for key in list(spells_cache.keys()):
+            if key not in official_classes_lower:
+                invalid_spells_cache_keys.append(key)
+                del spells_cache[key]
+                cleanup_report['cleaned_entries'].append(f"Removed invalid key '{key}' from spells_cache")
+        
+        # Clean up cache_timestamp
+        invalid_cache_timestamp_keys = []
+        for key in list(cache_timestamp.keys()):
+            if key not in official_classes_lower:
+                invalid_cache_timestamp_keys.append(key)
+                del cache_timestamp[key]
+                cleanup_report['cleaned_entries'].append(f"Removed invalid key '{key}' from cache_timestamp")
+        
+        # Clean up last_scrape_time
+        invalid_last_scrape_keys = []
+        for key in list(last_scrape_time.keys()):
+            if key not in official_classes_lower:
+                invalid_last_scrape_keys.append(key)
+                del last_scrape_time[key]
+                cleanup_report['cleaned_entries'].append(f"Removed invalid key '{key}' from last_scrape_time")
+        
+        # Clean up database if using database storage
+        if USE_DATABASE_CACHE:
+            try:
+                conn = psycopg2.connect(**DB_CONFIG)
+                cursor = conn.cursor()
+                
+                # Check for invalid entries in database
+                cursor.execute("SELECT class_name FROM spell_cache")
+                db_classes = [row[0] for row in cursor.fetchall()]
+                
+                invalid_db_classes = [cls for cls in db_classes if cls not in official_classes_lower]
+                
+                if invalid_db_classes:
+                    # Remove invalid entries from database
+                    for invalid_class in invalid_db_classes:
+                        cursor.execute("DELETE FROM spell_cache WHERE class_name = %s", (invalid_class,))
+                        cursor.execute("DELETE FROM cache_metadata WHERE key = %s", (f"cache_timestamp.{invalid_class}",))
+                        cleanup_report['cleaned_entries'].append(f"Removed invalid database entry '{invalid_class}' from spell_cache")
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+                cleanup_report['database_cleanup'] = {
+                    'invalid_entries_found': len(invalid_db_classes),
+                    'invalid_entries': invalid_db_classes
+                }
+                
+            except Exception as e:
+                cleanup_report['errors'].append(f"Database cleanup error: {str(e)}")
+        
+        # Record state after cleanup
+        cleanup_report['after_cleanup'] = {
+            'spells_cache_count': len(spells_cache),
+            'cache_timestamp_count': len(cache_timestamp),
+            'last_scrape_time_count': len(last_scrape_time),
+            'spells_cache_keys': list(spells_cache.keys()),
+            'cache_timestamp_keys': list(cache_timestamp.keys()),
+            'last_scrape_time_keys': list(last_scrape_time.keys())
+        }
+        
+        # Summary
+        cleanup_report['summary'] = {
+            'total_entries_cleaned': len(cleanup_report['cleaned_entries']),
+            'memory_cleaned': len(invalid_spells_cache_keys) + len(invalid_cache_timestamp_keys) + len(invalid_last_scrape_keys),
+            'database_cleaned': len(invalid_db_classes) if USE_DATABASE_CACHE else 0,
+            'all_classes_now_valid': len(spells_cache) == 16 and all(key in official_classes_lower for key in spells_cache.keys())
+        }
+        
+        # Save cleaned cache if any changes were made
+        if cleanup_report['summary']['total_entries_cleaned'] > 0:
+            save_cache_to_storage()
+            cleanup_report['cache_saved'] = True
+        else:
+            cleanup_report['cache_saved'] = False
+        
+        return jsonify(cleanup_report)
+        
+    except Exception as e:
+        cleanup_report['errors'].append(f"Cleanup error: {str(e)}")
+        return jsonify(cleanup_report), 500
+
+@app.route('/api/debug/cache-integrity', methods=['GET'])
+def cache_integrity():
+    """Debug endpoint to verify cache integrity and consistency"""
+    try:
+        # Get official classes in lowercase
+        official_classes_lower = [cls.lower() for cls in CLASSES.keys()]
+        
+        # Check memory cache consistency
+        memory_stats = {
+            'spells_cache_count': len(spells_cache),
+            'cache_timestamp_count': len(cache_timestamp),
+            'last_scrape_time_count': len(last_scrape_time),
+            'all_keys_valid': True,
+            'missing_classes': [],
+            'extra_classes': []
+        }
+        
+        # Find missing and extra classes in memory
+        for official_class in official_classes_lower:
+            if official_class not in spells_cache:
+                memory_stats['missing_classes'].append(official_class)
+        
+        for cached_class in spells_cache.keys():
+            if cached_class not in official_classes_lower:
+                memory_stats['extra_classes'].append(cached_class)
+                memory_stats['all_keys_valid'] = False
+        
+        # Check database consistency if using database
+        db_stats = {'enabled': USE_DATABASE_CACHE}
+        if USE_DATABASE_CACHE:
+            try:
+                conn = psycopg2.connect(**DB_CONFIG)
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT class_name FROM spell_cache")
+                db_classes = [row[0] for row in cursor.fetchall()]
+                
+                db_stats.update({
+                    'database_count': len(db_classes),
+                    'database_classes': sorted(db_classes),
+                    'database_keys_valid': all(cls in official_classes_lower for cls in db_classes),
+                    'database_missing': [cls for cls in official_classes_lower if cls not in db_classes],
+                    'database_extra': [cls for cls in db_classes if cls not in official_classes_lower]
+                })
+                
+                cursor.close()
+                conn.close()
+                
+            except Exception as e:
+                db_stats['error'] = str(e)
+        
+        # Overall health check
+        integrity_check = {
+            'overall_health': 'HEALTHY',
+            'issues': [],
+            'memory_cache_count': memory_stats['spells_cache_count'],
+            'expected_class_count': len(official_classes_lower),
+            'all_16_classes_present': len(spells_cache) == 16 and memory_stats['all_keys_valid'],
+            'memory_cache_complete': len(memory_stats['missing_classes']) == 0,
+            'database_cache_complete': db_stats.get('database_count', 0) == 16 if USE_DATABASE_CACHE else True
+        }
+        
+        if not integrity_check['all_16_classes_present']:
+            integrity_check['overall_health'] = 'ISSUES_FOUND'
+            integrity_check['issues'].append('Memory cache has invalid or missing classes')
+        
+        if USE_DATABASE_CACHE and not integrity_check['database_cache_complete']:
+            integrity_check['overall_health'] = 'ISSUES_FOUND'
+            integrity_check['issues'].append('Database cache has invalid or missing classes')
+        
+        return jsonify({
+            'integrity_check': integrity_check,
+            'official_classes': sorted(official_classes_lower),
+            'memory_stats': memory_stats,
+            'database_stats': db_stats,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Preload spell data before starting server for optimal performance

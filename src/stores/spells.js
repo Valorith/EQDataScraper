@@ -115,89 +115,112 @@ export const useSpellsStore = defineStore('spells', {
         
         if (healthCheck.data.ready_for_instant_responses && healthCheck.data.startup_complete) {
           console.log('✅ Server already has spell data preloaded in memory!')
-          console.log('⚡ Skipping frontend pre-hydration - server memory is ready for instant responses')
+          console.log('⚡ Marking all cached classes as hydrated for instant UI updates...')
+          
+          // Get cache status to identify all cached classes
+          const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+            timeout: 5000,
+            headers: { 'Accept': 'application/json' }
+          })
+          
+          const cachedClasses = Object.keys(cacheStatus.data)
+            .filter(key => key !== '_config' && cacheStatus.data[key].cached === true)
+          
+          console.log(`🎯 Marking ${cachedClasses.length} cached classes as hydrated:`, cachedClasses)
+          
+          // Mark all cached classes as hydrated with lightweight placeholder data
+          // This updates UI state without heavy data loading since server has everything ready
+          for (const className of cachedClasses) {
+            const normalizedClassName = className.toLowerCase()
+            
+            // Create lightweight placeholder that marks the class as "hydrated" for UI
+            // Real data will be loaded instantly from server memory when class is accessed
+            this.spellsData[normalizedClassName] = [{
+              _placeholder: true,
+              _serverReady: true,
+              _serverOptimized: true,
+              name: `${className} spells ready on server`,
+              level: 0
+            }]
+            
+            // Store cache metadata
+            this.spellsMetadata[normalizedClassName] = {
+              last_updated: cacheStatus.data[className].last_updated,
+              cached: true,
+              expired: false,
+              spell_count: cacheStatus.data[className].spell_count,
+              stale: false,
+              _serverOptimized: true
+            }
+          }
+          
           this.isPreHydrating = false
+          console.log(`🎉 Server optimization complete! All ${cachedClasses.length} classes marked as ready for instant loading`)
           return true
         }
         
-        // If server memory not ready, proceed with pre-hydration
-        console.log('📋 Server memory not fully loaded, proceeding with cache pre-hydration...')
+        // If server memory not ready, proceed with simplified pre-hydration
+        console.log('📋 Server memory not fully loaded, proceeding with simplified cache pre-hydration...')
         
-        // Phase 1: Validate and update cache database (single source of truth)
-        const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
-          timeout: 5000,
-          headers: { 'Accept': 'application/json' }
-        })
-        
-        const allClasses = Object.keys(cacheStatus.data).filter(key => key !== '_config')
-        const cachedClasses = allClasses.filter(cls => cacheStatus.data[cls].cached === true)
-        const uncachedClasses = allClasses.filter(cls => cacheStatus.data[cls].cached === false)
-        
-        console.log(`📊 Cache DB Status: ${cachedClasses.length} cached, ${uncachedClasses.length} uncached`)
-        
-        // If there are uncached classes, update the cache database first
-        if (uncachedClasses.length > 0) {
-          console.log(`🔄 Updating cache database for ${uncachedClasses.length} uncached classes...`)
-          try {
-            await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
-              timeout: 180000, // 3 minutes for cache updates
-              headers: { 'Accept': 'application/json' }
-            })
-            console.log('✅ Cache database updated successfully')
+        // Since server handles cache refresh on startup, we just need to trigger a refresh
+        // The server will handle cache database updates and memory loading
+        console.log('🔄 Triggering server-side cache refresh...')
+        try {
+          await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
+            timeout: 180000, // 3 minutes for cache updates
+            headers: { 'Accept': 'application/json' }
+          })
+          console.log('✅ Server-side cache refresh completed')
+          
+          // Re-check server memory status after refresh
+          const refreshedHealthCheck = await axios.get(`${API_BASE_URL}/api/health`, {
+            timeout: 5000,
+            headers: { 'Accept': 'application/json' }
+          })
+          
+          if (refreshedHealthCheck.data.ready_for_instant_responses) {
+            console.log('🎯 Server memory now ready - marking all classes as ready for instant loading')
             
-            // Re-check cache status after update
-            const updatedStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+            // Get cache status to identify all cached classes
+            const cacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
               timeout: 5000,
               headers: { 'Accept': 'application/json' }
             })
-            const updatedCachedClasses = Object.keys(updatedStatus.data)
-              .filter(key => key !== '_config' && updatedStatus.data[key].cached === true)
-            console.log(`📊 Updated cache: ${updatedCachedClasses.length} classes now cached in database`)
-          } catch (cacheUpdateError) {
-            console.warn('⚠️ Cache database update failed, proceeding with existing cache:', cacheUpdateError.message)
-          }
-        }
-        
-        // Phase 2: Load cached data from DB into memory for instant access
-        console.log('💾 Phase 2: Loading validated cache data into memory for instant access...')
-        
-        // Get final cache status for memory hydration
-        const finalCacheStatus = await axios.get(`${API_BASE_URL}/api/cache-status`, {
-          timeout: 5000,
-          headers: { 'Accept': 'application/json' }
-        })
-        
-        const classesToHydrate = Object.keys(finalCacheStatus.data)
-          .filter(key => key !== '_config' && finalCacheStatus.data[key].cached === true)
-          .map(cls => cls.toLowerCase())
-        
-        console.log(`🎯 Hydrating ${classesToHydrate.length} cached classes into memory:`, classesToHydrate)
-        
-        this.preHydrationProgress = { loaded: 0, total: classesToHydrate.length }
-        
-        // Load classes in parallel with concurrency limit
-        const batchSize = 4 // Load 4 classes at a time for comprehensive caching
-        for (let i = 0; i < classesToHydrate.length; i += batchSize) {
-          const batch = classesToHydrate.slice(i, i + batchSize)
-          
-          await Promise.all(batch.map(async (className) => {
-            try {
-              await this.fetchSpellsForClass(className)
-              this.preHydrationProgress.loaded++
-              console.log(`✅ Pre-loaded ${className} (${this.preHydrationProgress.loaded}/${this.preHydrationProgress.total})`)
-            } catch (error) {
-              this.preHydrationProgress.loaded++
-              console.warn(`⚠️ Failed to pre-load ${className}:`, error.message)
+            
+            const cachedClasses = Object.keys(cacheStatus.data)
+              .filter(key => key !== '_config' && cacheStatus.data[key].cached === true)
+            
+            // Mark all cached classes as ready with lightweight placeholders
+            for (const className of cachedClasses) {
+              const normalizedClassName = className.toLowerCase()
+              
+              this.spellsData[normalizedClassName] = [{
+                _placeholder: true,
+                _serverReady: true,
+                _serverOptimized: true,
+                name: `${className} spells ready on server`,
+                level: 0
+              }]
+              
+              this.spellsMetadata[normalizedClassName] = {
+                last_updated: cacheStatus.data[className].last_updated,
+                cached: true,
+                expired: false,
+                spell_count: cacheStatus.data[className].spell_count,
+                stale: false,
+                _serverOptimized: true
+              }
             }
-          }))
-          
-          // Small delay between batches to be backend-friendly
-          if (i + batchSize < classesToHydrate.length) {
-            await new Promise(resolve => setTimeout(resolve, 500))
+            
+            console.log(`🎉 Simplified cache system complete! All ${cachedClasses.length} classes ready for instant loading`)
+          } else {
+            console.log('⚠️ Server memory not ready after refresh - using fallback loading')
           }
+          
+        } catch (cacheUpdateError) {
+          console.warn('⚠️ Server-side cache refresh failed:', cacheUpdateError.message)
         }
         
-        console.log(`🎉 Two-phase cache system complete! Database validated → ${Object.keys(this.spellsData).length} classes hydrated into memory for instant navigation`)
         return true
         
       } catch (error) {
@@ -251,8 +274,14 @@ export const useSpellsStore = defineStore('spells', {
       
       // Check for cached data first (skip if forcing refresh)
       if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
-        console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
-        return this.spellsData[normalizedClassName]
+        // Check if this is placeholder data from server optimization
+        if (this.spellsData[normalizedClassName][0]._placeholder && this.spellsData[normalizedClassName][0]._serverReady) {
+          console.log(`⚡ Server has ${normalizedClassName} preloaded - fetching real data instantly`)
+          // Continue to fetch real data from server memory (should be instant)
+        } else {
+          console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
+          return this.spellsData[normalizedClassName]
+        }
       }
 
       this.loading = true
@@ -276,9 +305,13 @@ export const useSpellsStore = defineStore('spells', {
         console.log('API_BASE_URL:', API_BASE_URL)
         console.log('Making API call to:', apiUrl)
         
-        // Use optimized single request with longer initial timeout to avoid failed first attempts
+        // Check if server has data preloaded for faster timeout
+        const isServerOptimized = this.spellsData[normalizedClassName] && 
+          this.spellsData[normalizedClassName][0]._serverOptimized
+        
+        // Use shorter timeout when server has data preloaded, longer for fresh scraping
         const response = await axios.get(apiUrl, {
-          timeout: 60000, // 60 second timeout to handle both cached and fresh scraping
+          timeout: isServerOptimized ? 10000 : 60000, // 10s for server memory, 60s for fresh scraping
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json'
