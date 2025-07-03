@@ -176,7 +176,19 @@ python3 test_port_management.py
 ## Benefits
 
 1. **Zero Configuration**: Works out of the box, no manual port management needed
-2. **Deployment Ready**: Prevents port conflicts in production environments
-3. **Developer Friendly**: No more "port already in use" errors
-4. **Persistent**: Remembers port allocations between sessions
-5. **Transparent**: Shows exactly what ports are allocated and why
+2. **Railway Compatible**: Automatically detects and respects Railway deployment environment
+3. **Developer Friendly**: No more "port already in use" errors in development
+4. **Deployment Safe**: No file modifications or conflicts in production
+5. **Persistent**: Remembers port allocations between local development sessions
+6. **Transparent**: Shows exactly what ports are allocated and why
+
+## Railway Deployment
+
+The smart port management system is fully compatible with Railway:
+
+- ✅ **Automatic Detection**: Recognizes Railway environment variables
+- ✅ **Environment Respect**: Uses Railway's PORT assignments
+- ✅ **No File Changes**: Skips localhost file modifications in production
+- ✅ **Zero Interference**: Doesn't conflict with Railway's deployment process
+
+See [Railway Deployment Guide](./railway-deployment.md) for detailed information.

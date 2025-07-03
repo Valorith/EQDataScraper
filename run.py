@@ -133,6 +133,14 @@ class AppRunner:
     
     def smart_port_allocation(self) -> Dict[str, int]:
         """Smart port allocation with conflict detection and resolution"""
+        # Check if we're in a deployment environment (Railway, etc.)
+        if self._is_deployment_environment():
+            self.print_status("🚀 Deployment environment detected - using environment variables", "info")
+            return {
+                'backend': int(os.environ.get('BACKEND_PORT', self.config['backend_port'])),
+                'frontend': int(os.environ.get('PORT', os.environ.get('FRONTEND_PORT', self.config['frontend_port'])))
+            }
+        
         self.print_status("🔍 Smart port management: Checking for conflicts...", "info")
         
         # Define default ports to prevent drift
@@ -231,14 +239,19 @@ class AppRunner:
     
     def sync_frontend_config(self, backend_port: int):
         """Synchronize backend port across all frontend configuration files"""
+        # Skip file syncing in deployment environments
+        if self._is_deployment_environment():
+            self.print_status("📦 Deployment environment - skipping file sync", "info")
+            return
+            
         self.print_status(f"🔄 Syncing backend port {backend_port} to frontend files...", "info")
         
-        # Files that need updating
+        # Files that need updating (only localhost references - don't touch production URLs)
         files_to_update = [
             (self.frontend_dir / "src" / "stores" / "spells.js", 
-             r"http://localhost:\d+", f"http://localhost:{backend_port}"),
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
             (self.frontend_dir / "src" / "App.vue",
-             r"http://localhost:\d+", f"http://localhost:{backend_port}"),
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
             (self.frontend_dir / "vite.config.js",
              r"target:\s*['\"]http://localhost:\d+['\"]", f"target: 'http://localhost:{backend_port}'"),
             (self.frontend_dir / ".env.development",
@@ -999,8 +1012,35 @@ class AppRunner:
         if self.is_port_in_use(backend_port) or self.is_port_in_use(frontend_port):
             self.print_status("Use 'python3 run.py stop' to clean up untracked services", "info")
     
+    def _is_deployment_environment(self) -> bool:
+        """Check if we're running in a deployment environment"""
+        # Railway provides these environment variables
+        railway_indicators = ['RAILWAY_ENVIRONMENT', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID']
+        
+        # Common deployment environment indicators
+        deployment_indicators = ['DYNO', 'HEROKU_APP_NAME', 'RENDER', 'VERCEL', 'NETLIFY']
+        
+        # Check for Railway
+        if any(os.environ.get(var) for var in railway_indicators):
+            return True
+            
+        # Check for other deployment platforms
+        if any(os.environ.get(var) for var in deployment_indicators):
+            return True
+            
+        # Check if PORT is set (common in deployments)
+        if os.environ.get('PORT') and os.environ.get('NODE_ENV') == 'production':
+            return True
+            
+        return False
+    
     def setup_keyboard_handler(self):
         """Setup keyboard handler for Ctrl+R restart functionality"""
+        # Skip keyboard handlers in deployment environments
+        if self._is_deployment_environment():
+            self.print_status("📦 Deployment environment - keyboard handlers disabled", "info")
+            return
+            
         try:
             import platform
             if platform.system() == "Windows":
@@ -1223,6 +1263,15 @@ class AppRunner:
         self.print_status("", "info")
 
 def main():
+    # Check if we're in a deployment environment and warn about usage
+    runner = AppRunner()
+    if runner._is_deployment_environment() and len(sys.argv) > 1 and sys.argv[1] == "start":
+        print("⚠️  Deployment environment detected")
+        print("   Smart port management will use environment variables only")
+        print("   For production, consider starting services directly:")
+        print("   Backend: python backend/app.py")
+        print("   Frontend: npm run build && npm run preview")
+    
     parser = argparse.ArgumentParser(description="EQDataScraper Application Runner",
                                    formatter_class=argparse.RawDescriptionHelpFormatter,
                                    epilog="""
