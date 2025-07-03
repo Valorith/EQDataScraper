@@ -28,8 +28,21 @@ export default {
     console.log('All Vite env vars:', import.meta.env)
     
     // Test the fallback logic directly
-    const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-      (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5001')
+    const API_BASE_URL = (() => {
+      // In production, only use VITE_BACKEND_URL if it's a valid production URL
+      if (import.meta.env.PROD) {
+        const envUrl = import.meta.env.VITE_BACKEND_URL
+        // Only use env URL if it's a valid production URL (not localhost)
+        if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+          return envUrl
+        }
+        // Default production backend URL
+        return 'https://eqdatascraper-backend-production.up.railway.app'
+      }
+      
+      // In development, use env variable or default to localhost
+      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+    })()
     console.log('Computed API_BASE_URL:', API_BASE_URL)
     console.log('Build timestamp:', new Date().toISOString())
   }
