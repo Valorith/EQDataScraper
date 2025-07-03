@@ -16,6 +16,8 @@ config.json
 # Port management files
 .port_mapping.json
 test_port_management.py
+demo_smart_ports.py
+SMART_PORT_MANAGEMENT_SUMMARY.md
 
 # Environment variables (contains sensitive database URLs)
 .env
