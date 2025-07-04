@@ -191,6 +191,9 @@ export default {
     const router = useRouter()
     
     const goHome = () => {
+      console.log('goHome clicked - current route:', router.currentRoute.value.path)
+      console.log('Attempting to navigate to /')
+      alert('Button clicked! Navigating to home...')
       router.push('/')
     }
     
@@ -562,6 +565,7 @@ export default {
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
   font-family: 'Inter', sans-serif;
+  z-index: 10;
 }
 
 .home-button:hover {
