@@ -640,6 +640,10 @@ export default {
   box-shadow: 0 4px 12px rgba(238, 90, 36, 0.3);
 }
 
+.nav-card.raid-nav {
+  padding-right: 50px;
+}
+
 /* Global Search Styles */
 .global-search-container {
   position: relative;
