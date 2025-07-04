@@ -191,10 +191,7 @@ export default {
     const router = useRouter()
     
     const goHome = () => {
-      console.log('goHome clicked - current route:', router.currentRoute.value.path)
-      console.log('Attempting to navigate to /')
-      alert('Button clicked! Navigating to home...')
-      router.push('/')
+      router.push({ name: 'MainPage' })
     }
     
     return {
