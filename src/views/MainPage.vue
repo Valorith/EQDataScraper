@@ -6,13 +6,6 @@
         <p class="main-subtitle">Information Compendium</p>
       </div>
       
-      <!-- Cart Button -->
-      <div class="cart-container">
-        <button @click="openCart" class="cart-button" title="View Cart">
-          <span class="cart-icon">🛒</span>
-          <span v-if="cartStore.itemCount > 0" class="cart-counter">{{ cartStore.itemCount }}</span>
-        </button>
-      </div>
     </div>
     
     <!-- Global Search -->
@@ -161,128 +154,10 @@
       </div>
     </div>
     
-    <!-- Cart Modal -->
-    <div v-if="cartStore.isOpen" class="cart-modal-overlay" @click="cartStore.closeCart()">
-      <div class="cart-modal" @click.stop>
-        <div class="cart-modal-header">
-          <h3>Shopping Cart</h3>
-          <button @click="cartStore.closeCart()" class="modal-close-btn">×</button>
-        </div>
-        
-        <div class="cart-modal-content">
-          <!-- Empty Cart State -->
-          <div v-if="cartStore.itemCount === 0" class="cart-empty">
-            <div class="cart-empty-icon">🛒</div>
-            <h4>Your cart is empty</h4>
-            <p>Browse spells and add them to your cart to see them here.</p>
-            <button @click="cartStore.closeCart()" class="continue-shopping-btn">
-              Continue Shopping
-            </button>
-          </div>
-          
-          <!-- Cart Items -->
-          <div v-else>
-            <div class="cart-items">
-              <div 
-                v-for="item in cartStore.items" 
-                :key="item.spell_id"
-                class="cart-item"
-              >
-                <div class="cart-item-info">
-                  <img 
-                    v-if="item.icon" 
-                    :src="item.icon" 
-                    :alt="item.name"
-                    class="cart-item-icon"
-                    @error="handleIconError"
-                  />
-                  <div class="cart-item-details">
-                    <h4 class="cart-item-name">{{ item.name }}</h4>
-                    <div class="cart-item-meta">
-                      Level {{ item.level }}
-                      <span v-if="item.class_names && item.class_names.length">
-                        • {{ item.class_names.join(', ') }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="cart-item-pricing">
-                  <div v-if="item.pricing && hasAnyPrice(item.pricing)" class="cart-coin-display">
-                    <div v-if="item.pricing.platinum > 0" class="cart-coin-item">
-                      <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
-                      <span class="cart-coin-value">{{ item.pricing.platinum }}</span>
-                    </div>
-                    <div v-if="item.pricing.gold > 0" class="cart-coin-item">
-                      <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
-                      <span class="cart-coin-value">{{ item.pricing.gold }}</span>
-                    </div>
-                    <div v-if="item.pricing.silver > 0" class="cart-coin-item">
-                      <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
-                      <span class="cart-coin-value">{{ item.pricing.silver }}</span>
-                    </div>
-                    <div v-if="item.pricing.bronze > 0" class="cart-coin-item">
-                      <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
-                      <span class="cart-coin-value">{{ item.pricing.bronze }}</span>
-                    </div>
-                  </div>
-                  <div v-else class="cart-pricing-free">Free</div>
-                </div>
-                
-                <button 
-                  @click="removeFromCart(item.spell_id)" 
-                  class="remove-item-btn"
-                  title="Remove from cart"
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
-            
-            <!-- Cart Total -->
-            <div class="cart-total">
-              <div class="cart-total-header">
-                <h4>Total Cost</h4>
-                <div class="cart-total-coins">
-                  <div v-if="cartStore.optimizedTotal.platinum > 0" class="cart-coin-item">
-                    <img src="/icons/coins/platinum.svg" alt="Platinum" class="cart-coin-icon" />
-                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.platinum }}</span>
-                  </div>
-                  <div v-if="cartStore.optimizedTotal.gold > 0" class="cart-coin-item">
-                    <img src="/icons/coins/gold.svg" alt="Gold" class="cart-coin-icon" />
-                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.gold }}</span>
-                  </div>
-                  <div v-if="cartStore.optimizedTotal.silver > 0" class="cart-coin-item">
-                    <img src="/icons/coins/silver.svg" alt="Silver" class="cart-coin-icon" />
-                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.silver }}</span>
-                  </div>
-                  <div v-if="cartStore.optimizedTotal.bronze > 0" class="cart-coin-item">
-                    <img src="/icons/coins/bronze.svg" alt="Bronze" class="cart-coin-icon" />
-                    <span class="cart-coin-value">{{ cartStore.optimizedTotal.bronze }}</span>
-                  </div>
-                  <div v-if="cartStore.totalInBronze === 0" class="cart-total-free">No cost</div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Cart Actions -->
-            <div class="cart-actions">
-              <button @click="clearCart()" class="clear-cart-btn">
-                Clear Cart
-              </button>
-              <button @click="cartStore.closeCart()" class="continue-shopping-btn">
-                Continue Shopping
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script>
-import { useCartStore } from '../stores/cart'
 import axios from 'axios'
 
 // Configure API base URL
@@ -310,16 +185,6 @@ export default {
       currentPage: 0,
       resultsPerPage: 10,
       showRightArrowGlow: false
-    }
-  },
-  setup() {
-    const cartStore = useCartStore()
-    
-    // Load cart from localStorage on component mount
-    cartStore.loadFromLocalStorage()
-    
-    return {
-      cartStore
     }
   },
   computed: {
@@ -564,24 +429,6 @@ export default {
       }
     },
     
-    openCart() {
-      this.cartStore.openCart()
-    },
-
-    removeFromCart(spellId) {
-      this.cartStore.removeItem(spellId)
-    },
-
-    clearCart() {
-      if (confirm('Are you sure you want to clear your cart?')) {
-        this.cartStore.clearCart()
-      }
-    },
-
-    hasAnyPrice(pricing) {
-      if (!pricing) return false
-      return pricing.platinum > 0 || pricing.gold > 0 || pricing.silver > 0 || pricing.bronze > 0
-    },
 
     toggleDebugPanel() {
       this.$emit('toggle-debug-panel')
