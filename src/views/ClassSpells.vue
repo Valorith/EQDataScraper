@@ -1,7 +1,7 @@
 <template>
   <div class="main-container" :class="classInfo?.name.toLowerCase() || 'default'" :style="containerStyles">
     <div class="hero-section">
-      <button @click="goHome" class="home-button" title="Back to Classes">
+      <button @click="goHome" class="home-button" title="Back to Spells">
         ←
       </button>
       
@@ -1183,7 +1183,7 @@ export default {
     }
 
     const goHome = () => {
-      router.push('/')
+      router.push('/spells')
     }
 
     // Handle natural scroll events

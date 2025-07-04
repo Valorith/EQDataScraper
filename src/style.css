@@ -57,7 +57,7 @@ body::before {
 .main-container {
   position: relative;
   z-index: 2;
-  padding: 60px 20px;
+  padding: 100px 20px 60px 20px;
   max-width: 1800px;
   margin: 0 auto;
   background: transparent;
@@ -98,4 +98,17 @@ body.scroll-blur .level-section {
   filter: blur(0.6px);
   opacity: 0.8;
   transition: filter 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+/* Logo responsiveness */
+@media (max-width: 768px) {
+  .main-container {
+    padding-top: 80px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-container {
+    padding-top: 70px;
+  }
 } 

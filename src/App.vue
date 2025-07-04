@@ -1,5 +1,8 @@
 <template>
   <div id="app" class="railway-deployment-debug">
+    <!-- App Logo - appears on all pages -->
+    <AppLogo />
+    
     <!-- Cache pre-hydration indicator -->
     <div v-if="spellsStore.isPreHydrating" class="cache-prehydration-indicator">
       <div class="prehydration-content">
@@ -18,11 +21,13 @@
 <script>
 import { useSpellsStore } from './stores/spells'
 import DebugPanel from './components/DebugPanel.vue'
+import AppLogo from './components/AppLogo.vue'
 
 export default {
   name: 'App',
   components: {
-    DebugPanel
+    DebugPanel,
+    AppLogo
   },
   setup() {
     const spellsStore = useSpellsStore()
