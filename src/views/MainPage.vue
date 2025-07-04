@@ -640,18 +640,13 @@ export default {
   box-shadow: 0 4px 12px rgba(238, 90, 36, 0.3);
 }
 
-.nav-card.raid-nav .nav-content {
-  margin-right: 100px !important;
-  padding-right: 40px !important;
+.nav-card.raid-nav .coming-soon-badge {
+  top: 15px;
+  right: 120px !important;
 }
 
-.nav-card.raid-nav .nav-description {
-  margin-right: 60px !important;
-  padding-right: 40px !important;
-}
-
-.nav-card.raid-nav .nav-title {
-  margin-right: 60px !important;
+.nav-card.raid-nav {
+  min-width: 400px;
 }
 
 /* Global Search Styles */
