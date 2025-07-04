@@ -642,7 +642,7 @@ export default {
 
 .nav-card.raid-nav .coming-soon-badge {
   top: 15px;
-  right: 120px !important;
+  right: 15px;
 }
 
 .nav-card.raid-nav {
