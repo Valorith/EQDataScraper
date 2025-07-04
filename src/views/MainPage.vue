@@ -152,6 +152,17 @@
         </div>
         <div class="coming-soon-badge">Coming Soon</div>
       </div>
+      
+      <div class="nav-card raid-nav placeholder">
+        <div class="nav-icon">
+          <div class="nav-icon-symbol">⚔️</div>
+        </div>
+        <div class="nav-content">
+          <h3 class="nav-title">Raid Management</h3>
+          <p class="nav-description">A comprehensive raid and loot management tool for guilds (Coming Soon)</p>
+        </div>
+        <div class="coming-soon-badge">Coming Soon</div>
+      </div>
     </div>
     
   </div>
