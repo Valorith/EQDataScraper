@@ -1,6 +1,10 @@
 <template>
   <div class="main-container">
     <div class="hero-section">
+      <button @click="goHome" class="home-button" title="Back to Main Page">
+        ←
+      </button>
+      
       <div class="hero-content">
         <h1 class="main-title">Spells</h1>
         <p class="main-subtitle">Class Information</p>
@@ -496,6 +500,10 @@ export default {
     },
     
 
+    goHome() {
+      this.$router.push('/')
+    },
+    
     toggleDebugPanel() {
       // Emit event to App.vue to toggle debug panel
       this.$emit('toggle-debug-panel')
@@ -527,6 +535,36 @@ export default {
   border-radius: 50%;
   filter: blur(100px);
   z-index: -1;
+}
+
+.home-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: linear-gradient(135deg, var(--primary-color), rgba(var(--primary-rgb), 0.8));
+  color: white;
+  border: none;
+  border-radius: 50%;
+  padding: 12px;
+  font-size: 1.2em;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+  font-family: 'Inter', sans-serif;
+}
+
+.home-button:hover {
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.95), var(--primary-color));
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
 
 .main-title {
@@ -1597,6 +1635,11 @@ export default {
   .hero-section {
     flex-direction: column;
     gap: 1rem;
+  }
+  
+  .home-button {
+    position: relative;
+    margin-bottom: 1rem;
   }
   
   .cart-button {
