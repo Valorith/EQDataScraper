@@ -155,7 +155,7 @@
       
       <div class="nav-card raid-nav placeholder">
         <div class="nav-icon">
-          <div class="nav-icon-symbol">⚔️</div>
+          <div class="nav-icon-symbol">🏰</div>
         </div>
         <div class="nav-content">
           <h3 class="nav-title">Raid Management</h3>
