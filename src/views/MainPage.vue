@@ -545,6 +545,7 @@ export default {
   gap: 30px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   min-height: 140px;
+  min-width: 400px;
 }
 
 .nav-card::before {
@@ -645,9 +646,6 @@ export default {
   right: 15px;
 }
 
-.nav-card.raid-nav {
-  min-width: 400px;
-}
 
 /* Global Search Styles */
 .global-search-container {
