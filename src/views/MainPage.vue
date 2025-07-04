@@ -521,7 +521,7 @@ export default {
 
 .navigation-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 35px;
   margin-top: 60px;
   padding: 0 20px;
@@ -1352,8 +1352,13 @@ export default {
   box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
 }
 
-@media (max-width: 1200px) {
-  .navigation-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+@media (max-width: 1400px) {
+  .navigation-grid { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); }
+}
+
+@media (max-width: 1000px) {
+  .navigation-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .nav-card { min-width: 300px; }
 }
 
 @media (max-width: 768px) {
@@ -1367,6 +1372,7 @@ export default {
   .nav-card { 
     padding: 30px 20px; 
     flex-direction: column;
+    min-width: auto;
     text-align: center;
     gap: 20px;
   }
