@@ -640,8 +640,8 @@ export default {
   box-shadow: 0 4px 12px rgba(238, 90, 36, 0.3);
 }
 
-.nav-card.raid-nav {
-  padding-right: 50px;
+.nav-card.raid-nav .nav-content {
+  padding-right: 60px;
 }
 
 /* Global Search Styles */
