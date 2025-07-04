@@ -148,6 +148,7 @@
 
 <script>
 import { useSpellsStore } from '../stores/spells'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
 // Configure API base URL - use environment variable if explicitly set, otherwise use appropriate defaults
@@ -187,10 +188,16 @@ export default {
   },
   setup() {
     const spellsStore = useSpellsStore()
+    const router = useRouter()
+    
+    const goHome = () => {
+      router.push('/')
+    }
     
     return {
       classes: spellsStore.classes,
-      spellsStore
+      spellsStore,
+      goHome
     }
   },
   computed: {
@@ -500,9 +507,6 @@ export default {
     },
     
 
-    goHome() {
-      this.$router.push('/')
-    },
     
     toggleDebugPanel() {
       // Emit event to App.vue to toggle debug panel
