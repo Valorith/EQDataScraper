@@ -641,11 +641,17 @@ export default {
 }
 
 .nav-card.raid-nav .nav-content {
-  margin-right: 80px;
+  margin-right: 100px !important;
+  padding-right: 40px !important;
 }
 
 .nav-card.raid-nav .nav-description {
-  padding-right: 20px;
+  margin-right: 60px !important;
+  padding-right: 40px !important;
+}
+
+.nav-card.raid-nav .nav-title {
+  margin-right: 60px !important;
 }
 
 /* Global Search Styles */
