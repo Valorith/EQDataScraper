@@ -3443,9 +3443,9 @@ export default {
 }
 
 .home-button {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: fixed;
+  top: 120px;
+  left: 20px;
   background: linear-gradient(135deg, var(--class-color), rgba(var(--class-color-rgb), 0.8));
   color: white;
   border: none;
