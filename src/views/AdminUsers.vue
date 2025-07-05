@@ -251,8 +251,9 @@ const router = useRouter()
 const userStore = useUserStore()
 
 // API base URL - in development, use empty string so proxy handles /api routes
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+const API_BASE_URL = import.meta.env.PROD ? 
+  (import.meta.env.VITE_BACKEND_URL || 'https://eqdatascraper-backend-production.up.railway.app') : 
+  ''
 
 // State
 const users = ref([])
