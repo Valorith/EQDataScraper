@@ -25,6 +25,9 @@ app = Flask(__name__)
 # Check if user accounts are enabled
 ENABLE_USER_ACCOUNTS = os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true'
 
+# Global limiter variable
+limiter = None
+
 # Configure CORS with OAuth support if enabled
 if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
@@ -37,6 +40,13 @@ if ENABLE_USER_ACCOUNTS:
 else:
     # Standard CORS for existing functionality
     CORS(app)
+
+# Decorator to conditionally apply rate limiting
+def exempt_when_limiting(f):
+    """Decorator to exempt endpoints from rate limiting when limiter is active"""
+    if limiter:
+        return limiter.exempt(f)
+    return f
 
 # Import OAuth components only if enabled
 if ENABLE_USER_ACCOUNTS:
@@ -58,6 +68,15 @@ if ENABLE_USER_ACCOUNTS:
         limiter.limit("10 per minute")(auth_bp)
         limiter.limit("60 per hour")(users_bp) 
         limiter.limit("30 per hour")(admin_bp)
+        
+        # Exempt health check endpoint from rate limiting
+        @limiter.request_filter
+        def exempt_health_check():
+            """Exempt health endpoint from rate limiting"""
+            return request.endpoint == 'health_check'
+        
+        # Make limiter available globally for decorators
+        app.limiter = limiter
         
         # Database connection injection for OAuth routes
         @app.before_request
@@ -2442,6 +2461,7 @@ def startup_status():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint with server memory status"""
+    # This endpoint should not be rate limited
     pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
     
     return jsonify({

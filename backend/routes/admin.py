@@ -330,7 +330,12 @@ def get_admin_stats():
         # Get database connection
         conn = get_db_connection()
         if not conn:
-            return create_error_response("Database connection failed", 500)
+            # Return basic stats without database
+            return jsonify(create_success_response({
+                'totalUsers': 0,
+                'activeToday': 0,
+                'adminUsers': 0
+            }))
         
         try:
             with conn.cursor() as cursor:
@@ -340,6 +345,9 @@ def get_admin_stats():
                 
                 cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = TRUE")
                 admin_users = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '24 hours' AND is_active = TRUE")
+                active_today = cursor.fetchone()[0]
                 
                 cursor.execute("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '30 days' AND is_active = TRUE")
                 active_users_30d = cursor.fetchone()[0]
@@ -375,6 +383,9 @@ def get_admin_stats():
                     })
             
             return jsonify(create_success_response({
+                'totalUsers': total_users,
+                'activeToday': active_today,
+                'adminUsers': admin_users,
                 'users': {
                     'total': total_users,
                     'admins': admin_users,
@@ -432,3 +443,102 @@ def admin_cleanup():
             
     except Exception as e:
         return create_error_response(f"Failed to perform cleanup: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/activities', methods=['GET'])
+@require_admin
+def get_recent_activities():
+    """
+    Get recent system activities.
+    
+    Returns:
+        JSON response with recent activities
+    """
+    try:
+        # Get database connection
+        conn = get_db_connection()
+        if not conn:
+            # Return empty activities without database
+            return jsonify(create_success_response({
+                'activities': []
+            }))
+        
+        try:
+            with conn.cursor() as cursor:
+                # Get recent user login activities
+                cursor.execute("""
+                    SELECT 
+                        'user_login' as type,
+                        CONCAT(first_name, ' ', last_name, ' logged in') as description,
+                        last_login as timestamp
+                    FROM users
+                    WHERE last_login IS NOT NULL
+                    ORDER BY last_login DESC
+                    LIMIT 10
+                """)
+                activities = []
+                for row in cursor.fetchall():
+                    activities.append({
+                        'id': len(activities) + 1,
+                        'type': row[0],
+                        'description': row[1],
+                        'timestamp': row[2].isoformat() if row[2] else None
+                    })
+                
+                # Get recent user registrations
+                cursor.execute("""
+                    SELECT 
+                        'user_register' as type,
+                        CONCAT(first_name, ' ', last_name, ' created account') as description,
+                        created_at as timestamp
+                    FROM users
+                    WHERE created_at > NOW() - INTERVAL '7 days'
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                """)
+                for row in cursor.fetchall():
+                    activities.append({
+                        'id': len(activities) + 1,
+                        'type': row[0],
+                        'description': row[1],
+                        'timestamp': row[2].isoformat() if row[2] else None
+                    })
+                
+                # Sort all activities by timestamp
+                activities.sort(key=lambda x: x['timestamp'] if x['timestamp'] else '', reverse=True)
+                # Limit to 15 most recent
+                activities = activities[:15]
+            
+            return jsonify(create_success_response({
+                'activities': activities
+            }))
+            
+        except Exception as e:
+            return create_error_response(f"Database error: {str(e)}", 500)
+            
+    except Exception as e:
+        return create_error_response(f"Failed to get activities: {str(e)}", 500)
+
+
+@admin_bp.route('/api/cache/refresh', methods=['POST'])
+@require_admin 
+def refresh_all_caches():
+    """
+    Refresh all caches (admin only).
+    
+    Returns:
+        JSON response confirming cache refresh
+    """
+    try:
+        # Import cache functions from main app
+        from app import save_cache_to_disk
+        
+        # Save current cache state to disk
+        save_cache_to_disk()
+        
+        return jsonify(create_success_response({
+            'message': 'All caches refreshed successfully'
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to refresh caches: {str(e)}", 500)

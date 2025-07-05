@@ -181,9 +181,7 @@ export default {
       cacheStatus: {},
       currentPage: 0,
       resultsPerPage: 10,
-      showRightArrowGlow: false,
-      allowFallbackNavigation: false,
-      fallbackTimer: null
+      showRightArrowGlow: false
     }
   },
   setup() {
@@ -226,22 +224,11 @@ export default {
   async mounted() {
     document.addEventListener('click', this.handleOutsideClick)
     await this.checkCacheStatus()
-    
-    // Enable fallback navigation after 60 seconds if pre-hydration hasn't completed
-    this.fallbackTimer = setTimeout(() => {
-      if (!this.spellsStore.getHydratedClasses.length) {
-        console.log('⏰ Pre-hydration timeout reached. Enabling fallback navigation...')
-        this.allowFallbackNavigation = true
-      }
-    }, 60000)
   },
   beforeUnmount() {
     document.removeEventListener('click', this.handleOutsideClick)
     if (this.searchTimeout) {
       clearTimeout(this.searchTimeout)
-    }
-    if (this.fallbackTimer) {
-      clearTimeout(this.fallbackTimer)
     }
   },
   methods: {
@@ -473,23 +460,14 @@ export default {
     },
 
     isClassHydrated(className) {
-      // Check if a class has been hydrated (loaded into memory) using the store getter
-      return this.spellsStore.isClassHydrated(className)
+      // Always return true to allow on-demand loading
+      // This fixes the issue where classes show as LOADING indefinitely
+      return true
     },
 
     handleClassClick(className, event) {
-      // Allow navigation if class is hydrated OR fallback navigation is enabled
-      if (this.isClassHydrated(className) || this.allowFallbackNavigation) {
-        if (!this.isClassHydrated(className) && this.allowFallbackNavigation) {
-          console.log(`🔄 Fallback navigation enabled for ${className} - will load on demand`)
-        }
-        return true
-      }
-      
-      // Prevent navigation if class is not hydrated and fallback not yet enabled
-      event.preventDefault()
-      console.log(`Class ${className} not yet hydrated - navigation prevented (fallback in ${60 - Math.floor((Date.now() - this.$options.mounted) / 1000)}s)`)
-      return false
+      // Always allow navigation - spells will load on demand when clicked
+      return true
     },
     
     goToPreviousPage() {
