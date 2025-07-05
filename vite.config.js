@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { readFileSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Load configuration to get backend port
 let backendPort = 5001
@@ -31,6 +34,11 @@ console.log('Available VITE_ vars:', Object.keys(process.env).filter(key => key.
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src')
+    }
+  },
   server: {
     host: '0.0.0.0', // Bind to all interfaces for Windows/WSL access
     port: frontendPort,

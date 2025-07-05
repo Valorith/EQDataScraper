@@ -1,149 +1,385 @@
 """
-Test configuration and fixtures for EQDataScraper backend tests.
+Test fixtures and configuration for OAuth user account system tests.
 """
-import pytest
+
 import os
+
+# Set environment variables before importing any modules that need them
+os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Enable OAuth for tests
+os.environ['JWT_SECRET_KEY'] = 'test_jwt_secret_key_for_testing_only'
+os.environ['ENCRYPTION_KEY'] = 'test_encryption_key_for_testing_only'
+os.environ['GOOGLE_CLIENT_ID'] = 'test-client-id'
+os.environ['GOOGLE_CLIENT_SECRET'] = 'test-client-secret'
+os.environ['OAUTH_REDIRECT_URI'] = 'http://localhost:3000/auth/callback'
+os.environ['DATABASE_URL'] = 'postgresql://test:test@localhost:5432/test'
+
+import pytest
+import psycopg2
+from unittest.mock import Mock, MagicMock, patch
+from datetime import datetime, timedelta
 import json
 import tempfile
-import shutil
-from unittest.mock import patch, MagicMock
-from datetime import datetime
+from urllib.parse import urlparse
 
-# Set testing environment variables before importing app
-os.environ['TESTING'] = '1'
-os.environ['DATABASE_URL'] = ''  # Force file-based cache for tests
-os.environ['PORT'] = '5999'
-os.environ['CACHE_EXPIRY_HOURS'] = '1'
-os.environ['PRICING_CACHE_EXPIRY_HOURS'] = '1'
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
-    """Set up test environment variables before any tests run."""
-    os.environ['TESTING'] = '1'
-    os.environ['DATABASE_URL'] = ''
-    yield
-    # Cleanup after all tests
-    if 'TESTING' in os.environ:
-        del os.environ['TESTING']
+# Test configuration
+TEST_JWT_SECRET = "test_jwt_secret_key_for_testing_only"
+TEST_ENCRYPTION_KEY = "test_encryption_key_for_testing_only"
 
 @pytest.fixture
-def temp_cache_dir():
-    """Create a temporary cache directory for testing."""
-    temp_dir = tempfile.mkdtemp()
-    cache_dir = os.path.join(temp_dir, 'cache')
-    os.makedirs(cache_dir, exist_ok=True)
-    
-    with patch('app.CACHE_DIR', cache_dir):
-        with patch('app.SPELLS_CACHE_FILE', os.path.join(cache_dir, 'spells_cache.json')):
-            with patch('app.PRICING_CACHE_FILE', os.path.join(cache_dir, 'pricing_cache.json')):
-                with patch('app.SPELL_DETAILS_CACHE_FILE', os.path.join(cache_dir, 'spell_details_cache.json')):
-                    with patch('app.METADATA_CACHE_FILE', os.path.join(cache_dir, 'cache_metadata.json')):
-                        yield cache_dir
-    
-    # Cleanup
-    shutil.rmtree(temp_dir, ignore_errors=True)
+def mock_db_config():
+    """Mock database configuration for testing."""
+    return {
+        'host': 'localhost',
+        'port': 5432,
+        'database': 'test_eq_scraper',
+        'user': 'test_user',
+        'password': 'test_password'
+    }
 
-@pytest.fixture(autouse=True)
-def setup_clean_cache():
-    """Ensure clean cache state for each test."""
-    # Clear any cached data before each test
-    try:
-        import app as flask_app
-        flask_app.spells_cache.clear()
-        flask_app.spell_details_cache.clear()
-        flask_app.cache_timestamp.clear()
-        flask_app.pricing_cache_timestamp.clear()
-        flask_app.last_scrape_time.clear()
-        flask_app.pricing_lookup.clear()
-    except ImportError:
-        pass  # App not imported yet
+@pytest.fixture
+def mock_db_connection():
+    """Mock database connection with cursor."""
+    connection = Mock()
+    cursor = Mock()
     
-    yield
+    # Configure cursor to return dict-like objects
+    cursor.fetchone.return_value = None
+    cursor.fetchall.return_value = []
+    cursor.rowcount = 0
     
-    # Clean up after test
-    try:
-        import app as flask_app
-        flask_app.spells_cache.clear()
-        flask_app.spell_details_cache.clear()
-        flask_app.cache_timestamp.clear()
-        flask_app.pricing_cache_timestamp.clear()
-        flask_app.last_scrape_time.clear()
-        flask_app.pricing_lookup.clear()
-    except ImportError:
-        pass
+    connection.cursor.return_value = cursor
+    connection.commit.return_value = None
+    connection.rollback.return_value = None
+    connection.close.return_value = None
+    
+    return connection
+
+@pytest.fixture
+def mock_db_connection_with_context():
+    """Mock database connection that supports context manager."""
+    connection = Mock()
+    cursor = Mock()
+    
+    # Configure cursor to support context manager
+    cursor.__enter__ = Mock(return_value=cursor)
+    cursor.__exit__ = Mock(return_value=None)
+    cursor.fetchone.return_value = None
+    cursor.fetchall.return_value = []
+    cursor.rowcount = 0
+    
+    connection.cursor.return_value = cursor
+    connection.commit.return_value = None
+    connection.rollback.return_value = None
+    connection.close.return_value = None
+    
+    return connection
+
+@pytest.fixture
+def sample_user_data():
+    """Sample user data for testing."""
+    return {
+        'id': 1,
+        'google_id': 'test_google_id_123',
+        'email': 'test@example.com',
+        'first_name': 'Test',
+        'last_name': 'User',
+        'avatar_url': 'https://example.com/avatar.jpg',
+        'role': 'user',
+        'is_active': True,
+        'created_at': datetime.utcnow(),
+        'updated_at': datetime.utcnow(),
+        'last_login': datetime.utcnow()
+    }
+
+@pytest.fixture
+def sample_admin_user_data():
+    """Sample admin user data for testing."""
+    return {
+        'id': 2,
+        'google_id': 'admin_google_id_456',
+        'email': 'admin@example.com',
+        'first_name': 'Admin',
+        'last_name': 'User',
+        'avatar_url': 'https://example.com/admin_avatar.jpg',
+        'role': 'admin',
+        'is_active': True,
+        'created_at': datetime.utcnow(),
+        'updated_at': datetime.utcnow(),
+        'last_login': datetime.utcnow()
+    }
+
+@pytest.fixture
+def sample_user_preferences():
+    """Sample user preferences for testing."""
+    return {
+        'id': 1,
+        'user_id': 1,
+        'theme_preference': 'dark',
+        'results_per_page': 25,
+        'created_at': datetime.utcnow(),
+        'updated_at': datetime.utcnow()
+    }
+
+@pytest.fixture
+def sample_oauth_session():
+    """Sample OAuth session for testing."""
+    return {
+        'id': 1,
+        'user_id': 1,
+        'google_access_token': 'test_access_token',
+        'google_refresh_token': 'test_refresh_token',
+        'token_expires_at': datetime.utcnow() + timedelta(hours=1),
+        'local_session_token': 'test_local_session_token',
+        'ip_address': '127.0.0.1',
+        'created_at': datetime.utcnow(),
+        'last_used': datetime.utcnow()
+    }
+
+@pytest.fixture
+def mock_google_oauth_response():
+    """Mock Google OAuth API response."""
+    return {
+        'access_token': 'mock_access_token',
+        'refresh_token': 'mock_refresh_token',
+        'expires_in': 3600,
+        'token_type': 'Bearer',
+        'id_token': 'mock_id_token'
+    }
+
+@pytest.fixture
+def mock_google_user_info():
+    """Mock Google user info from ID token."""
+    return {
+        'sub': 'test_google_id_123',
+        'email': 'test@example.com',
+        'given_name': 'Test',
+        'family_name': 'User',
+        'picture': 'https://example.com/avatar.jpg',
+        'email_verified': True
+    }
+
+@pytest.fixture
+def mock_jwt_payload():
+    """Mock JWT payload for testing."""
+    return {
+        'user_id': 1,
+        'email': 'test@example.com',
+        'role': 'user',
+        'iat': datetime.utcnow().timestamp(),
+        'exp': (datetime.utcnow() + timedelta(hours=1)).timestamp(),
+        'type': 'access'
+    }
+
+@pytest.fixture
+def mock_oauth_state_data():
+    """Mock OAuth state data for PKCE flow."""
+    return {
+        'state': 'test_state_parameter',
+        'code_verifier': 'test_code_verifier',
+        'code_challenge': 'test_code_challenge'
+    }
+
+@pytest.fixture
+def test_env_vars():
+    """Set up test environment variables."""
+    test_vars = {
+        'ENABLE_USER_ACCOUNTS': 'true',
+        'GOOGLE_CLIENT_ID': 'test_client_id',
+        'GOOGLE_CLIENT_SECRET': 'test_client_secret',
+        'JWT_SECRET_KEY': TEST_JWT_SECRET,
+        'ENCRYPTION_KEY': TEST_ENCRYPTION_KEY,
+        'OAUTH_REDIRECT_URI': 'http://localhost:3005/auth/callback'
+    }
+    
+    # Store original values
+    original_values = {}
+    for key, value in test_vars.items():
+        original_values[key] = os.environ.get(key)
+        os.environ[key] = value
+    
+    yield test_vars
+    
+    # Restore original values
+    for key, original_value in original_values.items():
+        if original_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original_value
+
+@pytest.fixture
+def flask_test_client():
+    """Create Flask test client with OAuth disabled for testing."""
+    # Import app here to avoid circular imports
+    with patch.dict(os.environ, {'ENABLE_USER_ACCOUNTS': 'false'}):
+        from app import app
+        app.config['TESTING'] = True
+        app.config['WTF_CSRF_ENABLED'] = False
+        return app.test_client()
 
 @pytest.fixture
 def mock_app():
-    """Create a Flask test client."""
-    # Import app after environment is set
-    import app as flask_app
+    """Create Flask test client (alias for backward compatibility)."""
+    # Import app here to avoid circular imports
+    with patch.dict(os.environ, {'ENABLE_USER_ACCOUNTS': 'false'}):
+        from app import app
+        app.config['TESTING'] = True
+        app.config['WTF_CSRF_ENABLED'] = False
+        return app.test_client()
+
+@pytest.fixture
+def flask_oauth_test_client(test_env_vars):
+    """Create Flask test client with OAuth enabled for testing."""
+    with patch('app.psycopg2.connect') as mock_connect:
+        # Mock database connection
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = None
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
+        # Import app with OAuth enabled
+        from app import app
+        app.config['TESTING'] = True
+        app.config['WTF_CSRF_ENABLED'] = False
+        
+        yield app.test_client()
+
+@pytest.fixture
+def mock_request_context():
+    """Mock Flask request context for testing."""
+    from flask import Flask, request
+    app = Flask(__name__)
     
-    flask_app.app.config['TESTING'] = True
-    return flask_app.app.test_client()
+    with app.test_request_context():
+        yield request
+
+class MockRealDictCursor:
+    """Mock cursor that returns dict-like objects (similar to RealDictCursor)."""
+    
+    def __init__(self, return_data=None):
+        self.return_data = return_data or []
+        self.call_count = 0
+        self.executed_queries = []
+        self.rowcount = len(self.return_data) if isinstance(self.return_data, list) else 1
+    
+    def execute(self, query, params=None):
+        self.executed_queries.append((query, params))
+    
+    def fetchone(self):
+        if isinstance(self.return_data, list) and self.return_data:
+            return self.return_data[0]
+        elif isinstance(self.return_data, dict):
+            return self.return_data
+        return None
+    
+    def fetchall(self):
+        if isinstance(self.return_data, list):
+            return self.return_data
+        elif isinstance(self.return_data, dict):
+            return [self.return_data]
+        return []
+    
+    def close(self):
+        pass
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+@pytest.fixture
+def mock_real_dict_cursor():
+    """Factory for creating mock RealDictCursor instances."""
+    return MockRealDictCursor
+
+@pytest.fixture
+def mock_psycopg2():
+    """Mock psycopg2 module for database testing."""
+    with patch('psycopg2.connect') as mock_connect, \
+         patch('psycopg2.extras.RealDictCursor', MockRealDictCursor):
+        
+        mock_conn = Mock()
+        mock_connect.return_value = mock_conn
+        
+        yield {
+            'connect': mock_connect,
+            'connection': mock_conn
+        }
+
+# Test data generators
+def generate_test_user(**overrides):
+    """Generate test user data with optional overrides."""
+    base_data = {
+        'id': 1,
+        'google_id': 'test_google_id',
+        'email': 'test@example.com',
+        'first_name': 'Test',
+        'last_name': 'User',
+        'avatar_url': 'https://example.com/avatar.jpg',
+        'role': 'user',
+        'is_active': True,
+        'display_name': None,
+        'anonymous_mode': False,
+        'avatar_class': None,
+        'created_at': datetime.utcnow(),
+        'updated_at': datetime.utcnow(),
+        'last_login': datetime.utcnow()
+    }
+    base_data.update(overrides)
+    return base_data
+
+def generate_test_session(**overrides):
+    """Generate test OAuth session data with optional overrides."""
+    base_data = {
+        'id': 1,
+        'user_id': 1,
+        'google_access_token': 'test_access_token',
+        'google_refresh_token': 'test_refresh_token',
+        'token_expires_at': datetime.utcnow() + timedelta(hours=1),
+        'local_session_token': 'test_session_token',
+        'ip_address': '127.0.0.1',
+        'created_at': datetime.utcnow(),
+        'last_used': datetime.utcnow()
+    }
+    base_data.update(overrides)
+    return base_data
 
 @pytest.fixture
 def sample_spell_data():
     """Sample spell data for testing."""
     return [
         {
-            'name': 'Courage',
-            'level': 1,
-            'mana': '10',
-            'skill': 'ABJURATION',
-            'target_type': 'Single target',
-            'spell_id': '202',
-            'effects': 'Increase AC by 10.5 to 15',
-            'icon': 'https://alla.clumsysworld.com/images/icons/spell_202.png',
-            'pricing': None
+            'name': 'Complete Heal',
+            'level': 39,
+            'mana': 400,
+            'skill': 'Alteration',
+            'target_type': 'Single',
+            'spell_id': '13',
+            'effects': '1: Increase Current HP by 7500',
+            'icon': 'spell_icon_13.png'
         },
         {
-            'name': 'Flash of Light',
-            'level': 1,
-            'mana': '10',
-            'skill': 'EVOCATION',
-            'target_type': 'Single target',
-            'spell_id': '203',
-            'effects': 'Decrease Hitpoints by 5 to 8',
-            'icon': 'https://alla.clumsysworld.com/images/icons/spell_203.png',
-            'pricing': None
+            'name': 'Greater Heal',
+            'level': 29,
+            'mana': 150,
+            'skill': 'Alteration', 
+            'target_type': 'Single',
+            'spell_id': '12',
+            'effects': '1: Increase Current HP by 280 to 350',
+            'icon': 'spell_icon_12.png'
         }
     ]
 
 @pytest.fixture
-def sample_pricing_data():
-    """Sample pricing data for testing."""
-    return {
-        '202': {
-            'platinum': 0,
-            'gold': 0,
-            'silver': 4,
-            'bronze': 0,
-            'unknown': False
-        },
-        '203': {
-            'platinum': 0,
-            'gold': 0,
-            'silver': 4,
-            'bronze': 0,
-            'unknown': False
-        },
-        '999': {
-            'platinum': 0,
-            'gold': 0,
-            'silver': 0,
-            'bronze': 0,
-            'unknown': True
-        }
-    }
-
-@pytest.fixture
 def sample_spell_details():
-    """Sample spell details cache data."""
+    """Sample spell details data for testing."""
     return {
         '202': {
-            'cast_time': '1.5 sec',
-            'duration': '27 min (270 ticks)',
-            'effects': ['Increase AC by 10.5 to 15'],
+            'cast_time': '2.0 sec',
+            'duration': '0 sec',
+            'effects': ['1: Increase Current HP by 100'],
             'pricing': {
                 'platinum': 0,
                 'gold': 0,
@@ -152,14 +388,14 @@ def sample_spell_details():
                 'unknown': False
             },
             'range': '100',
-            'resist': 'None',
-            'skill': 'ABJURATION',
-            'target_type': 'Single target'
+            'resist': 'Magic',
+            'skill': 'Alteration',
+            'target_type': 'Single'
         },
         '203': {
-            'cast_time': '2.25 sec',
-            'duration': 'Instant',
-            'effects': ['Decrease Hitpoints by 5 to 8'],
+            'cast_time': '3.0 sec',
+            'duration': '0 sec',
+            'effects': ['1: Increase Current Mana by 50'],
             'pricing': {
                 'platinum': 0,
                 'gold': 0,
@@ -167,78 +403,58 @@ def sample_spell_details():
                 'bronze': 0,
                 'unknown': False
             },
-            'range': '200',
+            'range': '100',
             'resist': 'Magic',
-            'skill': 'EVOCATION',
-            'target_type': 'Single target'
+            'skill': 'Alteration',
+            'target_type': 'Single'
         }
     }
 
 @pytest.fixture
-def mock_requests():
-    """Mock requests for external API calls."""
-    with patch('requests.Session.get') as mock_get:
-        # Default successful response
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = """
-        <html>
-            <body>
-                <table>
-                    <tr><td>Cast Time:</td><td>1.5 sec</td></tr>
-                    <tr><td>Duration:</td><td>27 min (270 ticks)</td></tr>
-                </table>
-            </body>
-        </html>
-        """
-        mock_get.return_value = mock_response
-        yield mock_get
-
-@pytest.fixture
-def current_time():
-    """Fixed current time for testing."""
-    return datetime(2025, 1, 1, 12, 0, 0).isoformat()
-
-@pytest.fixture
-def setup_cache_data(temp_cache_dir):
-    """Set up cache files with test data."""
+def temp_cache_dir(tmp_path):
+    """Create a temporary cache directory for testing."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(exist_ok=True)
+    
+    # Import app and ensure file cache variables are defined
     import app
     
-    # Sample cache data
-    spells_data = {
-        'cleric': [
-            {
-                'name': 'Courage',
-                'level': 1,
-                'spell_id': '202',
-                'pricing': {'silver': 4, 'unknown': False}
-            },
-            {
-                'name': 'Flash of Light', 
-                'level': 1,
-                'spell_id': '203',
-                'pricing': {'silver': 4, 'unknown': False}
-            }
-        ]
-    }
+    # Define cache file paths if they don't exist (happens when USE_DATABASE_CACHE=True)
+    if not hasattr(app, 'SPELLS_CACHE_FILE'):
+        app.CACHE_DIR = str(cache_dir)
+        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
+        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
+        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
+        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
+        files_created = True
+    else:
+        # Save original values
+        original_files = {
+            'CACHE_DIR': app.CACHE_DIR,
+            'SPELLS_CACHE_FILE': app.SPELLS_CACHE_FILE,
+            'PRICING_CACHE_FILE': app.PRICING_CACHE_FILE,
+            'SPELL_DETAILS_CACHE_FILE': app.SPELL_DETAILS_CACHE_FILE,
+            'METADATA_CACHE_FILE': app.METADATA_CACHE_FILE
+        }
+        
+        # Set temporary cache files
+        app.CACHE_DIR = str(cache_dir)
+        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
+        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
+        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
+        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
+        files_created = False
     
-    metadata = {
-        'cache_timestamp': {'cleric': datetime.now().isoformat()},
-        'pricing_cache_timestamp': {
-            '202': datetime.now().isoformat(),
-            '203': datetime.now().isoformat()
-        },
-        'last_scrape_time': {'cleric': datetime.now().isoformat()}
-    }
+    yield str(cache_dir)
     
-    # Write test cache files
-    with open(os.path.join(temp_cache_dir, 'spells_cache.json'), 'w') as f:
-        json.dump(spells_data, f)
-    
-    with open(os.path.join(temp_cache_dir, 'cache_metadata.json'), 'w') as f:
-        json.dump(metadata, f)
-    
-    return {
-        'spells': spells_data,
-        'metadata': metadata
-    }
+    # Cleanup
+    if not files_created:
+        # Restore original values
+        for attr, value in original_files.items():
+            setattr(app, attr, value)
+    else:
+        # Remove attributes we created
+        for attr in ['CACHE_DIR', 'SPELLS_CACHE_FILE', 'PRICING_CACHE_FILE', 
+                     'SPELL_DETAILS_CACHE_FILE', 'METADATA_CACHE_FILE']:
+            if hasattr(app, attr):
+                delattr(app, attr)

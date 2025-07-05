@@ -237,6 +237,9 @@ class AppRunner:
             
             # Update all frontend files that reference the backend port
             self.sync_frontend_config(backend_port)
+            
+            # Update OAuth redirect URIs if frontend port changed
+            self.sync_oauth_config(frontend_port)
         else:
             if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
                 self.print_status("Using default ports (no conflicts detected)", "success", 2)
@@ -290,6 +293,48 @@ class AppRunner:
                 self.print_status("Created .env.development", "success", 3)
             except Exception as e:
                 self.print_status(f"Failed to create .env.development: {e}", "warning", 3)
+    
+    def sync_oauth_config(self, frontend_port: int):
+        """Synchronize OAuth redirect URIs when frontend port changes"""
+        # Skip file syncing in deployment environments
+        if self._is_deployment_environment():
+            self.print_status("Deployment environment - skipping OAuth sync", "info", 2)
+            return
+            
+        redirect_uri = f"http://localhost:{frontend_port}/auth/callback"
+        self.print_status("Syncing OAuth redirect URI...", "step", 2)
+        
+        # Files that need OAuth redirect URI updates
+        oauth_files_to_update = [
+            (self.frontend_dir / ".env", 
+             r"VITE_OAUTH_REDIRECT_URI=http://localhost:\d+/auth/callback", 
+             f"VITE_OAUTH_REDIRECT_URI={redirect_uri}"),
+            (self.backend_dir / ".env",
+             r"OAUTH_REDIRECT_URI=http://localhost:\d+/auth/callback",
+             f"OAUTH_REDIRECT_URI={redirect_uri}")
+        ]
+        
+        oauth_updated = False
+        for file_path, pattern, replacement in oauth_files_to_update:
+            if file_path.exists():
+                try:
+                    import re
+                    content = file_path.read_text()
+                    updated_content = re.sub(pattern, replacement, content)
+                    if content != updated_content:
+                        file_path.write_text(updated_content)
+                        self.print_status(f"Updated {file_path.name}", "success", 3)
+                        oauth_updated = True
+                except Exception as e:
+                    self.print_status(f"Failed to update OAuth redirect in {file_path.name}: {e}", "warning", 3)
+            else:
+                self.print_status(f"OAuth config file not found: {file_path.name}", "warning", 3)
+        
+        if oauth_updated:
+            self.print_status("OAuth configuration synchronized", "success", 2)
+            self.print_status("Remember to update Google Cloud Console redirect URIs", "warning", 2)
+        else:
+            self.print_status("OAuth configuration up to date", "info", 2)
     
     def is_port_in_use(self, port: int) -> bool:
         """Check if a port is already in use"""
@@ -418,6 +463,11 @@ class AppRunner:
             
             self.save_config(self.config)
             self.print_status(f"Updated config.json with new {service} port: {new_port}", "success")
+            
+            # Sync OAuth config if frontend port changed
+            if service == "frontend":
+                self.sync_oauth_config(new_port)
+            
             return new_port
         else:
             self.print_status(f"Could not find alternative port for {service}", "error")
@@ -474,7 +524,7 @@ class AppRunner:
             import pandas
             from bs4 import BeautifulSoup  # beautifulsoup4 package imports as bs4
             import jinja2
-            self.print_status("Python dependencies: OK", "success")
+            self.print_status("Core Python dependencies: OK", "success")
         except ImportError as e:
             self.print_status(f"Missing Python dependency: {e}", "error")
             self.print_status("", "info")  # Blank line
@@ -482,6 +532,40 @@ class AppRunner:
             self.print_status("   1. pip install -r backend/requirements.txt", "info")
             self.print_status("   2. Or run: python3 run.py install", "info")
             return False
+            
+        # Check OAuth dependencies (optional but recommended)
+        oauth_deps_missing = []
+        try:
+            import psycopg2
+        except ImportError:
+            oauth_deps_missing.append("psycopg2-binary")
+            
+        try:
+            import jwt
+        except ImportError:
+            oauth_deps_missing.append("PyJWT")
+            
+        try:
+            from google.auth import default
+        except ImportError:
+            oauth_deps_missing.append("google-auth")
+            
+        try:
+            from flask_limiter import Limiter
+        except ImportError:
+            oauth_deps_missing.append("Flask-Limiter")
+            
+        try:
+            import dotenv
+        except ImportError:
+            oauth_deps_missing.append("python-dotenv")
+        
+        if oauth_deps_missing:
+            self.print_status(f"Optional OAuth dependencies missing: {', '.join(oauth_deps_missing)}", "warning")
+            self.print_status("OAuth user accounts will be disabled", "detail", 1)
+            self.print_status("To enable OAuth: pip install -r backend/requirements.txt", "detail", 1)
+        else:
+            self.print_status("OAuth dependencies: OK", "success")
             
         # Check Node.js and npm
         try:
@@ -563,6 +647,9 @@ class AppRunner:
         if not self._check_network_connectivity():
             self.print_status("Network connectivity issue detected", "warning", 1)
             self.print_status("App will start but may have issues scraping spell data", "detail", 2)
+        
+        # Check OAuth configuration status
+        self._check_oauth_configuration()
             
         return True
         
@@ -619,6 +706,61 @@ class AppRunner:
         except Exception:
             # Any other error, assume connectivity is fine
             return True
+    
+    def _check_oauth_configuration(self):
+        """Check OAuth configuration and provide status information"""
+        try:
+            from dotenv import load_dotenv
+            
+            # Load environment files to check OAuth settings
+            backend_env_file = self.backend_dir / ".env"
+            if backend_env_file.exists():
+                load_dotenv(backend_env_file)
+            
+            root_env_file = self.root_dir / ".env"
+            if root_env_file.exists():
+                load_dotenv(root_env_file, override=False)
+            
+            # Check if OAuth is enabled
+            oauth_enabled = os.environ.get('ENABLE_USER_ACCOUNTS', '').lower() == 'true'
+            
+            if oauth_enabled:
+                # Check required OAuth environment variables
+                oauth_vars = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'JWT_SECRET_KEY', 'OAUTH_REDIRECT_URI']
+                configured_vars = sum(1 for var in oauth_vars if os.environ.get(var))
+                
+                if configured_vars == len(oauth_vars):
+                    self.print_status("OAuth system: READY", "success", 1)
+                elif configured_vars > 0:
+                    self.print_status(f"OAuth system: INCOMPLETE ({configured_vars}/{len(oauth_vars)} configured)", "warning", 1)
+                else:
+                    self.print_status("OAuth system: NOT CONFIGURED", "warning", 1)
+                
+                # Check database configuration
+                if os.environ.get('DATABASE_URL'):
+                    self.print_status("Database: configured", "success", 2)
+                else:
+                    self.print_status("Database: using local fallback", "info", 2)
+                
+                # Check OAuth redirect URI consistency (without showing actual values)
+                redirect_uri = os.environ.get('OAUTH_REDIRECT_URI', '')
+                frontend_port = self.config.get('frontend_port', 3000)
+                expected_redirect = f"http://localhost:{frontend_port}/auth/callback"
+                
+                if redirect_uri == expected_redirect:
+                    self.print_status("OAuth redirect URI: synchronized", "success", 2)
+                elif redirect_uri and 'localhost' in redirect_uri:
+                    self.print_status("OAuth redirect URI: port mismatch detected", "warning", 2)
+                    
+            else:
+                self.print_status("OAuth system: DISABLED", "info", 1)
+                
+        except ImportError:
+            # python-dotenv not available
+            pass
+        except Exception:
+            # Any other error during OAuth check, don't fail startup
+            pass
     
     def _verify_services_health(self):
         """Verify that services are actually responding"""
@@ -737,6 +879,34 @@ class AppRunner:
             env = os.environ.copy()
             env['PYTHONPATH'] = str(self.root_dir)
             env['BACKEND_PORT'] = str(backend_port)
+            
+            # Load environment variables from .env files for OAuth support
+            # Check if python-dotenv is available and load .env files
+            try:
+                from dotenv import load_dotenv
+                # Load backend .env file first (higher priority)
+                backend_env_file = self.backend_dir / ".env"
+                if backend_env_file.exists():
+                    load_dotenv(backend_env_file)
+                    self.print_status("Loaded backend OAuth configuration", "detail", 2)
+                    
+                # Load root .env file for any additional variables
+                root_env_file = self.root_dir / ".env"
+                if root_env_file.exists():
+                    load_dotenv(root_env_file, override=False)  # Don't override backend settings
+                    
+                # Copy loaded environment variables to subprocess environment
+                oauth_vars = [
+                    'ENABLE_USER_ACCOUNTS', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+                    'JWT_SECRET_KEY', 'ENCRYPTION_KEY', 'OAUTH_REDIRECT_URI', 'DATABASE_URL'
+                ]
+                for var in oauth_vars:
+                    if var in os.environ:
+                        env[var] = os.environ[var]
+                        
+            except ImportError:
+                # python-dotenv not available, OAuth will use system environment variables only
+                self.print_status("python-dotenv not available, using system environment only", "detail", 2)
             
             # Platform-specific subprocess creation
             import platform

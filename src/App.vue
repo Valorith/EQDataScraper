@@ -3,6 +3,12 @@
     <!-- App Logo - appears on all pages -->
     <AppLogo />
     
+    <!-- User Authentication (top-right corner) -->
+    <div class="auth-section">
+      <UserMenu v-if="userStore.isAuthenticated" />
+      <GoogleAuthButton v-else />
+    </div>
+    
     <!-- Cache pre-hydration indicator -->
     <div v-if="spellsStore.isPreHydrating" class="cache-prehydration-indicator">
       <div class="prehydration-content">
@@ -20,18 +26,24 @@
 
 <script>
 import { useSpellsStore } from './stores/spells'
+import { useUserStore } from './stores/userStore'
 import DebugPanel from './components/DebugPanel.vue'
 import AppLogo from './components/AppLogo.vue'
+import GoogleAuthButton from './components/GoogleAuthButton.vue'
+import UserMenu from './components/UserMenu.vue'
 
 export default {
   name: 'App',
   components: {
     DebugPanel,
-    AppLogo
+    AppLogo,
+    GoogleAuthButton,
+    UserMenu
   },
   setup() {
     const spellsStore = useSpellsStore()
-    return { spellsStore }
+    const userStore = useUserStore()
+    return { spellsStore, userStore }
   },
   methods: {
     toggleDebugPanel() {
@@ -60,10 +72,20 @@ export default {
       }
       
       // In development, use env variable or default to localhost
-      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5005'
     })()
     console.log('Computed API_BASE_URL:', API_BASE_URL)
     console.log('Build timestamp:', new Date().toISOString())
+    
+    // Initialize authentication system
+    try {
+      console.log('🔐 Initializing authentication...')
+      await this.userStore.initializeAuth()
+      this.userStore.setupTokenRefresh()
+      console.log('✅ Authentication initialized')
+    } catch (error) {
+      console.error('❌ Authentication initialization failed:', error)
+    }
     
     // Initialize cache system
     try {
@@ -97,6 +119,15 @@ export default {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100vh;
+  position: relative;
+}
+
+/* Authentication section positioning */
+.auth-section {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
 }
 
 /* Cache pre-hydration indicator */

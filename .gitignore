@@ -23,6 +23,11 @@ RAILWAY_COMPATIBILITY_SUMMARY.md
 
 # Environment variables (contains sensitive database URLs)
 .env
+.env.*
+!.env.example
+!.env.template
+backend/.env
+backend/.env.*
 
 # Cache directory - contains persistent spell and pricing data
 cache/
@@ -31,6 +36,5 @@ cache/
 dist/
 
 # AI Assistant Documentation
-CLAUDE.md
 GEMINI.md
 .DS_Store

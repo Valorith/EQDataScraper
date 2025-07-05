@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 import os
 import sys
@@ -9,11 +9,87 @@ import time
 import psycopg2
 from urllib.parse import urlparse
 
+# Load environment variables from .env file for local development
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Loaded environment variables from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not available, using system environment variables only")
+
 # Import scrape_spells from the same directory
 from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
 
 app = Flask(__name__)
-CORS(app)
+
+# Check if user accounts are enabled
+ENABLE_USER_ACCOUNTS = os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true'
+
+# Configure CORS with OAuth support if enabled
+if ENABLE_USER_ACCOUNTS:
+    # Allow specific origins for OAuth callbacks
+    allowed_origins = [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'https://eqdatascraper-frontend-production.up.railway.app'
+    ]
+    CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
+else:
+    # Standard CORS for existing functionality
+    CORS(app)
+
+# Import OAuth components only if enabled
+if ENABLE_USER_ACCOUNTS:
+    try:
+        from routes.auth import auth_bp
+        from routes.users import users_bp
+        from routes.admin import admin_bp
+        from flask_limiter import Limiter
+        from flask_limiter.util import get_remote_address
+        
+        # Initialize rate limiter
+        limiter = Limiter(
+            app,
+            key_func=get_remote_address,
+            default_limits=["200 per day", "50 per hour"]
+        )
+        
+        # Apply rate limits to OAuth endpoints
+        limiter.limit("10 per minute")(auth_bp)
+        limiter.limit("60 per hour")(users_bp) 
+        limiter.limit("30 per hour")(admin_bp)
+        
+        # Database connection injection for OAuth routes
+        @app.before_request
+        def inject_db_connection():
+            """Inject database connection for OAuth routes."""
+            if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
+                if USE_DATABASE_CACHE:
+                    try:
+                        g.db_connection = psycopg2.connect(**DB_CONFIG)
+                    except Exception as e:
+                        app.logger.error(f"Failed to connect to database for OAuth: {e}")
+                        g.db_connection = None
+                else:
+                    g.db_connection = None
+        
+        @app.teardown_request
+        def close_db_connection(error):
+            """Close database connection after OAuth requests."""
+            if hasattr(g, 'db_connection') and g.db_connection:
+                g.db_connection.close()
+        
+        # Register OAuth blueprints
+        app.register_blueprint(auth_bp, url_prefix='/api')
+        app.register_blueprint(users_bp, url_prefix='/api')
+        app.register_blueprint(admin_bp, url_prefix='/api')
+        
+        app.logger.info("✅ OAuth user accounts enabled")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ OAuth components not available: {e}")
+        ENABLE_USER_ACCOUNTS = False
+else:
+    app.logger.info("OAuth user accounts disabled")
 
 # Load configuration
 def load_config():

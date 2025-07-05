@@ -207,11 +207,15 @@ class TestRefreshPricingCacheEndpoint:
         # Use proper case for cache key
         app.spells_cache['cleric'] = sample_spell_data
         
-        # Add some existing pricing data to clear
-        app.pricing_cache_timestamp['202'] = datetime.now().isoformat()
-        app.pricing_cache_timestamp['203'] = datetime.now().isoformat()
-        app.pricing_lookup['202'] = {'silver': 4}
-        app.pricing_lookup['203'] = {'silver': 4}
+        # Add some existing pricing data to clear - use spell IDs from sample_spell_data
+        app.pricing_cache_timestamp['13'] = datetime.now().isoformat()
+        app.pricing_cache_timestamp['12'] = datetime.now().isoformat()
+        app.pricing_lookup['13'] = {'silver': 4}
+        app.pricing_lookup['12'] = {'silver': 4}
+        
+        # Add spell details cache entries with pricing data
+        app.spell_details_cache['13'] = {'pricing': {'silver': 4}}
+        app.spell_details_cache['12'] = {'pricing': {'silver': 4}}
         
         response = mock_app.post('/api/refresh-pricing-cache/cleric')
         
@@ -224,10 +228,13 @@ class TestRefreshPricingCacheEndpoint:
         assert 'message' in data
         
         # Verify data was cleared
-        assert '202' not in app.pricing_cache_timestamp
-        assert '203' not in app.pricing_cache_timestamp
-        assert '202' not in app.pricing_lookup
-        assert '203' not in app.pricing_lookup
+        assert '13' not in app.pricing_cache_timestamp
+        assert '12' not in app.pricing_cache_timestamp
+        assert '13' not in app.pricing_lookup
+        assert '12' not in app.pricing_lookup
+        # Verify pricing was removed from spell details cache
+        assert '13' not in app.spell_details_cache or 'pricing' not in app.spell_details_cache.get('13', {})
+        assert '12' not in app.spell_details_cache or 'pricing' not in app.spell_details_cache.get('12', {})
     
     def test_refresh_pricing_cache_invalid_class(self, mock_app):
         """Test refreshing pricing cache for invalid class."""
