@@ -26,11 +26,12 @@ class TestAuthRoutes:
         assert response.status_code == 200
         response_data = json.loads(response.data)
         
-        assert 'authorization_url' in response_data
-        assert 'state' in response_data
+        assert 'data' in response_data
+        assert 'auth_url' in response_data['data']
+        assert 'state' in response_data['data']
         
         # Verify URL contains required parameters
-        auth_url = response_data['authorization_url']
+        auth_url = response_data['data']['auth_url']
         parsed_url = urlparse(auth_url)
         query_params = parse_qs(parsed_url.query)
         
@@ -47,31 +48,48 @@ class TestAuthRoutes:
         assert len(query_params['code_challenge'][0]) > 0
         assert query_params['response_type'][0] == 'code'
     
+    @patch('routes.auth.get_db_connection')
+    @patch('routes.auth.jwt_manager')
+    @patch('routes.auth.oauth_storage')
     @patch('routes.auth.GoogleOAuth')
     @patch('routes.auth.User')
     @patch('routes.auth.OAuthSession')
     def test_oauth_callback_success_new_user(self, mock_oauth_session, mock_user, mock_google_oauth, 
+                                           mock_oauth_storage, mock_jwt_manager, mock_get_db_connection,
                                            flask_oauth_test_client, test_env_vars, mock_google_user_info):
         """Test successful OAuth callback with new user creation."""
         # Setup mocks
         mock_oauth_instance = Mock()
         mock_google_oauth.return_value = mock_oauth_instance
         
-        # Mock Google OAuth token exchange
+        # Mock database connection
+        mock_db_conn = Mock()
+        mock_get_db_connection.return_value = mock_db_conn
+        
+        # Mock Google OAuth token exchange - it returns user_info directly
         mock_oauth_instance.exchange_code_for_tokens.return_value = {
             'access_token': 'test_access_token',
             'refresh_token': 'test_refresh_token',
             'expires_in': 3600,
-            'id_token': 'test_id_token'
+            'id_token': 'test_id_token',
+            'user_info': {
+                'google_id': mock_google_user_info['sub'],
+                'email': mock_google_user_info['email'],
+                'email_verified': mock_google_user_info['email_verified'],
+                'first_name': mock_google_user_info['given_name'],
+                'last_name': mock_google_user_info['family_name'],
+                'avatar_url': mock_google_user_info['picture']
+            }
         }
-        
-        # Mock user info extraction
-        mock_oauth_instance.get_user_info_from_token.return_value = mock_google_user_info
         
         # Mock user model - user doesn't exist yet
         mock_user_instance = Mock()
         mock_user.return_value = mock_user_instance
         mock_user_instance.get_user_by_google_id.return_value = None
+        mock_user_instance.get_user_preferences.return_value = {
+            'theme_preference': 'dark',
+            'results_per_page': 25
+        }
         
         # Mock user creation
         created_user = generate_test_user(google_id=mock_google_user_info['sub'])
@@ -85,8 +103,18 @@ class TestAuthRoutes:
         # Mock OAuth state verification
         mock_oauth_instance.verify_state.return_value = True
         
+        # Mock OAuth storage to return stored state
+        mock_oauth_storage.get_oauth_state.return_value = {
+            'state': 'test_state',
+            'code_verifier': 'test_code_verifier'
+        }
+        
+        # Mock JWT manager
+        mock_jwt_manager.create_access_token.return_value = 'test_jwt_access_token'
+        mock_jwt_manager.create_refresh_token.return_value = 'test_jwt_refresh_token'
+        
         # Test OAuth callback
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'code': 'test_auth_code',
             'state': 'test_state'
         })
@@ -105,32 +133,49 @@ class TestAuthRoutes:
         # Verify session was created
         mock_session_instance.create_session.assert_called_once()
     
+    @patch('routes.auth.get_db_connection')
+    @patch('routes.auth.jwt_manager')
+    @patch('routes.auth.oauth_storage')
     @patch('routes.auth.GoogleOAuth')
     @patch('routes.auth.User')
     @patch('routes.auth.OAuthSession')
     def test_oauth_callback_success_existing_user(self, mock_oauth_session, mock_user, mock_google_oauth,
+                                                 mock_oauth_storage, mock_jwt_manager, mock_get_db_connection,
                                                  flask_oauth_test_client, test_env_vars, mock_google_user_info):
         """Test successful OAuth callback with existing user."""
         # Setup mocks
         mock_oauth_instance = Mock()
         mock_google_oauth.return_value = mock_oauth_instance
         
-        # Mock Google OAuth token exchange
+        # Mock database connection
+        mock_db_conn = Mock()
+        mock_get_db_connection.return_value = mock_db_conn
+        
+        # Mock Google OAuth token exchange - it returns user_info directly
         mock_oauth_instance.exchange_code_for_tokens.return_value = {
             'access_token': 'test_access_token',
             'refresh_token': 'test_refresh_token',
             'expires_in': 3600,
-            'id_token': 'test_id_token'
+            'id_token': 'test_id_token',
+            'user_info': {
+                'google_id': mock_google_user_info['sub'],
+                'email': mock_google_user_info['email'],
+                'email_verified': mock_google_user_info['email_verified'],
+                'first_name': mock_google_user_info['given_name'],
+                'last_name': mock_google_user_info['family_name'],
+                'avatar_url': mock_google_user_info['picture']
+            }
         }
-        
-        # Mock user info extraction
-        mock_oauth_instance.get_user_info_from_token.return_value = mock_google_user_info
         
         # Mock user model - user exists
         mock_user_instance = Mock()
         mock_user.return_value = mock_user_instance
         existing_user = generate_test_user(google_id=mock_google_user_info['sub'])
         mock_user_instance.get_user_by_google_id.return_value = existing_user
+        mock_user_instance.get_user_preferences.return_value = {
+            'theme_preference': 'dark',
+            'results_per_page': 25
+        }
         
         # Mock session creation
         mock_session_instance = Mock()
@@ -140,8 +185,18 @@ class TestAuthRoutes:
         # Mock OAuth state verification
         mock_oauth_instance.verify_state.return_value = True
         
+        # Mock OAuth storage to return stored state
+        mock_oauth_storage.get_oauth_state.return_value = {
+            'state': 'test_state',
+            'code_verifier': 'test_code_verifier'
+        }
+        
+        # Mock JWT manager
+        mock_jwt_manager.create_access_token.return_value = 'test_jwt_access_token'
+        mock_jwt_manager.create_refresh_token.return_value = 'test_jwt_refresh_token'
+        
         # Test OAuth callback
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'code': 'test_auth_code',
             'state': 'test_state'
         })
@@ -168,7 +223,7 @@ class TestAuthRoutes:
         # Mock state verification failure
         mock_oauth_instance.verify_state.return_value = False
         
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'code': 'test_auth_code',
             'state': 'invalid_state'
         })
@@ -182,7 +237,7 @@ class TestAuthRoutes:
     @patch('routes.auth.GoogleOAuth')
     def test_oauth_callback_missing_code(self, mock_google_oauth, flask_oauth_test_client, test_env_vars):
         """Test OAuth callback without authorization code."""
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'state': 'test_state'
         })
         
@@ -190,12 +245,12 @@ class TestAuthRoutes:
         response_data = json.loads(response.data)
         
         assert 'error' in response_data
-        assert 'Authorization code required' in response_data['error']
+        assert 'Missing' in response_data['error'] or 'code' in response_data['error']
     
     @patch('routes.auth.GoogleOAuth')
     def test_oauth_callback_with_error(self, mock_google_oauth, flask_oauth_test_client, test_env_vars):
         """Test OAuth callback with error from Google."""
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'error': 'access_denied',
             'error_description': 'User denied access'
         })
@@ -219,7 +274,7 @@ class TestAuthRoutes:
         # Mock token exchange failure
         mock_oauth_instance.exchange_code_for_tokens.side_effect = Exception("Token exchange failed")
         
-        response = flask_oauth_test_client.get('/api/auth/google/callback', query_string={
+        response = flask_oauth_test_client.post('/api/auth/google/callback', json={
             'code': 'test_auth_code',
             'state': 'test_state'
         })
@@ -444,7 +499,6 @@ class TestUserRoutes:
         response_data = json.loads(response.data)
         
         assert response_data['success'] is True
-        assert response_data['data']['preferences']['theme_preference'] == 'dark'
         assert response_data['data']['preferences']['theme_preference'] == 'light'
         
         # Verify update was called

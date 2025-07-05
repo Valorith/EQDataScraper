@@ -196,7 +196,6 @@ class TestUserModel:
         
         assert result is not None
         assert result['user_id'] == 1
-        assert result['theme_preference'] == 'auto'
         assert result['theme_preference'] == 'dark'
     
     def test_update_user_preferences(self, mock_db_connection_with_context, sample_user_preferences):
@@ -359,9 +358,7 @@ class TestOAuthSessionModel:
         user_model = User(mock_db_connection_with_context)
         result = user_model.update_user_preferences(
             user_id=1,
-            theme_preference='auto',
             theme_preference='auto'
         )
         
-        assert result['theme_preference'] == 'auto'
         assert result['theme_preference'] == 'auto'

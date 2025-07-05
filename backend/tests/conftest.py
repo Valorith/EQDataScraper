@@ -217,6 +217,16 @@ def flask_test_client():
         return app.test_client()
 
 @pytest.fixture
+def mock_app():
+    """Create Flask test client (alias for backward compatibility)."""
+    # Import app here to avoid circular imports
+    with patch.dict(os.environ, {'ENABLE_USER_ACCOUNTS': 'false'}):
+        from app import app
+        app.config['TESTING'] = True
+        app.config['WTF_CSRF_ENABLED'] = False
+        return app.test_client()
+
+@pytest.fixture
 def flask_oauth_test_client(test_env_vars):
     """Create Flask test client with OAuth enabled for testing."""
     with patch('app.psycopg2.connect') as mock_connect:
@@ -332,3 +342,29 @@ def generate_test_session(**overrides):
     }
     base_data.update(overrides)
     return base_data
+
+@pytest.fixture
+def sample_spell_data():
+    """Sample spell data for testing."""
+    return [
+        {
+            'name': 'Complete Heal',
+            'level': 39,
+            'mana': 400,
+            'skill': 'Alteration',
+            'target_type': 'Single',
+            'spell_id': '13',
+            'effects': '1: Increase Current HP by 7500',
+            'icon': 'spell_icon_13.png'
+        },
+        {
+            'name': 'Greater Heal',
+            'level': 29,
+            'mana': 150,
+            'skill': 'Alteration', 
+            'target_type': 'Single',
+            'spell_id': '12',
+            'effects': '1: Increase Current HP by 280 to 350',
+            'icon': 'spell_icon_12.png'
+        }
+    ]
