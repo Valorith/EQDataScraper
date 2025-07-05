@@ -357,7 +357,6 @@ class TestUserRoutes:
         
         # Mock user preferences
         mock_user_instance.get_user_preferences.return_value = {
-            'default_class': 'wizard',
             'theme_preference': 'dark',
             'results_per_page': 25
         }
@@ -429,7 +428,6 @@ class TestUserRoutes:
         mock_user_instance = Mock()
         mock_user.return_value = mock_user_instance
         updated_prefs = {
-            'default_class': 'cleric',
             'theme_preference': 'light',
             'results_per_page': 50
         }
@@ -446,7 +444,7 @@ class TestUserRoutes:
         response_data = json.loads(response.data)
         
         assert response_data['success'] is True
-        assert response_data['data']['preferences']['default_class'] == 'cleric'
+        assert response_data['data']['preferences']['theme_preference'] == 'dark'
         assert response_data['data']['preferences']['theme_preference'] == 'light'
         
         # Verify update was called

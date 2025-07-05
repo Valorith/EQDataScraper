@@ -5,6 +5,7 @@ Test fixtures and configuration for OAuth user account system tests.
 import os
 
 # Set environment variables before importing any modules that need them
+os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Enable OAuth for tests
 os.environ['JWT_SECRET_KEY'] = 'test_jwt_secret_key_for_testing_only'
 os.environ['ENCRYPTION_KEY'] = 'test_encryption_key_for_testing_only'
 os.environ['GOOGLE_CLIENT_ID'] = 'test-client-id'
@@ -113,7 +114,6 @@ def sample_user_preferences():
     return {
         'id': 1,
         'user_id': 1,
-        'default_class': 'wizard',
         'theme_preference': 'dark',
         'results_per_page': 25,
         'created_at': datetime.utcnow(),

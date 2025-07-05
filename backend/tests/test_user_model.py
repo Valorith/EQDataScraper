@@ -196,13 +196,13 @@ class TestUserModel:
         
         assert result is not None
         assert result['user_id'] == 1
-        assert result['default_class'] == 'wizard'
+        assert result['theme_preference'] == 'auto'
         assert result['theme_preference'] == 'dark'
     
     def test_update_user_preferences(self, mock_db_connection_with_context, sample_user_preferences):
         """Test updating user preferences."""
         updated_prefs = sample_user_preferences.copy()
-        updated_prefs['default_class'] = 'cleric'
+        updated_prefs['theme_preference'] = 'dark'
         updated_prefs['results_per_page'] = 50
         
         mock_cursor = MockRealDictCursor(updated_prefs)
@@ -211,11 +211,11 @@ class TestUserModel:
         user_model = User(mock_db_connection_with_context)
         result = user_model.update_user_preferences(
             user_id=1,
-            default_class='cleric',
+            theme_preference='dark',
             results_per_page=50
         )
         
-        assert result['default_class'] == 'cleric'
+        assert result['theme_preference'] == 'dark'
         assert result['results_per_page'] == 50
         mock_db_connection_with_context.commit.assert_called_once()
 
@@ -347,7 +347,7 @@ class TestOAuthSessionModel:
         preferences_with_none = {
             'id': 1,
             'user_id': 1,
-            'default_class': None,  # None should be allowed
+            'theme_preference': 'auto'
             'theme_preference': 'auto',
             'results_per_page': 20,
             'created_at': datetime.utcnow(),
@@ -360,9 +360,9 @@ class TestOAuthSessionModel:
         user_model = User(mock_db_connection_with_context)
         result = user_model.update_user_preferences(
             user_id=1,
-            default_class=None,
+            theme_preference='auto',
             theme_preference='auto'
         )
         
-        assert result['default_class'] is None
+        assert result['theme_preference'] == 'auto'
         assert result['theme_preference'] == 'auto'

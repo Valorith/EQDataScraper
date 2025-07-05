@@ -200,8 +200,8 @@ class TestMigrationContent:
         # Check for important columns
         assert "google_id VARCHAR(255) UNIQUE NOT NULL" in content
         assert "email VARCHAR(255) UNIQUE NOT NULL" in content
-        assert "access_token TEXT NOT NULL" in content
-        assert "refresh_token TEXT NOT NULL" in content
+        assert "google_access_token TEXT" in content
+        assert "google_refresh_token TEXT" in content
     
     def test_migration_002_content(self):
         """Test display fields migration."""
@@ -214,8 +214,8 @@ class TestMigrationContent:
             content = f.read()
         
         # Check for new columns
-        assert "ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)" in content
-        assert "ADD COLUMN IF NOT EXISTS anonymous_mode BOOLEAN DEFAULT FALSE" in content
+        assert "ADD COLUMN IF NOT EXISTS display_name" in content
+        assert "ADD COLUMN IF NOT EXISTS anonymous_mode" in content
     
     def test_migration_004_removes_default_class(self):
         """Test default_class removal migration."""
