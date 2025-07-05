@@ -76,9 +76,28 @@
             <span class="log-level" :class="log.level">{{ log.level.toUpperCase() }}</span>
             <span class="log-source">{{ log.source }}</span>
           </div>
-          <div class="log-message">{{ log.message }}</div>
-          <div v-if="log.details" class="log-details">
-            <pre>{{ log.details }}</pre>
+          <div class="log-content">
+            <div class="log-message">{{ log.message }}</div>
+            <button 
+              v-if="log.details && !expandedLogs[log.id]" 
+              @click="toggleLogDetails(log.id)"
+              class="expand-btn"
+            >
+              <i class="fas fa-chevron-right"></i>
+              Show Details
+            </button>
+          </div>
+          <div v-if="log.details && expandedLogs[log.id]" class="log-details expanded">
+            <button @click="toggleLogDetails(log.id)" class="collapse-btn">
+              <i class="fas fa-chevron-down"></i>
+              Hide Details
+            </button>
+            <div class="details-content">
+              <div v-for="(value, key) in log.details" :key="key" class="detail-item">
+                <span class="detail-key">{{ formatDetailKey(key) }}:</span>
+                <span class="detail-value">{{ formatDetailValue(value) }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -116,9 +135,10 @@ import axios from 'axios'
 const router = useRouter()
 const userStore = useUserStore()
 
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5001')
+// API base URL - in development, use empty string so proxy handles /api routes
+const API_BASE_URL = import.meta.env.PROD ? 
+  (import.meta.env.VITE_BACKEND_URL || 'https://eqdatascraper-backend-production.up.railway.app') : 
+  ''
 
 // State
 const logs = ref([])
@@ -130,6 +150,7 @@ const filters = ref({
 })
 const currentPage = ref(1)
 const perPage = ref(50)
+const expandedLogs = ref({})
 
 // Computed
 const filteredLogs = computed(() => {
@@ -183,29 +204,164 @@ const formatDateTime = (timestamp) => {
   return new Date(timestamp).toLocaleString()
 }
 
+const toggleLogDetails = (logId) => {
+  expandedLogs.value[logId] = !expandedLogs.value[logId]
+}
+
+const formatDetailKey = (key) => {
+  // Convert camelCase to Title Case
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, str => str.toUpperCase())
+    .trim()
+}
+
+const formatDetailValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.join(', ')
+  }
+  if (typeof value === 'object' && value !== null) {
+    return JSON.stringify(value, null, 2)
+  }
+  return value
+}
+
 // Mock data generator (remove when backend endpoint is ready)
 const generateMockLogs = () => {
-  const levels = ['info', 'warning', 'error', 'debug']
-  const sources = ['backend/app.py', 'auth.py', 'scraper.py', 'cache.py']
-  const messages = [
-    'Cache loaded from disk',
-    'User authentication successful',
-    'Spell data scraping completed',
-    'Rate limit exceeded for IP',
-    'Database connection established',
-    'Cache refresh triggered',
-    'API endpoint accessed',
-    'Background task started'
+  const logTemplates = [
+    {
+      level: 'info',
+      source: 'backend/app.py',
+      message: 'Cache loaded from disk',
+      details: {
+        spellClasses: 16,
+        totalSpells: 1532,
+        pricingEntries: 1038,
+        loadTime: '2.3s',
+        cacheSize: '4.2MB'
+      }
+    },
+    {
+      level: 'info',
+      source: 'auth.py',
+      message: 'User authentication successful',
+      details: {
+        user: 'rgagnier06@gmail.com',
+        provider: 'Google OAuth',
+        ipAddress: '192.168.1.45',
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        sessionId: 'sess_2a3b4c5d6e7f8g9h'
+      }
+    },
+    {
+      level: 'warning',
+      source: 'scraper.py',
+      message: 'Spell data scraping completed with warnings',
+      details: {
+        class: 'Necromancer',
+        totalSpells: 384,
+        successfulScrapes: 380,
+        failedScrapes: 4,
+        failedSpellIds: [2756, 3891, 4102, 5234],
+        duration: '45.2s',
+        retryAttempts: 3
+      }
+    },
+    {
+      level: 'error',
+      source: 'backend/app.py',
+      message: 'Rate limit exceeded for IP',
+      details: {
+        ipAddress: '45.23.178.92',
+        endpoint: '/api/spell-details/:id',
+        requestCount: 156,
+        timeWindow: '1 minute',
+        limit: 100,
+        blockDuration: '5 minutes',
+        userAgent: 'Python/3.8 requests/2.25.1'
+      }
+    },
+    {
+      level: 'debug',
+      source: 'backend/app.py',
+      message: 'Database connection established',
+      details: {
+        host: 'shuttle.proxy.rlwy.net',
+        port: 56963,
+        database: 'railway',
+        sslEnabled: true,
+        poolSize: 20,
+        connectionTime: '132ms'
+      }
+    },
+    {
+      level: 'info',
+      source: 'cache.py',
+      message: 'Cache refresh triggered',
+      details: {
+        triggeredBy: 'Automatic expiry check',
+        classes: ['Cleric', 'Wizard'],
+        previousCacheAge: '26.5 hours',
+        expiryThreshold: '24 hours'
+      }
+    },
+    {
+      level: 'debug',
+      source: 'backend/app.py',
+      message: 'API endpoint accessed',
+      details: null // Some logs don't have details
+    },
+    {
+      level: 'info',
+      source: 'scraper.py',
+      message: 'Background task started',
+      details: {
+        taskType: 'Full spell refresh',
+        scheduledBy: 'System',
+        estimatedDuration: '10-15 minutes',
+        priority: 'low'
+      }
+    },
+    {
+      level: 'error',
+      source: 'scraper.py',
+      message: 'Failed to scrape spell details',
+      details: {
+        spellId: 3456,
+        spellName: 'Harvest',
+        error: 'HTTP 503 Service Unavailable',
+        url: 'https://alla.clumsysworld.com/spell.php?id=3456',
+        retryCount: 3,
+        lastAttempt: new Date().toISOString()
+      }
+    },
+    {
+      level: 'warning',
+      source: 'backend/app.py',
+      message: 'Slow API response detected',
+      details: {
+        endpoint: 'GET /api/spells/wizard',
+        responseTime: '850ms',
+        threshold: '500ms',
+        itemsReturned: 384,
+        cacheHit: false
+      }
+    }
   ]
   
-  return Array.from({ length: 100 }, (_, i) => ({
-    id: i + 1,
-    timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-    level: levels[Math.floor(Math.random() * levels.length)],
-    source: sources[Math.floor(Math.random() * sources.length)],
-    message: messages[Math.floor(Math.random() * messages.length)],
-    details: Math.random() > 0.7 ? 'Additional details about this log entry...' : null
-  })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  return Array.from({ length: 50 }, (_, i) => {
+    const template = logTemplates[Math.floor(Math.random() * logTemplates.length)]
+    const hasDetails = template.details !== null && Math.random() > 0.3 // 70% chance of having details
+    
+    return {
+      id: i + 1,
+      timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
+      level: template.level,
+      source: template.source,
+      message: template.message,
+      details: hasDetails ? template.details : null
+    }
+  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
 }
 
 // Lifecycle
@@ -429,23 +585,90 @@ onMounted(() => {
   font-family: monospace;
 }
 
+.log-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .log-message {
   color: #1a202c;
   line-height: 1.5;
+  flex: 1;
+}
+
+.expand-btn,
+.collapse-btn {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  border: 1px solid #e5e7eb;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.expand-btn:hover,
+.collapse-btn:hover {
+  background: #f3f4f6;
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.expand-btn i,
+.collapse-btn i {
+  font-size: 0.75rem;
+  transition: transform 0.2s;
 }
 
 .log-details {
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: 12px;
+  padding: 16px;
   background: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
+  border-radius: 6px;
+  animation: slideDown 0.2s ease-out;
 }
 
-.log-details pre {
-  margin: 0;
-  font-size: 0.85rem;
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.details-content {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.detail-key {
+  font-weight: 600;
   color: #4a5568;
-  white-space: pre-wrap;
+  min-width: 140px;
+  font-size: 0.85rem;
+}
+
+.detail-value {
+  color: #1a202c;
+  font-size: 0.85rem;
+  font-family: monospace;
+  word-break: break-word;
 }
 
 .pagination {
