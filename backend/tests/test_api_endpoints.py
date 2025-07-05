@@ -302,6 +302,10 @@ class TestRefreshEndpoints:
         app.pricing_lookup['202'] = {'silver': 4}
         app.pricing_lookup['203'] = {'silver': 4}
         
+        # Add spell details cache entries with pricing data
+        app.spell_details_cache['202'] = {'pricing': {'silver': 4}}
+        app.spell_details_cache['203'] = {'pricing': {'silver': 4}}
+        
         response = mock_app.post('/api/refresh-pricing-cache/cleric')
         
         assert response.status_code == 200
@@ -317,6 +321,9 @@ class TestRefreshEndpoints:
         assert '203' not in app.pricing_cache_timestamp
         assert '202' not in app.pricing_lookup
         assert '203' not in app.pricing_lookup
+        # Verify pricing was removed from spell details cache
+        assert '202' not in app.spell_details_cache or 'pricing' not in app.spell_details_cache.get('202', {})
+        assert '203' not in app.spell_details_cache or 'pricing' not in app.spell_details_cache.get('203', {})
     
     def test_refresh_pricing_cache_endpoint_invalid_class(self, mock_app):
         """Test refresh pricing cache endpoint with invalid class."""

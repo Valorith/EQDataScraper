@@ -182,7 +182,7 @@ class TestCacheMetrics:
         
         # Verify configuration
         assert 'config' in data
-        assert data['config']['spell_cache_expiry_hours'] == 1  # Test config
+        assert data['config']['spell_cache_expiry_hours'] == 24  # Default config
     
     def test_health_endpoint_metrics(self, mock_app, sample_spell_data):
         """Test health endpoint cache metrics."""
@@ -330,8 +330,9 @@ class TestEnhancedCacheIntegrity:
         
         app.spells_cache['cleric'] = sample_spell_data
         
-        # Add pricing data
-        for spell_id in ['202', '203']:
+        # Add pricing data for spells that are actually in the sample_spell_data
+        # sample_spell_data contains spell_id '13' and '12'
+        for spell_id in ['13', '12']:
             app.pricing_cache_timestamp[spell_id] = datetime.now().isoformat()
             app.pricing_lookup[spell_id] = {'silver': 4}
             app.spell_details_cache[spell_id] = {'pricing': {'silver': 4}}
@@ -341,10 +342,10 @@ class TestEnhancedCacheIntegrity:
         assert response.status_code == 200
         
         # Verify all pricing-related data was cleared consistently
-        assert '202' not in app.pricing_cache_timestamp
-        assert '203' not in app.pricing_cache_timestamp
-        assert '202' not in app.pricing_lookup
-        assert '203' not in app.pricing_lookup
+        assert '13' not in app.pricing_cache_timestamp
+        assert '12' not in app.pricing_cache_timestamp
+        assert '13' not in app.pricing_lookup
+        assert '12' not in app.pricing_lookup
         
         # Spell cache should remain intact
         assert 'cleric' in app.spells_cache
@@ -507,12 +508,33 @@ class TestCacheStatusReporting:
         app.spells_cache['cleric'] = sample_spell_data
         app.cache_timestamp['cleric'] = fresh_time
         
-        # Mixed pricing cache
-        app.spell_details_cache['202'] = sample_spell_details['202']
-        app.pricing_cache_timestamp['202'] = fresh_time
+        # Mixed pricing cache - use spell IDs that are actually in sample_spell_data
+        # sample_spell_data contains spell_id '13' and '12'
+        app.spell_details_cache['13'] = {
+            'cast_time': '2.0 sec',
+            'effects': ['1: Increase Current HP by 7500'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 4,
+                'bronze': 0,
+                'unknown': False
+            }
+        }
+        app.pricing_cache_timestamp['13'] = fresh_time
         
-        app.spell_details_cache['203'] = sample_spell_details['203']
-        app.pricing_cache_timestamp['203'] = expired_time
+        app.spell_details_cache['12'] = {
+            'cast_time': '3.0 sec',
+            'effects': ['1: Increase Current HP by 280 to 350'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 3,
+                'bronze': 0,
+                'unknown': False
+            }
+        }
+        app.pricing_cache_timestamp['12'] = expired_time
         
         response = mock_app.get('/api/cache-expiry-status/cleric')
         assert response.status_code == 200

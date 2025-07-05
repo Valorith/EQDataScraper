@@ -320,6 +320,9 @@ def generate_test_user(**overrides):
         'avatar_url': 'https://example.com/avatar.jpg',
         'role': 'user',
         'is_active': True,
+        'display_name': None,
+        'anonymous_mode': False,
+        'avatar_class': None,
         'created_at': datetime.utcnow(),
         'updated_at': datetime.utcnow(),
         'last_login': datetime.utcnow()
@@ -368,3 +371,90 @@ def sample_spell_data():
             'icon': 'spell_icon_12.png'
         }
     ]
+
+@pytest.fixture
+def sample_spell_details():
+    """Sample spell details data for testing."""
+    return {
+        '202': {
+            'cast_time': '2.0 sec',
+            'duration': '0 sec',
+            'effects': ['1: Increase Current HP by 100'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 4,
+                'bronze': 0,
+                'unknown': False
+            },
+            'range': '100',
+            'resist': 'Magic',
+            'skill': 'Alteration',
+            'target_type': 'Single'
+        },
+        '203': {
+            'cast_time': '3.0 sec',
+            'duration': '0 sec',
+            'effects': ['1: Increase Current Mana by 50'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 4,
+                'bronze': 0,
+                'unknown': False
+            },
+            'range': '100',
+            'resist': 'Magic',
+            'skill': 'Alteration',
+            'target_type': 'Single'
+        }
+    }
+
+@pytest.fixture
+def temp_cache_dir(tmp_path):
+    """Create a temporary cache directory for testing."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(exist_ok=True)
+    
+    # Import app and ensure file cache variables are defined
+    import app
+    
+    # Define cache file paths if they don't exist (happens when USE_DATABASE_CACHE=True)
+    if not hasattr(app, 'SPELLS_CACHE_FILE'):
+        app.CACHE_DIR = str(cache_dir)
+        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
+        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
+        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
+        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
+        files_created = True
+    else:
+        # Save original values
+        original_files = {
+            'CACHE_DIR': app.CACHE_DIR,
+            'SPELLS_CACHE_FILE': app.SPELLS_CACHE_FILE,
+            'PRICING_CACHE_FILE': app.PRICING_CACHE_FILE,
+            'SPELL_DETAILS_CACHE_FILE': app.SPELL_DETAILS_CACHE_FILE,
+            'METADATA_CACHE_FILE': app.METADATA_CACHE_FILE
+        }
+        
+        # Set temporary cache files
+        app.CACHE_DIR = str(cache_dir)
+        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
+        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
+        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
+        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
+        files_created = False
+    
+    yield str(cache_dir)
+    
+    # Cleanup
+    if not files_created:
+        # Restore original values
+        for attr, value in original_files.items():
+            setattr(app, attr, value)
+    else:
+        # Remove attributes we created
+        for attr in ['CACHE_DIR', 'SPELLS_CACHE_FILE', 'PRICING_CACHE_FILE', 
+                     'SPELL_DETAILS_CACHE_FILE', 'METADATA_CACHE_FILE']:
+            if hasattr(app, attr):
+                delattr(app, attr)

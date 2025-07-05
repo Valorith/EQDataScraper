@@ -10,18 +10,19 @@ from datetime import datetime, timedelta
 from utils.oauth import GoogleOAuth
 
 
+@pytest.fixture
+def oauth_client():
+    """Create GoogleOAuth instance with test credentials."""
+    with patch.dict('os.environ', {
+        'GOOGLE_CLIENT_ID': 'test-client-id',
+        'GOOGLE_CLIENT_SECRET': 'test-client-secret',
+        'OAUTH_REDIRECT_URI': 'http://localhost:3000/auth/callback'
+    }):
+        return GoogleOAuth()
+
+
 class TestGoogleOAuth:
     """Test cases for GoogleOAuth class."""
-    
-    @pytest.fixture
-    def oauth_client(self):
-        """Create GoogleOAuth instance with test credentials."""
-        with patch.dict('os.environ', {
-            'GOOGLE_CLIENT_ID': 'test-client-id',
-            'GOOGLE_CLIENT_SECRET': 'test-client-secret',
-            'OAUTH_REDIRECT_URI': 'http://localhost:3000/auth/callback'
-        }):
-            return GoogleOAuth()
     
     def test_init_with_missing_credentials(self):
         """Test initialization fails without required credentials."""

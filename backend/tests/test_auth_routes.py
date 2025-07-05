@@ -8,7 +8,7 @@ import json
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs
-from flask import Flask
+from flask import Flask, g
 
 from routes.auth import auth_bp
 from utils.oauth import GoogleOAuth
@@ -441,217 +441,240 @@ class TestAuthRoutes:
 class TestUserRoutes:
     """Test user management routes."""
     
-    @patch('routes.auth.jwt_manager')
-    @patch('routes.auth.User')
-    def test_get_user_profile_success(self, mock_user, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_get_user_profile_success(self, mock_jwt_manager, 
+                                     flask_oauth_test_client, test_env_vars):
         """Test successful user profile retrieval."""
-        # Mock authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'test@example.com',
-            'role': 'user',
-            'type': 'access'
-        }
-        
-        # Mock user model
-        mock_user_instance = Mock()
-        mock_user.return_value = mock_user_instance
-        user_data = generate_test_user()
-        mock_user_instance.get_user_by_id.return_value = user_data
-        
-        # Mock user preferences
-        mock_user_instance.get_user_preferences.return_value = {
-            'theme_preference': 'dark',
-            'results_per_page': 25
-        }
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'test@example.com', 'role': 'user'}
-            
-            response = flask_oauth_test_client.get('/api/user/profile',
-                                                  headers={'Authorization': 'Bearer valid_token'})
-        
-        assert response.status_code == 200
-        response_data = json.loads(response.data)
-        
-        assert response_data['success'] is True
-        assert 'user' in response_data['data']
-        assert 'preferences' in response_data['data']
-        assert response_data['data']['user']['email'] == 'test@example.com'
+        with flask_oauth_test_client.application.app_context():
+            with patch('routes.users.User') as mock_user:
+                with patch('routes.users.get_db_connection') as mock_get_db:
+                    # Mock database connection
+                    mock_db_conn = Mock()
+                    mock_get_db.return_value = mock_db_conn
+                    
+                    # Mock authentication
+                    mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+                    mock_jwt_manager.verify_token.return_value = {
+                        'user_id': 1,
+                        'email': 'test@example.com',
+                        'role': 'user',
+                        'type': 'access'
+                    }
+                    
+                    # Mock user model
+                    mock_user_instance = Mock()
+                    mock_user.return_value = mock_user_instance
+                    user_data = generate_test_user()
+                    mock_user_instance.get_user_by_id.return_value = user_data
+                    
+                    # Mock user preferences
+                    mock_user_instance.get_user_preferences.return_value = {
+                        'theme_preference': 'dark',
+                        'results_per_page': 25
+                    }
+                    
+                    response = flask_oauth_test_client.get('/api/user/profile',
+                                                          headers={'Authorization': 'Bearer valid_token'})
+                    
+                    # Debug: Print response details if not 200
+                    if response.status_code != 200:
+                        print(f"Response status: {response.status_code}")
+                        print(f"Response data: {response.data}")
+                    
+                    assert response.status_code == 200
+                    response_data = json.loads(response.data)
+                    
+                    assert response_data['success'] is True
+                    assert 'user' in response_data['data']
+                    assert 'preferences' in response_data['data']
+                    assert response_data['data']['user']['email'] == 'test@example.com'
     
-    @patch('routes.auth.jwt_manager')
-    @patch('routes.auth.User')
-    def test_update_user_profile_success(self, mock_user, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_update_user_profile_success(self, mock_jwt_manager,
+                                        flask_oauth_test_client, test_env_vars):
         """Test successful user profile update."""
-        # Mock authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'test@example.com',
-            'role': 'user',
-            'type': 'access'
-        }
-        
-        # Mock user model
-        mock_user_instance = Mock()
-        mock_user.return_value = mock_user_instance
-        updated_user = generate_test_user(first_name='Updated', last_name='Name')
-        mock_user_instance.update_user_profile.return_value = updated_user
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'test@example.com', 'role': 'user'}
-            
-            response = flask_oauth_test_client.put('/api/user/profile',
-                                                  json={'first_name': 'Updated', 'last_name': 'Name'},
-                                                  headers={'Authorization': 'Bearer valid_token'})
-        
-        assert response.status_code == 200
-        response_data = json.loads(response.data)
-        
-        assert response_data['success'] is True
-        assert response_data['data']['user']['first_name'] == 'Updated'
-        assert response_data['data']['user']['last_name'] == 'Name'
-        
-        # Verify update was called
-        mock_user_instance.update_user_profile.assert_called_once()
+        with flask_oauth_test_client.application.app_context():
+            with patch('routes.users.User') as mock_user:
+                with patch('routes.users.get_db_connection') as mock_get_db:
+                    # Mock database connection
+                    mock_db_conn = Mock()
+                    mock_get_db.return_value = mock_db_conn
+                    
+                    # Mock authentication
+                    mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+                    mock_jwt_manager.verify_token.return_value = {
+                        'user_id': 1,
+                        'email': 'test@example.com',
+                        'role': 'user',
+                        'type': 'access'
+                    }
+                    
+                    # Mock user model
+                    mock_user_instance = Mock()
+                    mock_user.return_value = mock_user_instance
+                    updated_user = generate_test_user(first_name='Updated', last_name='Name')
+                    mock_user_instance.update_user_profile.return_value = updated_user
+                    
+                    response = flask_oauth_test_client.put('/api/user/profile',
+                                                          json={'first_name': 'Updated', 'last_name': 'Name'},
+                                                          headers={'Authorization': 'Bearer valid_token'})
+                    
+                    assert response.status_code == 200
+                    response_data = json.loads(response.data)
+                    
+                    assert response_data['success'] is True
+                    assert response_data['data']['user']['first_name'] == 'Updated'
+                    assert response_data['data']['user']['last_name'] == 'Name'
+                    
+                    # Verify update was called
+                    mock_user_instance.update_user_profile.assert_called_once()
     
-    @patch('routes.auth.jwt_manager')
-    @patch('routes.auth.User')
-    def test_update_user_preferences_success(self, mock_user, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_update_user_preferences_success(self, mock_jwt_manager,
+                                            flask_oauth_test_client, test_env_vars):
         """Test successful user preferences update."""
-        # Mock authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'test@example.com',
-            'role': 'user',
-            'type': 'access'
-        }
-        
-        # Mock user model
-        mock_user_instance = Mock()
-        mock_user.return_value = mock_user_instance
-        updated_prefs = {
-            'theme_preference': 'light',
-            'results_per_page': 50
-        }
-        mock_user_instance.update_user_preferences.return_value = updated_prefs
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'test@example.com', 'role': 'user'}
-            
-            response = flask_oauth_test_client.put('/api/user/preferences',
-                                                  json=updated_prefs,
-                                                  headers={'Authorization': 'Bearer valid_token'})
-        
-        assert response.status_code == 200
-        response_data = json.loads(response.data)
-        
-        assert response_data['success'] is True
-        assert response_data['data']['preferences']['theme_preference'] == 'light'
-        
-        # Verify update was called
-        mock_user_instance.update_user_preferences.assert_called_once()
+        with flask_oauth_test_client.application.app_context():
+            with patch('routes.users.User') as mock_user:
+                with patch('routes.users.get_db_connection') as mock_get_db:
+                    # Mock database connection
+                    mock_db_conn = Mock()
+                    mock_get_db.return_value = mock_db_conn
+                    
+                    # Mock authentication
+                    mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+                    mock_jwt_manager.verify_token.return_value = {
+                        'user_id': 1,
+                        'email': 'test@example.com',
+                        'role': 'user',
+                        'type': 'access'
+                    }
+                    
+                    # Mock user model
+                    mock_user_instance = Mock()
+                    mock_user.return_value = mock_user_instance
+                    updated_prefs = {
+                        'theme_preference': 'light',
+                        'results_per_page': 50
+                    }
+                    mock_user_instance.update_user_preferences.return_value = updated_prefs
+                    
+                    response = flask_oauth_test_client.put('/api/user/preferences',
+                                                          json=updated_prefs,
+                                                          headers={'Authorization': 'Bearer valid_token'})
+                    
+                    assert response.status_code == 200
+                    response_data = json.loads(response.data)
+                    
+                    assert response_data['success'] is True
+                    assert response_data['data']['preferences']['theme_preference'] == 'light'
+                    
+                    # Verify update was called
+                    mock_user_instance.update_user_preferences.assert_called_once()
 
 
 class TestAdminRoutes:
     """Test admin-only routes."""
     
-    @patch('routes.auth.jwt_manager')
-    @patch('routes.auth.User')
-    def test_get_all_users_admin_success(self, mock_user, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_get_all_users_admin_success(self, mock_jwt_manager,
+                                        flask_oauth_test_client, test_env_vars):
         """Test admin can retrieve all users."""
-        # Mock admin authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'admin_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'admin@example.com',
-            'role': 'admin',
-            'type': 'access'
-        }
-        
-        # Mock user model
-        mock_user_instance = Mock()
-        mock_user.return_value = mock_user_instance
-        mock_user_instance.get_all_users.return_value = {
-            'users': [generate_test_user()],
-            'total_count': 1,
-            'page': 1,
-            'per_page': 10
-        }
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'admin@example.com', 'role': 'admin'}
-            
-            response = flask_oauth_test_client.get('/api/admin/users',
-                                                  headers={'Authorization': 'Bearer admin_token'})
-        
-        assert response.status_code == 200
-        response_data = json.loads(response.data)
-        
-        assert response_data['success'] is True
-        assert 'users' in response_data['data']
-        assert response_data['data']['total_count'] == 1
+        with flask_oauth_test_client.application.app_context():
+            with patch('routes.admin.User') as mock_user:
+                with patch('routes.admin.get_db_connection') as mock_get_db:
+                    # Mock database connection
+                    mock_db_conn = Mock()
+                    mock_get_db.return_value = mock_db_conn
+                    
+                    # Mock admin authentication
+                    mock_jwt_manager.extract_token_from_header.return_value = 'admin_token'
+                    mock_jwt_manager.verify_token.return_value = {
+                        'user_id': 1,
+                        'email': 'admin@example.com',
+                        'role': 'admin',
+                        'type': 'access'
+                    }
+                    
+                    # Mock user model
+                    mock_user_instance = Mock()
+                    mock_user.return_value = mock_user_instance
+                    mock_user_instance.get_all_users.return_value = {
+                        'users': [generate_test_user()],
+                        'total_count': 1,
+                        'page': 1,
+                        'per_page': 10
+                    }
+                    
+                    response = flask_oauth_test_client.get('/api/admin/users',
+                                                          headers={'Authorization': 'Bearer admin_token'})
+                    
+                    assert response.status_code == 200
+                    response_data = json.loads(response.data)
+                    
+                    assert response_data['success'] is True
+                    assert 'users' in response_data['data']
+                    assert response_data['data']['total_count'] == 1
     
-    @patch('routes.auth.jwt_manager')
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
     def test_get_all_users_regular_user_denied(self, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
         """Test regular user cannot access admin endpoints."""
-        # Mock regular user authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'user_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'user@example.com',
-            'role': 'user',  # Not admin
-            'type': 'access'
-        }
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'user@example.com', 'role': 'user'}
+        with flask_oauth_test_client.application.app_context():
+            # Mock regular user authentication
+            mock_jwt_manager.extract_token_from_header.return_value = 'user_token'
+            mock_jwt_manager.verify_token.return_value = {
+                'user_id': 1,
+                'email': 'user@example.com',
+                'role': 'user',  # Not admin
+                'type': 'access'
+            }
             
             response = flask_oauth_test_client.get('/api/admin/users',
                                                   headers={'Authorization': 'Bearer user_token'})
-        
-        assert response.status_code == 403
-        response_data = json.loads(response.data)
-        
-        assert 'error' in response_data
-        assert 'Admin access required' in response_data['error']
-    
-    @patch('routes.auth.jwt_manager')
-    @patch('routes.auth.User')
-    def test_update_user_role_admin_success(self, mock_user, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
-        """Test admin can update user roles."""
-        # Mock admin authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'admin_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'admin@example.com',
-            'role': 'admin',
-            'type': 'access'
-        }
-        
-        # Mock user model
-        mock_user_instance = Mock()
-        mock_user.return_value = mock_user_instance
-        updated_user = generate_test_user(id=2, role='admin')
-        mock_user_instance.update_user_role.return_value = updated_user
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'admin@example.com', 'role': 'admin'}
             
-            response = flask_oauth_test_client.put('/api/admin/users/2/role',
-                                                  json={'role': 'admin'},
-                                                  headers={'Authorization': 'Bearer admin_token'})
-        
-        assert response.status_code == 200
-        response_data = json.loads(response.data)
-        
-        assert response_data['success'] is True
-        assert response_data['data']['user']['role'] == 'admin'
-        
-        # Verify update was called
-        mock_user_instance.update_user_role.assert_called_once_with(user_id=2, role='admin')
+            assert response.status_code == 403
+            response_data = json.loads(response.data)
+            
+            assert 'error' in response_data
+            assert 'Admin access required' in response_data['error']
+    
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_update_user_role_admin_success(self, mock_jwt_manager,
+                                           flask_oauth_test_client, test_env_vars):
+        """Test admin can update user roles."""
+        with flask_oauth_test_client.application.app_context():
+            with patch('routes.admin.User') as mock_user:
+                with patch('routes.admin.get_db_connection') as mock_get_db:
+                    # Mock database connection
+                    mock_db_conn = Mock()
+                    mock_get_db.return_value = mock_db_conn
+                    
+                    # Mock admin authentication
+                    mock_jwt_manager.extract_token_from_header.return_value = 'admin_token'
+                    mock_jwt_manager.verify_token.return_value = {
+                        'user_id': 1,
+                        'email': 'admin@example.com',
+                        'role': 'admin',
+                        'type': 'access'
+                    }
+                    
+                    # Mock user model
+                    mock_user_instance = Mock()
+                    mock_user.return_value = mock_user_instance
+                    updated_user = generate_test_user(id=2, role='admin')
+                    mock_user_instance.update_user_role.return_value = updated_user
+                    
+                    response = flask_oauth_test_client.put('/api/admin/users/2',
+                                                          json={'role': 'admin'},
+                                                          headers={'Authorization': 'Bearer admin_token'})
+                    
+                    assert response.status_code == 200
+                    response_data = json.loads(response.data)
+                    
+                    assert response_data['success'] is True
+                    assert response_data['data']['user']['role'] == 'admin'
+                    
+                    # Verify update was called
+                    mock_user_instance.update_user_role.assert_called_once_with(2, 'admin')
 
 
 class TestRateLimitingIntegration:
@@ -673,20 +696,19 @@ class TestRateLimitingIntegration:
         assert rate_limited_count > 0
         assert success_count + rate_limited_count == 12
     
-    @patch('routes.auth.jwt_manager')
-    def test_user_endpoint_rate_limit_enforcement(self, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
+    def test_user_endpoint_rate_limit_enforcement(self, mock_jwt_manager,
+                                                 flask_oauth_test_client, test_env_vars):
         """Test rate limiting on user endpoints."""
-        # Mock authentication
-        mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'email': 'test@example.com',
-            'role': 'user',
-            'type': 'access'
-        }
-        
-        with patch('routes.auth.g') as mock_g:
-            mock_g.current_user = {'id': 1, 'email': 'test@example.com', 'role': 'user'}
+        with flask_oauth_test_client.application.app_context():
+            # Mock authentication
+            mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+            mock_jwt_manager.verify_token.return_value = {
+                'user_id': 1,
+                'email': 'test@example.com',
+                'role': 'user',
+                'type': 'access'
+            }
             
             # Make requests to exceed rate limit
             responses = []
