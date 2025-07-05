@@ -299,7 +299,7 @@ const promoteToAdmin = async (user) => {
     try {
       await axios.put(`${API_BASE_URL}/api/admin/users/${user.id}`, 
         { role: 'admin' },
-        { headers: { Authorization: `Bearer ${userStore.token}` } }
+        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
       )
       await loadUsers()
     } catch (error) {
@@ -313,7 +313,7 @@ const demoteToUser = async (user) => {
     try {
       await axios.put(`${API_BASE_URL}/api/admin/users/${user.id}`, 
         { role: 'user' },
-        { headers: { Authorization: `Bearer ${userStore.token}` } }
+        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
       )
       await loadUsers()
     } catch (error) {

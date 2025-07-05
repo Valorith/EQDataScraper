@@ -72,7 +72,7 @@ export default {
       }
       
       // In development, use env variable or default to localhost
-      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5006'
+      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
     })()
     console.log('Computed API_BASE_URL:', API_BASE_URL)
     console.log('Build timestamp:', new Date().toISOString())
@@ -87,28 +87,9 @@ export default {
       console.error('❌ Authentication initialization failed:', error)
     }
     
-    // Initialize cache system
-    try {
-      console.log('🚀 Initializing cache system...')
-      
-      // Start backend warmup and cache pre-hydration in parallel
-      const [warmupResult, preHydrationResult] = await Promise.allSettled([
-        this.spellsStore.warmupBackend(),
-        this.spellsStore.preHydrateCache()
-      ])
-      
-      console.log('Warmup result:', warmupResult.status === 'fulfilled' ? warmupResult.value : warmupResult.reason)
-      console.log('Pre-hydration result:', preHydrationResult.status === 'fulfilled' ? preHydrationResult.value : preHydrationResult.reason)
-      
-      if (warmupResult.status === 'fulfilled' && warmupResult.value) {
-        console.log('✅ Backend is warmed up and ready')
-      } else {
-        console.warn('⚠️ Backend warmup failed, but application will continue with on-demand loading')
-      }
-      
-    } catch (error) {
-      console.error('❌ Cache initialization failed:', error)
-    }
+    // Skip cache initialization in App.vue since main.js already handles it
+    // This prevents duplicate initialization attempts and 429 errors
+    console.log('🎯 Cache initialization handled by main.js')
   }
 }
 </script>

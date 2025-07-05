@@ -8,7 +8,7 @@ import axios from 'axios'
 
 // Get API base URL from environment or default
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5001')
 
 export const useUserStore = defineStore('user', {
   state: () => ({

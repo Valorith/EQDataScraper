@@ -266,7 +266,8 @@ let statusInterval = null
 const classesWithStatus = computed(() => {
   return spellsStore.classes.map(c => ({
     ...c,
-    lastScraped: getClassLastScraped(c.apiName)
+    apiName: c.name.toLowerCase(), // Use lowercase class name as apiName
+    lastScraped: getClassLastScraped(c.name.toLowerCase())
   }))
 })
 
@@ -396,7 +397,7 @@ const getClassLastScraped = (className) => {
 }
 
 const formatClassName = (apiName) => {
-  const classInfo = spellsStore.classes.find(c => c.apiName === apiName)
+  const classInfo = spellsStore.classes.find(c => c.name.toLowerCase() === apiName)
   return classInfo?.name || apiName
 }
 
