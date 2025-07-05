@@ -17,15 +17,15 @@
         <div class="card-content">
           <div class="stat-row">
             <span class="stat-label">Total Users</span>
-            <span class="stat-value">{{ stats.totalUsers || '-' }}</span>
+            <span class="stat-value">{{ stats.users?.total || stats.totalUsers || 0 }}</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Active Today</span>
-            <span class="stat-value">{{ stats.activeToday || '-' }}</span>
+            <span class="stat-value">{{ stats.users?.active_today || stats.activeToday || 0 }}</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Admin Users</span>
-            <span class="stat-value">{{ stats.adminUsers || '-' }}</span>
+            <span class="stat-value">{{ stats.users?.admins || stats.adminUsers || 0 }}</span>
           </div>
         </div>
         <div class="card-actions">
@@ -53,7 +53,7 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Cached Classes</span>
-            <span class="stat-value">{{ cacheStatus.cachedClasses || '-' }}/16</span>
+            <span class="stat-value">{{ cacheStatus.cachedClasses || 0 }}/16</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Last Update</span>
@@ -89,7 +89,7 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Progress</span>
-            <span class="stat-value">{{ scrapingStatus.progress || '-' }}</span>
+            <span class="stat-value">{{ scrapingStatus.progress || 'N/A' }}</span>
           </div>
         </div>
         <div class="card-actions">
@@ -115,7 +115,7 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Response Time</span>
-            <span class="stat-value">{{ systemHealth.avgResponseTime || '-' }}ms</span>
+            <span class="stat-value">{{ systemHealth.avgResponseTime || 0 }}ms</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Error Rate</span>
@@ -375,15 +375,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+@import '../style-constants.css';
+
 .admin-dashboard {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: var(--header-height);
   max-width: 1400px;
   margin: 0 auto;
 }
 
 .dashboard-header {
   margin-bottom: 40px;
+  margin-top: 20px; /* Add extra spacing from the top */
 }
 
 .dashboard-header h1 {
@@ -448,12 +451,14 @@ onUnmounted(() => {
 }
 
 .card-icon.health {
-  background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
 }
 
 .card-header h2 {
   font-size: 1.3rem;
   margin: 0;
+  color: #1a202c;
+  font-weight: 600;
 }
 
 .card-content {
@@ -473,13 +478,15 @@ onUnmounted(() => {
 }
 
 .stat-label {
-  color: #666;
+  color: #4a5568;
   font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .stat-value {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 1.1rem;
+  color: #1a202c;
 }
 
 .stat-value.success {
@@ -523,6 +530,8 @@ onUnmounted(() => {
 
 .quick-actions h2 {
   margin-bottom: 20px;
+  color: #1a202c;
+  font-weight: 600;
 }
 
 .action-grid {
@@ -562,6 +571,7 @@ onUnmounted(() => {
 
 .quick-action-btn span {
   font-weight: 500;
+  color: #1a202c;
 }
 
 .recent-activity {
@@ -574,6 +584,8 @@ onUnmounted(() => {
 
 .recent-activity h2 {
   margin-bottom: 20px;
+  color: #1a202c;
+  font-weight: 600;
 }
 
 .activity-list {
@@ -630,17 +642,18 @@ onUnmounted(() => {
 .activity-description {
   margin: 0 0 5px 0;
   font-weight: 500;
+  color: #1a202c;
 }
 
 .activity-time {
-  color: #666;
+  color: #4a5568;
   font-size: 0.85rem;
 }
 
 .no-activity {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: #4a5568;
 }
 
 @media (max-width: 768px) {

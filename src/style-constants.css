@@ -1,0 +1,26 @@
+/* Global style constants for consistent spacing */
+:root {
+  /* Header spacing - accounts for fixed logo and auth elements */
+  --header-height: 100px;
+  --header-height-mobile: 120px;
+  
+  /* Z-index layers */
+  --z-logo: 1000;
+  --z-auth: 1100;
+  --z-modal: 2000;
+  --z-notification: 3000;
+}
+
+/* Utility class for consistent page padding */
+.page-container {
+  padding: 20px;
+  padding-top: var(--header-height);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .page-container {
+    padding-top: var(--header-height-mobile);
+  }
+}
