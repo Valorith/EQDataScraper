@@ -84,53 +84,12 @@
             <td>
               <div class="action-buttons">
                 <button 
-                  @click="viewUserDetails(user)" 
+                  @click="openActionsModal(user)" 
                   class="action-btn view"
-                  title="View user details and sessions"
+                  title="View user details and actions"
                 >
                   <i class="fas fa-eye"></i>
                   <span class="btn-text">View</span>
-                </button>
-                
-                <!-- Role Dropdown -->
-                <div class="role-dropdown" v-if="user.id !== currentUserId">
-                  <button 
-                    @click="toggleRoleDropdown(user.id)"
-                    class="role-dropdown-btn"
-                    :class="{ 'active': activeRoleDropdown === user.id }"
-                  >
-                    <i class="fas fa-user-cog"></i>
-                    <span class="btn-text">Role</span>
-                    <i class="fas fa-chevron-down dropdown-arrow"></i>
-                  </button>
-                  <div 
-                    v-if="activeRoleDropdown === user.id" 
-                    class="role-dropdown-menu"
-                    @click.stop
-                  >
-                    <div class="dropdown-header">Select Role</div>
-                    <button
-                      v-for="role in availableRoles"
-                      :key="role.value"
-                      @click="changeUserRole(user, role.value)"
-                      class="role-option"
-                      :class="{ 'current': user.role === role.value }"
-                    >
-                      <i v-if="user.role === role.value" class="fas fa-check"></i>
-                      <i v-else class="role-spacer"></i>
-                      <span>{{ role.label }}</span>
-                    </button>
-                  </div>
-                </div>
-                
-                <button 
-                  v-if="user.id !== currentUserId"
-                  @click="openActionsModal(user)" 
-                  class="action-btn actions"
-                  title="More actions"
-                >
-                  <i class="fas fa-ellipsis-v"></i>
-                  <span class="btn-text">Actions</span>
                 </button>
               </div>
             </td>
@@ -277,13 +236,27 @@
               </div>
             </button>
 
-            <button @click="changeRoleFromModal()" class="action-item">
+            <div class="action-item role-selector">
               <i class="fas fa-user-tag"></i>
               <div class="action-info">
                 <span class="action-title">Change Role</span>
-                <span class="action-desc">Current: {{ actionUser.role }} → {{ actionUser.role === 'admin' ? 'User' : 'Admin' }}</span>
+                <div class="role-select-wrapper">
+                  <select 
+                    :value="actionUser.role" 
+                    @change="handleRoleChange($event)"
+                    class="role-select"
+                  >
+                    <option 
+                      v-for="role in availableRoles" 
+                      :key="role.value" 
+                      :value="role.value"
+                    >
+                      {{ role.label }} {{ actionUser.role === role.value ? '(Current)' : '' }}
+                    </option>
+                  </select>
+                </div>
               </div>
-            </button>
+            </div>
 
             <button @click="logoutUser()" class="action-item">
               <i class="fas fa-sign-out-alt"></i>
@@ -316,7 +289,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import axios from 'axios'
@@ -339,7 +312,6 @@ const perPage = ref(20)
 const totalPages = ref(1)
 const selectedUser = ref(null)
 const userDetails = ref(null)
-const activeRoleDropdown = ref(null)
 const actionUser = ref(null)
 
 // Available roles
@@ -424,54 +396,38 @@ const viewUserDetails = async (user) => {
   }
 }
 
-const toggleRoleDropdown = (userId) => {
-  if (activeRoleDropdown.value === userId) {
-    activeRoleDropdown.value = null
-  } else {
-    activeRoleDropdown.value = userId
-  }
-}
-
-const changeUserRole = async (user, newRole) => {
-  // Don't do anything if it's the same role
-  if (user.role === newRole) {
-    activeRoleDropdown.value = null
-    return
-  }
-  
-  const roleLabel = availableRoles.find(r => r.value === newRole)?.label
-  const confirmMessage = `Change ${user.first_name} ${user.last_name}'s role from ${user.role} to ${newRole}?`
-  
-  if (confirm(confirmMessage)) {
-    try {
-      await axios.put(`${API_BASE_URL}/api/admin/users/${user.id}`, 
-        { role: newRole },
-        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
-      )
-      activeRoleDropdown.value = null
-      await loadUsers()
-    } catch (error) {
-      console.error('Error changing user role:', error)
-      alert('Failed to change user role. Please try again.')
-    }
-  }
-  activeRoleDropdown.value = null
-}
 
 const openActionsModal = (user) => {
   actionUser.value = user
-  // Close any open dropdowns
-  activeRoleDropdown.value = null
 }
 
 const closeActionsModal = () => {
   actionUser.value = null
 }
 
-const changeRoleFromModal = async () => {
-  const newRole = actionUser.value.role === 'admin' ? 'user' : 'admin'
-  await changeUserRole(actionUser.value, newRole)
-  closeActionsModal()
+const handleRoleChange = async (event) => {
+  const newRole = event.target.value
+  if (newRole === actionUser.value.role) return
+  
+  if (confirm(`Change ${actionUser.value.first_name} ${actionUser.value.last_name}'s role to ${newRole}?`)) {
+    try {
+      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+        { role: newRole },
+        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
+      )
+      // Update the local user object
+      actionUser.value.role = newRole
+      await loadUsers()
+    } catch (error) {
+      console.error('Error changing user role:', error)
+      alert('Failed to change user role. Please try again.')
+      // Reset the select to the original value
+      event.target.value = actionUser.value.role
+    }
+  } else {
+    // Reset the select if cancelled
+    event.target.value = actionUser.value.role
+  }
 }
 
 const logoutUser = async () => {
@@ -559,21 +515,9 @@ const debouncedSearch = () => {
   }, 300)
 }
 
-// Close dropdown when clicking outside
-const handleClickOutside = (event) => {
-  if (!event.target.closest('.role-dropdown')) {
-    activeRoleDropdown.value = null
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   loadUsers()
-  document.addEventListener('click', handleClickOutside)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -783,6 +727,7 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .action-btn {
@@ -821,112 +766,13 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1199px) {
-  .action-btn,
-  .role-dropdown-btn {
+  .action-btn {
     width: 36px;
     height: 36px;
     padding: 0;
   }
-  
-  .dropdown-arrow {
-    display: none;
-  }
 }
 
-.role-dropdown {
-  position: relative;
-  display: inline-block;
-}
-
-.role-dropdown-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.85rem;
-  font-weight: 500;
-  white-space: nowrap;
-  background: #e6f2ff;
-  color: #3182ce;
-}
-
-.role-dropdown-btn:hover,
-.role-dropdown-btn.active {
-  background: #3182ce;
-  color: white;
-}
-
-.dropdown-arrow {
-  font-size: 0.7rem;
-  transition: transform 0.2s;
-}
-
-.role-dropdown-btn.active .dropdown-arrow {
-  transform: rotate(180deg);
-}
-
-.role-dropdown-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  min-width: 150px;
-  overflow: hidden;
-}
-
-.dropdown-header {
-  padding: 8px 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #666;
-  text-transform: uppercase;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f7fafc;
-}
-
-.role-option {
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  background: white;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
-  font-size: 0.9rem;
-  text-align: left;
-}
-
-.role-option:hover {
-  background: #f7fafc;
-}
-
-.role-option.current {
-  background: #e6f2ff;
-  color: #3182ce;
-  font-weight: 500;
-}
-
-.role-option i {
-  width: 16px;
-  text-align: center;
-}
-
-.role-spacer {
-  display: inline-block;
-  width: 16px;
-}
 
 .action-btn.actions {
   background: #e6f2ff;
@@ -1219,6 +1065,40 @@ onUnmounted(() => {
 .action-item.danger:hover {
   background: #fee2e2;
   border-color: #fca5a5;
+}
+
+/* Role selector in modal */
+.action-item.role-selector {
+  cursor: default;
+}
+
+.action-item.role-selector:hover {
+  transform: none;
+}
+
+.role-select-wrapper {
+  margin-top: 8px;
+}
+
+.role-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.role-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.role-select:hover {
+  border-color: #cbd5e0;
 }
 
 @media (max-width: 1200px) {
