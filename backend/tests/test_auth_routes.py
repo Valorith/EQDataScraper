@@ -353,28 +353,51 @@ class TestAuthRoutes:
         assert 'error' in response_data
         assert 'Missing' in response_data['error'] or 'required' in response_data['error']
     
+    @patch('routes.auth.GoogleOAuth')
     @patch('routes.auth.get_db_connection')
+    @patch('routes.auth.jwt_manager')  # Mock jwt_manager used in route
     @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
     @patch('routes.auth.OAuthSession')
-    def test_logout_success(self, mock_oauth_session, mock_jwt_manager, mock_get_db_connection, flask_oauth_test_client, test_env_vars):
+    def test_logout_success(self, mock_oauth_session, mock_global_jwt_manager, mock_route_jwt_manager,
+                          mock_get_db_connection, mock_google_oauth, flask_oauth_test_client, test_env_vars):
         """Test successful logout with session cleanup."""
         # Mock database connection
         mock_db_conn = Mock()
         mock_get_db_connection.return_value = mock_db_conn
         
         # Mock JWT manager to extract user info
-        mock_jwt_manager.verify_token.return_value = {
-            'user_id': 1,
-            'session_token': 'test_session_token',
-            'type': 'access',
-            'email': 'test@example.com',
-            'role': 'user'
-        }
-        mock_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+        def verify_token_side_effect(token):
+            if token == 'valid_token':
+                return {
+                    'user_id': 1,
+                    'session_token': 'test_session_token',
+                    'type': 'access',
+                    'email': 'test@example.com',
+                    'role': 'user'
+                }
+            elif token == 'test_refresh_token':
+                return {
+                    'type': 'refresh',
+                    'session_token': 'test_session_token'
+                }
+            return None
+            
+        mock_global_jwt_manager.verify_token.side_effect = verify_token_side_effect
+        mock_global_jwt_manager.extract_token_from_header.return_value = 'valid_token'
+        
+        # Also set up the route jwt_manager
+        mock_route_jwt_manager.verify_token.side_effect = verify_token_side_effect
+        
+        # Mock GoogleOAuth
+        mock_oauth_instance = Mock()
+        mock_google_oauth.return_value = mock_oauth_instance
         
         # Mock session deletion
         mock_session_instance = Mock()
         mock_oauth_session.return_value = mock_session_instance
+        mock_session_instance.get_session_by_token.return_value = {
+            'google_access_token': 'test_google_access_token'
+        }
         
         response = flask_oauth_test_client.post('/api/auth/logout',
                                               json={'refresh_token': 'test_refresh_token'},
