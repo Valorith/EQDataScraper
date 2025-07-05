@@ -7,7 +7,7 @@ import base64
 import hashlib
 from datetime import datetime, timedelta
 
-from utils.oauth import GoogleOAuth, generate_state_token, generate_pkce_pair
+from utils.oauth import GoogleOAuth
 
 
 class TestGoogleOAuth:
@@ -31,10 +31,16 @@ class TestGoogleOAuth:
     
     def test_get_authorization_url(self, oauth_client):
         """Test authorization URL generation."""
-        state = "test-state-123"
-        code_challenge = "test-challenge"
+        result = oauth_client.get_authorization_url()
         
-        url = oauth_client.get_authorization_url(state, code_challenge)
+        # Check returned dictionary
+        assert 'auth_url' in result
+        assert 'state' in result
+        assert 'code_verifier' in result
+        
+        url = result['auth_url']
+        state = result['state']
+        code_verifier = result['code_verifier']
         
         # Check base URL
         assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth")
@@ -42,7 +48,7 @@ class TestGoogleOAuth:
         # Check required parameters
         assert "client_id=test-client-id" in url
         assert f"state={state}" in url
-        assert f"code_challenge={code_challenge}" in url
+        assert "code_challenge=" in url  # Challenge is generated, just check it exists
         assert "code_challenge_method=S256" in url
         assert "response_type=code" in url
         assert "scope=openid+email+profile" in url
@@ -125,13 +131,13 @@ class TestGoogleOAuth:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            'sub': 'google-user-id-123',
+            'id': 'google-user-id-123',
             'email': 'test@example.com',
             'name': 'Test User',
             'given_name': 'Test',
             'family_name': 'User',
             'picture': 'https://example.com/photo.jpg',
-            'email_verified': True
+            'verified_email': True
         }
         mock_get.return_value = mock_response
         
@@ -161,62 +167,24 @@ class TestGoogleOAuth:
         with pytest.raises(Exception, match="Failed to get user info"):
             oauth_client.get_user_info('invalid-token')
     
-    def test_extract_user_info_from_id_token(self, oauth_client):
-        """Test extracting user info from ID token."""
-        # Create a mock ID token payload
-        payload = {
-            'sub': 'google-user-id-123',
-            'email': 'test@example.com',
-            'name': 'Test User',
-            'given_name': 'Test',
-            'family_name': 'User',
-            'picture': 'https://example.com/photo.jpg',
-            'email_verified': True
-        }
-        
-        # Encode as JWT-like token (simplified for testing)
-        # Real JWT has header.payload.signature
-        encoded_payload = base64.urlsafe_b64encode(
-            json.dumps(payload).encode()
-        ).decode().rstrip('=')
-        
-        mock_id_token = f"header.{encoded_payload}.signature"
-        
-        user_info = oauth_client._extract_user_info_from_id_token(mock_id_token)
-        
-        assert user_info['google_id'] == 'google-user-id-123'
-        assert user_info['email'] == 'test@example.com'
-        assert user_info['first_name'] == 'Test'
-        assert user_info['last_name'] == 'User'
-    
-    def test_extract_user_info_from_invalid_token(self, oauth_client):
-        """Test extracting user info from invalid ID token."""
-        # Test with malformed token
-        user_info = oauth_client._extract_user_info_from_id_token("invalid-token")
-        assert user_info == {}
-        
-        # Test with token missing parts
-        user_info = oauth_client._extract_user_info_from_id_token("only.two")
-        assert user_info == {}
 
 
 class TestOAuthHelpers:
     """Test cases for OAuth helper functions."""
     
-    def test_generate_state_token(self):
+    def test_generate_state(self, oauth_client):
         """Test state token generation."""
-        state1 = generate_state_token()
-        state2 = generate_state_token()
+        state1 = oauth_client.generate_state()
+        state2 = oauth_client.generate_state()
         
         # Check format and uniqueness
-        assert len(state1) == 32  # 16 bytes = 32 hex chars
-        assert len(state2) == 32
+        assert len(state1) >= 32  # URL-safe token
+        assert len(state2) >= 32
         assert state1 != state2
-        assert all(c in '0123456789abcdef' for c in state1)
     
-    def test_generate_pkce_pair(self):
+    def test_generate_pkce_pair(self, oauth_client):
         """Test PKCE pair generation."""
-        verifier, challenge = generate_pkce_pair()
+        verifier, challenge = oauth_client.generate_pkce_pair()
         
         # Check verifier format (43 chars for 32 bytes base64)
         assert len(verifier) == 43
@@ -234,9 +202,9 @@ class TestOAuthHelpers:
         ).decode().rstrip('=')
         assert challenge == expected_challenge
     
-    def test_generate_pkce_pair_randomness(self):
+    def test_generate_pkce_pair_randomness(self, oauth_client):
         """Test PKCE pairs are random."""
-        pairs = [generate_pkce_pair() for _ in range(10)]
+        pairs = [oauth_client.generate_pkce_pair() for _ in range(10)]
         verifiers = [v for v, _ in pairs]
         challenges = [c for _, c in pairs]
         

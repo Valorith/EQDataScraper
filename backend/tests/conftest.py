@@ -2,12 +2,21 @@
 Test fixtures and configuration for OAuth user account system tests.
 """
 
+import os
+
+# Set environment variables before importing any modules that need them
+os.environ['JWT_SECRET_KEY'] = 'test_jwt_secret_key_for_testing_only'
+os.environ['ENCRYPTION_KEY'] = 'test_encryption_key_for_testing_only'
+os.environ['GOOGLE_CLIENT_ID'] = 'test-client-id'
+os.environ['GOOGLE_CLIENT_SECRET'] = 'test-client-secret'
+os.environ['OAUTH_REDIRECT_URI'] = 'http://localhost:3000/auth/callback'
+os.environ['DATABASE_URL'] = 'postgresql://test:test@localhost:5432/test'
+
 import pytest
 import psycopg2
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
 import json
-import os
 import tempfile
 from urllib.parse import urlparse
 
