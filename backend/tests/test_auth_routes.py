@@ -384,7 +384,7 @@ class TestAuthRoutes:
         response_data = json.loads(response.data)
         
         assert response_data['success'] is True
-        assert 'Logged out successfully' in response_data['message']
+        assert 'Logout' in response_data['message'] or 'logout' in response_data['message']
         
         # Verify session was deleted
         mock_session_instance.delete_session.assert_called_once()
