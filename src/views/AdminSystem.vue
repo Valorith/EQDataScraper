@@ -181,7 +181,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { useUserStore } from '../stores/userStore'
 import axios from 'axios'
 
 const router = useRouter()
@@ -453,11 +453,6 @@ const getStatusIcon = (status) => {
 
 // Lifecycle
 onMounted(() => {
-  if (!userStore.isLoggedIn || userStore.user?.role !== 'admin') {
-    router.push('/')
-    return
-  }
-  
   loadSystemStats()
   // Update stats every 5 seconds
   updateInterval = setInterval(loadSystemStats, 5000)

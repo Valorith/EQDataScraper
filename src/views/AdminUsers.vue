@@ -225,7 +225,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { useUserStore } from '../stores/userStore'
 import axios from 'axios'
 
 const router = useRouter()
@@ -262,7 +262,7 @@ const loadUsers = async () => {
     }
 
     const response = await axios.get(`${API_BASE_URL}/api/admin/users`, {
-      headers: { Authorization: `Bearer ${userStore.token}` },
+      headers: { Authorization: `Bearer ${userStore.accessToken}` },
       params
     })
 
@@ -272,7 +272,7 @@ const loadUsers = async () => {
     
     // Load stats separately
     const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
-      headers: { Authorization: `Bearer ${userStore.token}` }
+      headers: { Authorization: `Bearer ${userStore.accessToken}` }
     })
     stats.value = statsResponse.data.data.users
   } catch (error) {
@@ -286,7 +286,7 @@ const viewUserDetails = async (user) => {
   selectedUser.value = user
   try {
     const response = await axios.get(`${API_BASE_URL}/api/admin/users/${user.id}`, {
-      headers: { Authorization: `Bearer ${userStore.token}` }
+      headers: { Authorization: `Bearer ${userStore.accessToken}` }
     })
     userDetails.value = response.data.data
   } catch (error) {
@@ -326,7 +326,7 @@ const deleteSessions = async (user) => {
   if (confirm(`Delete all sessions for ${user.first_name} ${user.last_name}? They will need to log in again.`)) {
     try {
       await axios.delete(`${API_BASE_URL}/api/admin/users/${user.id}/sessions`, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
+        headers: { Authorization: `Bearer ${userStore.accessToken}` }
       })
       alert('Sessions deleted successfully')
     } catch (error) {
@@ -373,10 +373,6 @@ const debouncedSearch = () => {
 
 // Lifecycle
 onMounted(() => {
-  if (!userStore.isLoggedIn || userStore.user?.role !== 'admin') {
-    router.push('/')
-    return
-  }
   loadUsers()
 })
 </script>

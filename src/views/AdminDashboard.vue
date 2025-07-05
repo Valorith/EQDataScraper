@@ -180,15 +180,14 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { useUserStore } from '../stores/userStore'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
 
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+// API base URL - in development, use empty string so proxy handles /api routes
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || ''
 
 // State
 const stats = ref({
@@ -223,46 +222,74 @@ let refreshInterval = null
 
 // Methods
 const loadDashboardData = async () => {
+  
+  // Load stats
   try {
-    // Fetch all dashboard data in parallel
-    const [statsRes, cacheRes, healthRes, activitiesRes] = await Promise.all([
-      axios.get(`${API_BASE_URL}/api/admin/stats`, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
-      }),
-      axios.get(`${API_BASE_URL}/api/cache/status`),
-      axios.get(`${API_BASE_URL}/api/health`),
-      axios.get(`${API_BASE_URL}/api/admin/activities`, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
-      })
-    ])
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const statsRes = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    // Handle both success response formats
+    if (statsRes.data.success && statsRes.data.data) {
+      stats.value = statsRes.data.data
+    } else if (statsRes.data) {
+      stats.value = statsRes.data
+    }
+  } catch (error) {
+    console.error('Error loading stats:', error)
+    // Set default values
+    stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
+  }
 
-    // Update stats
-    stats.value = statsRes.data
-
-    // Update cache status
+  // Load cache status
+  try {
+    const cacheRes = await axios.get(`${API_BASE_URL}/api/cache/status`)
     const cacheData = cacheRes.data
     cacheStatus.value = {
       healthy: cacheData.total_cached >= 10,
       cachedClasses: cacheData.total_cached,
       lastUpdate: cacheData.last_update
     }
-
-    // Update system health
-    systemHealth.value = healthRes.data
-
-    // Update recent activities
-    recentActivities.value = activitiesRes.data.activities || []
-
   } catch (error) {
-    console.error('Error loading dashboard data:', error)
+    console.error('Error loading cache status:', error)
+    cacheStatus.value = { healthy: false, cachedClasses: 0, lastUpdate: null }
+  }
+
+  // Load health
+  try {
+    const healthRes = await axios.get(`${API_BASE_URL}/api/health`)
+    systemHealth.value = healthRes.data
+  } catch (error) {
+    console.error('Error loading health:', error)
+    systemHealth.value = { apiStatus: 'Unknown', avgResponseTime: 0, errorRate: 0 }
+  }
+
+  // Load activities
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const activitiesRes = await axios.get(`${API_BASE_URL}/api/admin/activities`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    // Handle both response formats
+    if (activitiesRes.data.success && activitiesRes.data.data) {
+      recentActivities.value = activitiesRes.data.data.activities || []
+    } else if (activitiesRes.data.activities) {
+      recentActivities.value = activitiesRes.data.activities
+    } else {
+      recentActivities.value = []
+    }
+  } catch (error) {
+    console.error('Error loading activities:', error)
+    recentActivities.value = []
   }
 }
 
 const refreshAllCaches = async () => {
   refreshing.value = true
   try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     await axios.post(`${API_BASE_URL}/api/cache/refresh`, {}, {
-      headers: { Authorization: `Bearer ${userStore.token}` }
+      headers: { Authorization: `Bearer ${token}` }
     })
     await loadDashboardData()
   } catch (error) {
@@ -276,8 +303,9 @@ const triggerFullScrape = async () => {
   if (confirm('This will scrape all class data. This may take several minutes. Continue?')) {
     scraping.value = true
     try {
+      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
       await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
+        headers: { Authorization: `Bearer ${token}` }
       })
       await loadDashboardData()
     } catch (error) {
@@ -333,12 +361,6 @@ const getActivityIcon = (type) => {
 
 // Lifecycle
 onMounted(() => {
-  // Check admin access
-  if (!userStore.isLoggedIn || userStore.user?.role !== 'admin') {
-    router.push('/')
-    return
-  }
-
   loadDashboardData()
   // Refresh data every 30 seconds
   refreshInterval = setInterval(loadDashboardData, 30000)
@@ -349,6 +371,7 @@ onUnmounted(() => {
     clearInterval(refreshInterval)
   }
 })
+
 </script>
 
 <style scoped>

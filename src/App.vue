@@ -72,7 +72,7 @@ export default {
       }
       
       // In development, use env variable or default to localhost
-      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5005'
+      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5006'
     })()
     console.log('Computed API_BASE_URL:', API_BASE_URL)
     console.log('Build timestamp:', new Date().toISOString())

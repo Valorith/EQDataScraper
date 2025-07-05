@@ -8,12 +8,13 @@ import ClassSpells from '../views/ClassSpells.vue'
 const AuthCallback = () => import('../views/AuthCallback.vue')
 const Profile = () => import('../views/Profile.vue')
 
-// Admin components (lazy loaded)
-const AdminDashboard = () => import('../views/AdminDashboard.vue')
-const AdminUsers = () => import('../views/AdminUsers.vue')
-const AdminCache = () => import('../views/AdminCache.vue')
-const AdminScraping = () => import('../views/AdminScraping.vue')
-const AdminSystem = () => import('../views/AdminSystem.vue')
+// Admin components - import directly for debugging
+import AdminDashboard from '../views/AdminDashboard.vue'
+import AdminDashboardTest from '../views/AdminDashboardTest.vue'
+import AdminUsers from '../views/AdminUsers.vue'
+import AdminCache from '../views/AdminCache.vue'
+import AdminScraping from '../views/AdminScraping.vue'
+import AdminSystem from '../views/AdminSystem.vue'
 
 const routes = [
   {
@@ -49,6 +50,11 @@ const routes = [
     component: Profile
   },
   // Admin routes
+  {
+    path: '/admin-test',
+    name: 'AdminTest',
+    component: AdminDashboardTest
+  },
   {
     path: '/admin',
     name: 'AdminDashboard',
@@ -87,15 +93,14 @@ const router = createRouter({
 })
 
 // Navigation guards for admin routes
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   // Check if route requires authentication
   if (to.matched.some(record => record.meta.requiresAuth)) {
-    // Import user store
-    import('../stores/user').then(({ useUserStore }) => {
+    try {
+      const { useUserStore } = await import('../stores/userStore')
       const userStore = useUserStore()
       
-      if (!userStore.isLoggedIn) {
-        // Redirect to home if not logged in
+      if (!userStore.isAuthenticated) {
         next('/')
         return
       }
@@ -103,14 +108,16 @@ router.beforeEach((to, from, next) => {
       // Check if route requires admin
       if (to.matched.some(record => record.meta.requiresAdmin)) {
         if (userStore.user?.role !== 'admin') {
-          // Redirect to home if not admin
           next('/')
           return
         }
       }
       
       next()
-    })
+    } catch (err) {
+      console.error('Error in route guard:', err)
+      next('/')
+    }
   } else {
     next()
   }

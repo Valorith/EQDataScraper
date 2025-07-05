@@ -151,7 +151,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { useUserStore } from '../stores/userStore'
 import { useSpellsStore } from '../stores/spells'
 import axios from 'axios'
 
@@ -349,10 +349,6 @@ const handleImageError = (event) => {
 
 // Lifecycle
 onMounted(() => {
-  if (!userStore.isLoggedIn || userStore.user?.role !== 'admin') {
-    router.push('/')
-    return
-  }
   loadCacheStatus()
 })
 </script>

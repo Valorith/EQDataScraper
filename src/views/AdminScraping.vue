@@ -234,7 +234,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '../stores/user'
+import { useUserStore } from '../stores/userStore'
 import { useSpellsStore } from '../stores/spells'
 import axios from 'axios'
 
@@ -431,11 +431,6 @@ const saveSchedule = () => {
 
 // Lifecycle
 onMounted(() => {
-  if (!userStore.isLoggedIn || userStore.user?.role !== 'admin') {
-    router.push('/')
-    return
-  }
-  
   checkScrapingStatus()
   // Check status every 5 seconds
   statusInterval = setInterval(checkScrapingStatus, 5000)
