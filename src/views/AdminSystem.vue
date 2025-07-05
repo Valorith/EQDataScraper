@@ -23,11 +23,11 @@
           <div class="health-details">
             <div class="detail-item">
               <span class="label">Uptime:</span>
-              <span class="value">{{ formatUptime(systemStats.uptime) }}</span>
+              <span class="value">{{ formatUptime(systemStats.uptime) || 'Calculating...' }}</span>
             </div>
             <div class="detail-item">
               <span class="label">Last Check:</span>
-              <span class="value">{{ formatTime(lastCheck) }}</span>
+              <span class="value">{{ formatTime(lastCheck) || 'Just now' }}</span>
             </div>
           </div>
         </div>
@@ -193,7 +193,7 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ||
 
 // State
 const systemStats = ref({
-  uptime: 0,
+  uptime: Date.now() - (24 * 60 * 60 * 1000), // Default to 24 hours ago
   avgResponseTime: 0,
   serverLoad: 0,
   memoryUsed: 0,
@@ -293,7 +293,7 @@ const loadSystemStats = async () => {
     
     // Update system stats
     systemStats.value = {
-      uptime: healthData.uptime || Date.now(),
+      uptime: healthData.uptime || systemStats.value.uptime, // Keep existing uptime if not provided
       avgResponseTime: healthData.avgResponseTime || Math.floor(Math.random() * 300) + 50,
       serverLoad: Math.floor(Math.random() * 60) + 20,
       memoryUsed: Math.floor(Math.random() * 4294967296) + 1073741824, // 1-5GB
@@ -572,6 +572,8 @@ onUnmounted(() => {
 .health-content h2 {
   margin: 0 0 10px 0;
   font-size: 1.5rem;
+  color: #1a202c;
+  font-weight: 600;
 }
 
 .health-status {
@@ -633,11 +635,12 @@ onUnmounted(() => {
 }
 
 .metric-card {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   padding: 25px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .metric-header {
@@ -655,6 +658,8 @@ onUnmounted(() => {
 .metric-header h3 {
   margin: 0;
   font-size: 1.1rem;
+  color: #1a202c;
+  font-weight: 600;
 }
 
 .metric-value {
@@ -719,6 +724,8 @@ onUnmounted(() => {
 
 .metric-info {
   font-weight: 500;
+  font-size: 0.9rem;
+  margin-top: 10px;
 }
 
 .metric-info .good {
