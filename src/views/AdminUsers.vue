@@ -250,7 +250,7 @@ import axios from 'axios'
 const router = useRouter()
 const userStore = useUserStore()
 
-// API base URL
+// API base URL - in development, use empty string so proxy handles /api routes
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
   (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
@@ -296,19 +296,34 @@ const loadUsers = async () => {
     users.value = data.users
     totalPages.value = data.total_pages
     
-    // Load stats separately
-    const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
-      headers: { Authorization: `Bearer ${userStore.accessToken}` }
-    })
-    console.log('Admin stats response:', statsResponse.data)
-    // Handle both possible response formats
-    if (statsResponse.data.data?.users) {
-      stats.value = statsResponse.data.data.users
-    } else if (statsResponse.data.users) {
-      stats.value = statsResponse.data.users
-    } else {
-      // Fallback to direct data if structure is different
-      stats.value = statsResponse.data
+    // Store total count if available
+    const totalCount = data.total || (data.total_pages * perPage.value) || users.value.length
+    
+    // Load stats separately - but don't fail the whole page if stats fail
+    try {
+      const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
+        headers: { Authorization: `Bearer ${userStore.accessToken}` }
+      })
+      // Handle both possible response formats
+      if (statsResponse.data.data?.users) {
+        stats.value = statsResponse.data.data.users
+      } else if (statsResponse.data.users) {
+        stats.value = statsResponse.data.users
+      } else {
+        // Fallback to direct data if structure is different
+        stats.value = statsResponse.data
+      }
+    } catch (statsError) {
+      console.error('Error loading stats (non-critical):', statsError)
+      // Calculate stats from the users we already loaded
+      // Since this is paginated, we'll use the total from the response
+      const adminCount = users.value.filter(u => u.role === 'admin').length
+      stats.value = {
+        total: totalCount,
+        active_30d: totalCount, // We don't have this data, so use total
+        new_7d: totalCount, // We don't have this data, so use total
+        admins: adminCount
+      }
     }
   } catch (error) {
     console.error('Error loading users:', error)

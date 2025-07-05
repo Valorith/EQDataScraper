@@ -229,7 +229,6 @@ const loadDashboardData = async () => {
     const statsRes = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
       headers: { Authorization: `Bearer ${token}` }
     })
-    console.log('Dashboard stats response:', statsRes.data)
     // Handle both success response formats
     if (statsRes.data.data) {
       stats.value = statsRes.data.data
