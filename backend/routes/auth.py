@@ -169,6 +169,9 @@ def google_callback():
                     'first_name': user['first_name'],
                     'last_name': user['last_name'],
                     'avatar_url': user['avatar_url'],
+                    'avatar_class': user.get('avatar_class'),
+                    'display_name': user.get('display_name'),
+                    'anonymous_mode': user.get('anonymous_mode', False),
                     'role': user['role']
                 },
                 'preferences': user_preferences
@@ -343,6 +346,9 @@ def auth_status():
                     'first_name': user['first_name'],
                     'last_name': user['last_name'],
                     'avatar_url': user['avatar_url'],
+                    'avatar_class': user.get('avatar_class'),
+                    'display_name': user.get('display_name'),
+                    'anonymous_mode': user.get('anonymous_mode', False),
                     'role': user['role']
                 }
             }))
