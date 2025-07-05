@@ -11,7 +11,8 @@ import app
 class TestPricingCache:
     """Test pricing cache functionality."""
     
-    def test_fetch_single_spell_pricing_success(self, mock_requests, sample_spell_details):
+    @patch('app.requests.get')
+    def test_fetch_single_spell_pricing_success(self, mock_requests_get, sample_spell_details):
         """Test successful pricing fetch stores data correctly."""
         # Clear cache
         app.spell_details_cache.clear()
@@ -19,11 +20,14 @@ class TestPricingCache:
         app.pricing_cache_timestamp.clear()
         
         # Mock successful response
-        mock_requests.return_value.text = """
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = """
         <table>
             <tr><td>Vendor Price:</td><td>4 silver</td></tr>
         </table>
         """
+        mock_requests_get.return_value = mock_response
         
         with patch('app.parse_spell_details_from_html') as mock_parse:
             mock_parse.return_value = sample_spell_details['202']
@@ -43,7 +47,8 @@ class TestPricingCache:
             assert app.spell_details_cache['202']['pricing']['silver'] == 4
             assert app.pricing_lookup['202']['silver'] == 4
     
-    def test_fetch_single_spell_pricing_failure(self, mock_requests):
+    @patch('app.requests.get')
+    def test_fetch_single_spell_pricing_failure(self, mock_requests_get):
         """Test pricing fetch failure stores unknown pricing."""
         # Clear cache
         app.spell_details_cache.clear()
@@ -51,7 +56,9 @@ class TestPricingCache:
         app.pricing_cache_timestamp.clear()
         
         # Mock failed response
-        mock_requests.return_value.status_code = 404
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_requests_get.return_value = mock_response
         
         result = app.fetch_single_spell_pricing('999')
         
@@ -234,9 +241,15 @@ class TestAPIEndpoints:
     
     def test_health_endpoint(self, mock_app, sample_spell_details):
         """Test health endpoint shows correct cache counts."""
+        # Clear all caches first
+        app.spells_cache.clear()
+        app.spell_details_cache.clear()
+        app.pricing_lookup.clear()
+        
         # Set up some cache data
         app.spells_cache['cleric'] = [{'spell_id': '202'}]
         app.spell_details_cache['202'] = sample_spell_details['202']
+        # Don't add to pricing_lookup to ensure cached_pricing is 0
         
         response = mock_app.get('/api/health')
         
@@ -245,7 +258,7 @@ class TestAPIEndpoints:
         
         assert data['status'] == 'healthy'
         assert data['cached_classes'] == 1
-        assert data['cached_pricing'] == 0  # Deprecated pricing_cache
+        assert data['cached_pricing'] == 0  # No items in pricing_lookup
         assert data['cached_spell_details'] == 1
 
 
