@@ -268,7 +268,7 @@ const generateMockLogs = () => {
       }
     },
     {
-      level: 'error',
+      level: 'warning',
       source: 'backend/app.py',
       message: 'Rate limit exceeded for IP',
       details: {
@@ -325,7 +325,7 @@ const generateMockLogs = () => {
     {
       level: 'error',
       source: 'scraper.py',
-      message: 'Failed to scrape spell details',
+      message: 'Failed to scrape spell details after retries',
       details: {
         spellId: 3456,
         spellName: 'Harvest',
@@ -345,6 +345,29 @@ const generateMockLogs = () => {
         threshold: '500ms',
         itemsReturned: 384,
         cacheHit: false
+      }
+    },
+    {
+      level: 'info',
+      source: 'backend/app.py',
+      message: 'Database backup completed',
+      details: {
+        tablesBackedUp: ['spell_cache', 'pricing_cache', 'spell_details_cache', 'users', 'sessions'],
+        totalRecords: 15243,
+        backupSize: '45.2MB',
+        duration: '3.2s',
+        location: 's3://eq-backups/2025-07-05/backup-1720123456.sql.gz'
+      }
+    },
+    {
+      level: 'error',
+      source: 'auth.py',
+      message: 'OAuth authentication failed',
+      details: {
+        provider: 'Google',
+        error: 'Invalid client_id',
+        ipAddress: '192.168.1.100',
+        attemptedEmail: 'user@example.com'
       }
     }
   ]
@@ -600,29 +623,42 @@ onMounted(() => {
 
 .expand-btn,
 .collapse-btn {
-  padding: 4px 12px;
-  font-size: 0.85rem;
-  border: 1px solid #e5e7eb;
-  background: white;
-  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  color: #667eea;
+  border-radius: 6px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .expand-btn:hover,
 .collapse-btn:hover {
-  background: #f3f4f6;
-  border-color: #667eea;
-  color: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
 }
 
 .expand-btn i,
 .collapse-btn i {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   transition: transform 0.2s;
+}
+
+.expand-btn:hover i {
+  transform: translateX(2px);
+}
+
+.collapse-btn i {
+  transform: rotate(90deg);
 }
 
 .log-details {
@@ -631,6 +667,10 @@ onMounted(() => {
   background: rgba(0, 0, 0, 0.05);
   border-radius: 6px;
   animation: slideDown 0.2s ease-out;
+}
+
+.log-details .collapse-btn {
+  margin-bottom: 12px;
 }
 
 @keyframes slideDown {
