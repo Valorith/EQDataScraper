@@ -125,12 +125,12 @@
                 
                 <button 
                   v-if="user.id !== currentUserId"
-                  @click="deleteSessions(user)" 
-                  class="action-btn delete"
-                  title="Force logout from all devices"
+                  @click="openActionsModal(user)" 
+                  class="action-btn actions"
+                  title="More actions"
                 >
-                  <i class="fas fa-sign-out-alt"></i>
-                  <span class="btn-text">Logout All</span>
+                  <i class="fas fa-ellipsis-v"></i>
+                  <span class="btn-text">Actions</span>
                 </button>
               </div>
             </td>
@@ -238,6 +238,80 @@
         </div>
       </div>
     </div>
+
+    <!-- User Actions Modal -->
+    <div v-if="actionUser" class="modal-overlay" @click="closeActionsModal">
+      <div class="modal-content actions-modal" @click.stop>
+        <div class="modal-header">
+          <h2>User Actions</h2>
+          <button @click="closeActionsModal" class="close-btn">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="user-info-summary">
+            <img 
+              v-if="actionUser.avatar_url" 
+              :src="actionUser.avatar_url" 
+              alt="Avatar"
+              class="user-avatar-large"
+            >
+            <div v-else class="user-avatar-fallback-large">
+              {{ getInitials(actionUser) }}
+            </div>
+            <div class="user-details">
+              <h3>{{ actionUser.first_name }} {{ actionUser.last_name }}</h3>
+              <p>{{ actionUser.email }}</p>
+              <span class="role-badge" :class="actionUser.role">{{ actionUser.role }}</span>
+            </div>
+          </div>
+
+          <div class="actions-list">
+            <h3>Available Actions</h3>
+            
+            <button @click="viewUserDetails(actionUser)" class="action-item">
+              <i class="fas fa-eye"></i>
+              <div class="action-info">
+                <span class="action-title">View Details</span>
+                <span class="action-desc">View full user profile and session information</span>
+              </div>
+            </button>
+
+            <button @click="changeRoleFromModal()" class="action-item">
+              <i class="fas fa-user-tag"></i>
+              <div class="action-info">
+                <span class="action-title">Change Role</span>
+                <span class="action-desc">Current: {{ actionUser.role }} → {{ actionUser.role === 'admin' ? 'User' : 'Admin' }}</span>
+              </div>
+            </button>
+
+            <button @click="logoutUser()" class="action-item">
+              <i class="fas fa-sign-out-alt"></i>
+              <div class="action-info">
+                <span class="action-title">Force Logout</span>
+                <span class="action-desc">End all active sessions for this user</span>
+              </div>
+            </button>
+
+            <button @click="toggleBanUser()" class="action-item" :class="{ 'danger': !actionUser.is_banned }">
+              <i :class="actionUser.is_banned ? 'fas fa-user-check' : 'fas fa-user-slash'"></i>
+              <div class="action-info">
+                <span class="action-title">{{ actionUser.is_banned ? 'Unban User' : 'Ban User' }}</span>
+                <span class="action-desc">{{ actionUser.is_banned ? 'Allow user to access the application' : 'Prevent user from accessing the application' }}</span>
+              </div>
+            </button>
+
+            <button @click="deleteUser()" class="action-item danger">
+              <i class="fas fa-trash-alt"></i>
+              <div class="action-info">
+                <span class="action-title">Delete User</span>
+                <span class="action-desc">Permanently remove user and all associated data</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -266,6 +340,7 @@ const totalPages = ref(1)
 const selectedUser = ref(null)
 const userDetails = ref(null)
 const activeRoleDropdown = ref(null)
+const actionUser = ref(null)
 
 // Available roles
 const availableRoles = [
@@ -335,6 +410,10 @@ const loadUsers = async () => {
 
 const viewUserDetails = async (user) => {
   selectedUser.value = user
+  // Close actions modal if open
+  if (actionUser.value) {
+    closeActionsModal()
+  }
   try {
     const response = await axios.get(`${API_BASE_URL}/api/admin/users/${user.id}`, {
       headers: { Authorization: `Bearer ${userStore.accessToken}` }
@@ -379,15 +458,67 @@ const changeUserRole = async (user, newRole) => {
   activeRoleDropdown.value = null
 }
 
-const deleteSessions = async (user) => {
-  if (confirm(`Delete all sessions for ${user.first_name} ${user.last_name}? They will need to log in again.`)) {
+const openActionsModal = (user) => {
+  actionUser.value = user
+  // Close any open dropdowns
+  activeRoleDropdown.value = null
+}
+
+const closeActionsModal = () => {
+  actionUser.value = null
+}
+
+const changeRoleFromModal = async () => {
+  const newRole = actionUser.value.role === 'admin' ? 'user' : 'admin'
+  await changeUserRole(actionUser.value, newRole)
+  closeActionsModal()
+}
+
+const logoutUser = async () => {
+  if (confirm(`Force logout ${actionUser.value.first_name} ${actionUser.value.last_name} from all devices?`)) {
     try {
-      await axios.delete(`${API_BASE_URL}/api/admin/users/${user.id}/sessions`, {
+      await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}/sessions`, {
         headers: { Authorization: `Bearer ${userStore.accessToken}` }
       })
-      alert('Sessions deleted successfully')
+      alert('User has been logged out from all devices')
+      closeActionsModal()
     } catch (error) {
-      console.error('Error deleting sessions:', error)
+      console.error('Error logging out user:', error)
+      alert('Failed to logout user. Please try again.')
+    }
+  }
+}
+
+const toggleBanUser = async () => {
+  const action = actionUser.value.is_banned ? 'unban' : 'ban'
+  if (confirm(`Are you sure you want to ${action} ${actionUser.value.first_name} ${actionUser.value.last_name}?`)) {
+    try {
+      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+        { is_banned: !actionUser.value.is_banned },
+        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
+      )
+      await loadUsers()
+      closeActionsModal()
+    } catch (error) {
+      console.error(`Error ${action}ning user:`, error)
+      alert(`Failed to ${action} user. Please try again.`)
+    }
+  }
+}
+
+const deleteUser = async () => {
+  if (confirm(`⚠️ WARNING: This action cannot be undone!\n\nAre you sure you want to permanently delete ${actionUser.value.first_name} ${actionUser.value.last_name} and all their data?`)) {
+    if (confirm(`Please confirm once more: Delete user ${actionUser.value.email}?`)) {
+      try {
+        await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, {
+          headers: { Authorization: `Bearer ${userStore.accessToken}` }
+        })
+        await loadUsers()
+        closeActionsModal()
+      } catch (error) {
+        console.error('Error deleting user:', error)
+        alert('Failed to delete user. Please try again.')
+      }
     }
   }
 }
@@ -574,6 +705,10 @@ onUnmounted(() => {
   font-weight: 600;
   color: #4a5568;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.users-table th:last-child {
+  text-align: center;
 }
 
 .users-table td {
@@ -793,13 +928,13 @@ onUnmounted(() => {
   width: 16px;
 }
 
-.action-btn.delete {
-  background: #fed7d7;
-  color: #c53030;
+.action-btn.actions {
+  background: #e6f2ff;
+  color: #3182ce;
 }
 
-.action-btn.delete:hover {
-  background: #c53030;
+.action-btn.actions:hover {
+  background: #3182ce;
   color: white;
 }
 
@@ -968,6 +1103,122 @@ onUnmounted(() => {
 .session-time {
   color: #666;
   font-size: 0.85rem;
+}
+
+/* Actions Modal Styles */
+.actions-modal {
+  max-width: 600px;
+}
+
+.user-info-summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 25px;
+  background: #f7fafc;
+  border-radius: 12px;
+  margin-bottom: 25px;
+}
+
+.user-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-avatar-fallback-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 24px;
+}
+
+.user-details h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.3rem;
+  color: #1a202c;
+}
+
+.user-details p {
+  margin: 0 0 10px 0;
+  color: #666;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.actions-list h3 {
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+  color: #4a5568;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: #f7fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.action-item:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e0;
+  transform: translateX(5px);
+}
+
+.action-item i {
+  font-size: 1.2rem;
+  width: 30px;
+  text-align: center;
+  color: #667eea;
+}
+
+.action-item.danger i {
+  color: #dc2626;
+}
+
+.action-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.action-title {
+  font-weight: 600;
+  color: #1a202c;
+  font-size: 1rem;
+}
+
+.action-desc {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.action-item.danger .action-title {
+  color: #dc2626;
+}
+
+.action-item.danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 @media (max-width: 1200px) {
