@@ -18,7 +18,7 @@ const API_BASE_URL = (() => {
   }
   
   // In development, use env variable or default to localhost
-  const devUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+  const devUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5005'
   console.log('🔧 Using development backend URL:', devUrl)
   return devUrl
 })()
