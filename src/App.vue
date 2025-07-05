@@ -108,7 +108,7 @@ export default {
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 1000;
+  z-index: 1100; /* Higher than other elements to prevent overlap */
 }
 
 /* Cache pre-hydration indicator */

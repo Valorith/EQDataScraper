@@ -69,6 +69,7 @@
                 </div>
                 <span class="user-name">
                   {{ user.first_name }} {{ user.last_name }}
+                  <span v-if="user.display_name" class="display-name">({{ user.display_name }})</span>
                 </span>
               </div>
             </td>
@@ -380,6 +381,7 @@ onMounted(() => {
 <style scoped>
 .admin-users {
   padding: 20px;
+  padding-top: 80px; /* Add padding to account for fixed header elements */
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -387,16 +389,21 @@ onMounted(() => {
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 30px;
   flex-wrap: wrap;
   gap: 20px;
+  margin-top: 20px; /* Add space from top to avoid logo overlap */
 }
 
 .header-content {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.header-actions {
+  margin-top: 30px; /* Add significant space above search bar */
 }
 
 .back-link {
@@ -424,6 +431,8 @@ onMounted(() => {
 .search-box {
   position: relative;
   width: 300px;
+  max-width: 100%;
+  z-index: 10; /* Ensure it's below the user menu */
 }
 
 .search-box i {
@@ -502,6 +511,7 @@ onMounted(() => {
 .users-table td {
   padding: 15px;
   border-bottom: 1px solid #e5e7eb;
+  color: #1a202c;
 }
 
 .users-table tbody tr:hover {
@@ -539,6 +549,13 @@ onMounted(() => {
   color: #1a202c;
 }
 
+.display-name {
+  color: #6b7280;
+  font-weight: 400;
+  font-style: italic;
+  margin-left: 4px;
+}
+
 .role-badge {
   display: inline-block;
   padding: 4px 12px;
@@ -548,13 +565,15 @@ onMounted(() => {
 }
 
 .role-badge.user {
-  background: #e6f2ff;
-  color: #3182ce;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
 }
 
 .role-badge.admin {
-  background: #fed7d7;
-  color: #c53030;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
 }
 
 .action-buttons {
@@ -781,14 +800,34 @@ onMounted(() => {
   font-size: 0.85rem;
 }
 
+@media (max-width: 1200px) {
+  .admin-users {
+    padding-top: 100px; /* More space on smaller screens */
+  }
+  
+  .page-header {
+    margin-top: 40px;
+  }
+}
+
 @media (max-width: 768px) {
+  .admin-users {
+    padding-top: 120px; /* Even more space on mobile */
+  }
+  
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+    margin-top: 60px;
+  }
+  
+  .header-content h1 {
+    font-size: 2rem; /* Smaller title on mobile */
   }
 
   .search-box {
     width: 100%;
+    margin-top: 10px;
   }
 
   .stats-grid {

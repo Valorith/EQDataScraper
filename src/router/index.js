@@ -15,6 +15,7 @@ import AdminUsers from '../views/AdminUsers.vue'
 import AdminCache from '../views/AdminCache.vue'
 import AdminScraping from '../views/AdminScraping.vue'
 import AdminSystem from '../views/AdminSystem.vue'
+import AdminLogs from '../views/AdminLogs.vue'
 
 const routes = [
   {
@@ -83,6 +84,12 @@ const routes = [
     path: '/admin/system',
     name: 'AdminSystem',
     component: AdminSystem,
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
+    path: '/admin/logs',
+    name: 'AdminLogs',
+    component: AdminLogs,
     meta: { requiresAuth: true, requiresAdmin: true }
   }
 ]

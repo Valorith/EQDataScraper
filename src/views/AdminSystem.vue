@@ -66,9 +66,9 @@
             <i class="fas fa-server"></i>
             <h3>Server Load</h3>
           </div>
-          <div class="metric-value">{{ systemStats.serverLoad || 0 }}%</div>
+          <div class="metric-value">{{ Math.min(Math.round(systemStats.serverLoad || 0), 100) }}%</div>
           <div class="load-bar">
-            <div class="load-fill" :style="{ width: (systemStats.serverLoad || 0) + '%' }"></div>
+            <div class="load-fill" :style="{ width: Math.min(systemStats.serverLoad || 0, 100) + '%' }"></div>
           </div>
           <div class="metric-info">
             <span :class="serverLoadClass">{{ serverLoadStatus }}</span>
@@ -468,6 +468,7 @@ onUnmounted(() => {
 <style scoped>
 .admin-system {
   padding: 20px;
+  padding-top: 80px; /* Add padding to account for fixed header elements */
   max-width: 1400px;
   margin: 0 auto;
 }

@@ -447,6 +447,7 @@ onUnmounted(() => {
 <style scoped>
 .admin-scraping {
   padding: 20px;
+  padding-top: 80px; /* Add padding to account for fixed header elements */
   max-width: 1400px;
   margin: 0 auto;
 }
