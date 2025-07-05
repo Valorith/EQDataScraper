@@ -300,7 +300,16 @@ const loadUsers = async () => {
     const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
       headers: { Authorization: `Bearer ${userStore.accessToken}` }
     })
-    stats.value = statsResponse.data.data.users
+    console.log('Admin stats response:', statsResponse.data)
+    // Handle both possible response formats
+    if (statsResponse.data.data?.users) {
+      stats.value = statsResponse.data.data.users
+    } else if (statsResponse.data.users) {
+      stats.value = statsResponse.data.users
+    } else {
+      // Fallback to direct data if structure is different
+      stats.value = statsResponse.data
+    }
   } catch (error) {
     console.error('Error loading users:', error)
   } finally {
