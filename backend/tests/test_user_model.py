@@ -347,7 +347,6 @@ class TestOAuthSessionModel:
         preferences_with_none = {
             'id': 1,
             'user_id': 1,
-            'theme_preference': 'auto'
             'theme_preference': 'auto',
             'results_per_page': 20,
             'created_at': datetime.utcnow(),
