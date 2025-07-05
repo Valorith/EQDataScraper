@@ -168,7 +168,10 @@
         <div v-for="log in filteredLogs" :key="log.id" class="log-entry" :class="log.level">
           <div class="log-time">{{ formatLogTime(log.timestamp) }}</div>
           <div class="log-level">{{ log.level.toUpperCase() }}</div>
-          <div class="log-message">{{ log.message }}</div>
+          <div class="log-content">
+            <div class="log-message">{{ log.message }}</div>
+            <div v-if="log.context" class="log-context">{{ log.context }}</div>
+          </div>
         </div>
         <div v-if="filteredLogs.length === 0" class="no-logs">
           No logs to display
@@ -383,16 +386,66 @@ const loadEndpointsStatus = () => {
 
 const generateSampleLogs = () => {
   const logMessages = [
-    { level: 'info', message: 'Application started successfully' },
-    { level: 'info', message: 'Connected to database' },
-    { level: 'info', message: 'Cache loaded from disk' },
-    { level: 'warning', message: 'High memory usage detected' },
-    { level: 'info', message: 'User authentication successful' },
-    { level: 'error', message: 'Failed to fetch spell data for Necromancer' },
-    { level: 'info', message: 'Cache refresh completed' },
-    { level: 'warning', message: 'Slow response time for /api/spells/wizard' },
-    { level: 'info', message: 'Scraping job started for all classes' },
-    { level: 'info', message: 'Admin user logged in' }
+    { 
+      level: 'info', 
+      message: 'Application started successfully',
+      context: 'Server initialized on port 5001 with 16 spell classes cached'
+    },
+    { 
+      level: 'info', 
+      message: 'Connected to PostgreSQL database',
+      context: 'Connection established to production database at shuttle.proxy.rlwy.net'
+    },
+    { 
+      level: 'info', 
+      message: 'Cache loaded from database',
+      context: 'Loaded 16 spell classes, 1532 spell details, and 1038 pricing entries'
+    },
+    { 
+      level: 'warning', 
+      message: 'High memory usage detected',
+      context: 'Memory usage at 85% (6.8GB / 8GB) - consider increasing cache cleanup frequency'
+    },
+    { 
+      level: 'info', 
+      message: 'User authentication successful',
+      context: 'User rgagnier06@gmail.com logged in via Google OAuth from IP 192.168.1.45'
+    },
+    { 
+      level: 'error', 
+      message: 'Failed to fetch spell data for Necromancer',
+      context: 'HTTP 503 from alla.clumsysworld.com - site may be under maintenance'
+    },
+    { 
+      level: 'info', 
+      message: 'Cache refresh completed for Wizard spells',
+      context: 'Updated 384 spells in 2.3s - next refresh scheduled for 24h'
+    },
+    { 
+      level: 'warning', 
+      message: 'Slow API response detected',
+      context: 'GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned'
+    },
+    { 
+      level: 'info', 
+      message: 'Bulk scraping job initiated',
+      context: 'Admin user rgagnier06@gmail.com triggered full refresh for all 16 classes'
+    },
+    { 
+      level: 'error', 
+      message: 'Rate limit exceeded for spell details endpoint',
+      context: 'IP 45.23.178.92 exceeded 100 requests/minute - blocked for 5 minutes'
+    },
+    {
+      level: 'info',
+      message: 'Database backup completed',
+      context: 'Successfully backed up 1532 spells and metadata - backup size: 4.2MB'
+    },
+    {
+      level: 'warning',
+      message: 'Stale cache detected for Cleric spells',
+      context: 'Cache is 26 hours old (expires after 24h) - automatic refresh triggered'
+    }
   ]
   
   systemLogs.value = logMessages.map((log, index) => ({
@@ -898,10 +951,15 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 150px 80px 1fr;
   gap: 15px;
-  padding: 10px;
+  padding: 12px;
   border-bottom: 1px solid #e5e7eb;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.log-entry:hover {
+  background: rgba(102, 126, 234, 0.05);
 }
 
 .log-entry:last-child {
@@ -917,8 +975,24 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
+.log-entry.error {
+  background: rgba(254, 226, 226, 0.3);
+}
+
+.log-entry.error:hover {
+  background: rgba(254, 226, 226, 0.5);
+}
+
 .log-entry.error .log-level {
   color: #ef4444;
+}
+
+.log-entry.warning {
+  background: rgba(254, 243, 199, 0.3);
+}
+
+.log-entry.warning:hover {
+  background: rgba(254, 243, 199, 0.5);
 }
 
 .log-entry.warning .log-level {
@@ -929,8 +1003,21 @@ onUnmounted(() => {
   color: #3b82f6;
 }
 
+.log-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .log-message {
   color: #1a202c;
+  font-weight: 500;
+}
+
+.log-context {
+  color: #6b7280;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .no-logs {
