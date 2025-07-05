@@ -38,3 +38,4 @@ dist/
 # AI Assistant Documentation
 GEMINI.md
 .DS_Store
+.env.local
