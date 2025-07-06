@@ -551,6 +551,8 @@ class TestClassNameHandling:
     def test_class_name_to_cache_key_mapping(self, mock_app, sample_spell_data):
         """Test that class name normalization correctly maps to cache keys."""
         from app import CLASSES
+        import time
+        from unittest.mock import patch
         
         app.spells_cache.clear()
         
@@ -570,13 +572,32 @@ class TestClassNameHandling:
             'beastlord': 'beastlord'
         }
         
-        for input_name, expected_cache_key in test_mappings.items():
-            response = mock_app.get(f'/api/spells/{input_name}')
-            assert response.status_code == 200, f"Failed for input: {input_name} -> {expected_cache_key}"
+        # Disable rate limiting for this test by mocking the limiter
+        with patch('app.limiter') as mock_limiter:
+            if mock_limiter:
+                mock_limiter.limit = lambda *args, **kwargs: lambda f: f
+                mock_limiter.request_filter = lambda f: f
             
-            # Verify the response contains data (proving cache lookup worked)
-            data = json.loads(response.data)
-            assert len(data['spells']) > 0, f"No spells found for {input_name} -> {expected_cache_key}"
+            for i, (input_name, expected_cache_key) in enumerate(test_mappings.items()):
+                # Small delay to avoid any residual rate limiting
+                if i > 0:
+                    time.sleep(0.1)
+                    
+                response = mock_app.get(f'/api/spells/{input_name}')
+                
+                # If still rate limited, wait and retry with longer delay
+                max_retries = 3
+                retry_count = 0
+                while response.status_code == 429 and retry_count < max_retries:
+                    retry_count += 1
+                    time.sleep(2 ** retry_count)  # Exponential backoff
+                    response = mock_app.get(f'/api/spells/{input_name}')
+                
+                assert response.status_code == 200, f"Failed for input: {input_name} -> {expected_cache_key} (status: {response.status_code}, retries: {retry_count})"
+                
+                # Verify the response contains data (proving cache lookup worked)
+                data = json.loads(response.data)
+                assert len(data['spells']) > 0, f"No spells found for {input_name} -> {expected_cache_key}"
 
 
 class TestDataValidation:
