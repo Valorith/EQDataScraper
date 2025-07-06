@@ -7,6 +7,8 @@ frontend.log
 backend.log
 backend_debug.log
 backend_manual.log
+backend_run.log
+backend_run_new.log
 frontend_manual.log
 monitor.log
 startup.log
