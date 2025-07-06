@@ -8,6 +8,23 @@ from utils.jwt_utils import jwt_manager, require_auth, create_error_response, cr
 from models.user import User, OAuthSession
 from models.activity import ActivityLog
 import psycopg2
+import traceback  # Import at module level to avoid dynamic import issues
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+def safe_log(message):
+    """Safely log messages without causing errors in production."""
+    try:
+        print(message)
+    except:
+        # If print fails, try logger
+        try:
+            logger.info(message)
+        except:
+            # Silently ignore if all logging fails
+            pass
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -103,22 +120,21 @@ def google_callback():
         
         # Exchange code for tokens
         try:
-            print(f"[OAuth Debug] Exchanging code for tokens")
-            print(f"[OAuth Debug] Client ID: {google_oauth.client_id[:10]}...")
-            print(f"[OAuth Debug] Redirect URI: {google_oauth.redirect_uri}")
-            print(f"[OAuth Debug] Code: {code[:10]}...")
-            print(f"[OAuth Debug] State: {state}")
+            safe_log(f"[OAuth Debug] Exchanging code for tokens")
+            safe_log(f"[OAuth Debug] Client ID: {google_oauth.client_id[:10]}...")
+            safe_log(f"[OAuth Debug] Redirect URI: {google_oauth.redirect_uri}")
+            safe_log(f"[OAuth Debug] Code: {code[:10]}...")
+            safe_log(f"[OAuth Debug] State: {state}")
             
             token_data = google_oauth.exchange_code_for_tokens(
                 code, 
                 stored_state['code_verifier']
             )
         except Exception as e:
-            print(f"[OAuth Error] Token exchange failed: {str(e)}")
-            print(f"[OAuth Error] Error type: {type(e).__name__}")
+            safe_log(f"[OAuth Error] Token exchange failed: {str(e)}")
+            safe_log(f"[OAuth Error] Error type: {type(e).__name__}")
             # Log more details for debugging
-            import traceback
-            print(f"[OAuth Error] Traceback: {traceback.format_exc()}")
+            safe_log(f"[OAuth Error] Traceback: {traceback.format_exc()}")
             return create_error_response(f"Failed to exchange code for tokens: {str(e)}", 500)
         
         user_info = token_data['user_info']
@@ -135,7 +151,7 @@ def google_callback():
         
         # For local development without database, create a simple in-memory user
         if not conn:
-            print("Warning: No database connection, using in-memory user storage")
+            safe_log("Warning: No database connection, using in-memory user storage")
             # Create JWT tokens without database
             access_token = jwt_manager.create_access_token(
                 user_id=user_info['google_id'],  # Use Google ID as user ID
