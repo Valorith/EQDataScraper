@@ -73,6 +73,34 @@ def google_login():
         return create_error_response(f"Failed to generate authorization URL: {str(e)}", 500)
 
 
+@auth_bp.route('/auth/google/callback', methods=['GET'])
+def google_callback_get():
+    """
+    Handle GET requests to the callback endpoint.
+    This should not normally happen - the frontend should POST the code.
+    
+    Returns:
+        JSON error response explaining the issue
+    """
+    # Log the request details to understand why GET is being called
+    safe_log("[OAuth] Unexpected GET request to callback endpoint")
+    safe_log(f"[OAuth] GET request headers: {dict(request.headers)}")
+    safe_log(f"[OAuth] GET request args: {dict(request.args)}")
+    
+    # Check if this is a direct redirect from Google (which shouldn't happen)
+    if 'code' in request.args:
+        return create_error_response(
+            "Invalid request method. The OAuth callback expects a POST request from the frontend, "
+            "not a direct GET redirect. Please ensure you're accessing the application through the correct URL.", 
+            405
+        )
+    
+    return create_error_response(
+        "Method not allowed. Use POST to submit OAuth callback data.", 
+        405
+    )
+
+
 @auth_bp.route('/auth/google/callback', methods=['POST'])
 def google_callback():
     """
