@@ -903,7 +903,11 @@ def save_cache_to_files():
         logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Load existing cache on startup
-load_cache_from_storage()
+# Skip for gunicorn workers to prevent timeout
+if __name__ == '__main__' or os.environ.get('FORCE_CACHE_LOAD'):
+    load_cache_from_storage()
+else:
+    logger.info("Skipping initial cache load for gunicorn worker")
 
 
 
@@ -2767,6 +2771,37 @@ def health_check():
         'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0,
         'startup_complete': server_startup_progress['startup_complete']
     })
+
+@app.route('/api/initialize', methods=['POST'])
+def initialize_cache():
+    """Initialize cache after server startup - for production environments"""
+    global server_startup_progress
+    
+    # Check if already initialized
+    if server_startup_progress['startup_complete']:
+        return jsonify({
+            'message': 'Cache already initialized',
+            'cached_classes': len(spells_cache),
+            'cached_spell_details': len(spell_details_cache)
+        })
+    
+    try:
+        # Load cache from storage
+        logger.info("Initializing cache via API endpoint...")
+        load_cache_from_storage()
+        
+        # Mark startup as complete
+        server_startup_progress['startup_complete'] = True
+        
+        return jsonify({
+            'message': 'Cache initialized successfully',
+            'cached_classes': len(spells_cache),
+            'cached_spell_details': len(spell_details_cache),
+            'storage_type': 'database' if USE_DATABASE_CACHE else 'files'
+        })
+    except Exception as e:
+        logger.error(f"Error initializing cache: {e}")
+        return jsonify({'error': f'Failed to initialize cache: {str(e)}'}), 500
 
 @app.route('/api/cache/save', methods=['POST'])
 def save_cache():
