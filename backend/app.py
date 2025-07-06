@@ -3718,6 +3718,7 @@ def search_items():
             
             # Convert to list of dictionaries with proper field mapping
             items_list = []
+            debug_logged = False  # Only log first item for debugging
             for item in items:
                 # Handle both dict and tuple cursor results
                 if isinstance(item, dict):
@@ -3757,6 +3758,11 @@ def search_items():
                     }
                 else:
                     # Handle tuple results (MySQL)
+                    if not debug_logged:
+                        logger.info(f"Debug item tuple - norent field (index 18): {item[18] if len(item) > 18 else 'NO INDEX 18'}")
+                        logger.info(f"Debug item tuple - magic field (index 16): {item[16] if len(item) > 16 else 'NO INDEX 16'}")
+                        logger.info(f"Debug item tuple - nodrop field (index 17): {item[17] if len(item) > 17 else 'NO INDEX 17'}")
+                        debug_logged = True
                     item_dict = {
                         'id': item[0],
                         'item_id': str(item[0]),
