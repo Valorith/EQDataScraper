@@ -88,6 +88,9 @@ class GoogleOAuth:
         
         auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params)}"
         
+        # Log the redirect URI being used
+        safe_log(f"[OAuth] Authorization URL generated with redirect_uri: {self.redirect_uri}")
+        
         return {
             'auth_url': auth_url,
             'state': state,
@@ -116,9 +119,35 @@ class GoogleOAuth:
                 'code_verifier': code_verifier
             }
             
-            response = requests.post(self.token_url, data=token_data)
-            response.raise_for_status()
+            safe_log(f"[OAuth] Sending token exchange request to: {self.token_url}")
+            safe_log(f"[OAuth] Token exchange data: client_id={self.client_id[:10]}..., redirect_uri={self.redirect_uri}, code={code[:10]}...")
             
+            response = requests.post(self.token_url, data=token_data)
+            
+            # Log response details before checking status
+            safe_log(f"[OAuth] Token exchange response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                safe_log(f"[OAuth] Token exchange failed with status {response.status_code}")
+                safe_log(f"[OAuth] Response content: {response.text}")
+                
+                # Try to parse error response
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('error', 'Unknown error')
+                    error_desc = error_data.get('error_description', '')
+                    safe_log(f"[OAuth] Error: {error_msg} - {error_desc}")
+                    
+                    # Common redirect_uri mismatch error
+                    if 'redirect_uri' in error_desc.lower():
+                        raise Exception(f"Redirect URI mismatch. Backend is using: {self.redirect_uri}. Error: {error_desc}")
+                    else:
+                        raise Exception(f"OAuth error: {error_msg} - {error_desc}")
+                except ValueError:
+                    # Response is not JSON
+                    raise Exception(f"OAuth token exchange failed with status {response.status_code}: {response.text[:200]}")
+            
+            response.raise_for_status()
             tokens = response.json()
             
             # Verify the ID token
