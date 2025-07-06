@@ -13,6 +13,23 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 import json
 import time
+import jwt  # Import jwt at module level to avoid dynamic import issues
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+def safe_log(message):
+    """Safely log messages without causing errors in production."""
+    try:
+        print(message)
+    except:
+        # If print fails, try logger
+        try:
+            logger.info(message)
+        except:
+            # Silently ignore if all logging fails
+            pass
 
 class GoogleOAuth:
     """Google OAuth handler with PKCE support."""
@@ -111,7 +128,8 @@ class GoogleOAuth:
             
             # Verify and decode the ID token
             try:
-                print(f"[OAuth] Verifying ID token with client_id: {self.client_id}")
+                safe_log(f"[OAuth] Verifying ID token with client_id: {self.client_id}")
+                
                 # Add clock skew tolerance
                 id_info = id_token.verify_oauth2_token(
                     id_token_jwt, 
@@ -119,33 +137,36 @@ class GoogleOAuth:
                     self.client_id,
                     clock_skew_in_seconds=60  # Increase to 60 seconds for production
                 )
-                print(f"[OAuth] ID token verified successfully")
+                
+                safe_log(f"[OAuth] ID token verified successfully")
             except Exception as e:
-                print(f"[OAuth] ID token verification failed: {str(e)}")
-                print(f"[OAuth] Client ID: {self.client_id}")
-                print(f"[OAuth] ID Token (first 50 chars): {id_token_jwt[:50] if id_token_jwt else 'None'}...")
+                safe_log(f"[OAuth] ID token verification failed: {str(e)}")
+                safe_log(f"[OAuth] Client ID: {self.client_id}")
+                safe_log(f"[OAuth] ID Token (first 50 chars): {id_token_jwt[:50] if id_token_jwt else 'None'}...")
                 
                 # Try alternative verification method for production
                 try:
-                    print("[OAuth] Attempting fallback JWT decode...")
-                    import jwt
+                    safe_log("[OAuth] Attempting fallback JWT decode...")
                     decoded = jwt.decode(id_token_jwt, options={"verify_signature": False})
-                    print(f"[OAuth] Decoded token claims: {json.dumps(decoded, indent=2)}")
+                    # Safely log token claims without json.dumps to avoid serialization errors
+                    safe_log(f"[OAuth] Decoded token email: {decoded.get('email')}")
+                    safe_log(f"[OAuth] Decoded token aud: {decoded.get('aud')}")
+                    safe_log(f"[OAuth] Decoded token iss: {decoded.get('iss')}")
                     
                     # Check if it's just an audience mismatch
                     if decoded.get('aud') != self.client_id:
-                        print(f"[OAuth] Warning: Audience mismatch! Token aud: {decoded.get('aud')}, Expected: {self.client_id}")
+                        safe_log(f"[OAuth] Warning: Audience mismatch! Token aud: {decoded.get('aud')}, Expected: {self.client_id}")
                     
                     # In production, we can be more lenient if the email is verified
                     # This is a temporary workaround for the ID token verification issue
                     if decoded.get('email_verified') and decoded.get('iss') in ['accounts.google.com', 'https://accounts.google.com']:
-                        print("[OAuth] Using fallback verification due to production environment")
+                        safe_log("[OAuth] Using fallback verification due to production environment")
                         id_info = decoded
                     else:
                         raise ValueError(f"Invalid ID token: {str(e)}")
                         
                 except Exception as alt_e:
-                    print(f"[OAuth] Fallback decode also failed: {str(alt_e)}")
+                    safe_log(f"[OAuth] Fallback decode also failed: {str(alt_e)}")
                     raise ValueError(f"Invalid ID token: {str(e)}")
             
             # Extract user information
