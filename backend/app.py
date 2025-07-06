@@ -35,7 +35,10 @@ if ENABLE_USER_ACCOUNTS:
     print("🔐 OAuth/User Accounts ENABLED")
     print(f"   - GOOGLE_CLIENT_ID: {'SET' if os.environ.get('GOOGLE_CLIENT_ID') else 'NOT SET'}")
     print(f"   - GOOGLE_CLIENT_SECRET: {'SET' if os.environ.get('GOOGLE_CLIENT_SECRET') else 'NOT SET'}")
-    print(f"   - OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
+    oauth_redirect = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
+    print(f"   - OAUTH_REDIRECT_URI: {oauth_redirect}")
+    if oauth_redirect != 'NOT SET' and ('backend' in oauth_redirect or '/api/' in oauth_redirect):
+        print(f"   ⚠️  WARNING: OAUTH_REDIRECT_URI points to backend API, should point to frontend!")
     print(f"   - FRONTEND_URL: {os.environ.get('FRONTEND_URL', 'NOT SET')}")
     print(f"   - JWT_SECRET_KEY: {'SET' if os.environ.get('JWT_SECRET_KEY') else 'NOT SET'}")
     print(f"   - DATABASE_URL: {'SET' if os.environ.get('DATABASE_URL') else 'NOT SET'}")

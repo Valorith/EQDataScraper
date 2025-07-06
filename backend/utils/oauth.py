@@ -42,6 +42,15 @@ class GoogleOAuth:
         if not all([self.client_id, self.client_secret, self.redirect_uri]):
             raise ValueError("Missing Google OAuth configuration. Check environment variables.")
         
+        # Fix common misconfiguration where redirect URI points to backend instead of frontend
+        if self.redirect_uri and ('/api/' in self.redirect_uri or 'backend' in self.redirect_uri):
+            safe_log(f"[OAuth Init] Warning: Redirect URI appears to point to backend: {self.redirect_uri}")
+            # In production, try to fix it automatically
+            if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+                frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+                self.redirect_uri = f"{frontend_url}/auth/callback"
+                safe_log(f"[OAuth Init] Auto-corrected redirect URI to: {self.redirect_uri}")
+        
         self.auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
         self.token_url = "https://oauth2.googleapis.com/token"
         self.userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"

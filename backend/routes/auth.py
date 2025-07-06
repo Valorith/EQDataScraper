@@ -54,6 +54,11 @@ def google_login():
         # In production, use the configured redirect URI
         if 'localhost' in origin and 'localhost' in google_oauth.redirect_uri:
             google_oauth.redirect_uri = f"{origin}/auth/callback"
+        elif os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+            # In production, ensure we're using the frontend URL, not the backend URL
+            frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+            google_oauth.redirect_uri = f"{frontend_url}/auth/callback"
+            safe_log(f"[OAuth Login] Production override - using frontend redirect URI: {google_oauth.redirect_uri}")
         
         # Log the redirect URI being used for debugging
         safe_log(f"[OAuth Login] Origin: {origin}")
@@ -237,6 +242,11 @@ def google_callback():
         # In production, use the configured redirect URI
         if 'localhost' in origin and 'localhost' in google_oauth.redirect_uri:
             google_oauth.redirect_uri = f"{origin}/auth/callback"
+        elif os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+            # In production, ensure we're using the frontend URL, not the backend URL
+            frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+            google_oauth.redirect_uri = f"{frontend_url}/auth/callback"
+            safe_log(f"[OAuth Login] Production override - using frontend redirect URI: {google_oauth.redirect_uri}")
         
         # Exchange code for tokens
         try:
