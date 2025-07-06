@@ -3829,10 +3829,10 @@ def search_items():
                         'discovered_only': True
                 })
                 
-            finally:
-                if cursor:
-                    cursor.close()
-                # Connection is automatically returned to pool by context manager
+        finally:
+            if cursor:
+                cursor.close()
+            # Connection is automatically returned to pool by context manager
             
     except Exception as e:
         import traceback
