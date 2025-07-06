@@ -185,14 +185,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
-
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
 // State
 const systemStats = ref({
@@ -408,42 +405,42 @@ const generateSampleLogs = () => {
     },
     { 
       level: 'info', 
-      message: 'User authentication successful',
+      message: 'User rgagnier06@gmail.com authenticated successfully via Google OAuth from IP 192.168.1.45',
       context: 'User rgagnier06@gmail.com logged in via Google OAuth from IP 192.168.1.45'
     },
     { 
       level: 'error', 
-      message: 'Failed to fetch spell data for Necromancer',
+      message: 'Failed to fetch Necromancer spell data from alla.clumsysworld.com - HTTP 503 Service Unavailable',
       context: 'HTTP 503 from alla.clumsysworld.com - site may be under maintenance'
     },
     { 
       level: 'info', 
-      message: 'Cache refresh completed for Wizard spells',
+      message: 'Cache refresh completed for Wizard spells - updated 384 spells in 2.3s',
       context: 'Updated 384 spells in 2.3s - next refresh scheduled for 24h'
     },
     { 
       level: 'warning', 
-      message: 'Slow API response detected',
+      message: 'Slow API response: GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned',
       context: 'GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned'
     },
     { 
       level: 'info', 
-      message: 'Bulk scraping job initiated',
+      message: 'Bulk scraping job initiated by admin user rgagnier06@gmail.com for all 16 classes',
       context: 'Admin user rgagnier06@gmail.com triggered full refresh for all 16 classes'
     },
     { 
       level: 'error', 
-      message: 'Rate limit exceeded for spell details endpoint',
+      message: 'Rate limit exceeded for IP 45.23.178.92 on spell details endpoint - 100 requests/minute - blocked for 5 minutes',
       context: 'IP 45.23.178.92 exceeded 100 requests/minute - blocked for 5 minutes'
     },
     {
       level: 'info',
-      message: 'Database backup completed',
+      message: 'Database backup completed - 1532 spells and metadata backed up (4.2MB)',
       context: 'Successfully backed up 1532 spells and metadata - backup size: 4.2MB'
     },
     {
       level: 'warning',
-      message: 'Stale cache detected for Cleric spells',
+      message: 'Stale cache detected for Cleric spells - 26 hours old (expires at 24h) - automatic refresh triggered',
       context: 'Cache is 26 hours old (expires after 24h) - automatic refresh triggered'
     }
   ]
@@ -521,13 +518,14 @@ onUnmounted(() => {
 <style scoped>
 .admin-system {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: 100px; /* Increased padding to prevent logo overlap */
   max-width: 1400px;
   margin: 0 auto;
 }
 
 .page-header {
   margin-bottom: 30px;
+  margin-top: 20px; /* Add space from top */
 }
 
 .header-content {

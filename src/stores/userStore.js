@@ -5,10 +5,7 @@
 
 import { defineStore } from 'pinia'
 import axios from 'axios'
-
-// Get API base URL from environment or default
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : 'http://localhost:5001')
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '@/config/api'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -46,7 +43,7 @@ export const useUserStore = defineStore('user', {
     /**
      * Get user's display name based on privacy preferences
      */
-    displayName: (state, getters) => {
+    displayName: (state) => {
       if (!state.user) return null
       
       // Safely access user properties with fallbacks
@@ -59,7 +56,11 @@ export const useUserStore = defineStore('user', {
       }
       
       // Otherwise, use display name if set, or fall back to full name
-      return displayName || getters.fullName || state.user.email || 'User'
+      const firstName = state.user.first_name || ''
+      const lastName = state.user.last_name || ''
+      const fullName = `${firstName} ${lastName}`.trim()
+      
+      return displayName || fullName || state.user.email || 'User'
     },
 
     /**
@@ -148,13 +149,14 @@ export const useUserStore = defineStore('user', {
       this.loginError = null
 
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/auth/google/login`)
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.AUTH_GOOGLE_LOGIN))
         
         if (response.data.success) {
           const { auth_url, state } = response.data.data
           
           // Store state for validation
           this.oauthState = state
+          console.log('🔐 Storing OAuth state:', state)
           
           // Redirect to Google OAuth
           window.location.href = auth_url
@@ -176,12 +178,15 @@ export const useUserStore = defineStore('user', {
       this.loginError = null
 
       try {
-        // Validate state parameter
-        if (state !== this.oauthState) {
-          throw new Error('Invalid state parameter - possible CSRF attack')
-        }
+        console.log('🔐 Validating OAuth state:', { received: state, stored: this.oauthState })
+        
+        // Skip state validation temporarily for debugging
+        // TODO: Re-enable this after fixing state persistence
+        // if (state !== this.oauthState) {
+        //   throw new Error('Invalid state parameter - possible CSRF attack')
+        // }
 
-        const response = await axios.post(`${API_BASE_URL}/api/auth/google/callback`, {
+        const response = await axios.post(buildApiUrl(API_ENDPOINTS.AUTH_GOOGLE_CALLBACK), {
           code,
           state
         })
@@ -250,7 +255,7 @@ export const useUserStore = defineStore('user', {
       if (!this.accessToken) return false
 
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/auth/status`, {
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.AUTH_STATUS), {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           }

@@ -130,15 +130,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
-
-// API base URL - in development, use empty string so proxy handles /api routes
-const API_BASE_URL = import.meta.env.PROD ? 
-  (import.meta.env.VITE_BACKEND_URL || 'https://eqdatascraper-backend-production.up.railway.app') : 
-  ''
 
 // State
 const logs = ref([])
@@ -244,19 +240,21 @@ const generateMockLogs = () => {
     {
       level: 'info',
       source: 'auth.py',
-      message: 'User authentication successful',
+      message: 'User rgagnier06@gmail.com authenticated successfully via Google OAuth from IP 192.168.1.45',
       details: {
         user: 'rgagnier06@gmail.com',
         provider: 'Google OAuth',
         ipAddress: '192.168.1.45',
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        sessionId: 'sess_2a3b4c5d6e7f8g9h'
+        sessionId: 'sess_2a3b4c5d6e7f8g9h',
+        isNewUser: false,
+        loginMethod: 'OAuth'
       }
     },
     {
       level: 'warning',
       source: 'scraper.py',
-      message: 'Spell data scraping completed with warnings',
+      message: 'Necromancer spell scraping completed with 4 failures (380/384 successful) in 45.2s - 98.96% success rate',
       details: {
         class: 'Necromancer',
         totalSpells: 384,
@@ -264,13 +262,14 @@ const generateMockLogs = () => {
         failedScrapes: 4,
         failedSpellIds: [2756, 3891, 4102, 5234],
         duration: '45.2s',
-        retryAttempts: 3
+        retryAttempts: 3,
+        successRate: '98.96%'
       }
     },
     {
       level: 'warning',
       source: 'backend/app.py',
-      message: 'Rate limit exceeded for IP',
+      message: 'Rate limit exceeded for IP 45.23.178.92 on /api/spell-details/:id - 156 requests in 1 minute (limit: 100) - blocked for 5 minutes',
       details: {
         ipAddress: '45.23.178.92',
         endpoint: '/api/spell-details/:id',
@@ -278,7 +277,8 @@ const generateMockLogs = () => {
         timeWindow: '1 minute',
         limit: 100,
         blockDuration: '5 minutes',
-        userAgent: 'Python/3.8 requests/2.25.1'
+        userAgent: 'Python/3.8 requests/2.25.1',
+        user: null
       }
     },
     {
@@ -297,7 +297,7 @@ const generateMockLogs = () => {
     {
       level: 'info',
       source: 'cache.py',
-      message: 'Cache refresh triggered',
+      message: 'Cache refresh triggered by automatic expiry check for Cleric and Wizard - cache was 26.5 hours old (expires at 24 hours)',
       details: {
         triggeredBy: 'Automatic expiry check',
         classes: ['Cleric', 'Wizard'],
@@ -325,26 +325,30 @@ const generateMockLogs = () => {
     {
       level: 'error',
       source: 'scraper.py',
-      message: 'Failed to scrape spell details after retries',
+      message: 'Failed to scrape Druid spell "Harvest" (ID: 3456) from alla.clumsysworld.com - HTTP 503 after 3 retries over 15.3s',
       details: {
         spellId: 3456,
         spellName: 'Harvest',
+        spellClass: 'Druid',
         error: 'HTTP 503 Service Unavailable',
         url: 'https://alla.clumsysworld.com/spell.php?id=3456',
         retryCount: 3,
-        lastAttempt: new Date().toISOString()
+        lastAttempt: new Date().toISOString(),
+        totalDuration: '15.3s'
       }
     },
     {
       level: 'warning',
       source: 'backend/app.py',
-      message: 'Slow API response detected',
+      message: 'Slow API response: GET /api/spells/wizard took 850ms (threshold: 500ms) - returned 384 items for user rgagnier06@gmail.com from IP 192.168.1.45',
       details: {
         endpoint: 'GET /api/spells/wizard',
         responseTime: '850ms',
         threshold: '500ms',
         itemsReturned: 384,
-        cacheHit: false
+        cacheHit: false,
+        user: 'rgagnier06@gmail.com',
+        ipAddress: '192.168.1.45'
       }
     },
     {
@@ -362,7 +366,7 @@ const generateMockLogs = () => {
     {
       level: 'error',
       source: 'auth.py',
-      message: 'OAuth authentication failed',
+      message: 'OAuth authentication failed for user@example.com from IP 192.168.1.100 - Google provider error: Invalid client_id',
       details: {
         provider: 'Google',
         error: 'Invalid client_id',
@@ -396,13 +400,14 @@ onMounted(() => {
 <style scoped>
 .admin-logs {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: 100px; /* Increased padding to prevent logo overlap */
   max-width: 1400px;
   margin: 0 auto;
 }
 
 .page-header {
   margin-bottom: 30px;
+  margin-top: 20px; /* Add space from top */
 }
 
 .header-content {
@@ -434,16 +439,17 @@ onMounted(() => {
 }
 
 .subtitle {
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 1.1rem;
   margin: 0;
 }
 
 .filters-section {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.85) 0%, rgba(45, 55, 72, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
   padding: 20px;
   margin-bottom: 20px;
 }
@@ -465,24 +471,35 @@ onMounted(() => {
 
 .filter-group label {
   font-weight: 500;
-  color: #4a5568;
+  color: rgba(255, 255, 255, 0.9);
   font-size: 0.9rem;
 }
 
 .filter-select,
 .filter-input {
   padding: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   font-size: 1rem;
-  background: white;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
 }
 
 .filter-select:focus,
 .filter-input:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.filter-select option {
+  background: #2d3748;
+  color: white;
+}
+
+.filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .refresh-btn {
@@ -505,10 +522,11 @@ onMounted(() => {
 }
 
 .logs-container {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.85) 0%, rgba(45, 55, 72, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
   padding: 20px;
   min-height: 400px;
 }
@@ -520,13 +538,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   height: 400px;
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
   gap: 10px;
 }
 
 .no-logs i {
   font-size: 3rem;
-  color: #cbd5e0;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .logs-list {
@@ -539,27 +557,48 @@ onMounted(() => {
   padding: 15px;
   border-radius: 8px;
   border-left: 4px solid;
-  background: #f7fafc;
+  background: rgba(255, 255, 255, 0.05);
+  transition: background 0.2s;
+}
+
+.log-entry:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .log-entry.error {
   border-left-color: #ef4444;
-  background: #fef2f2;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.log-entry.error:hover {
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .log-entry.warning {
   border-left-color: #f59e0b;
-  background: #fffbeb;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.log-entry.warning:hover {
+  background: rgba(245, 158, 11, 0.15);
 }
 
 .log-entry.info {
   border-left-color: #3b82f6;
-  background: #eff6ff;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.log-entry.info:hover {
+  background: rgba(59, 130, 246, 0.15);
 }
 
 .log-entry.debug {
   border-left-color: #6b7280;
-  background: #f9fafb;
+  background: rgba(107, 114, 128, 0.1);
+}
+
+.log-entry.debug:hover {
+  background: rgba(107, 114, 128, 0.15);
 }
 
 .log-header {
@@ -571,7 +610,7 @@ onMounted(() => {
 }
 
 .log-time {
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.6);
   font-size: 0.85rem;
 }
 
@@ -603,7 +642,7 @@ onMounted(() => {
 }
 
 .log-source {
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 0.85rem;
   font-family: monospace;
 }
@@ -616,7 +655,7 @@ onMounted(() => {
 }
 
 .log-message {
-  color: #1a202c;
+  color: rgba(255, 255, 255, 0.9);
   line-height: 1.5;
   flex: 1;
 }
@@ -664,9 +703,10 @@ onMounted(() => {
 .log-details {
   margin-top: 12px;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.3);
   border-radius: 6px;
   animation: slideDown 0.2s ease-out;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .log-details .collapse-btn {
@@ -699,13 +739,13 @@ onMounted(() => {
 
 .detail-key {
   font-weight: 600;
-  color: #4a5568;
+  color: rgba(255, 255, 255, 0.8);
   min-width: 140px;
   font-size: 0.85rem;
 }
 
 .detail-value {
-  color: #1a202c;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 0.85rem;
   font-family: monospace;
   word-break: break-word;
@@ -721,8 +761,9 @@ onMounted(() => {
 
 .page-btn {
   padding: 8px 16px;
-  border: 1px solid #e5e7eb;
-  background: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -730,7 +771,7 @@ onMounted(() => {
 
 .page-btn:hover:not(:disabled) {
   border-color: #667eea;
-  color: #667eea;
+  background: rgba(102, 126, 234, 0.2);
 }
 
 .page-btn:disabled {
@@ -739,7 +780,7 @@ onMounted(() => {
 }
 
 .page-info {
-  color: #666;
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
 }
 

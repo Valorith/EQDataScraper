@@ -292,15 +292,11 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
-
-// API base URL - in development, use empty string so proxy handles /api routes
-const API_BASE_URL = import.meta.env.PROD ? 
-  (import.meta.env.VITE_BACKEND_URL || 'https://eqdatascraper-backend-production.up.railway.app') : 
-  ''
 
 // State
 const users = ref([])

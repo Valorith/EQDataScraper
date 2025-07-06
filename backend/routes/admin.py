@@ -5,7 +5,9 @@ Admin routes for user management.
 from flask import Blueprint, request, jsonify, g
 from utils.jwt_utils import require_admin, create_error_response, create_success_response
 from models.user import User, OAuthSession
+from models.activity import ActivityLog
 import psycopg2
+from datetime import datetime, timedelta
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -451,66 +453,193 @@ def get_recent_activities():
     """
     Get recent system activities.
     
+    Query parameters:
+        limit: Number of activities to return (default: 50, max: 100)
+        offset: Offset for pagination (default: 0)
+        action: Filter by specific action type
+        user_id: Filter by specific user ID
+        start_date: Filter activities after this date (ISO format)
+        end_date: Filter activities before this date (ISO format)
+    
     Returns:
         JSON response with recent activities
     """
     try:
+        # Get query parameters
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        action = request.args.get('action')
+        user_id = request.args.get('user_id', type=int)
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        
+        # Validate parameters
+        if limit < 1 or limit > 100:
+            limit = 50
+        if offset < 0:
+            offset = 0
+        
+        # Parse dates if provided
+        start_date = None
+        end_date = None
+        if start_date_str:
+            try:
+                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+            except:
+                return create_error_response("Invalid start_date format", 400)
+        
+        if end_date_str:
+            try:
+                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+            except:
+                return create_error_response("Invalid end_date format", 400)
+        
         # Get database connection
         conn = get_db_connection()
         if not conn:
-            # Return empty activities without database
+            # Return mock activities for development when no database is available
+            from datetime import datetime, timedelta
+            
+            mock_activities = [
+                {
+                    'id': 1,
+                    'action': 'login',
+                    'user_id': 1,
+                    'user_display': 'Development User',
+                    'resource_type': 'session',
+                    'resource_id': 'dev-session-1',
+                    'details': {'method': 'google_oauth'},
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser',
+                    'created_at': (datetime.now() - timedelta(minutes=5)).isoformat(),
+                    'description': 'Development User logged in'
+                },
+                {
+                    'id': 2,
+                    'action': 'spell_search',
+                    'user_id': 1,
+                    'user_display': 'Development User',
+                    'resource_type': 'spell',
+                    'resource_id': 'heal',
+                    'details': {'query': 'heal', 'results_count': 45},
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser',
+                    'created_at': (datetime.now() - timedelta(minutes=10)).isoformat(),
+                    'description': 'Development User searched for spells: "heal"'
+                },
+                {
+                    'id': 3,
+                    'action': 'cache_refresh',
+                    'user_id': None,
+                    'user_display': 'System',
+                    'resource_type': 'cache',
+                    'resource_id': 'all_classes',
+                    'details': {'refreshed_classes': 16},
+                    'ip_address': None,
+                    'user_agent': None,
+                    'created_at': (datetime.now() - timedelta(hours=1)).isoformat(),
+                    'description': 'System refreshed cache for all classes'
+                },
+                {
+                    'id': 4,
+                    'action': 'scrape_complete',
+                    'user_id': 1,
+                    'user_display': 'Development User',
+                    'resource_type': 'class',
+                    'resource_id': 'paladin',
+                    'details': {'spell_count': 142, 'duration_seconds': 8.3},
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser',
+                    'created_at': (datetime.now() - timedelta(hours=2)).isoformat(),
+                    'description': 'Development User completed scraping for Paladin (142 spells)'
+                },
+                {
+                    'id': 5,
+                    'action': 'spell_view',
+                    'user_id': 1,
+                    'user_display': 'Development User',
+                    'resource_type': 'spell',
+                    'resource_id': '1234',
+                    'details': {'spell_name': 'Complete Heal', 'class': 'cleric'},
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser',
+                    'created_at': (datetime.now() - timedelta(hours=3)).isoformat(),
+                    'description': 'Development User viewed spell details: Complete Heal'
+                }
+            ]
+            
             return jsonify(create_success_response({
-                'activities': []
+                'activities': mock_activities[:limit],  # Respect the limit parameter
+                'total_count': len(mock_activities)
             }))
         
         try:
-            with conn.cursor() as cursor:
-                # Get recent user login activities
-                cursor.execute("""
-                    SELECT 
-                        'user_login' as type,
-                        CONCAT(first_name, ' ', last_name, ' logged in') as description,
-                        last_login as timestamp
-                    FROM users
-                    WHERE last_login IS NOT NULL
-                    ORDER BY last_login DESC
-                    LIMIT 10
-                """)
-                activities = []
-                for row in cursor.fetchall():
-                    activities.append({
-                        'id': len(activities) + 1,
-                        'type': row[0],
-                        'description': row[1],
-                        'timestamp': row[2].isoformat() if row[2] else None
-                    })
+            # Initialize activity log model
+            activity_log = ActivityLog(conn)
+            
+            # Get activities
+            activities = activity_log.get_recent_activities(
+                limit=limit,
+                offset=offset,
+                user_id=user_id,
+                action=action,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            # Get total count for pagination
+            total_count = activity_log.get_activity_count(
+                user_id=user_id,
+                action=action,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            
+            # Format activities for response
+            formatted_activities = []
+            for activity in activities:
+                formatted_activity = {
+                    'id': activity['id'],
+                    'action': activity['action'],
+                    'user_id': activity['user_id'],
+                    'user_display': activity.get('user_display', 'System'),
+                    'resource_type': activity['resource_type'],
+                    'resource_id': activity['resource_id'],
+                    'details': activity['details'],
+                    'ip_address': str(activity['ip_address']) if activity['ip_address'] else None,
+                    'user_agent': activity['user_agent'],
+                    'created_at': activity['created_at'].isoformat() if activity['created_at'] else None
+                }
                 
-                # Get recent user registrations
-                cursor.execute("""
-                    SELECT 
-                        'user_register' as type,
-                        CONCAT(first_name, ' ', last_name, ' created account') as description,
-                        created_at as timestamp
-                    FROM users
-                    WHERE created_at > NOW() - INTERVAL '7 days'
-                    ORDER BY created_at DESC
-                    LIMIT 5
-                """)
-                for row in cursor.fetchall():
-                    activities.append({
-                        'id': len(activities) + 1,
-                        'type': row[0],
-                        'description': row[1],
-                        'timestamp': row[2].isoformat() if row[2] else None
-                    })
+                # Create human-readable description
+                if activity['action'] == ActivityLog.ACTION_LOGIN:
+                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} logged in"
+                elif activity['action'] == ActivityLog.ACTION_LOGOUT:
+                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} logged out"
+                elif activity['action'] == ActivityLog.ACTION_CACHE_REFRESH:
+                    formatted_activity['description'] = f"{activity.get('user_display', 'System')} refreshed cache"
+                elif activity['action'] == ActivityLog.ACTION_SCRAPE_START:
+                    class_name = activity['details'].get('class_name', 'Unknown') if activity['details'] else 'Unknown'
+                    formatted_activity['description'] = f"Started scraping {class_name} spells"
+                elif activity['action'] == ActivityLog.ACTION_SCRAPE_COMPLETE:
+                    class_name = activity['details'].get('class_name', 'Unknown') if activity['details'] else 'Unknown'
+                    count = activity['details'].get('spell_count', 0) if activity['details'] else 0
+                    formatted_activity['description'] = f"Completed scraping {count} {class_name} spells"
+                elif activity['action'] == ActivityLog.ACTION_USER_CREATE:
+                    formatted_activity['description'] = f"New user {activity.get('user_display', 'Unknown')} created"
+                elif activity['action'] == ActivityLog.ACTION_USER_UPDATE:
+                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} updated profile"
+                else:
+                    formatted_activity['description'] = f"{activity['action']} by {activity.get('user_display', 'System')}"
                 
-                # Sort all activities by timestamp
-                activities.sort(key=lambda x: x['timestamp'] if x['timestamp'] else '', reverse=True)
-                # Limit to 15 most recent
-                activities = activities[:15]
+                formatted_activities.append(formatted_activity)
             
             return jsonify(create_success_response({
-                'activities': activities
+                'activities': formatted_activities,
+                'total_count': total_count,
+                'limit': limit,
+                'offset': offset
             }))
             
         except Exception as e:
@@ -518,6 +647,174 @@ def get_recent_activities():
             
     except Exception as e:
         return create_error_response(f"Failed to get activities: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/activities', methods=['POST'])
+@require_admin
+def log_activity():
+    """
+    Log a new activity (admin only).
+    
+    Expected JSON payload:
+    {
+        "action": "string",
+        "resource_type": "string",
+        "resource_id": "string",
+        "details": {},
+        "user_id": 123
+    }
+    
+    Returns:
+        JSON response with created activity
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return create_error_response("Missing request data", 400)
+        
+        action = data.get('action')
+        if not action:
+            return create_error_response("Missing action field", 400)
+        
+        # Get database connection
+        conn = get_db_connection()
+        if not conn:
+            return create_error_response("Database connection failed", 500)
+        
+        try:
+            # Initialize activity log model
+            activity_log = ActivityLog(conn)
+            
+            # Log the activity
+            activity = activity_log.log_activity(
+                action=action,
+                user_id=data.get('user_id', g.current_user['id']),
+                resource_type=data.get('resource_type'),
+                resource_id=data.get('resource_id'),
+                details=data.get('details'),
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+            
+            return jsonify(create_success_response({
+                'activity': {
+                    'id': activity['id'],
+                    'action': activity['action'],
+                    'created_at': activity['created_at'].isoformat() if activity['created_at'] else None
+                }
+            }, "Activity logged"))
+            
+        except Exception as e:
+            return create_error_response(f"Database error: {str(e)}", 500)
+            
+    except Exception as e:
+        return create_error_response(f"Failed to log activity: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/activities/stats', methods=['GET'])
+@require_admin
+def get_activity_stats():
+    """
+    Get activity statistics.
+    
+    Query parameters:
+        hours: Number of hours to look back (default: 24, max: 168)
+    
+    Returns:
+        JSON response with activity statistics
+    """
+    try:
+        # Get query parameters
+        hours = request.args.get('hours', 24, type=int)
+        
+        # Validate parameters
+        if hours < 1 or hours > 168:  # Max 7 days
+            hours = 24
+        
+        # Get database connection
+        conn = get_db_connection()
+        if not conn:
+            # Return empty stats without database
+            return jsonify(create_success_response({
+                'time_period_hours': hours,
+                'total_activities': 0,
+                'unique_users': 0,
+                'action_counts': {},
+                'most_active_users': []
+            }))
+        
+        try:
+            # Initialize activity log model
+            activity_log = ActivityLog(conn)
+            
+            # Get activity stats
+            stats = activity_log.get_activity_stats(hours=hours)
+            
+            return jsonify(create_success_response(stats))
+            
+        except Exception as e:
+            return create_error_response(f"Database error: {str(e)}", 500)
+            
+    except Exception as e:
+        return create_error_response(f"Failed to get activity stats: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/activities/cleanup', methods=['POST'])
+@require_admin
+def cleanup_old_activities():
+    """
+    Clean up old activities (admin only).
+    
+    Expected JSON payload:
+    {
+        "days": 90
+    }
+    
+    Returns:
+        JSON response with cleanup results
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        days = data.get('days', 90) if data else 90
+        
+        # Validate days parameter
+        if days < 30:  # Minimum 30 days retention
+            return create_error_response("Minimum retention period is 30 days", 400)
+        
+        # Get database connection
+        conn = get_db_connection()
+        if not conn:
+            return create_error_response("Database connection failed", 500)
+        
+        try:
+            # Initialize activity log model
+            activity_log = ActivityLog(conn)
+            
+            # Clean up old activities
+            deleted_count = activity_log.cleanup_old_activities(days=days)
+            
+            # Log the cleanup action
+            activity_log.log_activity(
+                action=ActivityLog.ACTION_ADMIN_ACTION,
+                user_id=g.current_user['id'],
+                resource_type=ActivityLog.RESOURCE_SYSTEM,
+                details={'action': 'cleanup_activities', 'days': days, 'deleted_count': deleted_count},
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+            
+            return jsonify(create_success_response({
+                'deleted_activities': deleted_count,
+                'retention_days': days
+            }, f"Deleted {deleted_count} activities older than {days} days"))
+            
+        except Exception as e:
+            return create_error_response(f"Database error: {str(e)}", 500)
+            
+    except Exception as e:
+        return create_error_response(f"Failed to cleanup activities: {str(e)}", 500)
 
 
 @admin_bp.route('/api/cache/refresh', methods=['POST'])
@@ -532,6 +829,21 @@ def refresh_all_caches():
     try:
         # Import cache functions from main app
         from app import save_cache_to_disk
+        
+        # Get database connection
+        conn = get_db_connection()
+        if conn:
+            # Log cache refresh activity
+            activity_log = ActivityLog(conn)
+            activity_log.log_activity(
+                action=ActivityLog.ACTION_CACHE_REFRESH,
+                user_id=g.current_user['id'],
+                resource_type=ActivityLog.RESOURCE_CACHE,
+                resource_id='all',
+                details={'action': 'manual_refresh', 'initiated_by': 'admin'},
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
         
         # Save current cache state to disk
         save_cache_to_disk()

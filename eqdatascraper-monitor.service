@@ -1,0 +1,25 @@
+[Unit]
+Description=EQDataScraper Service Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/EQDataScraper
+ExecStart=/usr/bin/python3 /path/to/EQDataScraper/monitor.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/path/to/EQDataScraper/monitor.log
+StandardError=append:/path/to/EQDataScraper/monitor.log
+
+# Environment variables
+Environment="PYTHONUNBUFFERED=1"
+
+# Resource limits
+# Limit memory usage to 256MB
+MemoryLimit=256M
+# Nice level (lower priority)
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

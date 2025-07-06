@@ -54,7 +54,8 @@ class TestAuthRoutes:
     @patch('routes.auth.GoogleOAuth')
     @patch('routes.auth.User')
     @patch('routes.auth.OAuthSession')
-    def test_oauth_callback_success_new_user(self, mock_oauth_session, mock_user, mock_google_oauth, 
+    @patch('routes.auth.ActivityLog')
+    def test_oauth_callback_success_new_user(self, mock_activity_log, mock_oauth_session, mock_user, mock_google_oauth, 
                                            mock_oauth_storage, mock_jwt_manager, mock_get_db_connection,
                                            flask_oauth_test_client, test_env_vars, mock_google_user_info):
         """Test successful OAuth callback with new user creation."""
@@ -104,6 +105,10 @@ class TestAuthRoutes:
         mock_oauth_session.return_value = mock_session_instance
         mock_session_instance.create_session.return_value = generate_test_session()
         
+        # Mock activity log
+        mock_activity_log_instance = Mock()
+        mock_activity_log.return_value = mock_activity_log_instance
+        
         # Mock OAuth state verification
         mock_oauth_instance.verify_state.return_value = True
         
@@ -144,7 +149,8 @@ class TestAuthRoutes:
     @patch('routes.auth.GoogleOAuth')
     @patch('routes.auth.User')
     @patch('routes.auth.OAuthSession')
-    def test_oauth_callback_success_existing_user(self, mock_oauth_session, mock_user, mock_google_oauth,
+    @patch('routes.auth.ActivityLog')
+    def test_oauth_callback_success_existing_user(self, mock_activity_log, mock_oauth_session, mock_user, mock_google_oauth,
                                                  mock_oauth_storage, mock_jwt_manager, mock_get_db_connection,
                                                  flask_oauth_test_client, test_env_vars, mock_google_user_info):
         """Test successful OAuth callback with existing user."""
@@ -188,6 +194,10 @@ class TestAuthRoutes:
         mock_session_instance = Mock()
         mock_oauth_session.return_value = mock_session_instance
         mock_session_instance.create_session.return_value = generate_test_session()
+        
+        # Mock activity log
+        mock_activity_log_instance = Mock()
+        mock_activity_log.return_value = mock_activity_log_instance
         
         # Mock OAuth state verification
         mock_oauth_instance.verify_state.return_value = True
@@ -301,7 +311,7 @@ class TestAuthRoutes:
         response_data = json.loads(response.data)
         
         assert 'error' in response_data
-        assert 'OAuth callback failed' in response_data['error']
+        assert 'Failed to exchange code for tokens' in response_data['error']
     
     @patch('routes.auth.jwt_manager')
     @patch('routes.auth.User')
@@ -358,7 +368,8 @@ class TestAuthRoutes:
     @patch('routes.auth.jwt_manager')  # Mock jwt_manager used in route
     @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
     @patch('routes.auth.OAuthSession')
-    def test_logout_success(self, mock_oauth_session, mock_global_jwt_manager, mock_route_jwt_manager,
+    @patch('routes.auth.ActivityLog')
+    def test_logout_success(self, mock_activity_log, mock_oauth_session, mock_global_jwt_manager, mock_route_jwt_manager,
                           mock_get_db_connection, mock_google_oauth, flask_oauth_test_client, test_env_vars):
         """Test successful logout with session cleanup."""
         # Mock database connection
@@ -396,8 +407,14 @@ class TestAuthRoutes:
         mock_session_instance = Mock()
         mock_oauth_session.return_value = mock_session_instance
         mock_session_instance.get_session_by_token.return_value = {
+            'id': 1,
+            'user_id': 1,
             'google_access_token': 'test_google_access_token'
         }
+        
+        # Mock activity log
+        mock_activity_log_instance = Mock()
+        mock_activity_log.return_value = mock_activity_log_instance
         
         response = flask_oauth_test_client.post('/api/auth/logout',
                                               json={'refresh_token': 'test_refresh_token'},

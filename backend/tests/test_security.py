@@ -356,7 +356,8 @@ class TestSessionSecurity:
     @patch('utils.jwt_utils.jwt_manager')  # Mock the global jwt_manager used by decorator
     @patch('routes.auth.jwt_manager')
     @patch('routes.auth.OAuthSession')
-    def test_logout_invalidates_session(self, mock_oauth_session, mock_route_jwt_manager, 
+    @patch('routes.auth.ActivityLog')
+    def test_logout_invalidates_session(self, mock_activity_log, mock_oauth_session, mock_route_jwt_manager, 
                                       mock_global_jwt_manager, mock_get_db_connection, 
                                       mock_google_oauth, flask_oauth_test_client, test_env_vars):
         """Test that logout properly invalidates user session."""
@@ -389,8 +390,14 @@ class TestSessionSecurity:
         mock_session_instance = Mock()
         mock_oauth_session.return_value = mock_session_instance
         mock_session_instance.get_session_by_token.return_value = {
+            'id': 1,
+            'user_id': 1,
             'google_access_token': 'test_google_access_token'
         }
+        
+        # Mock activity log
+        mock_activity_log_instance = Mock()
+        mock_activity_log.return_value = mock_activity_log_instance
         
         # Mock GoogleOAuth
         mock_oauth_instance = Mock()
