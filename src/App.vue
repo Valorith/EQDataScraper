@@ -23,7 +23,38 @@
     <DebugPanel ref="debugPanel" />
     
     <!-- Dev Login Panel (only shows in development with flag) -->
-    <DevLogin v-if="!isProduction" />
+    <DevLogin v-if="!isProduction" ref="devLogin" />
+    
+    <!-- Toast Notification -->
+    <ToastNotification 
+      v-if="currentToast"
+      ref="toast"
+      :key="currentToast.id"
+      :message="currentToast.message"
+      :type="currentToast.type"
+      :duration="currentToast.duration"
+    />
+    
+    <!-- Debug Panel Toggle Button -->
+    <button 
+      v-if="!isProduction || debugPanelEnabled" 
+      @click="toggleDebugPanel" 
+      class="debug-toggle-btn"
+      :class="{ 'active': debugPanelVisible }"
+      title="Toggle Debug Panel"
+    >
+      🔧
+    </button>
+    
+    <!-- Dev Login Toggle Button (for simulating login) -->
+    <button 
+      v-if="!isProduction" 
+      @click="toggleDevLogin" 
+      class="dev-login-toggle-btn"
+      title="Toggle Dev Login Panel"
+    >
+      👤
+    </button>
   </div>
 </template>
 
@@ -35,6 +66,9 @@ import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
+import ToastNotification from './components/ToastNotification.vue'
+import { toastService } from './services/toastService'
+import { ref, watch } from 'vue'
 
 export default {
   name: 'App',
@@ -43,18 +77,56 @@ export default {
     DevLogin,
     AppLogo,
     GoogleAuthButton,
-    UserMenu
+    UserMenu,
+    ToastNotification
   },
   setup() {
     const spellsStore = useSpellsStore()
     const userStore = useUserStore()
     const isProduction = import.meta.env.PROD
-    return { spellsStore, userStore, isProduction }
+    const currentToast = ref(null)
+    const toast = ref(null)
+    
+    // Watch for toast changes
+    watch(() => toastService.getCurrent(), (newToast) => {
+      currentToast.value = newToast
+      if (newToast && toast.value) {
+        // Use nextTick to ensure component is rendered
+        import('vue').then(({ nextTick }) => {
+          nextTick(() => {
+            if (toast.value) {
+              toast.value.show()
+            }
+          })
+        })
+      }
+    }, { immediate: true })
+    
+    return { spellsStore, userStore, isProduction, currentToast, toast }
+  },
+  computed: {
+    debugPanelEnabled() {
+      // Check if debug panel is enabled via localStorage (for production)
+      return localStorage.getItem('debug-panel') === 'true'
+    },
+    debugPanelVisible() {
+      // Check if debug panel is currently visible
+      return this.$refs.debugPanel?.showDebugPanel || false
+    },
+    isAdminRoute() {
+      // Check if current route is an admin route
+      return this.$route?.path?.startsWith('/admin')
+    }
   },
   methods: {
     toggleDebugPanel() {
       if (this.$refs.debugPanel) {
         this.$refs.debugPanel.toggleDebugPanel()
+      }
+    },
+    toggleDevLogin() {
+      if (this.$refs.devLogin) {
+        this.$refs.devLogin.toggleMinimize()
       }
     }
   },
@@ -140,5 +212,79 @@ export default {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* Debug Panel Toggle Button */
+.debug-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 80px; /* Position next to cache indicator */
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.2), rgba(147, 112, 219, 0.1));
+  backdrop-filter: blur(15px);
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  border-radius: 12px;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 9998; /* Below cache indicator */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.debug-toggle-btn:hover {
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.4), rgba(147, 112, 219, 0.2));
+  border-color: rgba(147, 112, 219, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(147, 112, 219, 0.4);
+}
+
+.debug-toggle-btn.active {
+  background: linear-gradient(145deg, rgba(147, 112, 219, 0.6), rgba(147, 112, 219, 0.4));
+  border-color: rgba(147, 112, 219, 0.8);
+  box-shadow: 0 0 20px rgba(147, 112, 219, 0.6);
+  animation: debugPulse 2s infinite;
+}
+
+@keyframes debugPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(147, 112, 219, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(147, 112, 219, 0.8), 0 0 40px rgba(147, 112, 219, 0.4);
+  }
+}
+
+/* Dev Login Toggle Button */
+.dev-login-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px; /* Far right corner */
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(145deg, rgba(72, 187, 120, 0.2), rgba(72, 187, 120, 0.1));
+  backdrop-filter: blur(15px);
+  border: 2px solid rgba(72, 187, 120, 0.3);
+  border-radius: 12px;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 9997; /* Below debug toggle */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dev-login-toggle-btn:hover {
+  background: linear-gradient(145deg, rgba(72, 187, 120, 0.4), rgba(72, 187, 120, 0.2));
+  border-color: rgba(72, 187, 120, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(72, 187, 120, 0.4);
 }
 </style> 

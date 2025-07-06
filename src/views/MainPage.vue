@@ -123,16 +123,18 @@
         </div>
       </router-link>
       
-      <div class="nav-card items-nav placeholder">
+      <router-link 
+        to="/items"
+        class="nav-card items-nav"
+      >
         <div class="nav-icon">
           <div class="nav-icon-symbol">⚔️</div>
         </div>
         <div class="nav-content">
           <h3 class="nav-title">Items</h3>
-          <p class="nav-description">Explore weapons, armor, and magical items (Coming Soon)</p>
+          <p class="nav-description">Explore weapons, armor, and magical items from the database</p>
         </div>
-        <div class="coming-soon-badge">Coming Soon</div>
-      </div>
+      </router-link>
       
       <div class="nav-card wiki-nav placeholder">
         <div class="nav-icon">

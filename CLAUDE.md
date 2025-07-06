@@ -236,3 +236,37 @@ if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>
 - Pagination should trigger at 10+ results with fixed dropdown height (520px)
 - Hash navigation with query parameters enables deep linking to specific spells
 - Modal auto-opening enhances UX but requires careful timing coordination
+
+## Reusable Components
+
+### LoadingModal Component (`src/components/LoadingModal.vue`)
+A standardized loading overlay component that should be used throughout the app for all loading states (except within class cards).
+
+**Features:**
+- Displays random EverQuest class icons (warrior.gif, cleric.gif, etc.) from `/icons/`
+- Semi-transparent overlay with blur effect matching the app's glassmorphism theme
+- Pulsing animation with purple glow effect
+- Supports both relative (within container) and full-screen positioning
+- Pixelated rendering for authentic EverQuest aesthetic
+
+**Usage:**
+```vue
+<LoadingModal :visible="isLoading" />
+<LoadingModal :visible="isSaving" text="Saving changes..." />
+<LoadingModal :visible="isProcessing" text="Processing..." :full-screen="true" />
+```
+
+**Props:**
+- `visible` (Boolean) - Controls visibility
+- `text` (String, default: 'Loading') - Loading message
+- `fullScreen` (Boolean) - Full viewport coverage
+- `showIcon` (Boolean) - Whether to show icon
+- `customIcon` (String) - Custom icon URL
+- `randomClassIcon` (Boolean) - Use random EQ class icons
+
+**When to use:**
+- API calls and data fetching
+- Form submissions
+- Pagination transitions
+- Any async operation that takes noticeable time
+- NOT for loading states within individual class cards on the spell selection page

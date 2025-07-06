@@ -1,17 +1,8 @@
 <template>
-  <div v-if="isDevAuthEnabled" class="dev-login-container" :class="{ minimized: isMinimized }">
-    <!-- Minimized State - Small Icon -->
-    <div v-if="isMinimized" class="minimized-icon" @click="toggleMinimize" title="Dev Login Panel">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <div class="dev-badge">DEV</div>
-    </div>
-    
-    <!-- Expanded State - Full Panel -->
-    <div v-else class="expanded-panel">
+  
+  <div v-if="showDevLogin && !isMinimized" class="dev-login-container">
+    <!-- Only show expanded state - no minimized icon -->
+    <div class="expanded-panel">
       <div class="dev-warning">
         <span class="warning-icon">⚠️</span>
         <span>Development Mode - Auth Bypass Active</span>
@@ -76,8 +67,10 @@ export default {
     const userStore = useUserStore()
     const router = useRouter()
     
+    const isProduction = import.meta.env.PROD
     const isDevAuthEnabled = ref(false)
     const isMinimized = ref(true) // Start minimized
+    const showDevLogin = ref(false) // Control visibility
     const showCustomForm = ref(false)
     const customEmail = ref('')
     const customIsAdmin = ref(false)
@@ -86,10 +79,13 @@ export default {
     // Check if dev auth is enabled
     const checkDevAuth = async () => {
       try {
+        console.log('🔍 Checking dev auth status...')
         const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`)
         isDevAuthEnabled.value = response.data.dev_auth_enabled || false
+        console.log('✅ Dev auth enabled:', isDevAuthEnabled.value)
       } catch (err) {
         // Dev auth not available
+        console.log('❌ Dev auth check failed:', err.message)
         isDevAuthEnabled.value = false
       }
     }
@@ -144,21 +140,33 @@ export default {
     }
     
     const toggleMinimize = () => {
-      isMinimized.value = !isMinimized.value
-      // Reset custom form when minimizing
-      if (isMinimized.value) {
-        showCustomForm.value = false
-        error.value = null
+      // If not showing, show it first
+      if (!showDevLogin.value) {
+        showDevLogin.value = true
+        isMinimized.value = false
+      } else {
+        isMinimized.value = !isMinimized.value
+        // Reset custom form when minimizing
+        if (isMinimized.value) {
+          showCustomForm.value = false
+          error.value = null
+        }
       }
     }
     
     onMounted(() => {
+      console.log('🚀 DevLogin component mounted')
+      console.log('📍 Running in production?', import.meta.env.PROD)
+      console.log('📍 Environment mode:', import.meta.env.MODE)
+      console.log('📍 API Base URL:', API_BASE_URL)
       checkDevAuth()
     })
     
     return {
+      isProduction,
       isDevAuthEnabled,
       isMinimized,
+      showDevLogin,
       showCustomForm,
       customEmail,
       customIsAdmin,
@@ -176,10 +184,11 @@ export default {
 <style scoped>
 .dev-login-container {
   position: fixed;
-  bottom: 20px;
+  bottom: 80px; /* Moved up to avoid overlap with cache indicator */
   right: 20px;
-  z-index: 9999;
+  z-index: 10000; /* Higher than cache indicator */
   max-width: 300px;
+  transition: bottom 0.3s ease;
 }
 
 .dev-login-container:not(.minimized) {

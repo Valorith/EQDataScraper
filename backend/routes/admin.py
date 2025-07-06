@@ -854,3 +854,501 @@ def refresh_all_caches():
         
     except Exception as e:
         return create_error_response(f"Failed to refresh caches: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/database/config', methods=['GET'])
+@require_admin
+def get_database_config():
+    """
+    Get current database configuration (admin only).
+    
+    Returns:
+        JSON response with database connection info
+    """
+    try:
+        import json
+        import os
+        
+        # Load current config from config.json
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
+        config = {}
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        
+        # Get current database URL from environment or config
+        current_db_url = os.environ.get('DATABASE_URL', config.get('production_database_url', ''))
+        
+        # Parse URL to get connection details (without password)
+        if current_db_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(current_db_url)
+                
+                # Detect database type from URL
+                db_type = 'postgresql'  # default
+                if 'mysql' in current_db_url.lower():
+                    db_type = 'mysql'
+                elif 'mssql' in current_db_url.lower() or 'sqlserver' in current_db_url.lower():
+                    db_type = 'mssql'
+                elif 'postgresql' in current_db_url.lower() or 'postgres' in current_db_url.lower():
+                    db_type = 'postgresql'
+                else:
+                    # Check config for saved type
+                    db_type = config.get('database_type', 'postgresql')
+                
+                # Set default port based on detected type
+                default_port = 5432
+                if db_type == 'mysql':
+                    default_port = 3306
+                elif db_type == 'mssql':
+                    default_port = 1433
+                
+                db_info = {
+                    'host': parsed.hostname,
+                    'port': parsed.port or default_port,
+                    'database': parsed.path[1:] if parsed.path else '',
+                    'username': parsed.username,
+                    'connected': True,
+                    'connection_type': 'environment' if os.environ.get('DATABASE_URL') else 'config',
+                    'db_type': db_type
+                }
+                
+                # Test EQEmu database connection
+                try:
+                    # Import database connector utils
+                    import sys
+                    backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    if backend_path not in sys.path:
+                        sys.path.append(backend_path)
+                    from utils.database_connectors import get_database_connector, test_database_query
+                    
+                    # Create connection config from saved settings
+                    test_config = {
+                        'host': db_info['host'],
+                        'port': db_info['port'],
+                        'database': db_info['database'],
+                        'username': db_info['username'],
+                        'password': parsed.password,  # Include password for testing
+                        'use_ssl': config.get('database_ssl', True)
+                    }
+                    
+                    # Test the EQEmu database connection
+                    test_conn = get_database_connector(db_type, test_config)
+                    test_result = test_database_query(test_conn, db_type)
+                    test_conn.close()
+                    
+                    db_info['version'] = test_result.get('version', 'Unknown')
+                    db_info['status'] = 'connected'
+                    db_info['connected'] = True
+                    
+                    # Add table info if available
+                    if test_result.get('tables'):
+                        db_info['items_table_exists'] = test_result['tables'].get('items_exists', False)
+                        db_info['discovered_items_table_exists'] = test_result['tables'].get('discovered_items_exists', False)
+                        
+                except Exception as e:
+                    db_info['status'] = 'disconnected'
+                    db_info['error'] = str(e)
+                    db_info['connected'] = False
+                
+            except Exception as e:
+                db_info = {
+                    'connected': False,
+                    'status': 'invalid_url',
+                    'error': str(e)
+                }
+        else:
+            # No database URL, but check if we have saved config
+            db_type = config.get('database_type', 'mysql')
+            db_info = {
+                'connected': False,
+                'status': 'no_database_configured',
+                'db_type': db_type,
+                'host': config.get('database_host'),
+                'port': config.get('database_port'),
+                'database': config.get('database_name'),
+                'username': config.get('database_username')
+            }
+        
+        return jsonify(create_success_response({
+            'database': db_info,
+            'use_database_cache': config.get('use_production_database', False)
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to get database config: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/database/config', methods=['POST'])
+@require_admin
+def update_database_config():
+    """
+    Update database configuration (admin only) - READ-ONLY ACCESS.
+    This will configure the connection but all database operations will be read-only.
+    
+    Expected JSON payload:
+    {
+        "host": "string",
+        "port": 5432,
+        "database": "string",
+        "username": "string",
+        "password": "string",
+        "use_ssl": true
+    }
+    
+    Returns:
+        JSON response with updated configuration
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return create_error_response("Missing request data", 400)
+        
+        # Validate required fields
+        required_fields = ['host', 'port', 'database', 'username', 'password']
+        for field in required_fields:
+            if not data.get(field):
+                return create_error_response(f"Missing required field: {field}", 400)
+        
+        # Build connection URL with read-only parameters
+        from utils.database_connectors import build_connection_url, get_database_connector
+        
+        db_type = data.get('db_type', 'postgresql')
+        host = data['host']
+        port = data['port']
+        database = data['database']
+        username = data['username']
+        password = data['password']
+        use_ssl = data.get('use_ssl', True)
+        
+        config = {
+            'host': host,
+            'port': port,
+            'database': database,
+            'username': username,
+            'password': password,
+            'use_ssl': use_ssl
+        }
+        
+        # Build appropriate connection URL
+        connection_url = build_connection_url(db_type, config)
+        
+        # Test connection with read-only mode
+        try:
+            test_conn = get_database_connector(db_type, config)
+            cursor = test_conn.cursor()
+            try:
+                # Ensure read-only mode where supported
+                if db_type == 'postgresql':
+                    cursor.execute("SET TRANSACTION READ ONLY")
+                elif db_type == 'mysql':
+                    cursor.execute("SET SESSION TRANSACTION READ ONLY")
+                # SQL Server: rely on user permissions
+                
+                # Get version to verify connection
+                if db_type == 'postgresql':
+                    cursor.execute('SELECT version();')
+                    version = cursor.fetchone()[0]
+                elif db_type == 'mysql':
+                    cursor.execute('SELECT VERSION();')
+                    result = cursor.fetchone()
+                    version = result.get('VERSION()') if isinstance(result, dict) else result[0]
+                elif db_type == 'mssql':
+                    cursor.execute('SELECT @@VERSION;')
+                    version = cursor.fetchone()[0]
+                else:
+                    version = 'Unknown'
+                
+                # Test that we can access the required tables
+                cursor.execute("SELECT COUNT(*) FROM items")
+                items_accessible = True
+                
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM discovered_items")
+                    discovered_items_accessible = True
+                except:
+                    discovered_items_accessible = False
+                    
+            finally:
+                cursor.close()
+            
+            test_conn.close()
+            
+        except Exception as e:
+            return create_error_response(f"Database connection test failed: {str(e)}", 400)
+        
+        # Update config.json
+        import json
+        import os
+        
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
+        config = {}
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        
+        config['production_database_url'] = connection_url
+        config['use_production_database'] = True
+        config['database_read_only'] = True  # Mark as read-only
+        config['database_type'] = db_type  # Save database type
+        
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        # Log configuration change (if we have a working OAuth database connection)
+        try:
+            conn = get_db_connection()
+            if conn:
+                activity_log = ActivityLog(conn)
+                activity_log.log_activity(
+                    action=ActivityLog.ACTION_ADMIN_ACTION,
+                    user_id=g.current_user['id'],
+                    resource_type=ActivityLog.RESOURCE_SYSTEM,
+                    resource_id='database_config',
+                    details={
+                    'action': 'update_database_config_readonly',
+                    'host': host,
+                    'port': port,
+                    'database': database,
+                    'username': username,
+                    'use_ssl': use_ssl,
+                    'read_only': True
+                },
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+        except Exception as e:
+            # Log error but don't fail the save operation
+            print(f"Warning: Could not log activity: {str(e)}")
+        
+        return jsonify(create_success_response({
+            'message': 'Database configuration updated successfully (READ-ONLY mode)',
+            'database': {
+                'host': host,
+                'port': port,
+                'database': database,
+                'username': username,
+                'use_ssl': use_ssl,
+                'status': 'connected',
+                'version': version,
+                'read_only': True,
+                'items_accessible': items_accessible,
+                'discovered_items_accessible': discovered_items_accessible
+            }
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to update database config: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/database/test', methods=['POST'])
+@require_admin
+def test_database_connection():
+    """
+    Test database connection with provided credentials (admin only) - READ-ONLY MODE.
+    
+    Expected JSON payload:
+    {
+        "host": "string",
+        "port": 5432,
+        "database": "string",
+        "username": "string",
+        "password": "string",
+        "use_ssl": true
+    }
+    
+    Returns:
+        JSON response with connection test results
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return create_error_response("Missing request data", 400)
+        
+        # Validate required fields
+        required_fields = ['host', 'port', 'database', 'username', 'password']
+        for field in required_fields:
+            if not data.get(field):
+                return create_error_response(f"Missing required field: {field}", 400)
+        
+        # Test connection in READ-ONLY mode
+        import time
+        from utils.database_connectors import get_database_connector, test_database_query
+        
+        db_type = data.get('db_type', 'postgresql')  # Default to PostgreSQL for backwards compatibility
+        host = data['host']
+        port = data['port']
+        database = data['database']
+        username = data['username']
+        password = data['password']
+        use_ssl = data.get('use_ssl', True)
+        
+        test_config = {
+            'host': host,
+            'port': port,
+            'database': database,
+            'username': username,
+            'password': password,
+            'use_ssl': use_ssl
+        }
+        
+        start_time = time.time()
+        
+        try:
+            test_conn = get_database_connector(db_type, test_config)
+            
+            # Test basic operations in READ-ONLY mode
+            cursor = test_conn.cursor()
+            try:
+                # Set to read-only mode for PostgreSQL
+                if db_type == 'postgresql':
+                    cursor.execute("SET TRANSACTION READ ONLY")
+                elif db_type == 'mysql':
+                    cursor.execute("SET SESSION TRANSACTION READ ONLY")
+                # SQL Server doesn't have a simple read-only transaction mode, rely on user permissions
+                
+                # Run database-specific tests
+                test_results = test_database_query(test_conn, db_type)
+                
+                version = test_results['version']
+                current_time = test_results['current_time']
+                tables_info = test_results['tables']
+                
+                items_table_exists = tables_info.get('items_exists', False)
+                discovered_items_table_exists = tables_info.get('discovered_items_exists', False)
+                items_accessible = tables_info.get('items_accessible', False)
+                items_count = tables_info.get('items_count', 0)
+                discovered_items_accessible = tables_info.get('discovered_items_accessible', False)
+                discovered_items_count = tables_info.get('discovered_items_count', 0)
+            finally:
+                cursor.close()
+            
+            test_conn.close()
+            
+            connection_time = round((time.time() - start_time) * 1000, 2)
+            
+            return jsonify(create_success_response({
+                'connection_successful': True,
+                'connection_time_ms': connection_time,
+                'database_version': version,
+                'server_time': str(current_time),  # Convert to string instead of isoformat
+                'read_only_mode': True,
+                'tables': {
+                    'items_exists': items_table_exists,
+                    'items_accessible': items_accessible,
+                    'items_count': items_count,
+                    'discovered_items_exists': discovered_items_table_exists,
+                    'discovered_items_accessible': discovered_items_accessible,
+                    'discovered_items_count': discovered_items_count
+                },
+                'message': 'Database connection successful (READ-ONLY mode)'
+            }))
+            
+        except Exception as e:
+            # Determine error type based on exception class
+            is_connection_error = True  # Most database errors are connection-related
+            
+            # Try to import database-specific modules for better error detection
+            try:
+                if 'psycopg2' in str(type(e).__module__):
+                    is_connection_error = isinstance(e, psycopg2.OperationalError)
+            except:
+                pass
+            
+            # Connection-level errors (host not found, auth failed, etc.)
+            error_details = {
+                'error_type': 'connection_error',
+                'error_message': str(e),
+                'details': {}
+            }
+            
+            error_str = str(e).lower()
+            if 'could not translate host name' in error_str or 'name or service not known' in error_str:
+                error_details['details']['issue'] = 'Host not found'
+                error_details['details']['suggestion'] = 'Check that the hostname is correct and accessible from this server'
+            elif 'connection refused' in error_str:
+                error_details['details']['issue'] = 'Connection refused'
+                error_details['details']['suggestion'] = f'Check that PostgreSQL is running on {host}:{port} and accepting connections'
+            elif 'password authentication failed' in error_str or 'authentication failed' in error_str:
+                error_details['details']['issue'] = 'Authentication failed'
+                error_details['details']['suggestion'] = 'Check username and password are correct'
+            elif 'database' in error_str and 'does not exist' in error_str:
+                error_details['details']['issue'] = 'Database not found'
+                error_details['details']['suggestion'] = f'The database "{database}" does not exist on the server'
+            elif 'timeout' in error_str:
+                error_details['details']['issue'] = 'Connection timeout'
+                error_details['details']['suggestion'] = 'Server is not responding. Check network connectivity and firewall rules'
+            elif 'ssl' in error_str:
+                error_details['details']['issue'] = 'SSL connection error'
+                error_details['details']['suggestion'] = 'Try toggling the SSL option or check server SSL configuration'
+            else:
+                error_details['details']['issue'] = 'Connection failed'
+                error_details['details']['suggestion'] = 'Check server logs for more details'
+            
+            return jsonify({
+                'success': False,
+                'message': 'Database connection failed',
+                'error': error_details
+            }), 400
+            
+        except psycopg2.ProgrammingError as e:
+            # SQL/permission errors
+            error_details = {
+                'error_type': 'permission_error',
+                'error_message': str(e),
+                'details': {
+                    'issue': 'Permission denied or SQL error',
+                    'suggestion': 'Check that the user has proper permissions to access the database and tables'
+                }
+            }
+            return jsonify({
+                'success': False,
+                'message': 'Database permission error',
+                'error': error_details
+            }), 400
+            
+        except psycopg2.Error as e:
+            # Other PostgreSQL errors
+            error_details = {
+                'error_type': 'database_error',
+                'error_message': str(e),
+                'details': {
+                    'issue': 'Database error',
+                    'suggestion': 'An unexpected database error occurred'
+                }
+            }
+            return jsonify({
+                'success': False,
+                'message': 'Database error',
+                'error': error_details
+            }), 400
+            
+        except Exception as e:
+            # Non-PostgreSQL errors
+            error_details = {
+                'error_type': 'general_error',
+                'error_message': str(e),
+                'details': {
+                    'issue': 'Unexpected error',
+                    'suggestion': 'An unexpected error occurred during connection test'
+                }
+            }
+            return jsonify({
+                'success': False,
+                'message': 'Connection test failed',
+                'error': error_details
+            }), 500
+        
+    except Exception as e:
+        return create_error_response(f"Failed to test database connection: {str(e)}", 500)
+
+
+# Note: Database initialization endpoint removed for read-only access
+# The EQEmu database should already have the required tables:
+# - items: Main items table with EQEmu schema
+# - discovered_items: Tracks which items have been discovered by players

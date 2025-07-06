@@ -3,6 +3,7 @@ import MainPage from '../views/MainPage.vue'
 import Home from '../views/Home.vue'
 import Spells from '../views/Spells.vue'
 import ClassSpells from '../views/ClassSpells.vue'
+import Items from '../views/Items.vue'
 
 // OAuth authentication components (lazy loaded)
 const AuthCallback = () => import('../views/AuthCallback.vue')
@@ -38,6 +39,11 @@ const routes = [
     name: 'ClassSpells',
     component: ClassSpells,
     props: true
+  },
+  {
+    path: '/items',
+    name: 'Items',
+    component: Items
   },
   // OAuth authentication routes
   {
@@ -99,34 +105,44 @@ const router = createRouter({
   routes
 })
 
-// Navigation guards for admin routes
+// Navigation guards for authentication
 router.beforeEach(async (to, from, next) => {
-  // Check if route requires authentication
-  if (to.matched.some(record => record.meta.requiresAuth)) {
-    try {
-      const { useUserStore } = await import('../stores/userStore')
-      const userStore = useUserStore()
-      
-      if (!userStore.isAuthenticated) {
+  // Allow access to main page and auth callback without login
+  const publicRoutes = ['MainPage', 'AuthCallback']
+  
+  // Check if the route is public
+  if (publicRoutes.includes(to.name)) {
+    next()
+    return
+  }
+  
+  // All other routes require authentication
+  try {
+    const { useUserStore } = await import('../stores/userStore')
+    const { toastService } = await import('../services/toastService')
+    const userStore = useUserStore()
+    
+    if (!userStore.isAuthenticated) {
+      // Show toast message
+      toastService.warning('Please sign in to access this page', 4000)
+      // Redirect to main page if not authenticated
+      next('/')
+      return
+    }
+    
+    // Check if route specifically requires admin
+    if (to.matched.some(record => record.meta.requiresAdmin)) {
+      if (userStore.user?.role !== 'admin') {
+        toastService.error('Admin access required', 3000)
         next('/')
         return
       }
-      
-      // Check if route requires admin
-      if (to.matched.some(record => record.meta.requiresAdmin)) {
-        if (userStore.user?.role !== 'admin') {
-          next('/')
-          return
-        }
-      }
-      
-      next()
-    } catch (err) {
-      console.error('Error in route guard:', err)
-      next('/')
     }
-  } else {
+    
     next()
+  } catch (err) {
+    console.error('Error in route guard:', err)
+    next('/')
   }
 })
 

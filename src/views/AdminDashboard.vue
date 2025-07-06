@@ -131,6 +131,38 @@
           </router-link>
         </div>
       </div>
+
+      <!-- Database Connection Card -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div class="card-icon database">
+            <i class="fas fa-database"></i>
+          </div>
+          <h2>Database Connection</h2>
+        </div>
+        <div class="card-content">
+          <div class="stat-row">
+            <span class="stat-label">Status</span>
+            <span class="stat-value" :class="databaseStatus.connected ? 'success' : 'warning'">
+              {{ databaseStatus.connected ? 'Connected' : 'Disconnected' }}
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Host</span>
+            <span class="stat-value">{{ databaseStatus.host || 'Not configured' }}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Database</span>
+            <span class="stat-value">{{ databaseStatus.database || 'None' }}</span>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button @click="showDatabaseModal = true" class="action-button primary">
+            <i class="fas fa-cog"></i>
+            Configure Database
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Quick Actions -->
@@ -178,6 +210,168 @@
         </div>
       </div>
     </div>
+
+    <!-- Database Configuration Modal -->
+    <div v-if="showDatabaseModal" class="modal-overlay" @click="closeDatabaseModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Database Configuration</h3>
+          <button @click="closeDatabaseModal" class="modal-close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <form @submit.prevent="saveDatabaseConfig">
+            <div class="form-group">
+              <label for="db-type">Database Type</label>
+              <select 
+                id="db-type"
+                v-model="databaseForm.db_type" 
+                @change="updateDefaultPort"
+                class="form-input"
+                required
+              >
+                <option value="mssql">Microsoft SQL Server</option>
+                <option value="mysql">MySQL</option>
+                <option value="postgresql">PostgreSQL</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="db-host">Host</label>
+              <input 
+                id="db-host"
+                v-model="databaseForm.host" 
+                type="text" 
+                class="form-input"
+                placeholder="localhost"
+                required
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="db-port">Port</label>
+              <input 
+                id="db-port"
+                v-model="databaseForm.port" 
+                type="number" 
+                class="form-input"
+                placeholder="5432"
+                min="1"
+                max="65535"
+                required
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="db-name">Database Name</label>
+              <input 
+                id="db-name"
+                v-model="databaseForm.database" 
+                type="text" 
+                class="form-input"
+                placeholder="eqdata"
+                required
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="db-username">Username</label>
+              <input 
+                id="db-username"
+                v-model="databaseForm.username" 
+                type="text" 
+                class="form-input"
+                placeholder="postgres"
+                required
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="db-password">Password</label>
+              <input 
+                id="db-password"
+                v-model="databaseForm.password" 
+                type="password" 
+                class="form-input"
+                placeholder="Enter password"
+                required
+              />
+            </div>
+            
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input 
+                  v-model="databaseForm.use_ssl" 
+                  type="checkbox" 
+                  class="form-checkbox"
+                />
+                <span class="checkbox-text">Use SSL Connection</span>
+              </label>
+            </div>
+            
+            <div v-if="databaseTestResult" class="test-result" :class="databaseTestResult.success ? 'success' : 'error'">
+              <i :class="databaseTestResult.success ? 'fas fa-check-circle' : 'fas fa-exclamation-circle'"></i>
+              <span>{{ databaseTestResult.message }}</span>
+              
+              <!-- Success details -->
+              <div v-if="databaseTestResult.success && databaseTestResult.data" class="test-details">
+                <p v-if="databaseTestResult.data.read_only_mode">✓ Read-only mode enabled</p>
+                <p v-if="databaseTestResult.data.tables">
+                  ✓ Items table: {{ databaseTestResult.data.tables.items_accessible ? 'Accessible' : 'Not accessible' }}
+                  <span v-if="databaseTestResult.data.tables.items_count">({{ databaseTestResult.data.tables.items_count }} items)</span>
+                </p>
+                <p v-if="databaseTestResult.data.tables">
+                  ✓ Discovered items table: {{ databaseTestResult.data.tables.discovered_items_accessible ? 'Accessible' : 'Not accessible' }}
+                  <span v-if="databaseTestResult.data.tables.discovered_items_count">({{ databaseTestResult.data.tables.discovered_items_count }} discovered)</span>
+                </p>
+              </div>
+              
+              <!-- Error details -->
+              <div v-if="!databaseTestResult.success && databaseTestResult.error" class="error-details">
+                <div class="error-issue">
+                  <strong>Issue:</strong> {{ databaseTestResult.error.details?.issue || 'Unknown error' }}
+                </div>
+                <div class="error-suggestion">
+                  <strong>Suggestion:</strong> {{ databaseTestResult.error.details?.suggestion || 'Please check your connection details' }}
+                </div>
+                <div v-if="databaseTestResult.error.error_message" class="error-technical">
+                  <details>
+                    <summary>Technical details</summary>
+                    <code>{{ databaseTestResult.error.error_message }}</code>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        
+        <div class="modal-footer">
+          <button 
+            @click="testDatabaseConnection" 
+            class="test-button"
+            :disabled="testingConnection"
+          >
+            <i class="fas fa-plug" :class="{ 'fa-spin': testingConnection }"></i>
+            {{ testingConnection ? 'Testing...' : 'Test Connection' }}
+          </button>
+          
+          <button 
+            @click="saveDatabaseConfig" 
+            class="save-button"
+            :disabled="savingConfig || !databaseTestResult?.success"
+          >
+            <i class="fas fa-save" :class="{ 'fa-spin': savingConfig }"></i>
+            {{ savingConfig ? 'Saving...' : 'Save Configuration' }}
+          </button>
+          
+          <button @click="closeDatabaseModal" class="cancel-button">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -220,6 +414,27 @@ const recentActivities = ref([])
 const refreshing = ref(false)
 const scraping = ref(false)
 
+// Database configuration state
+const showDatabaseModal = ref(false)
+const databaseStatus = ref({
+  connected: false,
+  host: null,
+  database: null,
+  status: 'unknown'
+})
+const databaseForm = ref({
+  db_type: 'mssql',
+  host: '',
+  port: 1433,
+  database: '',
+  username: '',
+  password: '',
+  use_ssl: true
+})
+const databaseTestResult = ref(null)
+const testingConnection = ref(false)
+const savingConfig = ref(false)
+
 let refreshInterval = null
 let activityRefreshInterval = null
 
@@ -247,6 +462,42 @@ const loadDashboardData = async () => {
     }
     // Set default values
     stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
+  }
+
+  // Load database configuration status
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (dbConfigRes.data.success && dbConfigRes.data.data?.database) {
+      const dbData = dbConfigRes.data.data.database
+      databaseStatus.value = {
+        connected: dbData.connected || false,
+        host: dbData.host || null,
+        database: dbData.database || null,
+        status: dbData.status || 'unknown',
+        version: dbData.version || null
+      }
+    } else {
+      // No database configured
+      databaseStatus.value = {
+        connected: false,
+        host: null,
+        database: null,
+        status: 'not_configured'
+      }
+    }
+  } catch (error) {
+    console.error('Error loading database config:', error)
+    // Set default values
+    databaseStatus.value = {
+      connected: false,
+      host: null,
+      database: null,
+      status: 'error'
+    }
   }
 
   // Load cache status
@@ -384,6 +635,33 @@ const loadDashboardData = async () => {
   }
   
   console.log('Recent activities loaded:', recentActivities.value)
+
+  // Load database status
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const dbRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (dbRes.data.success && dbRes.data.data.database) {
+      const dbData = dbRes.data.data.database
+      databaseStatus.value = {
+        connected: dbData.connected || false,
+        host: dbData.host || null,
+        database: dbData.database || null,
+        status: dbData.status || 'unknown',
+        version: dbData.version || null
+      }
+    }
+  } catch (error) {
+    console.error('Error loading database status:', error)
+    databaseStatus.value = {
+      connected: false,
+      host: null,
+      database: null,
+      status: 'error'
+    }
+  }
 }
 
 const refreshAllCaches = async () => {
@@ -514,6 +792,139 @@ const formatActivityDescription = (activity) => {
       return `Error scraping ${activity.resource_type || 'data'}`
     default:
       return activity.description || `${action} performed`
+  }
+}
+
+// Database configuration methods
+const updateDefaultPort = () => {
+  switch (databaseForm.value.db_type) {
+    case 'mssql':
+      databaseForm.value.port = 1433
+      break
+    case 'mysql':
+      databaseForm.value.port = 3306
+      break
+    case 'postgresql':
+      databaseForm.value.port = 5432
+      break
+  }
+}
+
+const closeDatabaseModal = () => {
+  showDatabaseModal.value = false
+  databaseTestResult.value = null
+  // Reset form
+  databaseForm.value = {
+    db_type: 'mssql',
+    host: '',
+    port: 1433,
+    database: '',
+    username: '',
+    password: '',
+    use_ssl: true
+  }
+}
+
+const testDatabaseConnection = async () => {
+  testingConnection.value = true
+  databaseTestResult.value = null
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await axios.post(`${API_BASE_URL}/api/admin/database/test`, {
+      db_type: databaseForm.value.db_type,
+      host: databaseForm.value.host,
+      port: databaseForm.value.port,
+      database: databaseForm.value.database,
+      username: databaseForm.value.username,
+      password: databaseForm.value.password,
+      use_ssl: databaseForm.value.use_ssl
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.success) {
+      databaseTestResult.value = {
+        success: true,
+        message: `Connection successful! Database version: ${response.data.data.database_version.split(' ')[0]} (${response.data.data.connection_time_ms}ms)`,
+        data: response.data.data
+      }
+    } else {
+      databaseTestResult.value = {
+        success: false,
+        message: response.data.message || 'Connection test failed',
+        error: response.data.error
+      }
+    }
+  } catch (error) {
+    console.error('Database test error:', error)
+    const errorData = error.response?.data
+    databaseTestResult.value = {
+      success: false,
+      message: errorData?.message || 'Connection test failed',
+      error: errorData?.error || {
+        error_type: 'network_error',
+        error_message: error.message,
+        details: {
+          issue: 'Unable to reach server',
+          suggestion: 'Check that the backend server is running and accessible'
+        }
+      }
+    }
+  } finally {
+    testingConnection.value = false
+  }
+}
+
+const saveDatabaseConfig = async () => {
+  if (!databaseTestResult.value?.success) {
+    alert('Please test the connection first before saving')
+    return
+  }
+  
+  savingConfig.value = true
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await axios.post(`${API_BASE_URL}/api/admin/database/config`, {
+      db_type: databaseForm.value.db_type,
+      host: databaseForm.value.host,
+      port: databaseForm.value.port,
+      database: databaseForm.value.database,
+      username: databaseForm.value.username,
+      password: databaseForm.value.password,
+      use_ssl: databaseForm.value.use_ssl
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.success) {
+      // Update database status
+      const dbData = response.data.data.database
+      databaseStatus.value = {
+        connected: true,
+        host: dbData.host,
+        database: dbData.database,
+        status: 'connected',
+        version: dbData.version
+      }
+      
+      // Close modal
+      closeDatabaseModal()
+      
+      // Show success message
+      alert('Database configuration saved successfully!')
+      
+      // Refresh dashboard data
+      await loadDashboardData()
+    } else {
+      alert('Failed to save database configuration: ' + (response.data.message || 'Unknown error'))
+    }
+  } catch (error) {
+    console.error('Save database config error:', error)
+    alert('Failed to save database configuration: ' + (error.response?.data?.message || 'Unknown error'))
+  } finally {
+    savingConfig.value = false
   }
 }
 
@@ -659,6 +1070,10 @@ onUnmounted(() => {
 
 .card-icon.health {
   background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+}
+
+.card-icon.database {
+  background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
 }
 
 .card-header h2 {
@@ -1165,6 +1580,276 @@ onUnmounted(() => {
   animation: fa-spin 1s infinite linear, gentlePulse 2s infinite ease-in-out;
 }
 
+/* Database Configuration Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px 30px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f7fafc;
+  margin: 0;
+  background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.modal-close:hover {
+  color: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-body {
+  padding: 30px;
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #f7fafc;
+  font-size: 0.95rem;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #f7fafc;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.form-input::placeholder {
+  color: #9ca3af;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.form-checkbox {
+  margin-right: 12px;
+  width: 18px;
+  height: 18px;
+  accent-color: #8b5cf6;
+}
+
+.checkbox-text {
+  color: #f7fafc;
+  font-weight: 500;
+}
+
+.test-result {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 500;
+}
+
+.test-result.success {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+
+.test-result.error {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.test-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9rem;
+}
+
+.test-details p {
+  margin: 6px 0;
+  opacity: 0.9;
+}
+
+.error-details {
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 107, 107, 0.2);
+}
+
+.error-issue {
+  margin-bottom: 10px;
+  font-size: 0.95em;
+  color: #ff6b6b;
+}
+
+.error-suggestion {
+  margin-bottom: 10px;
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.error-technical {
+  margin-top: 10px;
+  font-size: 0.85em;
+}
+
+.error-technical summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 5px;
+}
+
+.error-technical summary:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.error-technical code {
+  display: block;
+  margin-top: 5px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.7);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 16px;
+  padding: 20px 30px 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.test-button, .save-button, .cancel-button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-button {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  flex: 1;
+}
+
+.test-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+}
+
+.save-button {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  flex: 1;
+}
+
+.save-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+}
+
+.cancel-button {
+  background: rgba(0, 0, 0, 0.3);
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cancel-button:hover {
+  background: rgba(0, 0, 0, 0.5);
+  color: #f7fafc;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.test-button:disabled, .save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 @media (max-width: 768px) {
   .dashboard-header h1 {
     font-size: 2rem;
@@ -1188,6 +1873,19 @@ onUnmounted(() => {
   
   .quick-action-btn span {
     font-size: 0.85rem;
+  }
+  
+  .modal-content {
+    margin: 10px;
+    max-width: none;
+  }
+  
+  .modal-header, .modal-body, .modal-footer {
+    padding: 20px;
+  }
+  
+  .modal-footer {
+    flex-direction: column;
   }
 }
 </style>

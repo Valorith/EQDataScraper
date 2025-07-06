@@ -19,6 +19,7 @@ except ImportError:
 
 # Import scrape_spells from the same directory
 from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
+from utils.security import sanitize_search_input, validate_item_search_params, rate_limit_by_ip
 
 # Import activity logger if user accounts are enabled
 if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
@@ -37,8 +38,8 @@ if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
         'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
+        'http://localhost:3000',
+        'http://localhost:3000',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
@@ -190,10 +191,22 @@ if IS_PRODUCTION:
 else:
     logger.info("Running in LOCAL DEVELOPMENT environment")
 
-USE_DATABASE_CACHE = DATABASE_URL is not None and DATABASE_URL != ''
+# Disable database cache since it's configured for MySQL (EQEmu) not PostgreSQL
+# The database URL is for the EQEmu database, not for cache storage
+USE_DATABASE_CACHE = False
 
 if USE_DATABASE_CACHE:
-    logger.info("Using PostgreSQL database for cache storage")
+    # Detect database type from URL
+    if DATABASE_URL.startswith('mysql://'):
+        DB_TYPE = 'mysql'
+        logger.info("Using MySQL database for cache storage")
+    elif DATABASE_URL.startswith('postgresql://') or DATABASE_URL.startswith('postgres://'):
+        DB_TYPE = 'postgresql'
+        logger.info("Using PostgreSQL database for cache storage")
+    else:
+        DB_TYPE = 'postgresql'  # Default to PostgreSQL
+        logger.info("Using PostgreSQL database for cache storage (default)")
+    
     # Parse DATABASE_URL for connection
     parsed = urlparse(DATABASE_URL)
     DB_CONFIG = {
@@ -221,20 +234,41 @@ def init_cache_storage():
         init_file_cache()
 
 def init_database_cache():
-    """Initialize PostgreSQL tables for cache storage"""
+    """Initialize database tables for cache storage"""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        if DB_TYPE == 'mysql':
+            import pymysql
+            conn = pymysql.connect(
+                host=DB_CONFIG['host'],
+                port=int(DB_CONFIG['port']) if DB_CONFIG['port'] else 3306,
+                database=DB_CONFIG['database'],
+                user=DB_CONFIG['user'],
+                password=DB_CONFIG['password'],
+                charset='utf8mb4'
+            )
+        else:
+            conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
         
         # Create cache tables
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS spell_cache (
-                class_name VARCHAR(50) PRIMARY KEY,
-                data JSONB NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        if DB_TYPE == 'mysql':
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS spell_cache (
+                    class_name VARCHAR(50) PRIMARY KEY,
+                    data JSON NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS spell_cache (
+                    class_name VARCHAR(50) PRIMARY KEY,
+                    data JSONB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
         
         # Create activity_logs table if user accounts are enabled
         if ENABLE_USER_ACCOUNTS:
@@ -347,6 +381,10 @@ def load_all_pricing_to_memory():
     global pricing_lookup, pricing_cache_loaded
     
     if pricing_cache_loaded:
+        return
+    
+    # Skip if not using database cache
+    if not USE_DATABASE_CACHE:
         return
     
     try:
@@ -3324,6 +3362,689 @@ def cache_integrity():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# Helper function for EQEmu database connection
+def get_eqemu_db_connection():
+    """Get connection to the configured EQEmu database."""
+    import json
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
+    config = {}
+    if os.path.exists(config_path):
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    
+    # Get database URL from config
+    database_url = config.get('production_database_url', '')
+    if not database_url:
+        return None, None, "Database not configured"
+    
+    # Import database connector
+    from utils.database_connectors import get_database_connector
+    from urllib.parse import urlparse
+    
+    # Parse database URL
+    parsed = urlparse(database_url)
+    db_type = config.get('database_type', 'mysql')
+    
+    db_config = {
+        'host': parsed.hostname,
+        'port': int(parsed.port) if parsed.port else 3306,
+        'database': parsed.path[1:] if parsed.path else '',
+        'username': parsed.username,
+        'password': parsed.password,
+        'use_ssl': config.get('database_ssl', True)
+    }
+    
+    try:
+        # Get appropriate connection
+        conn = get_database_connector(db_type, db_config)
+        return conn, db_type, None
+    except Exception as e:
+        app.logger.error(f"Database connection error: {e}")
+        app.logger.error(f"Database config: host={db_config.get('host')}, port={db_config.get('port')}, db={db_config.get('database')}, user={db_config.get('username')}")
+        return None, None, str(e)
+
+# Helper function for safe numeric conversions
+def _safe_float(value):
+    """Safely convert a value to float, returning None if conversion fails"""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+def _safe_int(value):
+    """Safely convert a value to int, returning None if conversion fails"""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+# Item search endpoints (EQEmu schema with discovered items join)
+@app.route('/api/items/search', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Liberal limits for normal users
+def search_items():
+    """
+    Search discovered items in the EQEmu database.
+    Only returns items that exist in both items and discovered_items tables.
+    
+    Query parameters:
+        q: Search query
+        limit: Number of results to return (default: 20, max: 100)
+        offset: Offset for pagination (default: 0)
+        type: Filter by item type (itemtype)
+        class: Filter by usable classes
+        min_level: Filter by minimum required level
+        max_level: Filter by maximum required level
+    """
+    try:
+        # Get EQEmu database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        # Validate and sanitize all input parameters
+        validated_params = validate_item_search_params(request.args)
+        
+        search_query = validated_params.get('q', '')
+        limit = validated_params.get('limit', 20)
+        offset = validated_params.get('offset', 0)
+        item_type = validated_params.get('type')
+        item_class = validated_params.get('class')
+        min_level = validated_params.get('min_level')
+        max_level = validated_params.get('max_level')
+        advanced_filters = validated_params.get('filters', [])
+        
+        # Security logging
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+        
+        # Log search activity
+        app.logger.info(f"Item search request from {client_ip} - q: '{search_query}', type: '{item_type}', class: '{item_class}', min_level: '{min_level}', max_level: '{max_level}', filters: {len(advanced_filters)}")
+        
+        if not search_query and not item_type and not item_class and not min_level and not max_level and not advanced_filters:
+            return jsonify({'error': 'Search query or filter required'}), 400
+        
+        # Build SQL query with JOIN to discovered_items
+        conditions = []
+        params = []
+        
+        if search_query:
+            # Use LIKE for MySQL compatibility (ILIKE is PostgreSQL specific)
+            if db_type == 'postgresql':
+                conditions.append("(items.Name ILIKE %s OR items.lore ILIKE %s)")
+            else:
+                conditions.append("(items.Name LIKE %s OR items.lore LIKE %s)")
+            params.extend([f'%{search_query}%', f'%{search_query}%'])
+        
+        if item_type is not None:
+            conditions.append("items.itemtype = %s")
+            params.append(item_type)
+        
+        if item_class:
+            # EQEmu uses bitmask for classes - we'll do a simple search in the classes field
+            if db_type == 'postgresql':
+                conditions.append("items.classes::text LIKE %s")
+            else:
+                # For MySQL/MSSQL, use CAST function
+                conditions.append("CAST(items.classes AS CHAR) LIKE %s")
+            params.append(f'%{item_class}%')
+        
+        if min_level is not None:
+            conditions.append("items.reqlevel >= %s")
+            params.append(min_level)
+        
+        if max_level is not None:
+            conditions.append("items.reqlevel <= %s")
+            params.append(max_level)
+        
+        # Process advanced filters
+        for filter_item in advanced_filters:
+            field = filter_item.get('field')
+            operator = filter_item.get('operator')
+            value = filter_item.get('value')
+            value2 = filter_item.get('value2')  # For 'between' operator
+            
+            # Map frontend field names to database column names
+            field_mapping = {
+                'lore': 'items.lore',
+                'price': 'items.price',
+                'weight': 'items.weight',
+                'size': 'items.size',
+                'damage': 'items.damage',
+                'delay': 'items.delay',
+                'ac': 'items.ac',
+                'hp': 'items.hp',
+                'mana': 'items.mana',
+                'str': 'items.astr',
+                'sta': 'items.asta',
+                'agi': 'items.aagi',
+                'dex': 'items.adex',
+                'wis': 'items.awis',
+                'int': 'items.aint',
+                'cha': 'items.acha',
+                'magic': 'items.magic',
+                'lore': 'items.lore',
+                'nodrop': 'items.nodrop',
+                'norent': 'items.norent',
+                'clickeffect': 'items.clickeffect',
+                'proceffect': 'items.proceffect',
+                'worneffect': 'items.worneffect',
+                'focuseffect': 'items.focuseffect',
+                'slots': 'items.slots'
+            }
+            
+            db_field = field_mapping.get(field)
+            if not db_field:
+                continue
+            
+            # Handle different operators
+            if operator == 'equals':
+                conditions.append(f"{db_field} = %s")
+                params.append(value)
+            elif operator == 'not equals':
+                conditions.append(f"{db_field} != %s")
+                params.append(value)
+            elif operator == 'contains':
+                if db_type == 'postgresql':
+                    conditions.append(f"{db_field} ILIKE %s")
+                else:
+                    conditions.append(f"{db_field} LIKE %s")
+                params.append(f'%{value}%')
+            elif operator == 'starts with':
+                if db_type == 'postgresql':
+                    conditions.append(f"{db_field} ILIKE %s")
+                else:
+                    conditions.append(f"{db_field} LIKE %s")
+                params.append(f'{value}%')
+            elif operator == 'ends with':
+                if db_type == 'postgresql':
+                    conditions.append(f"{db_field} ILIKE %s")
+                else:
+                    conditions.append(f"{db_field} LIKE %s")
+                params.append(f'%{value}')
+            elif operator == 'greater than':
+                conditions.append(f"{db_field} > %s")
+                params.append(value)
+            elif operator == 'less than':
+                conditions.append(f"{db_field} < %s")
+                params.append(value)
+            elif operator == 'between':
+                conditions.append(f"{db_field} BETWEEN %s AND %s")
+                params.extend([value, value2])
+            elif operator == 'exists':
+                conditions.append(f"{db_field} IS NOT NULL")
+            elif operator == 'includes' and field == 'slots':
+                # Special handling for slots (bitmask)
+                conditions.append(f"(items.slots & %s) > 0")
+                params.append(value)
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        # Execute query with database connection (READ-ONLY)
+        try:
+            cursor = conn.cursor()
+            # Set connection to read-only mode
+            if db_type == 'mysql':
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+            elif db_type == 'postgresql':
+                cursor.execute("SET TRANSACTION READ ONLY")
+            elif db_type == 'mssql':
+                # SQL Server doesn't have a direct equivalent, we rely on permissions
+                pass
+                
+            
+            # Get total count with JOIN
+            count_query = f"""
+                SELECT COUNT(DISTINCT items.id) AS total_count
+                    FROM items 
+                    INNER JOIN discovered_items ON items.id = discovered_items.item_id
+                    WHERE {where_clause}
+                """
+            cursor.execute(count_query, params)
+            result = cursor.fetchone()
+            # Handle both dict and tuple results
+            if result:
+                if isinstance(result, dict):
+                    total_count = result.get('total_count', 0)
+                else:
+                    total_count = result[0]
+            else:
+                total_count = 0
+            
+            # Get items with JOIN (only discovered items)
+            items_query = f"""
+                    SELECT DISTINCT 
+                        items.id,
+                        items.Name,
+                        items.itemtype,
+                        items.ac,
+                        items.hp,
+                        items.mana,
+                        items.astr,
+                        items.asta,
+                        items.aagi,
+                        items.adex,
+                        items.awis,
+                        items.aint,
+                        items.acha,
+                        items.weight,
+                        items.damage,
+                        items.delay,
+                        items.magic,
+                        items.nodrop,
+                        items.norent,
+                        items.classes,
+                        items.races,
+                        items.slots,
+                        items.lore,
+                        items.reqlevel,
+                        items.stackable,
+                        items.stacksize,
+                        items.icon,
+                        COUNT(discovered_items.item_id) as discovery_count
+                    FROM items 
+                    INNER JOIN discovered_items ON items.id = discovered_items.item_id
+                    WHERE {where_clause}
+                    GROUP BY items.id, items.Name, items.itemtype, items.ac, items.hp, items.mana,
+                             items.astr, items.asta, items.aagi, items.adex, items.awis, items.aint, items.acha,
+                             items.weight, items.damage, items.delay, items.magic, items.nodrop, items.norent,
+                             items.classes, items.races, items.slots, items.lore, items.reqlevel,
+                             items.stackable, items.stacksize, items.icon
+                    ORDER BY items.Name
+                    LIMIT %s OFFSET %s
+                """
+            cursor.execute(items_query, params + [limit, offset])
+            items = cursor.fetchall()
+            
+            # Convert to list of dictionaries with proper field mapping
+            items_list = []
+            for item in items:
+                # Handle both dict and tuple cursor results
+                if isinstance(item, dict):
+                    # MySQL DictCursor returns field names as they appear in query
+                    item_dict = {
+                        'id': item.get('id'),
+                        'item_id': str(item.get('id')),  # Use id as item_id for consistency
+                        'name': item.get('Name'),
+                        'itemtype': item.get('itemtype'),
+                        'ac': _safe_int(item.get('ac')),
+                        'hp': _safe_int(item.get('hp')),
+                        'mana': _safe_int(item.get('mana')),
+                        'stats': {
+                            'str': _safe_int(item.get('astr')),  # EQEmu uses astr for strength bonus
+                            'sta': _safe_int(item.get('asta')),  # EQEmu uses asta for stamina bonus
+                            'agi': _safe_int(item.get('aagi')),  # EQEmu uses aagi for agility bonus
+                            'dex': _safe_int(item.get('adex')),  # EQEmu uses adex for dexterity bonus
+                            'wis': _safe_int(item.get('awis')),  # EQEmu uses awis for wisdom bonus
+                            'int': _safe_int(item.get('aint')),  # EQEmu uses aint for intelligence bonus
+                            'cha': _safe_int(item.get('acha'))   # EQEmu uses acha for charisma bonus
+                        },
+                        'weight': _safe_float(item.get('weight')),
+                        'damage': _safe_int(item.get('damage')),
+                        'delay': _safe_int(item.get('delay')),
+                        'magic': bool(item.get('magic')),
+                        'nodrop': bool(item.get('nodrop')),
+                        'norent': bool(item.get('norent')),
+                        'lore': item.get('lore') if item.get('lore') else None,  # lore is text in EQEmu
+                        'classes': _safe_int(item.get('classes')),
+                        'races': _safe_int(item.get('races')),
+                        'slots': _safe_int(item.get('slots')),
+                        'reqlevel': _safe_int(item.get('reqlevel')),
+                        'stackable': bool(item.get('stackable')),
+                        'stacksize': _safe_int(item.get('stacksize')),
+                        'icon': _safe_int(item.get('icon')),
+                        'discovery_count': _safe_int(item.get('discovery_count'))
+                    }
+                else:
+                    # Handle tuple results (MySQL)
+                    item_dict = {
+                        'id': item[0],
+                        'item_id': str(item[0]),
+                        'name': item[1],
+                        'itemtype': item[2],
+                        'ac': _safe_int(item[3]),
+                        'hp': _safe_int(item[4]),
+                        'mana': _safe_int(item[5]),
+                        'stats': {
+                            'str': _safe_int(item[6]),
+                            'sta': _safe_int(item[7]),
+                            'agi': _safe_int(item[8]),
+                            'dex': _safe_int(item[9]),
+                            'wis': _safe_int(item[10]),
+                            'int': _safe_int(item[11]),
+                            'cha': _safe_int(item[12])
+                        },
+                        'weight': _safe_float(item[13]),
+                        'damage': _safe_int(item[14]),
+                        'delay': _safe_int(item[15]),
+                        'magic': bool(item[16]),
+                        'nodrop': bool(item[17]),
+                        'norent': bool(item[18]),
+                        'classes': _safe_int(item[19]),
+                        'races': _safe_int(item[20]),
+                        'slots': _safe_int(item[21]),
+                        'lore': item[22],
+                        'reqlevel': _safe_int(item[23]),
+                        'stackable': bool(item[24]),
+                        'stacksize': _safe_int(item[25]),
+                        'icon': _safe_int(item[26]),
+                        'discovery_count': _safe_int(item[27])
+                    }
+                items_list.append(item_dict)
+            
+            cursor.close()
+            return jsonify({
+                    'items': items_list,
+                    'total_count': total_count,
+                    'limit': limit,
+                    'offset': offset,
+                    'search_query': search_query,
+                    'discovered_only': True
+            })
+            
+        finally:
+            if cursor:
+                cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        import traceback
+        app.logger.error(f"Error searching items: {e}")
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>', methods=['GET'])
+@exempt_when_limiting
+def get_item_details(item_id):
+    """
+    Get detailed information about a specific discovered item using EQEmu schema.
+    Only returns items that exist in both items and discovered_items tables.
+    """
+    try:
+        # Get EQEmu database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': error or 'Database not configured'}), 503
+        try:
+            cursor = conn.cursor()
+            # Set connection to read-only mode
+            if db_type == 'mysql':
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+            elif db_type == 'postgresql':
+                cursor.execute("SET TRANSACTION READ ONLY")
+            elif db_type == 'mssql':
+                # SQL Server doesn't have a direct equivalent, we rely on permissions
+                pass
+            
+            # Query with JOIN to ensure item is discovered
+            cursor.execute("""
+                    SELECT DISTINCT
+                        items.id,
+                        items.Name,
+                        items.itemtype,
+                        items.ac,
+                        items.hp,
+                        items.mana,
+                        items.astr,
+                        items.asta,
+                        items.aagi,
+                        items.adex,
+                        items.awis,
+                        items.aint,
+                        items.acha,
+                        items.weight,
+                        items.damage,
+                        items.delay,
+                        items.magic,
+                        items.nodrop,
+                        items.norent,
+                        items.classes,
+                        items.races,
+                        items.slots,
+                        items.lore,
+                        items.reqlevel,
+                        items.stackable,
+                        items.stacksize,
+                        items.clickeffect,
+                        items.proceffect,
+                        items.worneffect,
+                        items.focuseffect,
+                        items.scrolleffect,
+                        items.bardeffect,
+                        items.cr,
+                        items.dr,
+                        items.fr,
+                        items.mr,
+                        items.pr,
+                        items.svcorruption,
+                        items.skillmodtype,
+                        items.skillmodvalue,
+                        items.price,
+                        items.favor,
+                        items.icon,
+                        COUNT(discovered_items.item_id) as discovery_count,
+                        MIN(discovered_items.discovered_date) as first_discovered,
+                        MAX(discovered_items.discovered_date) as last_discovered
+                    FROM items 
+                    INNER JOIN discovered_items ON items.id = discovered_items.item_id
+                    WHERE items.id = %s
+                    GROUP BY items.id, items.Name, items.itemtype, items.ac, items.hp, items.mana,
+                             items.astr, items.asta, items.aagi, items.adex, items.awis, items.aint, items.acha,
+                             items.weight, items.damage, items.delay, items.magic, items.nodrop, items.norent,
+                             items.classes, items.races, items.slots, items.lore, items.reqlevel,
+                             items.stackable, items.stacksize, items.clickeffect, items.proceffect,
+                             items.worneffect, items.focuseffect, items.scrolleffect, items.bardeffect,
+                             items.cr, items.dr, items.fr, items.mr, items.pr, items.svcorruption,
+                             items.skillmodtype, items.skillmodvalue, items.price, items.favor, items.icon
+            """, (item_id,))
+            
+            item = cursor.fetchone()
+            if not item:
+                return jsonify({'error': 'Item not found or not discovered'}), 404
+            
+            # Convert to dictionary with proper field mapping
+            # Handle both dict and tuple cursor results
+            if isinstance(item, dict):
+                item_dict = {
+                    'id': item['id'],
+                    'item_id': str(item['id']),
+                    'name': item['Name'] if 'Name' in item else item.get('name', ''),
+                    'itemtype': item['itemtype'],
+                    'ac': item['ac'],
+                    'hp': item['hp'],
+                    'mana': item['mana'],
+                    'str': item['astr'],
+                    'sta': item['asta'],
+                    'agi': item['aagi'],
+                    'dex': item['adex'],
+                    'wis': item['awis'],
+                    'int': item['aint'],
+                    'cha': item['acha'],
+                    'weight': float(item['weight']) if item['weight'] else None,
+                    'damage': item['damage'],
+                    'delay': item['delay'],
+                    'magic': bool(item['magic']),
+                    'nodrop': bool(item['nodrop']),
+                    'norent': bool(item['norent']),
+                    'lore': item['lore'] if item['lore'] else None,
+                    'classes': item['classes'],
+                    'races': item['races'],
+                    'slots': item['slots'],
+                    'reqlevel': item['reqlevel'],
+                    'stackable': bool(item['stackable']),
+                    'stacksize': item['stacksize'],
+                    'effects': {
+                        'click': item['clickeffect'],
+                        'proc': item['proceffect'],
+                        'worn': item['worneffect'],
+                        'focus': item['focuseffect'],
+                        'scroll': item['scrolleffect'],
+                        'bard': item['bardeffect']
+                    },
+                    'resistances': {
+                        'cold': item['cr'],
+                        'disease': item['dr'],
+                        'fire': item['fr'],
+                        'magic': item['mr'],
+                        'poison': item['pr'],
+                        'corruption': item['svcorruption']
+                    },
+                    'skill_mod': {
+                        'type': item['skillmodtype'],
+                        'value': item['skillmodvalue']
+                    },
+                    'price': item['price'],
+                    'favor': item['favor'],
+                    'icon': item['icon'],
+                    'discovery_info': {
+                        'discovery_count': item['discovery_count'],
+                        'first_discovered': item['first_discovered'],
+                        'last_discovered': item['last_discovered']
+                    }
+                }
+            else:
+                # Handle tuple results - map all fields by position
+                item_dict = {
+                    'id': item[0],
+                    'item_id': str(item[0]),
+                    'name': item[1],
+                    'itemtype': item[2],
+                    'ac': item[3],
+                    'hp': item[4],
+                    'mana': item[5],
+                    'str': item[6],
+                    'sta': item[7],
+                    'agi': item[8],
+                    'dex': item[9],
+                    'wis': item[10],
+                    'int': item[11],
+                    'cha': item[12],
+                    'weight': float(item[13]) if item[13] else None,
+                    'damage': item[14],
+                    'delay': item[15],
+                    'magic': bool(item[16]),
+                    'nodrop': bool(item[17]),
+                    'norent': bool(item[18]),
+                    'classes': item[19],
+                    'races': item[20],
+                    'slots': item[21],
+                    'lore': item[22] if item[22] else None,
+                    'reqlevel': item[23],
+                    'stackable': bool(item[24]),
+                    'stacksize': item[25],
+                    'effects': {
+                        'click': item[26],
+                        'proc': item[27],
+                        'worn': item[28],
+                        'focus': item[29],
+                        'scroll': item[30],
+                        'bard': item[31]
+                    },
+                    'resistances': {
+                        'cold': item[32],
+                        'disease': item[33],
+                        'fire': item[34],
+                        'magic': item[35],
+                        'poison': item[36],
+                        'corruption': item[37]
+                    },
+                    'skill_mod': {
+                        'type': item[38],
+                        'value': item[39]
+                    },
+                    'price': item[40],
+                    'favor': item[41],
+                    'icon': item[42],
+                    'discovery_info': {
+                        'discovery_count': item[43],
+                        'first_discovered': item[44],
+                        'last_discovered': item[45]
+                    }
+                }
+            
+            cursor.close()
+            return jsonify({'item': item_dict})
+            
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item details: {e}")
+        return jsonify({'error': f'Failed to get item: {str(e)}'}), 500
+
+
+@app.route('/api/items/types', methods=['GET'])
+@exempt_when_limiting
+def get_item_types():
+    """
+    Get list of available item types for filtering (discovered items only).
+    Uses EQEmu schema with read-only access.
+    """
+    try:
+        # Get EQEmu database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': error or 'Database not configured'}), 503
+        try:
+            cursor = conn.cursor()
+            # Set connection to read-only mode
+            if db_type == 'mysql':
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+            elif db_type == 'postgresql':
+                cursor.execute("SET TRANSACTION READ ONLY")
+            elif db_type == 'mssql':
+                # SQL Server doesn't have a direct equivalent, we rely on permissions
+                pass
+            
+            # Query only discovered items using JOIN with discovered_items table
+            # Use proper column aliases for MySQL DictCursor
+            query = """
+                SELECT DISTINCT items.itemtype AS itemtype, COUNT(*) AS count
+                FROM items 
+                INNER JOIN discovered_items ON items.id = discovered_items.item_id
+                WHERE items.itemtype IS NOT NULL
+                GROUP BY items.itemtype
+                ORDER BY count DESC, items.itemtype
+            """
+            
+            app.logger.info(f"Executing query on {db_type} database: {query}")
+            cursor.execute(query)
+            
+            types = []
+            results = cursor.fetchall()
+            app.logger.info(f"Query returned {len(results) if isinstance(results, list) else type(results)} results")
+            
+            for row in results:
+                # Handle both dictionary and tuple results
+                if isinstance(row, dict):
+                    types.append({
+                        'type': row['itemtype'],
+                        'count': row['count']
+                    })
+                else:
+                    types.append({
+                        'type': row[0],
+                        'count': row[1]
+                    })
+            
+            cursor.close()
+            return jsonify({'types': types})
+            
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item types: {e}")
+        return jsonify({'error': f'Failed to get item types: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     # Preload spell data before starting server for optimal performance
