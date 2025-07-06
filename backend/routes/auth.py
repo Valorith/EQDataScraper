@@ -10,6 +10,7 @@ from models.activity import ActivityLog
 import psycopg2
 import traceback  # Import at module level to avoid dynamic import issues
 import logging
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
