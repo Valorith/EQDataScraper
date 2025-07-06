@@ -56,6 +56,8 @@ class GoogleOAuth:
             # In production, try to fix it automatically
             if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
                 frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+                # Remove trailing slash if present
+                frontend_url = frontend_url.rstrip('/')
                 self.redirect_uri = f"{frontend_url}/auth/callback"
                 safe_log(f"[OAuth Init] Auto-corrected redirect URI to: {self.redirect_uri}")
         
@@ -97,6 +99,8 @@ class GoogleOAuth:
             # Force correction
             if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
                 frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+                # Remove trailing slash if present
+                frontend_url = frontend_url.rstrip('/')
                 self.redirect_uri = f"{frontend_url}/auth/callback"
                 safe_log(f"[OAuth] FORCED correction to: {self.redirect_uri}")
         

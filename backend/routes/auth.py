@@ -59,6 +59,8 @@ def google_login():
         elif os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
             # In production, ensure we're using the frontend URL, not the backend URL
             frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+            # Remove trailing slash if present
+            frontend_url = frontend_url.rstrip('/')
             google_oauth.redirect_uri = f"{frontend_url}/auth/callback"
             safe_log(f"[OAuth Login] Production override - using frontend redirect URI: {google_oauth.redirect_uri}")
         
@@ -134,6 +136,8 @@ def google_callback_get():
         # Check for Railway production environment
         if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
             frontend_base = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+            # Remove trailing slash if present
+            frontend_base = frontend_base.rstrip('/')
         else:
             # For local development, try to detect from referer or use default
             referer = request.headers.get('Referer', '')
@@ -263,6 +267,8 @@ def google_callback():
         elif os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
             # In production, ensure we're using the frontend URL, not the backend URL
             frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+            # Remove trailing slash if present
+            frontend_url = frontend_url.rstrip('/')
             google_oauth.redirect_uri = f"{frontend_url}/auth/callback"
             safe_log(f"[OAuth Login] Production override - using frontend redirect URI: {google_oauth.redirect_uri}")
         
