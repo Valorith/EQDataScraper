@@ -149,24 +149,8 @@
 <script>
 import { useSpellsStore } from '../stores/spells'
 import { useRouter } from 'vue-router'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
-
-// Configure API base URL - use environment variable if explicitly set, otherwise use appropriate defaults
-const API_BASE_URL = (() => {
-  // In production, only use VITE_BACKEND_URL if it's a valid production URL
-  if (import.meta.env.PROD) {
-    const envUrl = import.meta.env.VITE_BACKEND_URL
-    // Only use env URL if it's a valid production URL (not localhost)
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      return envUrl
-    }
-    // Default production backend URL
-    return 'https://eqdatascraper-backend-production.up.railway.app'
-  }
-  
-  // In development, use env variable or default to localhost
-  return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-})()
 
 export default {
   name: 'Spells',

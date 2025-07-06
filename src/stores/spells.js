@@ -1,27 +1,6 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
-
-// Configure API base URL - use environment variable if explicitly set, otherwise use appropriate defaults
-const API_BASE_URL = (() => {
-  // In production, only use VITE_API_BASE_URL if it's a valid production URL
-  if (import.meta.env.PROD) {
-    const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL
-    // Only use env URL if it's a valid production URL (not localhost)
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      console.log('🔧 Using environment variable VITE_API_BASE_URL:', envUrl)
-      return envUrl
-    }
-    // Default production backend URL
-    const defaultUrl = 'https://eqdatascraper-backend-production.up.railway.app'
-    console.log('🔧 Using default production backend URL:', defaultUrl)
-    return defaultUrl
-  }
-  
-  // In development, use env variable or default to localhost
-  const devUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-  console.log('🔧 Using development backend URL:', devUrl)
-  return devUrl
-})()
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '@/config/api'
 
 // Global debugging for network requests
 const DEBUG_NETWORK = import.meta.env.PROD || localStorage.getItem('debug-network') === 'true'
@@ -132,7 +111,7 @@ export const useSpellsStore = defineStore('spells', {
     // Warmup the backend connection with a single attempt
     async warmupBackend() {
       const startTime = Date.now()
-      const healthUrl = `${API_BASE_URL}/api/health`
+      const healthUrl = buildApiUrl(API_ENDPOINTS.HEALTH)
       
       try {
         const response = await axios.get(healthUrl, { 
@@ -155,7 +134,7 @@ export const useSpellsStore = defineStore('spells', {
     // Simple method to check cache status without pre-hydration
     async checkCacheStatus() {
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/cache-status`, {
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.CACHE_STATUS), {
           timeout: 5000,
           headers: { 'Accept': 'application/json' }
         })
@@ -234,8 +213,6 @@ export const useSpellsStore = defineStore('spells', {
       const apiUrl = `${API_BASE_URL}/api/spells/${normalizedClassName}`
       
       try {
-        console.log('API_BASE_URL:', API_BASE_URL)
-        console.log('Making API call to:', apiUrl)
         logNetworkRequest('GET', apiUrl)
         
         // Check if server has data preloaded for faster timeout

@@ -84,35 +84,12 @@
             <td>
               <div class="action-buttons">
                 <button 
-                  @click="viewUserDetails(user)" 
+                  @click="openActionsModal(user)" 
                   class="action-btn view"
-                  title="View Details"
+                  title="View user details and actions"
                 >
                   <i class="fas fa-eye"></i>
-                </button>
-                <button 
-                  v-if="user.role !== 'admin' && user.id !== currentUserId" 
-                  @click="promoteToAdmin(user)" 
-                  class="action-btn promote"
-                  title="Promote to Admin"
-                >
-                  <i class="fas fa-user-shield"></i>
-                </button>
-                <button 
-                  v-else-if="user.role === 'admin' && user.id !== currentUserId" 
-                  @click="demoteToUser(user)" 
-                  class="action-btn demote"
-                  title="Demote to User"
-                >
-                  <i class="fas fa-user"></i>
-                </button>
-                <button 
-                  v-if="user.id !== currentUserId"
-                  @click="deleteSessions(user)" 
-                  class="action-btn delete"
-                  title="Delete All Sessions"
-                >
-                  <i class="fas fa-sign-out-alt"></i>
+                  <span class="btn-text">View</span>
                 </button>
               </div>
             </td>
@@ -220,6 +197,94 @@
         </div>
       </div>
     </div>
+
+    <!-- User Actions Modal -->
+    <div v-if="actionUser" class="modal-overlay" @click="closeActionsModal">
+      <div class="modal-content actions-modal" @click.stop>
+        <div class="modal-header">
+          <h2>User Actions</h2>
+          <button @click="closeActionsModal" class="close-btn">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="user-info-summary">
+            <img 
+              v-if="actionUser.avatar_url" 
+              :src="actionUser.avatar_url" 
+              alt="Avatar"
+              class="user-avatar-large"
+            >
+            <div v-else class="user-avatar-fallback-large">
+              {{ getInitials(actionUser) }}
+            </div>
+            <div class="user-details">
+              <h3>{{ actionUser.first_name }} {{ actionUser.last_name }}</h3>
+              <p>{{ actionUser.email }}</p>
+              <span class="role-badge" :class="actionUser.role">{{ actionUser.role }}</span>
+            </div>
+          </div>
+
+          <div class="actions-list">
+            <h3>Available Actions</h3>
+            
+            <button @click="viewUserDetails(actionUser)" class="action-item">
+              <i class="fas fa-eye"></i>
+              <div class="action-info">
+                <span class="action-title">View Details</span>
+                <span class="action-desc">View full user profile and session information</span>
+              </div>
+            </button>
+
+            <div class="action-item role-selector">
+              <i class="fas fa-user-tag"></i>
+              <div class="action-info">
+                <span class="action-title">Change Role</span>
+                <div class="role-select-wrapper">
+                  <select 
+                    :value="actionUser.role" 
+                    @change="handleRoleChange($event)"
+                    class="role-select"
+                  >
+                    <option 
+                      v-for="role in availableRoles" 
+                      :key="role.value" 
+                      :value="role.value"
+                    >
+                      {{ role.label }} {{ actionUser.role === role.value ? '(Current)' : '' }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <button @click="logoutUser()" class="action-item">
+              <i class="fas fa-sign-out-alt"></i>
+              <div class="action-info">
+                <span class="action-title">Force Logout</span>
+                <span class="action-desc">End all active sessions for this user</span>
+              </div>
+            </button>
+
+            <button @click="toggleBanUser()" class="action-item" :class="{ 'danger': !actionUser.is_banned }">
+              <i :class="actionUser.is_banned ? 'fas fa-user-check' : 'fas fa-user-slash'"></i>
+              <div class="action-info">
+                <span class="action-title">{{ actionUser.is_banned ? 'Unban User' : 'Ban User' }}</span>
+                <span class="action-desc">{{ actionUser.is_banned ? 'Allow user to access the application' : 'Prevent user from accessing the application' }}</span>
+              </div>
+            </button>
+
+            <button @click="deleteUser()" class="action-item danger">
+              <i class="fas fa-trash-alt"></i>
+              <div class="action-info">
+                <span class="action-title">Delete User</span>
+                <span class="action-desc">Permanently remove user and all associated data</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -227,14 +292,11 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
-
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
 // State
 const users = ref([])
@@ -246,6 +308,13 @@ const perPage = ref(20)
 const totalPages = ref(1)
 const selectedUser = ref(null)
 const userDetails = ref(null)
+const actionUser = ref(null)
+
+// Available roles
+const availableRoles = [
+  { value: 'user', label: 'User' },
+  { value: 'admin', label: 'Administrator' }
+]
 
 // Computed
 const currentUserId = computed(() => userStore.user?.id)
@@ -271,11 +340,35 @@ const loadUsers = async () => {
     users.value = data.users
     totalPages.value = data.total_pages
     
-    // Load stats separately
-    const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
-      headers: { Authorization: `Bearer ${userStore.accessToken}` }
-    })
-    stats.value = statsResponse.data.data.users
+    // Store total count if available
+    const totalCount = data.total || (data.total_pages * perPage.value) || users.value.length
+    
+    // Load stats separately - but don't fail the whole page if stats fail
+    try {
+      const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
+        headers: { Authorization: `Bearer ${userStore.accessToken}` }
+      })
+      // Handle both possible response formats
+      if (statsResponse.data.data?.users) {
+        stats.value = statsResponse.data.data.users
+      } else if (statsResponse.data.users) {
+        stats.value = statsResponse.data.users
+      } else {
+        // Fallback to direct data if structure is different
+        stats.value = statsResponse.data
+      }
+    } catch (statsError) {
+      console.error('Error loading stats (non-critical):', statsError)
+      // Calculate stats from the users we already loaded
+      // Since this is paginated, we'll use the total from the response
+      const adminCount = users.value.filter(u => u.role === 'admin').length
+      stats.value = {
+        total: totalCount,
+        active_30d: totalCount, // We don't have this data, so use total
+        new_7d: totalCount, // We don't have this data, so use total
+        admins: adminCount
+      }
+    }
   } catch (error) {
     console.error('Error loading users:', error)
   } finally {
@@ -285,6 +378,10 @@ const loadUsers = async () => {
 
 const viewUserDetails = async (user) => {
   selectedUser.value = user
+  // Close actions modal if open
+  if (actionUser.value) {
+    closeActionsModal()
+  }
   try {
     const response = await axios.get(`${API_BASE_URL}/api/admin/users/${user.id}`, {
       headers: { Authorization: `Bearer ${userStore.accessToken}` }
@@ -295,43 +392,85 @@ const viewUserDetails = async (user) => {
   }
 }
 
-const promoteToAdmin = async (user) => {
-  if (confirm(`Promote ${user.first_name} ${user.last_name} to admin?`)) {
+
+const openActionsModal = (user) => {
+  actionUser.value = user
+}
+
+const closeActionsModal = () => {
+  actionUser.value = null
+}
+
+const handleRoleChange = async (event) => {
+  const newRole = event.target.value
+  if (newRole === actionUser.value.role) return
+  
+  if (confirm(`Change ${actionUser.value.first_name} ${actionUser.value.last_name}'s role to ${newRole}?`)) {
     try {
-      await axios.put(`${API_BASE_URL}/api/admin/users/${user.id}`, 
-        { role: 'admin' },
+      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+        { role: newRole },
         { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
       )
+      // Update the local user object
+      actionUser.value.role = newRole
       await loadUsers()
     } catch (error) {
-      console.error('Error promoting user:', error)
+      console.error('Error changing user role:', error)
+      alert('Failed to change user role. Please try again.')
+      // Reset the select to the original value
+      event.target.value = actionUser.value.role
     }
+  } else {
+    // Reset the select if cancelled
+    event.target.value = actionUser.value.role
   }
 }
 
-const demoteToUser = async (user) => {
-  if (confirm(`Demote ${user.first_name} ${user.last_name} to regular user?`)) {
+const logoutUser = async () => {
+  if (confirm(`Force logout ${actionUser.value.first_name} ${actionUser.value.last_name} from all devices?`)) {
     try {
-      await axios.put(`${API_BASE_URL}/api/admin/users/${user.id}`, 
-        { role: 'user' },
-        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
-      )
-      await loadUsers()
-    } catch (error) {
-      console.error('Error demoting user:', error)
-    }
-  }
-}
-
-const deleteSessions = async (user) => {
-  if (confirm(`Delete all sessions for ${user.first_name} ${user.last_name}? They will need to log in again.`)) {
-    try {
-      await axios.delete(`${API_BASE_URL}/api/admin/users/${user.id}/sessions`, {
+      await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}/sessions`, {
         headers: { Authorization: `Bearer ${userStore.accessToken}` }
       })
-      alert('Sessions deleted successfully')
+      alert('User has been logged out from all devices')
+      closeActionsModal()
     } catch (error) {
-      console.error('Error deleting sessions:', error)
+      console.error('Error logging out user:', error)
+      alert('Failed to logout user. Please try again.')
+    }
+  }
+}
+
+const toggleBanUser = async () => {
+  const action = actionUser.value.is_banned ? 'unban' : 'ban'
+  if (confirm(`Are you sure you want to ${action} ${actionUser.value.first_name} ${actionUser.value.last_name}?`)) {
+    try {
+      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+        { is_banned: !actionUser.value.is_banned },
+        { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
+      )
+      await loadUsers()
+      closeActionsModal()
+    } catch (error) {
+      console.error(`Error ${action}ning user:`, error)
+      alert(`Failed to ${action} user. Please try again.`)
+    }
+  }
+}
+
+const deleteUser = async () => {
+  if (confirm(`⚠️ WARNING: This action cannot be undone!\n\nAre you sure you want to permanently delete ${actionUser.value.first_name} ${actionUser.value.last_name} and all their data?`)) {
+    if (confirm(`Please confirm once more: Delete user ${actionUser.value.email}?`)) {
+      try {
+        await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, {
+          headers: { Authorization: `Bearer ${userStore.accessToken}` }
+        })
+        await loadUsers()
+        closeActionsModal()
+      } catch (error) {
+        console.error('Error deleting user:', error)
+        alert('Failed to delete user. Please try again.')
+      }
     }
   }
 }
@@ -508,6 +647,10 @@ onMounted(() => {
   border-bottom: 1px solid #e5e7eb;
 }
 
+.users-table th:last-child {
+  text-align: center;
+}
+
 .users-table td {
   padding: 15px;
   border-bottom: 1px solid #e5e7eb;
@@ -579,18 +722,23 @@ onMounted(() => {
 .action-buttons {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .action-btn {
-  width: 32px;
-  height: 32px;
+  padding: 6px 12px;
   border: none;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   cursor: pointer;
   transition: all 0.2s;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .action-btn.view {
@@ -603,33 +751,32 @@ onMounted(() => {
   color: white;
 }
 
-.action-btn.promote {
-  background: #d6f5d6;
-  color: #22863a;
+.btn-text {
+  display: none;
 }
 
-.action-btn.promote:hover {
-  background: #22863a;
-  color: white;
+@media (min-width: 1200px) {
+  .btn-text {
+    display: inline;
+  }
 }
 
-.action-btn.demote {
-  background: #fff5e6;
-  color: #dd6b20;
+@media (max-width: 1199px) {
+  .action-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
 }
 
-.action-btn.demote:hover {
-  background: #dd6b20;
-  color: white;
+
+.action-btn.actions {
+  background: #e6f2ff;
+  color: #3182ce;
 }
 
-.action-btn.delete {
-  background: #fed7d7;
-  color: #c53030;
-}
-
-.action-btn.delete:hover {
-  background: #c53030;
+.action-btn.actions:hover {
+  background: #3182ce;
   color: white;
 }
 
@@ -798,6 +945,156 @@ onMounted(() => {
 .session-time {
   color: #666;
   font-size: 0.85rem;
+}
+
+/* Actions Modal Styles */
+.actions-modal {
+  max-width: 600px;
+}
+
+.user-info-summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 25px;
+  background: #f7fafc;
+  border-radius: 12px;
+  margin-bottom: 25px;
+}
+
+.user-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-avatar-fallback-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 24px;
+}
+
+.user-details h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.3rem;
+  color: #1a202c;
+}
+
+.user-details p {
+  margin: 0 0 10px 0;
+  color: #666;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.actions-list h3 {
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+  color: #4a5568;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: #f7fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.action-item:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e0;
+  transform: translateX(5px);
+}
+
+.action-item i {
+  font-size: 1.2rem;
+  width: 30px;
+  text-align: center;
+  color: #667eea;
+}
+
+.action-item.danger i {
+  color: #dc2626;
+}
+
+.action-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.action-title {
+  font-weight: 600;
+  color: #1a202c;
+  font-size: 1rem;
+}
+
+.action-desc {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.action-item.danger .action-title {
+  color: #dc2626;
+}
+
+.action-item.danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* Role selector in modal */
+.action-item.role-selector {
+  cursor: default;
+}
+
+.action-item.role-selector:hover {
+  transform: none;
+}
+
+.role-select-wrapper {
+  margin-top: 8px;
+}
+
+.role-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.role-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.role-select:hover {
+  border-color: #cbd5e0;
 }
 
 @media (max-width: 1200px) {

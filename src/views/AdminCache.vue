@@ -14,26 +14,25 @@
     <!-- Cache Overview -->
     <div class="cache-overview">
       <div class="overview-card">
-        <div class="card-icon">
-          <i class="fas fa-server"></i>
-        </div>
         <div class="card-content">
-          <h3>Cache Status</h3>
-          <div class="status-indicator" :class="cacheHealthClass">
-            <i :class="cacheHealthIcon"></i>
-            {{ cacheHealthText }}
+          <div class="header-row">
+            <h3>Cache Status</h3>
+            <div class="status-indicator" :class="cacheHealthClass">
+              <i :class="cacheHealthIcon"></i>
+              {{ cacheHealthText }}
+            </div>
           </div>
           <div class="cache-stats">
             <div class="stat">
-              <span class="label">Total Cached:</span>
-              <span class="value">{{ cacheStatus.total_cached || 0 }} / 16 classes</span>
+              <span class="label">Total Cached</span>
+              <span class="value">{{ cacheStatus.total_cached || 0 }} / 16</span>
             </div>
             <div class="stat">
-              <span class="label">Cache Size:</span>
+              <span class="label">Cache Size</span>
               <span class="value">{{ formatBytes(cacheStatus.total_size || 0) }}</span>
             </div>
             <div class="stat">
-              <span class="label">Last Update:</span>
+              <span class="label">Last Update</span>
               <span class="value">{{ formatLastUpdate(cacheStatus.last_update) }}</span>
             </div>
           </div>
@@ -57,51 +56,35 @@
           class="class-card"
           :class="{ cached: isClassCached(className) }"
         >
-          <div class="class-header">
-            <div class="class-icon" :style="{ backgroundColor: getClassColor(className) }">
+          <div class="class-card-content">
+            <div class="class-info">
+              <h3>{{ formatClassName(className) }}</h3>
+              <div class="class-status">
+                <div v-if="isClassCached(className)" class="cached-info">
+                  <div class="status-row">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Cached</span>
+                  </div>
+                  <div class="cache-time">
+                    {{ formatCacheTime(getCacheTime(className)) }}
+                  </div>
+                  <div class="spell-count">
+                    {{ getSpellCount(className) || 0 }} spells
+                  </div>
+                </div>
+                <div v-else class="not-cached">
+                  <i class="fas fa-times-circle"></i>
+                  <span>Not Cached</span>
+                </div>
+              </div>
+            </div>
+            <div class="class-icon">
               <img 
                 :src="`/icons/${className}.gif`" 
                 :alt="className"
                 @error="handleImageError"
               >
             </div>
-            <h3>{{ formatClassName(className) }}</h3>
-          </div>
-          <div class="class-status">
-            <div v-if="isClassCached(className)" class="cached-info">
-              <div class="status-row">
-                <i class="fas fa-check-circle"></i>
-                <span>Cached</span>
-              </div>
-              <div class="cache-time">
-                {{ formatCacheTime(getCacheTime(className)) }}
-              </div>
-              <div class="spell-count">
-                {{ getSpellCount(className) || 0 }} spells
-              </div>
-            </div>
-            <div v-else class="not-cached">
-              <i class="fas fa-times-circle"></i>
-              <span>Not Cached</span>
-            </div>
-          </div>
-          <div class="class-actions">
-            <button 
-              @click="refreshClassCache(className)" 
-              class="refresh-btn"
-              :disabled="refreshingClass === className"
-              title="Refresh this class"
-            >
-              <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshingClass === className }"></i>
-            </button>
-            <button 
-              v-if="isClassCached(className)"
-              @click="clearClassCache(className)" 
-              class="clear-btn"
-              title="Clear this class cache"
-            >
-              <i class="fas fa-trash"></i>
-            </button>
           </div>
         </div>
       </div>
@@ -138,13 +121,6 @@
       </div>
     </div>
 
-    <!-- Cache Details -->
-    <div v-if="Object.keys(cacheDetails).length > 0" class="cache-details">
-      <h2>Cache Details</h2>
-      <div class="details-content">
-        <pre>{{ JSON.stringify(cacheDetails, null, 2) }}</pre>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -153,15 +129,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import { useSpellsStore } from '../stores/spells'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
 const spellsStore = useSpellsStore()
-
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
 // State
 const cacheStatus = ref({})
@@ -205,11 +178,59 @@ const cacheHealthIcon = computed(() => {
 const loadCacheStatus = async () => {
   try {
     const response = await axios.get(`${API_BASE_URL}/api/cache/status`)
-    cacheStatus.value = response.data
     
     // Load detailed cache info
     const detailsResponse = await axios.get(`${API_BASE_URL}/api/cache-status`)
     cacheDetails.value = detailsResponse.data
+    
+    // Calculate total cached classes from the details
+    let totalCached = 0
+    let lastUpdate = null
+    let mostRecentUpdate = null
+    
+    for (const [className, classData] of Object.entries(detailsResponse.data)) {
+      if (className !== '_config' && classData.cached) {
+        totalCached++
+        // Find the most recent update time
+        if (classData.last_updated) {
+          const updateTime = new Date(classData.last_updated)
+          if (!mostRecentUpdate || updateTime > mostRecentUpdate) {
+            mostRecentUpdate = updateTime
+            lastUpdate = classData.last_updated
+          }
+        }
+      }
+    }
+    
+    // If all classes are cached but no update time found, use current time
+    // (likely means cache was just loaded from database on startup)
+    if (totalCached > 0 && !lastUpdate) {
+      lastUpdate = new Date().toISOString()
+    }
+    
+    // Calculate total size from storage info
+    let totalSize = 0
+    if (response.data.storage?.file_sizes_bytes) {
+      totalSize = Object.values(response.data.storage.file_sizes_bytes).reduce((sum, size) => sum + size, 0)
+    } else if (response.data.storage?.tables) {
+      // For database storage, estimate size based on row counts
+      const tables = response.data.storage.tables
+      // Rough estimation: average 1KB per spell, 500 bytes per pricing entry
+      totalSize = (tables.spell_cache_rows || 0) * 1024 + 
+                  (tables.pricing_cache_rows || 0) * 500 +
+                  (tables.spell_details_cache_rows || 0) * 2048
+    }
+    
+    // Update cache status with calculated values
+    cacheStatus.value = {
+      total_cached: totalCached,
+      total_size: totalSize,
+      last_update: lastUpdate,
+      ...response.data
+    }
+    
+    console.log('Cache status:', cacheStatus.value)
+    console.log('Cache details:', cacheDetails.value)
   } catch (error) {
     console.error('Error loading cache status:', error)
   }
@@ -298,15 +319,50 @@ const clearClassCache = async (className) => {
 }
 
 const isClassCached = (className) => {
-  return cacheDetails.value[className]?.cached || false
+  // Check both lowercase and proper case versions
+  const titleCase = className.charAt(0).toUpperCase() + className.slice(1)
+  
+  // Special handling for compound names
+  let properCase = titleCase
+  if (className === 'shadowknight') properCase = 'ShadowKnight'
+  else if (className === 'beastlord') properCase = 'BeastLord'
+  
+  return cacheDetails.value[className]?.cached || 
+         cacheDetails.value[titleCase]?.cached || 
+         cacheDetails.value[properCase]?.cached ||
+         false
 }
 
 const getCacheTime = (className) => {
-  return cacheDetails.value[className]?.cache_time
+  // Check both lowercase and proper case versions
+  const titleCase = className.charAt(0).toUpperCase() + className.slice(1)
+  
+  // Special handling for compound names
+  let properCase = titleCase
+  if (className === 'shadowknight') properCase = 'ShadowKnight'
+  else if (className === 'beastlord') properCase = 'BeastLord'
+  
+  return cacheDetails.value[className]?.last_updated || 
+         cacheDetails.value[titleCase]?.last_updated ||
+         cacheDetails.value[properCase]?.last_updated ||
+         cacheDetails.value[className]?.cache_time ||
+         cacheDetails.value[titleCase]?.cache_time ||
+         cacheDetails.value[properCase]?.cache_time
 }
 
 const getSpellCount = (className) => {
-  return cacheDetails.value[className]?.spell_count
+  // Check both lowercase and proper case versions
+  const titleCase = className.charAt(0).toUpperCase() + className.slice(1)
+  
+  // Special handling for compound names
+  let properCase = titleCase
+  if (className === 'shadowknight') properCase = 'ShadowKnight'
+  else if (className === 'beastlord') properCase = 'BeastLord'
+  
+  return cacheDetails.value[className]?.spell_count || 
+         cacheDetails.value[titleCase]?.spell_count || 
+         cacheDetails.value[properCase]?.spell_count ||
+         0
 }
 
 const getClassColor = (className) => {
@@ -356,13 +412,31 @@ onMounted(() => {
 <style scoped>
 .admin-cache {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: 100px; /* Increased padding to prevent logo overlap */
   max-width: 1400px;
   margin: 0 auto;
+  position: relative;
+}
+
+/* Add subtle background pattern */
+.admin-cache::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(102, 126, 234, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(118, 75, 162, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(102, 126, 234, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .page-header {
   margin-bottom: 30px;
+  margin-top: 20px; /* Add space from top */
 }
 
 .header-content {
@@ -404,66 +478,91 @@ onMounted(() => {
 }
 
 .overview-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 15px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  padding: 30px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 0;
   display: flex;
-  align-items: center;
-  gap: 30px;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
 }
 
 .card-icon {
-  width: 80px;
-  height: 80px;
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 2.5rem;
-  flex-shrink: 0;
+  display: none; /* Remove the icon box */
 }
 
 .card-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  padding: 40px;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
 .card-content h3 {
-  margin: 0 0 15px 0;
-  font-size: 1.5rem;
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .status-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-weight: 500;
-  margin-bottom: 20px;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 25px;
+  font-weight: 600;
+  font-size: 1.1rem;
+  align-self: flex-start;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.status-indicator i {
+  font-size: 1.2rem;
 }
 
 .status-indicator.healthy {
-  background: #d4edda;
-  color: #155724;
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .status-indicator.warning {
-  background: #fff3cd;
-  color: #856404;
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .status-indicator.critical {
-  background: #f8d7da;
-  color: #721c24;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .cache-stats {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 30px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 25px;
+  border-radius: 15px;
+  backdrop-filter: blur(10px);
 }
 
 .stat {
@@ -473,31 +572,61 @@ onMounted(() => {
 }
 
 .stat .label {
-  color: #666;
-  font-size: 0.9rem;
+  color: #9ca3af;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .stat .value {
-  font-weight: 600;
-  font-size: 1.1rem;
-  color: #1a202c;
+  font-weight: 700;
+  font-size: 1.3rem;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .card-actions {
+  padding: 25px 40px;
+  background: rgba(0, 0, 0, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
+  justify-content: flex-end;
   gap: 10px;
 }
 
 .action-btn {
-  padding: 10px 20px;
+  padding: 12px 24px;
   border: none;
-  border-radius: 8px;
-  font-weight: 500;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 1rem;
   cursor: pointer;
   transition: all 0.3s;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-btn i {
+  font-size: 1.1rem;
+}
+
+.action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  transition: left 0.5s;
+}
+
+.action-btn:hover::before {
+  left: 100%;
 }
 
 .action-btn.primary {
@@ -507,17 +636,30 @@ onMounted(() => {
 
 .action-btn.primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 
 .action-btn.success {
-  background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.action-btn.success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
 }
 
 .action-btn.danger {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: white;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+.action-btn.danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
 }
 
 .action-btn:disabled {
@@ -530,176 +672,233 @@ onMounted(() => {
 }
 
 .cache-grid h2 {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .class-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
 }
 
 .class-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 20px;
-  transition: all 0.3s;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.85) 0%, rgba(45, 55, 72, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .class-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12),
+              0 0 0 1px rgba(255, 255, 255, 0.3) inset;
 }
 
 .class-card.cached {
-  border: 2px solid #10b981;
+  border: 2px solid rgba(16, 185, 129, 0.5);
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.85) 0%, rgba(4, 120, 87, 0.85) 100%);
 }
 
-.class-header {
+.class-card-content {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 15px;
+  align-items: stretch;
+  min-height: 140px;
+}
+
+.class-info {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.class-info h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f7fafc;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .class-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   overflow: hidden;
+  background: transparent;
 }
 
 .class-icon img {
-  width: 28px;
-  height: 28px;
+  width: 110px;
+  height: 110px;
   object-fit: contain;
+  z-index: 1;
+  position: relative;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+  transition: transform 0.3s ease;
 }
 
-.class-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
+.class-card:hover .class-icon img {
+  transform: scale(1.1);
+}
+
+.class-icon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.15;
+  z-index: 0;
 }
 
 .class-status {
-  margin-bottom: 15px;
-  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .cached-info {
-  color: #059669;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .status-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 5px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: #10b981;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.status-row i {
+  font-size: 1.1rem;
 }
 
 .cache-time {
   font-size: 0.85rem;
-  color: #666;
-  margin-bottom: 5px;
+  color: #9ca3af;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .spell-count {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #34d399;
+  margin-top: 4px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .not-cached {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #dc2626;
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-.class-actions {
-  display: flex;
-  gap: 8px;
+.not-cached i {
+  font-size: 1.1rem;
 }
 
-.refresh-btn,
-.clear-btn {
-  padding: 8px 12px;
-  border: 1px solid #e5e7eb;
-  background: white;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  border-color: #667eea;
-  color: #667eea;
-}
-
-.clear-btn:hover {
-  border-color: #dc2626;
-  color: #dc2626;
-}
+/* Action buttons removed from class cards to clean up the UI */
 
 .cache-actions-section {
   margin-bottom: 40px;
+  padding: 40px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.5) 0%, rgba(45, 55, 72, 0.5) 100%);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2),
+              0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
 
 .cache-actions-section h2 {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .actions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
 }
 
 .action-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 25px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.85) 0%, rgba(45, 55, 72, 0.85) 100%);
+  backdrop-filter: blur(15px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 30px;
   text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.02) 100%);
+  pointer-events: none;
+}
+
+.action-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .action-card h3 {
-  margin: 0 0 10px 0;
-  font-size: 1.2rem;
+  margin: 0 0 12px 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .action-card p {
-  color: #666;
-  margin-bottom: 20px;
+  color: #9ca3af;
+  margin-bottom: 25px;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
-.cache-details {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 25px;
-}
-
-.cache-details h2 {
-  margin-bottom: 20px;
-}
-
-.details-content {
-  background: #f7fafc;
-  border-radius: 8px;
-  padding: 20px;
-  overflow-x: auto;
-}
-
-.details-content pre {
-  margin: 0;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 0.85rem;
-}
 
 @media (max-width: 768px) {
   .overview-card {

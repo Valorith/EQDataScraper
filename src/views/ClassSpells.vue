@@ -776,24 +776,8 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSpellsStore } from '../stores/spells'
 import { useCartStore } from '../stores/cart'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
-
-// Configure API base URL - use environment variable if explicitly set, otherwise use appropriate defaults
-const API_BASE_URL = (() => {
-  // In production, only use VITE_BACKEND_URL if it's a valid production URL
-  if (import.meta.env.PROD) {
-    const envUrl = import.meta.env.VITE_BACKEND_URL
-    // Only use env URL if it's a valid production URL (not localhost)
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      return envUrl
-    }
-    // Default production backend URL
-    return 'https://eqdatascraper-backend-production.up.railway.app'
-  }
-  
-  // In development, use env variable or default to localhost
-  return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-})()
 
 // Debounce utility function
 function debounce(func, delay) {
@@ -1042,22 +1026,6 @@ export default {
       }
       
       try {
-        const API_BASE_URL = (() => {
-          // In production, only use VITE_BACKEND_URL if it's a valid production URL
-          if (import.meta.env.PROD) {
-            const envUrl = import.meta.env.VITE_BACKEND_URL
-            // Only use env URL if it's a valid production URL (not localhost)
-            if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-              return envUrl
-            }
-            // Default production backend URL
-            return 'https://eqdatascraper-backend-production.up.railway.app'
-          }
-          
-          // In development, use env variable or default to localhost
-          return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-        })()
-        
         console.log(`Merging ${spellsWithUIPricing.value.length} pricing entries into cache`)
         
         // Send pricing data to backend to merge into cache
@@ -1240,22 +1208,6 @@ export default {
 
     const loadPricingMetadata = async () => {
       try {
-        const API_BASE_URL = (() => {
-          // In production, only use VITE_BACKEND_URL if it's a valid production URL
-          if (import.meta.env.PROD) {
-            const envUrl = import.meta.env.VITE_BACKEND_URL
-            // Only use env URL if it's a valid production URL (not localhost)
-            if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-              return envUrl
-            }
-            // Default production backend URL
-            return 'https://eqdatascraper-backend-production.up.railway.app'
-          }
-          
-          // In development, use env variable or default to localhost
-          return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-        })()
-        
         const response = await axios.get(`${API_BASE_URL}/api/cache-expiry-status/${props.className}`)
         pricingMetadata.value = response.data
       } catch (err) {

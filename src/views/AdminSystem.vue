@@ -168,7 +168,10 @@
         <div v-for="log in filteredLogs" :key="log.id" class="log-entry" :class="log.level">
           <div class="log-time">{{ formatLogTime(log.timestamp) }}</div>
           <div class="log-level">{{ log.level.toUpperCase() }}</div>
-          <div class="log-message">{{ log.message }}</div>
+          <div class="log-content">
+            <div class="log-message">{{ log.message }}</div>
+            <div v-if="log.context" class="log-context">{{ log.context }}</div>
+          </div>
         </div>
         <div v-if="filteredLogs.length === 0" class="no-logs">
           No logs to display
@@ -182,14 +185,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
-
-// API base URL
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
 
 // State
 const systemStats = ref({
@@ -383,16 +383,66 @@ const loadEndpointsStatus = () => {
 
 const generateSampleLogs = () => {
   const logMessages = [
-    { level: 'info', message: 'Application started successfully' },
-    { level: 'info', message: 'Connected to database' },
-    { level: 'info', message: 'Cache loaded from disk' },
-    { level: 'warning', message: 'High memory usage detected' },
-    { level: 'info', message: 'User authentication successful' },
-    { level: 'error', message: 'Failed to fetch spell data for Necromancer' },
-    { level: 'info', message: 'Cache refresh completed' },
-    { level: 'warning', message: 'Slow response time for /api/spells/wizard' },
-    { level: 'info', message: 'Scraping job started for all classes' },
-    { level: 'info', message: 'Admin user logged in' }
+    { 
+      level: 'info', 
+      message: 'Application started successfully',
+      context: 'Server initialized on port 5001 with 16 spell classes cached'
+    },
+    { 
+      level: 'info', 
+      message: 'Connected to PostgreSQL database',
+      context: 'Connection established to production database at shuttle.proxy.rlwy.net'
+    },
+    { 
+      level: 'info', 
+      message: 'Cache loaded from database',
+      context: 'Loaded 16 spell classes, 1532 spell details, and 1038 pricing entries'
+    },
+    { 
+      level: 'warning', 
+      message: 'High memory usage detected',
+      context: 'Memory usage at 85% (6.8GB / 8GB) - consider increasing cache cleanup frequency'
+    },
+    { 
+      level: 'info', 
+      message: 'User rgagnier06@gmail.com authenticated successfully via Google OAuth from IP 192.168.1.45',
+      context: 'User rgagnier06@gmail.com logged in via Google OAuth from IP 192.168.1.45'
+    },
+    { 
+      level: 'error', 
+      message: 'Failed to fetch Necromancer spell data from alla.clumsysworld.com - HTTP 503 Service Unavailable',
+      context: 'HTTP 503 from alla.clumsysworld.com - site may be under maintenance'
+    },
+    { 
+      level: 'info', 
+      message: 'Cache refresh completed for Wizard spells - updated 384 spells in 2.3s',
+      context: 'Updated 384 spells in 2.3s - next refresh scheduled for 24h'
+    },
+    { 
+      level: 'warning', 
+      message: 'Slow API response: GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned',
+      context: 'GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned'
+    },
+    { 
+      level: 'info', 
+      message: 'Bulk scraping job initiated by admin user rgagnier06@gmail.com for all 16 classes',
+      context: 'Admin user rgagnier06@gmail.com triggered full refresh for all 16 classes'
+    },
+    { 
+      level: 'error', 
+      message: 'Rate limit exceeded for IP 45.23.178.92 on spell details endpoint - 100 requests/minute - blocked for 5 minutes',
+      context: 'IP 45.23.178.92 exceeded 100 requests/minute - blocked for 5 minutes'
+    },
+    {
+      level: 'info',
+      message: 'Database backup completed - 1532 spells and metadata backed up (4.2MB)',
+      context: 'Successfully backed up 1532 spells and metadata - backup size: 4.2MB'
+    },
+    {
+      level: 'warning',
+      message: 'Stale cache detected for Cleric spells - 26 hours old (expires at 24h) - automatic refresh triggered',
+      context: 'Cache is 26 hours old (expires after 24h) - automatic refresh triggered'
+    }
   ]
   
   systemLogs.value = logMessages.map((log, index) => ({
@@ -468,13 +518,14 @@ onUnmounted(() => {
 <style scoped>
 .admin-system {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: 100px; /* Increased padding to prevent logo overlap */
   max-width: 1400px;
   margin: 0 auto;
 }
 
 .page-header {
   margin-bottom: 30px;
+  margin-top: 20px; /* Add space from top */
 }
 
 .header-content {
@@ -898,10 +949,15 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 150px 80px 1fr;
   gap: 15px;
-  padding: 10px;
+  padding: 12px;
   border-bottom: 1px solid #e5e7eb;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.log-entry:hover {
+  background: rgba(102, 126, 234, 0.05);
 }
 
 .log-entry:last-child {
@@ -917,8 +973,24 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
+.log-entry.error {
+  background: rgba(254, 226, 226, 0.3);
+}
+
+.log-entry.error:hover {
+  background: rgba(254, 226, 226, 0.5);
+}
+
 .log-entry.error .log-level {
   color: #ef4444;
+}
+
+.log-entry.warning {
+  background: rgba(254, 243, 199, 0.3);
+}
+
+.log-entry.warning:hover {
+  background: rgba(254, 243, 199, 0.5);
 }
 
 .log-entry.warning .log-level {
@@ -929,8 +1001,21 @@ onUnmounted(() => {
   color: #3b82f6;
 }
 
+.log-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .log-message {
   color: #1a202c;
+  font-weight: 500;
+}
+
+.log-context {
+  color: #6b7280;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .no-logs {

@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, g
 from utils.oauth import GoogleOAuth, oauth_storage
 from utils.jwt_utils import jwt_manager, require_auth, create_error_response, create_success_response
 from models.user import User, OAuthSession
+from models.activity import ActivityLog
 import psycopg2
 
 auth_bp = Blueprint('auth', __name__)
@@ -25,8 +26,15 @@ def google_login():
         JSON response with authorization URL
     """
     try:
-        # Initialize Google OAuth
+        # Get the origin from the request to determine the actual frontend port
+        origin = request.headers.get('Origin', 'http://localhost:3000')
+        
+        # Initialize Google OAuth with dynamic redirect URI
         google_oauth = GoogleOAuth()
+        
+        # Override redirect URI based on request origin for local development
+        if 'localhost' in origin:
+            google_oauth.redirect_uri = f"{origin}/auth/callback"
         
         # Generate authorization URL with PKCE
         auth_data = google_oauth.get_authorization_url()
@@ -81,14 +89,26 @@ def google_callback():
         # Clean up used state
         oauth_storage.remove_oauth_state(state)
         
-        # Initialize Google OAuth
+        # Get the origin from the request to determine the actual frontend port
+        origin = request.headers.get('Origin', 'http://localhost:3000')
+        
+        # Initialize Google OAuth with dynamic redirect URI
         google_oauth = GoogleOAuth()
         
+        # Override redirect URI based on request origin for local development
+        if 'localhost' in origin:
+            google_oauth.redirect_uri = f"{origin}/auth/callback"
+        
         # Exchange code for tokens
-        token_data = google_oauth.exchange_code_for_tokens(
-            code, 
-            stored_state['code_verifier']
-        )
+        try:
+            print(f"Exchanging code for tokens with redirect_uri: {google_oauth.redirect_uri}")
+            token_data = google_oauth.exchange_code_for_tokens(
+                code, 
+                stored_state['code_verifier']
+            )
+        except Exception as e:
+            print(f"Token exchange failed: {str(e)}")
+            return create_error_response(f"Failed to exchange code for tokens: {str(e)}", 500)
         
         user_info = token_data['user_info']
         
@@ -101,13 +121,46 @@ def google_callback():
         
         # Get database connection
         conn = get_db_connection()
+        
+        # For local development without database, create a simple in-memory user
         if not conn:
-            return create_error_response("Database connection failed", 500)
+            print("Warning: No database connection, using in-memory user storage")
+            # Create JWT tokens without database
+            access_token = jwt_manager.create_access_token(
+                user_id=user_info['google_id'],  # Use Google ID as user ID
+                email=user_info['email'],
+                is_admin=False  # Default to non-admin
+            )
+            
+            refresh_token = jwt_manager.create_refresh_token(
+                user_id=user_info['google_id'],
+                email=user_info['email']
+            )
+            
+            # Return simplified response without database
+            return jsonify(create_success_response({
+                'access_token': access_token,
+                'refresh_token': refresh_token,
+                'user': {
+                    'id': user_info['google_id'],
+                    'email': user_info['email'],
+                    'first_name': user_info.get('first_name'),
+                    'last_name': user_info.get('last_name'),
+                    'avatar_url': user_info.get('avatar_url'),
+                    'is_admin': False,
+                    'is_active': True
+                },
+                'preferences': {
+                    'theme_preference': 'auto',
+                    'results_per_page': 20
+                }
+            }))
         
         try:
             # Initialize models
             user_model = User(conn)
             oauth_session_model = OAuthSession(conn)
+            activity_log = ActivityLog(conn)
             
             # Check if user exists
             user = user_model.get_user_by_google_id(user_info['google_id'])
@@ -120,6 +173,17 @@ def google_callback():
                     first_name=user_info.get('first_name'),
                     last_name=user_info.get('last_name'),
                     avatar_url=user_info.get('avatar_url')
+                )
+                
+                # Log user creation
+                activity_log.log_activity(
+                    action=ActivityLog.ACTION_USER_CREATE,
+                    user_id=user['id'],
+                    resource_type=ActivityLog.RESOURCE_USER,
+                    resource_id=str(user['id']),
+                    details={'email': user['email']},
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get('User-Agent')
                 )
             else:
                 # Update existing user's login time and profile
@@ -158,6 +222,17 @@ def google_callback():
             
             # Get user preferences
             user_preferences = user_model.get_user_preferences(user['id'])
+            
+            # Log login activity
+            activity_log.log_activity(
+                action=ActivityLog.ACTION_LOGIN,
+                user_id=user['id'],
+                resource_type=ActivityLog.RESOURCE_SESSION,
+                resource_id=str(oauth_session['id']),
+                details={'method': 'google_oauth'},
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
             
             # Return success response
             return jsonify(create_success_response({
@@ -266,6 +341,7 @@ def logout():
         try:
             # Initialize models
             oauth_session_model = OAuthSession(conn)
+            activity_log = ActivityLog(conn)
             
             if refresh_token:
                 # Verify refresh token to get session token
@@ -273,17 +349,30 @@ def logout():
                 if payload and payload.get('type') == 'refresh':
                     session_token = payload.get('session_token')
                     if session_token:
+                        # Get session before deleting for logging
+                        session = oauth_session_model.get_session_by_token(session_token)
+                        
                         # Delete session
                         oauth_session_model.delete_session(session_token)
                         
                         # Try to revoke Google tokens
                         try:
                             google_oauth = GoogleOAuth()
-                            session = oauth_session_model.get_session_by_token(session_token)
                             if session and session.get('google_access_token'):
                                 google_oauth.revoke_token(session['google_access_token'])
                         except Exception:
                             pass  # Don't fail logout if token revocation fails
+                        
+                        # Log logout activity
+                        if session:
+                            activity_log.log_activity(
+                                action=ActivityLog.ACTION_LOGOUT,
+                                user_id=session['user_id'],
+                                resource_type=ActivityLog.RESOURCE_SESSION,
+                                resource_id=str(session['id']),
+                                ip_address=request.remote_addr,
+                                user_agent=request.headers.get('User-Agent')
+                            )
             
             return jsonify(create_success_response({}, "Logout successful"))
             

@@ -2,7 +2,10 @@
   <div class="main-container">
     <div class="hero-section">
       <div class="hero-content">
-        <h1 class="main-title">Clumsy's World</h1>
+        <h1 class="main-title">
+          Clumsy's World
+          <span v-if="isDev" class="dev-stamp">DEV</span>
+        </h1>
         <p class="main-subtitle">Information Compendium</p>
       </div>
       
@@ -169,19 +172,8 @@
 </template>
 
 <script>
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
-
-// Configure API base URL
-const API_BASE_URL = (() => {
-  if (import.meta.env.PROD) {
-    const envUrl = import.meta.env.VITE_BACKEND_URL
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      return envUrl
-    }
-    return 'https://eqdatascraper-backend-production.up.railway.app'
-  }
-  return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-})()
 
 export default {
   name: 'MainPage',
@@ -199,6 +191,10 @@ export default {
     }
   },
   computed: {
+    isDev() {
+      return import.meta.env.MODE === 'development'
+    },
+    
     totalPages() {
       return Math.ceil(this.searchResults.length / this.resultsPerPage)
     },
@@ -485,6 +481,8 @@ export default {
   text-shadow: 0 0 40px rgba(var(--primary-rgb), 0.6);
   animation: glow 4s ease-in-out infinite alternate;
   letter-spacing: 2px;
+  position: relative;
+  display: inline-block;
 }
 
 @keyframes glow {
@@ -496,6 +494,26 @@ export default {
     text-shadow: 0 0 50px rgba(var(--primary-rgb), 0.8), 0 0 80px rgba(147, 112, 219, 0.4);
     transform: scale(1.01);
   }
+}
+
+.dev-stamp {
+  position: absolute;
+  top: 5px;
+  right: -40px;
+  background: #ff0000;
+  color: white;
+  padding: 4px 16px;
+  font-size: 0.2em;
+  font-weight: bold;
+  font-family: Arial, sans-serif;
+  letter-spacing: 1px;
+  transform: rotate(45deg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  animation: none;
+  -webkit-text-fill-color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transform-origin: center;
 }
 
 .main-subtitle {

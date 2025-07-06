@@ -5,6 +5,15 @@ static-backup/
 run.log
 frontend.log
 backend.log
+backend_debug.log
+backend_manual.log
+frontend_manual.log
+monitor.log
+oauth_debug.txt
+test_oauth.html
+
+# Test coverage reports
+coverage/
 __pycache__/
 download_icons.py
 node_modules/
