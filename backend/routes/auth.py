@@ -123,8 +123,12 @@ def google_callback():
             safe_log(f"[OAuth Debug] Exchanging code for tokens")
             safe_log(f"[OAuth Debug] Client ID: {google_oauth.client_id[:10]}...")
             safe_log(f"[OAuth Debug] Redirect URI: {google_oauth.redirect_uri}")
+            safe_log(f"[OAuth Debug] Original Origin: {origin}")
             safe_log(f"[OAuth Debug] Code: {code[:10]}...")
             safe_log(f"[OAuth Debug] State: {state}")
+            
+            # Add diagnostic info to help debug
+            safe_log(f"[OAuth Debug] Environment OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
             
             token_data = google_oauth.exchange_code_for_tokens(
                 code, 
@@ -135,7 +139,8 @@ def google_callback():
             safe_log(f"[OAuth Error] Error type: {type(e).__name__}")
             # Log more details for debugging
             safe_log(f"[OAuth Error] Traceback: {traceback.format_exc()}")
-            return create_error_response(f"Failed to exchange code for tokens: {str(e)}", 500)
+            # Include redirect URI in error response for debugging
+            return create_error_response(f"Failed to exchange code for tokens: {str(e)} (redirect_uri: {google_oauth.redirect_uri})", 500)
         
         user_info = token_data['user_info']
         
@@ -474,6 +479,34 @@ def auth_status():
             
     except Exception as e:
         return create_error_response(f"Status check failed: {str(e)}", 500)
+
+
+@auth_bp.route('/auth/debug-config', methods=['GET'])
+def debug_oauth_config():
+    """
+    Debug endpoint to check OAuth configuration (remove in production).
+    
+    Returns:
+        JSON response with OAuth configuration
+    """
+    try:
+        # Only allow in development or with special header
+        if not (os.environ.get('FLASK_ENV') == 'development' or 
+                request.headers.get('X-Debug-Token') == os.environ.get('DEBUG_TOKEN', 'no-token-set')):
+            return create_error_response("Not available", 404)
+        
+        google_oauth = GoogleOAuth()
+        
+        return jsonify(create_success_response({
+            'client_id': google_oauth.client_id[:20] + '...' if google_oauth.client_id else 'NOT SET',
+            'redirect_uri': google_oauth.redirect_uri,
+            'env_redirect_uri': os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET'),
+            'scopes': google_oauth.scopes,
+            'auth_url': google_oauth.auth_url,
+            'token_url': google_oauth.token_url
+        }))
+    except Exception as e:
+        return create_error_response(f"Failed to get config: {str(e)}", 500)
 
 
 @auth_bp.route('/auth/cleanup', methods=['POST'])
