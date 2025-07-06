@@ -121,6 +121,7 @@ class GoogleOAuth:
             
             safe_log(f"[OAuth] Sending token exchange request to: {self.token_url}")
             safe_log(f"[OAuth] Token exchange data: client_id={self.client_id[:10]}..., redirect_uri={self.redirect_uri}, code={code[:10]}...")
+            safe_log(f"[OAuth] Code verifier length: {len(code_verifier) if code_verifier else 0}")
             
             response = requests.post(self.token_url, data=token_data)
             

@@ -246,9 +246,11 @@ def google_callback():
             safe_log(f"[OAuth Debug] Original Origin: {origin}")
             safe_log(f"[OAuth Debug] Code: {code[:10]}...")
             safe_log(f"[OAuth Debug] State: {state}")
+            safe_log(f"[OAuth Debug] Code verifier present: {bool(stored_state.get('code_verifier'))}")
             
             # Add diagnostic info to help debug
             safe_log(f"[OAuth Debug] Environment OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
+            safe_log(f"[OAuth Debug] Railway environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT SET')}")
             
             token_data = google_oauth.exchange_code_for_tokens(
                 code, 
@@ -649,6 +651,47 @@ def debug_oauth_config():
         }))
     except Exception as e:
         return create_error_response(f"Failed to get config: {str(e)}", 500)
+
+
+@auth_bp.route('/auth/test-redirect', methods=['GET'])
+def test_oauth_redirect():
+    """
+    Test endpoint to verify OAuth redirect configuration.
+    
+    Returns:
+        JSON response with redirect test results
+    """
+    try:
+        # Get the origin from the request
+        origin = request.headers.get('Origin', 'No origin header')
+        referer = request.headers.get('Referer', 'No referer header')
+        
+        # Initialize Google OAuth
+        google_oauth = GoogleOAuth()
+        
+        # Check what redirect URI would be used
+        redirect_uri = google_oauth.redirect_uri
+        
+        # Check if this matches what Google expects
+        google_expects = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
+        
+        # Test if we're in production
+        is_production = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+        
+        return jsonify(create_success_response({
+            'test_results': {
+                'redirect_uri_used': redirect_uri,
+                'redirect_uri_expected': google_expects,
+                'match': redirect_uri == google_expects,
+                'is_production': is_production,
+                'origin': origin,
+                'referer': referer,
+                'frontend_url': os.environ.get('FRONTEND_URL', 'NOT SET'),
+                'recommendations': []
+            }
+        }))
+    except Exception as e:
+        return create_error_response(f"Test failed: {str(e)}", 500)
 
 
 @auth_bp.route('/auth/cleanup', methods=['POST'])
