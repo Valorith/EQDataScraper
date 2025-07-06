@@ -8,8 +8,10 @@ from models.user import User, OAuthSession
 from models.activity import ActivityLog
 import psycopg2
 from datetime import datetime, timedelta
+import logging
 
 admin_bp = Blueprint('admin', __name__)
+logger = logging.getLogger(__name__)
 
 def get_db_connection():
     """Get database connection - will be injected by main app."""
