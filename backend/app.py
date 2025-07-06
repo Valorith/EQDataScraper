@@ -30,6 +30,23 @@ app = Flask(__name__)
 # Check if user accounts are enabled
 ENABLE_USER_ACCOUNTS = os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true'
 
+# Log OAuth configuration at startup for debugging
+if ENABLE_USER_ACCOUNTS:
+    print("🔐 OAuth/User Accounts ENABLED")
+    print(f"   - GOOGLE_CLIENT_ID: {'SET' if os.environ.get('GOOGLE_CLIENT_ID') else 'NOT SET'}")
+    print(f"   - GOOGLE_CLIENT_SECRET: {'SET' if os.environ.get('GOOGLE_CLIENT_SECRET') else 'NOT SET'}")
+    print(f"   - OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
+    print(f"   - FRONTEND_URL: {os.environ.get('FRONTEND_URL', 'NOT SET')}")
+    print(f"   - JWT_SECRET_KEY: {'SET' if os.environ.get('JWT_SECRET_KEY') else 'NOT SET'}")
+    print(f"   - DATABASE_URL: {'SET' if os.environ.get('DATABASE_URL') else 'NOT SET'}")
+    
+    # Log production-specific environment detection
+    is_railway = 'RAILWAY_ENVIRONMENT' in os.environ
+    is_production = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+    print(f"   - Environment: {'Railway Production' if is_production else 'Railway Dev' if is_railway else 'Local Development'}")
+else:
+    print("🔓 OAuth/User Accounts DISABLED")
+
 # Global limiter variable
 limiter = None
 
@@ -38,10 +55,16 @@ if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
         'http://localhost:3000',
-        'http://localhost:3000',
-        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
+    
+    # Add frontend URL from environment if set
+    frontend_url = os.environ.get('FRONTEND_URL')
+    if frontend_url and frontend_url not in allowed_origins:
+        allowed_origins.append(frontend_url)
+    
     CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
 else:
     # Standard CORS for existing functionality

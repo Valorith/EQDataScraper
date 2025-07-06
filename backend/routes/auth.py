@@ -96,6 +96,8 @@ def google_callback_get():
     safe_log("[OAuth] Unexpected GET request to callback endpoint")
     safe_log(f"[OAuth] GET request headers: {dict(request.headers)}")
     safe_log(f"[OAuth] GET request args: {dict(request.args)}")
+    safe_log(f"[OAuth] Current OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
+    safe_log(f"[OAuth] Current FRONTEND_URL: {os.environ.get('FRONTEND_URL', 'NOT SET')}")
     
     # Check if this is a direct redirect from Google (which shouldn't happen)
     if 'code' in request.args:
@@ -105,11 +107,27 @@ def google_callback_get():
         
         # Log the redirect issue
         safe_log(f"[OAuth] Direct redirect from Google detected!")
-        safe_log(f"[OAuth] This suggests OAUTH_REDIRECT_URI might be set to the backend URL instead of frontend")
+        safe_log(f"[OAuth] This suggests OAUTH_REDIRECT_URI is misconfigured in Google Cloud Console")
         safe_log(f"[OAuth] Code present: {bool(code)}, State present: {bool(state)}")
         
-        # Build the correct frontend redirect URL
-        frontend_base = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+        # Determine the correct frontend URL
+        frontend_base = None
+        
+        # Check for Railway production environment
+        if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+            frontend_base = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+        else:
+            # For local development, try to detect from referer or use default
+            referer = request.headers.get('Referer', '')
+            if 'localhost' in referer:
+                # Extract the base URL from referer
+                from urllib.parse import urlparse
+                parsed = urlparse(referer)
+                frontend_base = f"{parsed.scheme}://{parsed.netloc}"
+            else:
+                frontend_base = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+        
+        safe_log(f"[OAuth] Redirecting to frontend: {frontend_base}")
         correct_redirect = f"{frontend_base}/auth/callback?code={code}&state={state}"
         
         # Return HTML that redirects to the frontend
@@ -118,10 +136,47 @@ def google_callback_get():
         <head>
             <title>Redirecting...</title>
             <meta http-equiv="refresh" content="0; url={correct_redirect}">
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                    background-color: #f5f5f5;
+                }}
+                .redirect-container {{
+                    text-align: center;
+                    padding: 40px;
+                    background: white;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .spinner {{
+                    border: 3px solid #f3f3f3;
+                    border-top: 3px solid #667eea;
+                    border-radius: 50%;
+                    width: 40px;
+                    height: 40px;
+                    animation: spin 1s linear infinite;
+                    margin: 0 auto 20px;
+                }}
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+            </style>
         </head>
         <body>
-            <p>Redirecting to complete authentication...</p>
-            <p>If you are not redirected, <a href="{correct_redirect}">click here</a>.</p>
+            <div class="redirect-container">
+                <div class="spinner"></div>
+                <h2>Completing authentication...</h2>
+                <p>You will be redirected automatically.</p>
+                <p style="margin-top: 20px;">
+                    <small>If nothing happens, <a href="{correct_redirect}">click here</a>.</small>
+                </p>
+            </div>
         </body>
         </html>
         """, 200, {'Content-Type': 'text/html'}
@@ -147,10 +202,16 @@ def google_callback():
         JSON response with tokens and user info
     """
     try:
+        safe_log(f"[OAuth POST Callback] Request received")
+        safe_log(f"[OAuth POST Callback] Headers: {dict(request.headers)}")
+        
         # Get request data
         data = request.get_json()
         if not data:
+            safe_log(f"[OAuth POST Callback] No JSON data in request body")
             return create_error_response("Missing request data", 400)
+        
+        safe_log(f"[OAuth POST Callback] Request data keys: {list(data.keys())}")
         
         code = data.get('code')
         state = data.get('state')
@@ -549,9 +610,13 @@ def debug_oauth_config():
         JSON response with OAuth configuration
     """
     try:
-        # Only allow in development or with special header
-        if not (os.environ.get('FLASK_ENV') == 'development' or 
-                request.headers.get('X-Debug-Token') == os.environ.get('DEBUG_TOKEN', 'no-token-set')):
+        # Allow in Railway environments for debugging
+        is_railway = 'RAILWAY_ENVIRONMENT' in os.environ
+        is_allowed = (os.environ.get('FLASK_ENV') == 'development' or 
+                     is_railway or
+                     request.headers.get('X-Debug-Token') == os.environ.get('DEBUG_TOKEN', 'no-token-set'))
+        
+        if not is_allowed:
             return create_error_response("Not available", 404)
         
         google_oauth = GoogleOAuth()
@@ -559,6 +624,13 @@ def debug_oauth_config():
         # Test redirect URI matching
         frontend_redirect = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
         origin = request.headers.get('Origin', 'No origin header')
+        
+        # Check for common redirect URI issues
+        redirect_uri_issues = []
+        if google_oauth.redirect_uri and 'backend' in google_oauth.redirect_uri:
+            redirect_uri_issues.append("Redirect URI points to backend instead of frontend")
+        if google_oauth.redirect_uri and 'localhost' in google_oauth.redirect_uri and is_railway:
+            redirect_uri_issues.append("Using localhost redirect URI in production")
         
         return jsonify(create_success_response({
             'client_id': google_oauth.client_id[:20] + '...' if google_oauth.client_id else 'NOT SET',
@@ -570,7 +642,10 @@ def debug_oauth_config():
             'frontend_url': os.environ.get('FRONTEND_URL', 'NOT SET'),
             'scopes': google_oauth.scopes,
             'auth_url': google_oauth.auth_url,
-            'token_url': google_oauth.token_url
+            'token_url': google_oauth.token_url,
+            'is_railway': is_railway,
+            'railway_env': os.environ.get('RAILWAY_ENVIRONMENT', 'NOT SET'),
+            'redirect_uri_issues': redirect_uri_issues
         }))
     except Exception as e:
         return create_error_response(f"Failed to get config: {str(e)}", 500)
