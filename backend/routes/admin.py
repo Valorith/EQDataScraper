@@ -1102,6 +1102,16 @@ def update_database_config():
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
         
+        # Invalidate the database configuration cache to force reload
+        try:
+            # Access the Flask app's db_config_manager if available
+            from flask import current_app
+            if hasattr(current_app, 'db_config_manager'):
+                current_app.db_config_manager.invalidate()
+                logger.info("Database configuration cache invalidated after save")
+        except Exception as e:
+            logger.warning(f"Could not invalidate database config cache: {e}")
+        
         # Log configuration change (if we have a working OAuth database connection)
         try:
             conn = get_db_connection()

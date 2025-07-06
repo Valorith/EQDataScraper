@@ -34,10 +34,15 @@ class DatabaseConnectionPool:
         
     def _create_new_connection(self):
         """Create a new connection and add it to tracking."""
-        conn = self.create_connection()
-        with self.lock:
-            self.all_connections.append(conn)
-        return conn
+        try:
+            conn = self.create_connection()
+            with self.lock:
+                self.all_connections.append(conn)
+            logger.info(f"Created new database connection (total: {len(self.all_connections)})")
+            return conn
+        except Exception as e:
+            logger.error(f"Failed to create database connection: {e}")
+            raise
         
     def _is_connection_alive(self, conn):
         """Check if a connection is still alive."""
@@ -89,8 +94,10 @@ class DatabaseConnectionPool:
                         conn = self._create_new_connection()
                     else:
                         # Wait for a connection to become available
+                        logger.warning(f"Connection pool full ({self.max_connections} connections), waiting...")
                         conn = self.pool.get(timeout=self.timeout)
                         if not self._is_connection_alive(conn):
+                            logger.warning("Retrieved dead connection from pool, creating new one")
                             try:
                                 conn.close()
                             except:

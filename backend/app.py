@@ -3838,7 +3838,17 @@ def search_items():
         import traceback
         app.logger.error(f"Error searching items: {e}")
         app.logger.error(f"Traceback: {traceback.format_exc()}")
-        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+        # Provide more specific error messages
+        error_msg = str(e)
+        if "timeout" in error_msg.lower():
+            return jsonify({'error': 'Database connection timeout. Please try again.'}), 503
+        elif "connection pool" in error_msg.lower():
+            return jsonify({'error': 'Database connection pool error. Please try again later.'}), 503
+        elif "not configured" in error_msg.lower():
+            return jsonify({'error': 'Database not configured. Please contact administrator.'}), 503
+        else:
+            return jsonify({'error': f'Search failed: {error_msg}'}), 500
 
 
 @app.route('/api/items/<item_id>', methods=['GET'])
