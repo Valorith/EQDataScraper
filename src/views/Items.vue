@@ -25,16 +25,6 @@
         <!-- Filters -->
         <div class="filters-container">
           <div class="filter-group">
-            <label for="type-filter">Type:</label>
-            <select id="type-filter" v-model="selectedType" class="filter-select">
-              <option value="">All Types</option>
-              <option v-for="type in itemTypes" :key="type.type" :value="type.type">
-                {{ type.type }} ({{ type.count }})
-              </option>
-            </select>
-          </div>
-          
-          <div class="filter-group">
             <label for="class-filter">Class:</label>
             <select id="class-filter" v-model="selectedClass" class="filter-select">
               <option value="">All Classes</option>
@@ -719,12 +709,12 @@ import LoadingModal from '../components/LoadingModal.vue'
 
 // State
 const searchQuery = ref('')
-const selectedType = ref('')
+// Type filter removed - not needed
 const selectedClass = ref('')
 const minLevel = ref('')
 const maxLevel = ref('')
 const items = ref([])
-const itemTypes = ref([])
+// Item types removed - not needed
 const totalCount = ref(0)
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
@@ -838,14 +828,14 @@ const loadItemTypes = async () => {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
     const data = await response.json()
-    itemTypes.value = data.types || []
+    // Item types removed - not needed
   } catch (error) {
     console.error('Error loading item types:', error)
   }
 }
 
 const performSearch = async (page = 1) => {
-  if (!searchQuery.value && !selectedType.value && !selectedClass.value && !minLevel.value && !maxLevel.value && activeFilters.value.length === 0) {
+  if (!searchQuery.value && !selectedClass.value && !minLevel.value && !maxLevel.value && activeFilters.value.length === 0) {
     alert('Please enter a search term or select a filter')
     return
   }
@@ -861,7 +851,7 @@ const performSearch = async (page = 1) => {
   try {
     const params = new URLSearchParams()
     if (searchQuery.value) params.append('q', searchQuery.value)
-    if (selectedType.value) params.append('type', selectedType.value)
+    // Type filter removed
     if (selectedClass.value) params.append('class', selectedClass.value)
     
     // Validate numeric inputs before sending
@@ -937,7 +927,7 @@ const changePage = (page) => {
 
 const clearFilters = () => {
   searchQuery.value = ''
-  selectedType.value = ''
+  // Type filter removed
   selectedClass.value = ''
   minLevel.value = ''
   maxLevel.value = ''
