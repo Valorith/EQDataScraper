@@ -157,7 +157,7 @@
           </div>
         </div>
         <div class="card-actions">
-          <button @click="showDatabaseModal = true" class="action-button primary">
+          <button @click="openDatabaseModal" class="action-button primary">
             <i class="fas fa-cog"></i>
             Configure Database
           </button>
@@ -476,17 +476,27 @@ const loadDashboardData = async () => {
       databaseStatus.value = {
         connected: dbData.connected || false,
         host: dbData.host || null,
+        port: dbData.port || null,
         database: dbData.database || null,
+        username: dbData.username || null,
+        db_type: dbData.db_type || null,
+        use_ssl: dbData.use_ssl !== undefined ? dbData.use_ssl : true,
         status: dbData.status || 'unknown',
-        version: dbData.version || null
+        version: dbData.version || null,
+        connection_type: dbData.connection_type || 'unknown'
       }
     } else {
       // No database configured
       databaseStatus.value = {
         connected: false,
         host: null,
+        port: null,
         database: null,
-        status: 'not_configured'
+        username: null,
+        db_type: null,
+        use_ssl: true,
+        status: 'not_configured',
+        connection_type: 'none'
       }
     }
   } catch (error) {
@@ -810,6 +820,22 @@ const updateDefaultPort = () => {
   }
 }
 
+const openDatabaseModal = () => {
+  // Populate form with current configuration if available
+  if (databaseStatus.value.connected && databaseStatus.value.db_type) {
+    databaseForm.value = {
+      db_type: databaseStatus.value.db_type || 'mssql',
+      host: databaseStatus.value.host || '',
+      port: databaseStatus.value.port || (databaseStatus.value.db_type === 'mysql' ? 3306 : databaseStatus.value.db_type === 'mssql' ? 1433 : 5432),
+      database: databaseStatus.value.database || '',
+      username: databaseStatus.value.username || '',
+      password: '', // Password is not returned for security
+      use_ssl: databaseStatus.value.use_ssl !== undefined ? databaseStatus.value.use_ssl : true
+    }
+  }
+  showDatabaseModal.value = true
+}
+
 const closeDatabaseModal = () => {
   showDatabaseModal.value = false
   databaseTestResult.value = null
@@ -899,14 +925,19 @@ const saveDatabaseConfig = async () => {
     })
     
     if (response.data.success) {
-      // Update database status
+      // Update database status with all fields
       const dbData = response.data.data.database
       databaseStatus.value = {
         connected: true,
         host: dbData.host,
+        port: dbData.port,
         database: dbData.database,
+        username: dbData.username,
+        db_type: dbData.db_type,
+        use_ssl: dbData.use_ssl,
         status: 'connected',
-        version: dbData.version
+        version: dbData.version,
+        connection_type: 'config'
       }
       
       // Close modal

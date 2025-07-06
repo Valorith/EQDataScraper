@@ -886,17 +886,19 @@ def get_database_config():
                 from urllib.parse import urlparse
                 parsed = urlparse(current_db_url)
                 
-                # Detect database type from URL
-                db_type = 'postgresql'  # default
-                if 'mysql' in current_db_url.lower():
-                    db_type = 'mysql'
-                elif 'mssql' in current_db_url.lower() or 'sqlserver' in current_db_url.lower():
-                    db_type = 'mssql'
-                elif 'postgresql' in current_db_url.lower() or 'postgres' in current_db_url.lower():
-                    db_type = 'postgresql'
-                else:
-                    # Check config for saved type
-                    db_type = config.get('database_type', 'postgresql')
+                # Use saved database type from config first, fall back to URL detection
+                db_type = config.get('database_type')
+                
+                if not db_type:
+                    # Detect database type from URL only if not saved
+                    if 'mysql' in current_db_url.lower():
+                        db_type = 'mysql'
+                    elif 'mssql' in current_db_url.lower() or 'sqlserver' in current_db_url.lower():
+                        db_type = 'mssql'
+                    elif 'postgresql' in current_db_url.lower() or 'postgres' in current_db_url.lower():
+                        db_type = 'postgresql'
+                    else:
+                        db_type = 'postgresql'  # default
                 
                 # Set default port based on detected type
                 default_port = 5432
@@ -912,7 +914,8 @@ def get_database_config():
                     'username': parsed.username,
                     'connected': True,
                     'connection_type': 'environment' if os.environ.get('DATABASE_URL') else 'config',
-                    'db_type': db_type
+                    'db_type': db_type,
+                    'use_ssl': config.get('database_ssl', True)  # Include SSL setting
                 }
                 
                 # Test EQEmu database connection
