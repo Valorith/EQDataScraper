@@ -54,6 +54,11 @@ def google_login():
         if 'localhost' in origin and 'localhost' in google_oauth.redirect_uri:
             google_oauth.redirect_uri = f"{origin}/auth/callback"
         
+        # Log the redirect URI being used for debugging
+        safe_log(f"[OAuth Login] Origin: {origin}")
+        safe_log(f"[OAuth Login] Using redirect URI: {google_oauth.redirect_uri}")
+        safe_log(f"[OAuth Login] Environment OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
+        
         # Generate authorization URL with PKCE
         auth_data = google_oauth.get_authorization_url()
         
@@ -64,12 +69,16 @@ def google_login():
             request.remote_addr
         )
         
+        # Log the generated auth URL for debugging
+        safe_log(f"[OAuth Login] Generated auth URL (first 100 chars): {auth_data['auth_url'][:100]}...")
+        
         return jsonify(create_success_response({
             'auth_url': auth_data['auth_url'],
             'state': auth_data['state']
         }))
         
     except Exception as e:
+        safe_log(f"[OAuth Login Error] {str(e)}")
         return create_error_response(f"Failed to generate authorization URL: {str(e)}", 500)
 
 
@@ -89,11 +98,32 @@ def google_callback_get():
     
     # Check if this is a direct redirect from Google (which shouldn't happen)
     if 'code' in request.args:
-        return create_error_response(
-            "Invalid request method. The OAuth callback expects a POST request from the frontend, "
-            "not a direct GET redirect. Please ensure you're accessing the application through the correct URL.", 
-            405
-        )
+        # This might be a misconfiguration - Google is redirecting to the API instead of frontend
+        code = request.args.get('code')
+        state = request.args.get('state')
+        
+        # Log the redirect issue
+        safe_log(f"[OAuth] Direct redirect from Google detected!")
+        safe_log(f"[OAuth] This suggests OAUTH_REDIRECT_URI might be set to the backend URL instead of frontend")
+        safe_log(f"[OAuth] Code present: {bool(code)}, State present: {bool(state)}")
+        
+        # Build the correct frontend redirect URL
+        frontend_base = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+        correct_redirect = f"{frontend_base}/auth/callback?code={code}&state={state}"
+        
+        # Return HTML that redirects to the frontend
+        return f"""
+        <html>
+        <head>
+            <title>Redirecting...</title>
+            <meta http-equiv="refresh" content="0; url={correct_redirect}">
+        </head>
+        <body>
+            <p>Redirecting to complete authentication...</p>
+            <p>If you are not redirected, <a href="{correct_redirect}">click here</a>.</p>
+        </body>
+        </html>
+        """, 200, {'Content-Type': 'text/html'}
     
     return create_error_response(
         "Method not allowed. Use POST to submit OAuth callback data.", 
@@ -525,10 +555,18 @@ def debug_oauth_config():
         
         google_oauth = GoogleOAuth()
         
+        # Test redirect URI matching
+        frontend_redirect = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
+        origin = request.headers.get('Origin', 'No origin header')
+        
         return jsonify(create_success_response({
             'client_id': google_oauth.client_id[:20] + '...' if google_oauth.client_id else 'NOT SET',
             'redirect_uri': google_oauth.redirect_uri,
             'env_redirect_uri': os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET'),
+            'client_id_set': bool(os.environ.get('GOOGLE_CLIENT_ID')),
+            'client_secret_set': bool(os.environ.get('GOOGLE_CLIENT_SECRET')),
+            'request_origin': origin,
+            'frontend_url': os.environ.get('FRONTEND_URL', 'NOT SET'),
             'scopes': google_oauth.scopes,
             'auth_url': google_oauth.auth_url,
             'token_url': google_oauth.token_url
