@@ -77,6 +77,18 @@ def google_login():
         
         # Log the generated auth URL for debugging
         safe_log(f"[OAuth Login] Generated auth URL (first 100 chars): {auth_data['auth_url'][:100]}...")
+        safe_log(f"[OAuth Login] Full auth URL length: {len(auth_data['auth_url'])}")
+        
+        # Check if redirect_uri is complete in the auth URL
+        if 'redirect_uri=' in auth_data['auth_url']:
+            import re
+            redirect_match = re.search(r'redirect_uri=([^&]+)', auth_data['auth_url'])
+            if redirect_match:
+                encoded_redirect = redirect_match.group(1)
+                decoded_redirect = urllib.parse.unquote(encoded_redirect)
+                safe_log(f"[OAuth Login] Redirect URI in auth URL: {decoded_redirect}")
+                if not decoded_redirect.endswith('/auth/callback'):
+                    safe_log(f"[OAuth Login] WARNING: Redirect URI is incomplete!")
         
         return jsonify(create_success_response({
             'auth_url': auth_data['auth_url'],

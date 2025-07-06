@@ -104,11 +104,19 @@ class GoogleOAuth:
             'prompt': 'consent'  # Always show consent screen for refresh token
         }
         
-        auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params)}"
+        # URL encode with safe parameter to avoid issues
+        auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params, safe='')}"
         
         # Log the full auth URL for debugging
         safe_log(f"[OAuth] Authorization URL generated with redirect_uri: {self.redirect_uri}")
         safe_log(f"[OAuth] Full auth URL params: {params}")
+        safe_log(f"[OAuth] Full auth URL (first 500 chars): {auth_url[:500]}")
+        safe_log(f"[OAuth] Redirect URI length: {len(self.redirect_uri)}")
+        
+        # Double-check the auth URL contains the full redirect URI
+        if '/auth/callba' in auth_url and '/auth/callback' not in auth_url:
+            safe_log(f"[OAuth] ERROR: Redirect URI was truncated in auth URL!")
+            safe_log(f"[OAuth] Full redirect URI should be: {self.redirect_uri}")
         
         return {
             'auth_url': auth_url,
