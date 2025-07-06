@@ -77,6 +77,7 @@
                 </svg>
                 Admin Dashboard
               </router-link>
+              
             </nav>
 
             <div class="menu-divider"></div>
@@ -446,6 +447,15 @@ export default {
 
 .menu-item.logout-item:hover {
   background: rgba(229, 62, 62, 0.1);
+}
+
+.menu-item.dev-item {
+  color: #38a169;
+  font-weight: 600;
+}
+
+.menu-item.dev-item:hover {
+  background: rgba(56, 161, 105, 0.1);
 }
 
 .menu-item:disabled {

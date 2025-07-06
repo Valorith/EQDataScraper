@@ -20,6 +20,10 @@ except ImportError:
 # Import scrape_spells from the same directory
 from scrape_spells import scrape_class, CLASSES, CLASS_COLORS
 
+# Import activity logger if user accounts are enabled
+if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
+    from utils.activity_logger import log_scrape_activity, log_cache_activity, log_api_activity
+
 app = Flask(__name__)
 
 # Check if user accounts are enabled
@@ -34,6 +38,7 @@ if ENABLE_USER_ACCOUNTS:
     allowed_origins = [
         'http://localhost:3000',
         'http://localhost:3001',
+        'http://localhost:3002',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
@@ -67,13 +72,21 @@ if ENABLE_USER_ACCOUNTS:
         # Apply rate limits to OAuth endpoints
         limiter.limit("10 per minute")(auth_bp)
         limiter.limit("60 per hour")(users_bp) 
-        limiter.limit("30 per hour")(admin_bp)
+        # Admin endpoints are exempt from rate limiting
         
-        # Exempt health check endpoint from rate limiting
+        # Exempt health check, admin endpoints, and cache status from rate limiting
         @limiter.request_filter
-        def exempt_health_check():
-            """Exempt health endpoint from rate limiting"""
-            return request.endpoint == 'health_check'
+        def exempt_endpoints():
+            """Exempt health, admin, and cache status endpoints from rate limiting"""
+            if request.endpoint in ['health_check', 'get_cache_status', 'cache_status_detailed']:
+                return True
+            # Exempt all admin endpoints from rate limiting
+            if request.endpoint and request.endpoint.startswith('admin.'):
+                return True
+            # Also check by path for cache-related and health endpoints
+            if request.path and any(path in request.path for path in ['/api/health', '/api/cache-status', '/api/cache/']):
+                return True
+            return False
         
         # Make limiter available globally for decorators
         app.limiter = limiter
@@ -102,6 +115,13 @@ if ENABLE_USER_ACCOUNTS:
         app.register_blueprint(auth_bp, url_prefix='/api')
         app.register_blueprint(users_bp, url_prefix='/api')
         app.register_blueprint(admin_bp, url_prefix='/api')
+        
+        # Import and register dev auth if conditions are met
+        from routes.auth_dev import create_dev_auth_blueprint
+        dev_auth_bp = create_dev_auth_blueprint()
+        if dev_auth_bp:
+            app.register_blueprint(dev_auth_bp, url_prefix='')
+            app.logger.warning("⚠️  DEVELOPMENT AUTH ENABLED - Never use in production!")
         
         app.logger.info("✅ OAuth user accounts enabled")
     except ImportError as e:
@@ -215,6 +235,27 @@ def init_database_cache():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Create activity_logs table if user accounts are enabled
+        if ENABLE_USER_ACCOUNTS:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS activity_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    action VARCHAR(100) NOT NULL,
+                    resource_type VARCHAR(50),
+                    resource_id VARCHAR(100),
+                    details JSONB,
+                    ip_address INET,
+                    user_agent TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create indexes for activity_logs
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_action ON activity_logs(action)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at DESC)")
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS pricing_cache (
@@ -618,6 +659,14 @@ def save_cache_to_storage():
     else:
         save_cache_to_files()
 
+def save_single_class_to_storage(class_name):
+    """Save a single class to storage - much faster than saving everything"""
+    if USE_DATABASE_CACHE:
+        save_single_class_to_database(class_name)
+    else:
+        # For file storage, we still need to save everything
+        save_cache_to_files()
+
 def save_cache_to_database():
     """Save cached data to PostgreSQL database"""
     logger.info(f"=== SAVING CACHE TO DATABASE ===")
@@ -681,6 +730,42 @@ def save_cache_to_database():
         logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
+
+def save_single_class_to_database(class_name):
+    """Save a single class to PostgreSQL database - optimized for single class updates"""
+    logger.info(f"Saving single class '{class_name}' to database")
+    
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Save only the specific class
+        if class_name in spells_cache:
+            cursor.execute("""
+                INSERT INTO spell_cache (class_name, data, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (class_name) 
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """, (class_name, json.dumps(spells_cache[class_name])))
+        
+        # Update metadata for this class only
+        if class_name in cache_timestamp:
+            cursor.execute("""
+                INSERT INTO cache_metadata (key, value, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (key) 
+                DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+            """, (f'cache_timestamp', json.dumps(cache_timestamp)))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✓ Successfully saved class '{class_name}' to database")
+        
+    except Exception as e:
+        logger.error(f"✗ Error saving single class to database: {e}")
+        raise
 
 def save_cache_to_files():
     """Save cached data to JSON files (fallback for local development)"""
@@ -913,6 +998,14 @@ def get_spells(class_name):
         
         logger.info(f"Scraping fresh data for {class_name}")
         
+        # Log scrape start activity
+        if ENABLE_USER_ACCOUNTS:
+            log_scrape_activity(
+                action='scrape_start',
+                class_name=class_name,
+                details={'trigger': 'api_request'}
+            )
+        
         # Scrape the data with timeout
         start_time = time.time()
         df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
@@ -920,6 +1013,15 @@ def get_spells(class_name):
         
         if df is None or df.empty:
             logger.error(f"No spells found for {class_name} after trying all scraping methods")
+            
+            # Log scrape error
+            if ENABLE_USER_ACCOUNTS:
+                log_scrape_activity(
+                    action='scrape_error',
+                    class_name=class_name,
+                    details={'error': 'No spells found', 'scrape_time': scrape_time}
+                )
+            
             return jsonify({
                 'error': f'No spells found for {class_name}',
                 'suggestion': 'Check backend logs for scraping details',
@@ -994,6 +1096,18 @@ def get_spells(class_name):
         
         logger.info(f"Successfully scraped {len(spells)} spells for {class_name} in {scrape_time:.2f}s")
         
+        # Log successful scrape
+        if ENABLE_USER_ACCOUNTS:
+            log_scrape_activity(
+                action='scrape_complete',
+                class_name=class_name,
+                details={
+                    'spell_count': len(spells),
+                    'scrape_time': round(scrape_time, 2),
+                    'pricing_applied': applied_pricing_count
+                }
+            )
+        
         return jsonify({
             'spells': spells,
             'cached': False,
@@ -1026,6 +1140,13 @@ def scrape_all_classes():
     """Scrape spells for all classes"""
     try:
         from scrape_spells import scrape_all
+        
+        # Log scrape start activity
+        if ENABLE_USER_ACCOUNTS:
+            log_scrape_activity(
+                action='scrape_start',
+                details={'classes': 'all', 'trigger': 'manual'}
+            )
         
         # Clear cache
         spells_cache.clear()
@@ -1082,6 +1203,18 @@ def scrape_all_classes():
         # Save to disk after scraping all classes
         save_cache_to_storage()
         
+        # Log successful completion
+        if ENABLE_USER_ACCOUNTS:
+            total_spells = sum(len(spells) for spells in spells_cache.values())
+            log_scrape_activity(
+                action='scrape_complete',
+                details={
+                    'classes': 'all',
+                    'classes_count': len(spells_cache),
+                    'total_spells': total_spells
+                }
+            )
+        
         return jsonify({
             'message': 'All classes scraped successfully',
             'classes_scraped': list(spells_cache.keys()),
@@ -1089,6 +1222,12 @@ def scrape_all_classes():
         })
     
     except Exception as e:
+        # Log scrape error
+        if ENABLE_USER_ACCOUNTS:
+            log_scrape_activity(
+                action='scrape_error',
+                details={'error': str(e), 'classes': 'all'}
+            )
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/classes', methods=['GET'])
@@ -1103,6 +1242,18 @@ def get_classes():
         })
     
     return jsonify(classes)
+
+@app.route('/api/classes', methods=['GET'])
+def get_classes_list():
+    """Get list of all available classes"""
+    classes_list = []
+    for class_name, color in CLASSES.items():
+        classes_list.append({
+            'name': class_name,
+            'color': color,
+            'api_name': class_name.lower()
+        })
+    return jsonify(classes_list)
 
 @app.route('/api/cache-status', methods=['GET'])
 def get_cache_status():
@@ -1238,64 +1389,73 @@ def refresh_spell_cache(class_name):
         # Initialize progress tracking
         update_refresh_progress(class_name, 'initializing')
         
-        # Simulate progress for demo purposes (remove this for production)
-        # This allows testing the modal without actual scraping
-        import threading
-        def simulate_refresh():
-            time.sleep(1)
-            update_refresh_progress(class_name, 'scraping', estimated_time_remaining=8)
-            time.sleep(2)
-            update_refresh_progress(class_name, 'processing', estimated_time_remaining=5)
-            time.sleep(2)
-            update_refresh_progress(class_name, 'updating_cache', estimated_time_remaining=3)
-            time.sleep(1)
-            update_refresh_progress(class_name, 'loading_memory', estimated_time_remaining=1)
-            time.sleep(1)
-            update_refresh_progress(class_name, 'complete')
-        
-        # Start simulation in background
-        thread = threading.Thread(target=simulate_refresh)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Refresh started',
-            'class_name': class_name
-        })
-        
-        # Real implementation would be:
         # Force refresh by removing from cache
-        # spells_cache.pop(class_name, None)
-        # cache_timestamp.pop(class_name, None)
-        # 
-        # # Update progress to scraping stage
-        # update_refresh_progress(class_name, 'scraping', 
-        #                       estimated_time_remaining=30)
-        # 
-        # # Trigger fresh scrape
-        # from scrape_spells import scrape_class
-        # df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
-        # 
-        # if df is not None and not df.empty:
-        #     new_spells = df.to_dict('records')
-        #     update_refresh_progress(class_name, 'processing', estimated_time_remaining=15)
-        #     update_refresh_progress(class_name, 'updating_cache', estimated_time_remaining=10)
-        #     spells_cache[class_name] = new_spells
-        #     cache_timestamp[class_name] = datetime.now().isoformat()
-        #     save_cache_to_storage()
-        #     update_refresh_progress(class_name, 'loading_memory', estimated_time_remaining=5)
-        #     time.sleep(0.5)
-        #     update_refresh_progress(class_name, 'complete')
-        #     return jsonify({
-        #         'success': True,
-        #         'class_name': class_name,
-        #         'spell_count': len(new_spells),
-        #         'timestamp': cache_timestamp[class_name]
-        #     })
-        # else:
-        #     update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
-        #     return jsonify({'error': 'Failed to scrape new data'}), 500
+        spells_cache.pop(class_name, None)
+        cache_timestamp.pop(class_name, None)
+        last_scrape_time[class_name] = datetime.now().isoformat()
+        
+        # Update progress to scraping stage
+        update_refresh_progress(class_name, 'scraping', 
+                              estimated_time_remaining=30)
+        
+        # Trigger fresh scrape
+        logger.info(f"Starting scrape for {normalized_class_name}")
+        df = scrape_class(normalized_class_name, 'https://alla.clumsysworld.com/', None)
+        
+        if df is not None and not df.empty:
+            new_spells = df.to_dict('records')
+            update_refresh_progress(class_name, 'processing', progress_percentage=60, estimated_time_remaining=15)
+            
+            # Update cache
+            update_refresh_progress(class_name, 'updating_cache', progress_percentage=80, estimated_time_remaining=10)
+            spells_cache[class_name] = new_spells
+            cache_timestamp[class_name] = datetime.now().isoformat()
+            
+            # Save to storage with progress tracking
+            try:
+                update_refresh_progress(class_name, 'updating_cache', progress_percentage=85, message='💾 Saving to database...')
+                # Only save the specific class that was just scraped
+                save_single_class_to_storage(class_name)
+                update_refresh_progress(class_name, 'loading_memory', progress_percentage=95, estimated_time_remaining=2)
+            except Exception as e:
+                logger.error(f"Error saving cache to storage: {e}")
+                # Continue anyway, cache is in memory
+            
+            time.sleep(0.5)
+            update_refresh_progress(class_name, 'complete', progress_percentage=100)
+            
+            # Clear progress after a delay
+            def clear_progress_later():
+                time.sleep(5)
+                clear_refresh_progress(class_name)
+            
+            import threading
+            clear_thread = threading.Thread(target=clear_progress_later)
+            clear_thread.daemon = True
+            clear_thread.start()
+            
+            # Log activity if user accounts are enabled
+            if ENABLE_USER_ACCOUNTS:
+                user_id = getattr(g, 'user_id', None)
+                if user_id:
+                    log_scrape_activity(user_id, normalized_class_name, len(new_spells), 'success')
+            
+            return jsonify({
+                'success': True,
+                'class_name': class_name,
+                'spell_count': len(new_spells),
+                'timestamp': cache_timestamp[class_name]
+            })
+        else:
+            update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
+            
+            # Log failed activity if user accounts are enabled
+            if ENABLE_USER_ACCOUNTS:
+                user_id = getattr(g, 'user_id', None)
+                if user_id:
+                    log_scrape_activity(user_id, normalized_class_name, 0, 'failed')
+            
+            return jsonify({'error': 'Failed to scrape new data'}), 500
             
     except Exception as e:
         logger.error(f"Error refreshing spell cache for {class_name}: {e}")
@@ -1593,6 +1753,19 @@ def get_spell_details(spell_id):
         save_cache_to_storage()
         
         logger.info(f"Successfully parsed and cached spell details for ID {spell_id}")
+        
+        # Log spell view activity
+        if ENABLE_USER_ACCOUNTS:
+            log_api_activity(
+                action='spell_view',
+                resource_type='spell',
+                resource_id=spell_id_str,
+                details={
+                    'spell_name': details.get('name', 'Unknown'),
+                    'has_pricing': pricing_success
+                }
+            )
+        
         return jsonify(details)
         
     except requests.exceptions.Timeout:
@@ -2306,6 +2479,17 @@ def search_spells():
         results.sort(key=lambda x: x['name'].lower())
         results = results[:50]
         
+        # Log search activity
+        if ENABLE_USER_ACCOUNTS:
+            log_api_activity(
+                action='spell_search',
+                resource_type='spell',
+                details={
+                    'query': query,
+                    'results_count': len(results)
+                }
+            )
+        
         return jsonify({
             'results': results,
             'query': query,
@@ -2480,6 +2664,18 @@ def save_cache():
     """Manually save cache to disk"""
     try:
         save_cache_to_storage()
+        
+        # Log cache save activity
+        if ENABLE_USER_ACCOUNTS:
+            log_cache_activity(
+                action='cache_save',
+                details={
+                    'cached_classes': len(spells_cache),
+                    'cached_spell_details': len(spell_details_cache),
+                    'trigger': 'manual'
+                }
+            )
+        
         return jsonify({
             'message': 'Cache saved successfully',
             'timestamp': datetime.now().isoformat(),
@@ -2526,6 +2722,16 @@ def clear_cache():
             for cache_file in [SPELLS_CACHE_FILE, PRICING_CACHE_FILE, SPELL_DETAILS_CACHE_FILE, METADATA_CACHE_FILE]:
                 if os.path.exists(cache_file):
                     os.remove(cache_file)
+        
+        # Log cache clear activity
+        if ENABLE_USER_ACCOUNTS:
+            log_cache_activity(
+                action='cache_clear',
+                details={
+                    'storage_type': 'database' if USE_DATABASE_CACHE else 'file',
+                    'trigger': 'manual'
+                }
+            )
         
         return jsonify({
             'message': 'Cache cleared successfully',

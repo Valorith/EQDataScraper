@@ -98,6 +98,7 @@
 
 <script>
 import { useSpellsStore } from '../stores/spells'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 export default {
@@ -125,15 +126,8 @@ export default {
       return import.meta.env.VITE_BACKEND_URL
     },
     apiBaseUrl() {
-      // Mirror the logic from spells.js
-      if (import.meta.env.PROD) {
-        const envUrl = import.meta.env.VITE_BACKEND_URL
-        if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-          return envUrl
-        }
-        return 'https://eqdatascraper-backend-production.up.railway.app'
-      }
-      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+      // Use centralized API configuration
+      return API_BASE_URL
     }
   },
   mounted() {
@@ -225,7 +219,7 @@ export default {
     async testHealth() {
       this.healthStatus.testing = true
       try {
-        const response = await axios.get(`${this.apiBaseUrl}/api/health`, { timeout: 10000 })
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.HEALTH), { timeout: 10000 })
         this.healthStatus = {
           status: 'success',
           message: `OK (${response.status})`,
@@ -243,7 +237,7 @@ export default {
     async testCache() {
       this.cacheStatus.testing = true
       try {
-        const response = await axios.get(`${this.apiBaseUrl}/api/cache-status`, { timeout: 10000 })
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.CACHE_STATUS), { timeout: 10000 })
         const cacheKeys = Object.keys(response.data).filter(key => key !== '_config')
         this.cacheStatus = {
           status: 'success',
@@ -262,7 +256,7 @@ export default {
     async testSampleApi() {
       this.sampleApiStatus.testing = true
       try {
-        const response = await axios.get(`${this.apiBaseUrl}/api/spells/warrior`, { timeout: 15000 })
+        const response = await axios.get(buildApiUrl(API_ENDPOINTS.SPELLS('warrior')), { timeout: 15000 })
         const spellCount = response.data.spells?.length || response.data.length || 0
         this.sampleApiStatus = {
           status: 'success',

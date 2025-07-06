@@ -12,6 +12,7 @@ import requests
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 import json
+import time
 
 class GoogleOAuth:
     """Google OAuth handler with PKCE support."""
@@ -110,12 +111,30 @@ class GoogleOAuth:
             
             # Verify and decode the ID token
             try:
+                print(f"Verifying ID token with client_id: {self.client_id}")
+                # Add clock skew tolerance
                 id_info = id_token.verify_oauth2_token(
                     id_token_jwt, 
                     google_requests.Request(), 
-                    self.client_id
+                    self.client_id,
+                    clock_skew_in_seconds=30  # Allow 30 seconds of clock skew
                 )
+                print(f"ID token verified successfully")
             except Exception as e:
+                print(f"ID token verification failed: {str(e)}")
+                print(f"Client ID: {self.client_id}")
+                print(f"ID Token (first 50 chars): {id_token_jwt[:50] if id_token_jwt else 'None'}...")
+                # Try alternative verification method
+                try:
+                    print("Attempting alternative verification without audience check...")
+                    # This is less secure but can help diagnose the issue
+                    import jwt
+                    decoded = jwt.decode(id_token_jwt, options={"verify_signature": False})
+                    print(f"Decoded token claims: {decoded}")
+                    if decoded.get('aud') != self.client_id:
+                        print(f"Audience mismatch! Token aud: {decoded.get('aud')}, Expected: {self.client_id}")
+                except Exception as alt_e:
+                    print(f"Alternative decode also failed: {str(alt_e)}")
                 raise ValueError(f"Invalid ID token: {str(e)}")
             
             # Extract user information
@@ -242,11 +261,15 @@ class GoogleOAuth:
         Returns:
             True if URI is valid, False otherwise
         """
-        # Allow configured redirect URI and localhost for development
+        # Allow configured redirect URI and multiple localhost ports for development
         allowed_uris = [
             self.redirect_uri,
             'http://localhost:3000/auth/callback',
-            'http://localhost:3001/auth/callback'
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3002/auth/callback',
+            'http://localhost:3003/auth/callback',
+            'http://localhost:3005/auth/callback',
+            'http://localhost:8080/auth/callback'
         ]
         
         return redirect_uri in allowed_uris

@@ -21,6 +21,9 @@
     
     <!-- Debug Panel for production debugging -->
     <DebugPanel ref="debugPanel" />
+    
+    <!-- Dev Login Panel (only shows in development with flag) -->
+    <DevLogin v-if="!isProduction" />
   </div>
 </template>
 
@@ -28,6 +31,7 @@
 import { useSpellsStore } from './stores/spells'
 import { useUserStore } from './stores/userStore'
 import DebugPanel from './components/DebugPanel.vue'
+import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
@@ -36,6 +40,7 @@ export default {
   name: 'App',
   components: {
     DebugPanel,
+    DevLogin,
     AppLogo,
     GoogleAuthButton,
     UserMenu
@@ -43,7 +48,8 @@ export default {
   setup() {
     const spellsStore = useSpellsStore()
     const userStore = useUserStore()
-    return { spellsStore, userStore }
+    const isProduction = import.meta.env.PROD
+    return { spellsStore, userStore, isProduction }
   },
   methods: {
     toggleDebugPanel() {
@@ -53,29 +59,8 @@ export default {
     }
   },
   async mounted() {
-    console.log('🔧 Environment Variables Debug v4:')
-    console.log('VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL)
-    console.log('import.meta.env.PROD:', import.meta.env.PROD)
-    console.log('All Vite env vars:', import.meta.env)
-    
-    // Test the fallback logic directly
-    const API_BASE_URL = (() => {
-      // In production, only use VITE_BACKEND_URL if it's a valid production URL
-      if (import.meta.env.PROD) {
-        const envUrl = import.meta.env.VITE_BACKEND_URL
-        // Only use env URL if it's a valid production URL (not localhost)
-        if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-          return envUrl
-        }
-        // Default production backend URL
-        return 'https://eqdatascraper-backend-production.up.railway.app'
-      }
-      
-      // In development, use env variable or default to localhost
-      return import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
-    })()
-    console.log('Computed API_BASE_URL:', API_BASE_URL)
-    console.log('Build timestamp:', new Date().toISOString())
+    // Import clearAuth utility for debugging
+    import('@/utils/clearAuth.js')
     
     // Initialize authentication system
     try {

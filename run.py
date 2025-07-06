@@ -58,6 +58,7 @@ class AppRunner:
         self.running = False
         self.restart_requested = False
         self.old_termios = None
+        self.platform = sys.platform
         
     def print_header(self, title: str):
         """Print a formatted header"""
@@ -152,103 +153,123 @@ class AppRunner:
                 'frontend': int(os.environ.get('PORT', os.environ.get('FRONTEND_PORT', self.config['frontend_port'])))
             }
         
-        self.print_status("Checking for port conflicts...", "step", 1)
+        self.print_status("Enforcing port management policy...", "step", 1)
         
-        # Define default ports to prevent drift
+        # Define default ports - these are the ONLY ports we want to use
         DEFAULT_BACKEND_PORT = 5001
         DEFAULT_FRONTEND_PORT = 3000
         
-        # Try to use defaults first, then fall back to configured ports
-        backend_port = DEFAULT_BACKEND_PORT
-        frontend_port = DEFAULT_FRONTEND_PORT
-        
-        # Check if we can use default ports
-        default_backend_available = not self.is_port_in_use(DEFAULT_BACKEND_PORT)
-        default_frontend_available = not self.is_port_in_use(DEFAULT_FRONTEND_PORT)
-        
-        # Track allocated ports
         allocated_ports = {}
-        ports_changed = False
+        config_updates_needed = False
         
-        # Backend port allocation
-        if default_backend_available:
-            # Prefer default port
-            backend_port = DEFAULT_BACKEND_PORT
-            if self.config['backend_port'] != DEFAULT_BACKEND_PORT:
-                self.print_status(f"Using default backend port: {DEFAULT_BACKEND_PORT}", "success", 2)
-                ports_changed = True
+        # BACKEND PORT MANAGEMENT
+        self.print_status("Backend port management:", "step", 2)
+        backend_port = DEFAULT_BACKEND_PORT
+        
+        if self.is_port_in_use(backend_port):
+            process_info = self.get_port_conflict_process(backend_port)
+            
+            # Check if it's likely our own backend
+            if process_info and any(indicator in process_info.lower() for indicator in ["python", "app.py", "flask"]):
+                self.print_status(f"Reclaiming backend port {backend_port} from stale process", "warning", 3)
+                if self.kill_port_process(backend_port):
+                    time.sleep(1)
+                    self.print_status(f"Successfully reclaimed backend port {backend_port}", "success", 3)
+                else:
+                    # Forcefully kill
+                    self._force_kill_port(backend_port)
+                    time.sleep(2)
+                    if not self.is_port_in_use(backend_port):
+                        self.print_status(f"Forcefully reclaimed backend port {backend_port}", "success", 3)
+                    else:
+                        self.print_status(f"Could not reclaim port {backend_port}, finding alternative", "error", 3)
+                        backend_port = self.find_available_port(backend_port + 1, max_attempts=10)
+            else:
+                self.print_status(f"Port {backend_port} occupied by: {process_info}", "warning", 3)
+                backend_port = self.find_available_port(backend_port + 1, max_attempts=10)
+                self.print_status(f"Using alternative backend port: {backend_port}", "info", 3)
         else:
-            # Default is not available, check configured port
-            backend_port = self.config['backend_port']
-            if self.is_port_in_use(backend_port):
-                process_info = self.get_port_conflict_process(backend_port)
-                self.print_status(f"Port {backend_port} in use by: {process_info or 'unknown'}", "warning", 2)
-                
-                # Find alternative
-                new_backend_port = self.find_available_port(backend_port + 1, max_attempts=20)
-                if new_backend_port != backend_port:
-                    self.print_status(f"Allocated backend port: {new_backend_port}", "success", 2)
-                    backend_port = new_backend_port
-                    ports_changed = True
+            self.print_status(f"Backend port {backend_port} is available", "success", 3)
         
         allocated_ports['backend'] = backend_port
         
-        # Frontend port allocation
-        if default_frontend_available and frontend_port != backend_port:
-            # Prefer default port
-            frontend_port = DEFAULT_FRONTEND_PORT
-            if self.config['frontend_port'] != DEFAULT_FRONTEND_PORT:
-                self.print_status(f"Using default frontend port: {DEFAULT_FRONTEND_PORT}", "success", 2)
-                ports_changed = True
-        else:
-            # Default is not available or conflicts with backend
-            frontend_port = self.config['frontend_port']
-            if self.is_port_in_use(frontend_port) or frontend_port == backend_port:
-                if frontend_port == backend_port:
-                    self.print_status(f"Frontend port conflicts with backend", "warning", 2)
+        # FRONTEND PORT MANAGEMENT - STRICT ENFORCEMENT OF PORT 3000
+        self.print_status("Frontend port management (enforcing port 3000):", "step", 2)
+        frontend_port = DEFAULT_FRONTEND_PORT
+        
+        if self.is_port_in_use(frontend_port):
+            process_info = self.get_port_conflict_process(frontend_port)
+            self.print_status(f"Port {frontend_port} currently occupied by: {process_info}", "warning", 3)
+            
+            # Always try to reclaim port 3000 in local development
+            self.print_status("Attempting to reclaim port 3000...", "step", 3)
+            
+            # First attempt - normal kill
+            if self.kill_port_process(frontend_port):
+                time.sleep(1)
+                if not self.is_port_in_use(frontend_port):
+                    self.print_status("Successfully reclaimed port 3000", "success", 3)
                 else:
-                    process_info = self.get_port_conflict_process(frontend_port)
-                    self.print_status(f"Port {frontend_port} in use by: {process_info or 'unknown'}", "warning", 2)
-                
-                # Find alternative (avoid backend port)
-                new_frontend_port = frontend_port + 1
-                while new_frontend_port == backend_port or self.is_port_in_use(new_frontend_port):
-                    new_frontend_port += 1
-                    if new_frontend_port > frontend_port + 20:  # Safety limit
-                        break
-                
-                if new_frontend_port != frontend_port:
-                    self.print_status(f"Allocated frontend port: {new_frontend_port}", "success", 2)
-                    frontend_port = new_frontend_port
-                    ports_changed = True
+                    # Second attempt - force kill
+                    self.print_status("First attempt failed, trying forceful termination...", "step", 3)
+                    self._force_kill_port(frontend_port)
+                    time.sleep(2)
+                    
+                    if not self.is_port_in_use(frontend_port):
+                        self.print_status("Successfully freed port 3000 (forced)", "success", 3)
+                    else:
+                        # Final attempt - kill all node processes
+                        self.print_status("Force kill failed, terminating all node processes...", "warning", 3)
+                        self._kill_all_node_processes()
+                        time.sleep(2)
+                        
+                        if not self.is_port_in_use(frontend_port):
+                            self.print_status("Successfully freed port 3000 (all node killed)", "success", 3)
+                        else:
+                            # Give up and use alternative
+                            self.print_status("Could not free port 3000, using alternative", "error", 3)
+                            frontend_port = self.find_available_port(frontend_port + 1, max_attempts=10, exclude=[backend_port])
+            else:
+                # Direct force approach
+                self._force_kill_port(frontend_port)
+                time.sleep(2)
+                if not self.is_port_in_use(frontend_port):
+                    self.print_status("Freed port 3000 via force kill", "success", 3)
+                else:
+                    frontend_port = self.find_available_port(frontend_port + 1, max_attempts=10, exclude=[backend_port])
+                    self.print_status(f"Using alternative frontend port: {frontend_port}", "warning", 3)
+        else:
+            self.print_status(f"Frontend port {frontend_port} is available", "success", 3)
         
         allocated_ports['frontend'] = frontend_port
         
-        # Update config if ports changed
-        if ports_changed:
+        # CHECK IF CONFIGURATION NEEDS UPDATING
+        if (self.config.get('backend_port') != backend_port or 
+            self.config.get('frontend_port') != frontend_port):
+            config_updates_needed = True
+        
+        # UPDATE ALL CONFIGURATIONS
+        if config_updates_needed:
+            self.print_status("Updating all configuration files...", "step", 2)
+            
+            # Update config.json
             self.config['backend_port'] = backend_port
             self.config['frontend_port'] = frontend_port
             self.save_config(self.config)
+            self.print_status("Updated config.json", "success", 3)
             
-            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
-                self.print_status("Reverted to default ports configuration", "success", 2)
-            else:
-                self.print_status("Updated config.json with new port allocations", "success", 2)
-            
-            # Update all frontend files that reference the backend port
-            self.sync_frontend_config(backend_port)
-            
-            # Update OAuth redirect URIs if frontend port changed
-            self.sync_oauth_config(frontend_port)
+            # Synchronize all configuration points
+            self.sync_all_configurations(backend_port, frontend_port)
         else:
-            if backend_port == DEFAULT_BACKEND_PORT and frontend_port == DEFAULT_FRONTEND_PORT:
-                self.print_status("Using default ports (no conflicts detected)", "success", 2)
-            else:
-                self.print_status("Using previously configured ports", "info", 2)
+            self.print_status("Configuration is already correct", "info", 2)
         
-        # Save port mapping
+        # Save port mapping for tracking
         self.save_port_mapping(allocated_ports)
-        self.print_status(f"Backend: {backend_port}, Frontend: {frontend_port}", "info", 2)
+        
+        # Final status
+        self.print_status(f"Port allocation complete:", "success", 1)
+        self.print_status(f"Backend: {backend_port}", "info", 2)
+        self.print_status(f"Frontend: {frontend_port}", "info", 2)
         
         return allocated_ports
     
@@ -264,6 +285,16 @@ class AppRunner:
         # Files that need updating (only localhost references - don't touch production URLs)
         files_to_update = [
             (self.frontend_dir / "src" / "stores" / "spells.js", 
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "stores" / "userStore.js",
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "views" / "Spells.vue",
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "views" / "MainPage.vue",
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "views" / "ClassSpells.vue",
+             r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
+            (self.frontend_dir / "src" / "components" / "DebugPanel.vue",
              r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
             (self.frontend_dir / "src" / "App.vue",
              r"'http://localhost:\d+'", f"'http://localhost:{backend_port}'"),
@@ -314,6 +345,24 @@ class AppRunner:
              f"OAUTH_REDIRECT_URI={redirect_uri}")
         ]
         
+        # Also update backend's allowed origins in app.py
+        backend_app_file = self.backend_dir / "app.py"
+        if backend_app_file.exists():
+            oauth_files_to_update.append(
+                (backend_app_file,
+                 r"'http://localhost:\d+',",
+                 f"'http://localhost:{frontend_port}',")
+            )
+        
+        # Update oauth.py allowed URIs
+        oauth_utils_file = self.backend_dir / "utils" / "oauth.py"
+        if oauth_utils_file.exists():
+            oauth_files_to_update.append(
+                (oauth_utils_file,
+                 r"'http://localhost:\d+/auth/callback'",
+                 f"'http://localhost:{frontend_port}/auth/callback'")
+            )
+        
         oauth_updated = False
         for file_path, pattern, replacement in oauth_files_to_update:
             if file_path.exists():
@@ -346,25 +395,134 @@ class AppRunner:
         except:
             return False
     
-    def find_available_port(self, start_port: int, max_attempts: int = 10) -> int:
+    def _force_kill_port(self, port: int):
+        """Forcefully kill process on port using platform-specific methods"""
+        try:
+            if self.platform == 'darwin':  # macOS
+                subprocess.run(f"lsof -ti tcp:{port} | xargs kill -9", shell=True, stderr=subprocess.DEVNULL)
+            elif self.platform == 'linux':
+                subprocess.run(f"fuser -k {port}/tcp", shell=True, stderr=subprocess.DEVNULL)
+            elif self.platform == 'win32':
+                cmd = f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr :{port}\') do @taskkill /F /PID %a'
+                subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
+        except:
+            pass
+    
+    def _kill_all_node_processes(self):
+        """Kill all node processes as a last resort"""
+        try:
+            if self.platform == 'darwin':  # macOS
+                subprocess.run("pkill -9 node", shell=True, stderr=subprocess.DEVNULL)
+            elif self.platform == 'linux':
+                subprocess.run("pkill -9 node", shell=True, stderr=subprocess.DEVNULL)
+            elif self.platform == 'win32':
+                subprocess.run("taskkill /F /IM node.exe", shell=True, stderr=subprocess.DEVNULL)
+        except:
+            pass
+    
+    def sync_all_configurations(self, backend_port: int, frontend_port: int):
+        """Synchronize all configuration files with the allocated ports"""
+        self.sync_frontend_config(backend_port)
+        self.sync_oauth_config(frontend_port)
+        self.print_status("All configurations synchronized", "success", 3)
+    
+    def kill_port_process(self, port: int) -> bool:
+        """Kill process using the specified port (local dev only)"""
+        try:
+            if self.platform == 'darwin':  # macOS
+                # Find PID using lsof
+                cmd = f"lsof -ti tcp:{port}"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.returncode == 0 and result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        try:
+                            subprocess.run(f"kill -9 {pid}", shell=True)
+                        except:
+                            pass
+                    return True
+            elif self.platform == 'linux':  # Linux
+                # Find PID using ss or netstat
+                try:
+                    cmd = f"ss -tlnp | grep ':{port}' | awk '{{print $7}}' | sed -n 's/.*pid=\\([0-9]*\\).*/\\1/p'"
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            try:
+                                subprocess.run(f"kill -9 {pid}", shell=True)
+                            except:
+                                pass
+                        return True
+                except:
+                    # Fallback to fuser
+                    try:
+                        subprocess.run(f"fuser -k {port}/tcp", shell=True, stderr=subprocess.DEVNULL)
+                        return True
+                    except:
+                        pass
+            elif self.platform == 'win32':  # Windows
+                # Find and kill process on Windows
+                cmd = f"for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{port}') do taskkill /F /PID %a"
+                subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
+                return True
+        except Exception as e:
+            self.print_status(f"Error killing process on port {port}: {e}", "warning", 3)
+        return False
+    
+    def find_available_port(self, start_port: int, max_attempts: int = 10, exclude: list = None) -> int:
         """Find an available port starting from start_port"""
+        exclude = exclude or []
+        
         # First, check if the preferred default ports are available
         DEFAULT_BACKEND_PORT = 5001
         DEFAULT_FRONTEND_PORT = 3000
         
         # If we're looking for a backend port and default is free, prefer it
-        if start_port > DEFAULT_BACKEND_PORT and not self.is_port_in_use(DEFAULT_BACKEND_PORT):
+        if start_port > DEFAULT_BACKEND_PORT and not self.is_port_in_use(DEFAULT_BACKEND_PORT) and DEFAULT_BACKEND_PORT not in exclude:
             return DEFAULT_BACKEND_PORT
             
         # If we're looking for a frontend port and default is free, prefer it
-        if start_port > DEFAULT_FRONTEND_PORT and start_port < 5000 and not self.is_port_in_use(DEFAULT_FRONTEND_PORT):
+        if start_port > DEFAULT_FRONTEND_PORT and start_port < 5000 and not self.is_port_in_use(DEFAULT_FRONTEND_PORT) and DEFAULT_FRONTEND_PORT not in exclude:
             return DEFAULT_FRONTEND_PORT
         
         # Otherwise, find next available port
         for port in range(start_port, start_port + max_attempts):
-            if not self.is_port_in_use(port):
+            if not self.is_port_in_use(port) and port not in exclude:
                 return port
         return start_port  # Fallback to original port
+    
+    def _get_process_port(self, pid: int, port_candidates: list) -> Optional[int]:
+        """Get the actual port a process is listening on"""
+        try:
+            if self.platform == 'darwin':  # macOS
+                for port in port_candidates:
+                    cmd = f"lsof -P -i :{port} | grep {pid}"
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    if result.returncode == 0 and str(pid) in result.stdout:
+                        return port
+            elif self.platform == 'linux':  # Linux
+                for port in port_candidates:
+                    try:
+                        cmd = f"ss -tlnp | grep ':{port}' | grep 'pid={pid}'"
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            return port
+                    except:
+                        # Fallback to netstat
+                        cmd = f"netstat -tlnp 2>/dev/null | grep ':{port}' | grep '{pid}'"
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            return port
+            elif self.platform == 'win32':  # Windows
+                for port in port_candidates:
+                    cmd = f"netstat -aon | findstr :{port} | findstr {pid}"
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        return port
+        except:
+            pass
+        return None
     
     def get_port_conflict_process(self, port: int) -> Optional[str]:
         """Get information about the process using a port"""
@@ -867,6 +1025,58 @@ class AppRunner:
                     os.kill(pid, signal.SIGKILL)
             except (OSError, ProcessLookupError):
                 pass
+    
+    def _stop_monitor_process(self):
+        """Stop any running monitor processes"""
+        self.print_status("Checking for monitor processes...", "step", 1)
+        
+        try:
+            import psutil
+            monitor_stopped = False
+            monitor_count = 0
+            
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = proc.info.get('cmdline', [])
+                    if cmdline and any('monitor.py' in str(cmd) for cmd in cmdline):
+                        monitor_count += 1
+                        self.print_status(f"Stopping monitor process (PID: {proc.info['pid']})", "step", 2)
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=3)
+                            self.print_status(f"Monitor process {proc.info['pid']} terminated gracefully", "success", 2)
+                        except psutil.TimeoutExpired:
+                            proc.kill()
+                            self.print_status(f"Monitor process {proc.info['pid']} force killed", "success", 2)
+                        monitor_stopped = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            if monitor_stopped:
+                self.print_status(f"Stopped {monitor_count} monitor process(es)", "success", 1)
+            else:
+                self.print_status("No monitor processes found", "info", 1)
+                
+        except ImportError:
+            # psutil not available, try basic process search
+            self.print_status("psutil not available, using basic process search", "info", 2)
+            if sys.platform != "win32":
+                try:
+                    result = subprocess.run(['pgrep', '-f', 'monitor.py'], 
+                                          capture_output=True, text=True)
+                    if result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        self.print_status(f"Found {len(pids)} monitor process(es)", "info", 2)
+                        for pid in pids:
+                            try:
+                                os.kill(int(pid), signal.SIGTERM)
+                                self.print_status(f"Stopped monitor process (PID: {pid})", "success", 2)
+                            except:
+                                self.print_status(f"Failed to stop monitor process (PID: {pid})", "warning", 2)
+                    else:
+                        self.print_status("No monitor processes found", "info", 1)
+                except:
+                    self.print_status("Failed to search for monitor processes", "warning", 1)
             
     def start_backend(self, allocated_ports: Dict[str, int]) -> bool:
         """Start the Flask backend server"""
@@ -1106,10 +1316,16 @@ class AppRunner:
             self.running = False
             
     def stop_services(self):
-        """Stop all running services"""
+        """Stop all running services - enhanced to find all instances"""
         self.print_header("Stopping EQDataScraper Application")
         
-        # Load PIDs from file if processes dict is empty
+        # Track what we've stopped
+        stopped_count = 0
+        
+        # Stop monitor if running
+        self._stop_monitor_process()
+        
+        # 1. First try to stop tracked processes from PID file
         if not self.processes:
             pids = self.load_pids()
             for name, pid in pids.items():
@@ -1118,6 +1334,7 @@ class AppRunner:
                     try:
                         self._terminate_process_by_pid(pid)
                         self.print_status(f"Stopped {name} service", "success", 1)
+                        stopped_count += 1
                     except (OSError, ProcessLookupError):
                         self.print_status(f"Could not stop {name} service", "warning", 1)
         else:
@@ -1140,16 +1357,102 @@ class AppRunner:
                                 pass  # Process might be forcefully killed
                         
                         self.print_status(f"Stopped {name}", "success", 1)
+                        stopped_count += 1
                     else:
                         self.print_status(f"{name} was already stopped", "info", 1)
                 except Exception as e:
                     self.print_status(f"Error stopping {name}: {e}", "error", 1)
+        
+        # 2. Look for any processes on our common ports
+        self.print_status("Checking for untracked instances...", "step", 1)
+        
+        # Check backend ports
+        backend_ports = [5000, 5001, 5002, 5003]
+        for port in backend_ports:
+            if self.is_port_in_use(port):
+                process_info = self.get_port_conflict_process(port)
+                if process_info and any(indicator in process_info.lower() for indicator in ["python", "flask", "app.py"]):
+                    self.print_status(f"Found backend process on port {port}: {process_info}", "warning", 2)
+                    if self.kill_port_process(port):
+                        self.print_status(f"Killed backend process on port {port}", "success", 2)
+                        stopped_count += 1
+                    else:
+                        self._force_kill_port(port)
+                        self.print_status(f"Force killed backend process on port {port}", "success", 2)
+                        stopped_count += 1
+        
+        # Check frontend ports
+        frontend_ports = [3000, 3001, 3002, 3003, 3005, 8080]
+        for port in frontend_ports:
+            if self.is_port_in_use(port):
+                process_info = self.get_port_conflict_process(port)
+                if process_info and any(indicator in process_info.lower() for indicator in ["node", "vite", "npm"]):
+                    self.print_status(f"Found frontend process on port {port}: {process_info}", "warning", 2)
+                    if self.kill_port_process(port):
+                        self.print_status(f"Killed frontend process on port {port}", "success", 2)
+                        stopped_count += 1
+                    else:
+                        self._force_kill_port(port)
+                        self.print_status(f"Force killed frontend process on port {port}", "success", 2)
+                        stopped_count += 1
+        
+        # 3. Search for processes by name pattern
+        self.print_status("Searching for app processes by name...", "step", 1)
+        
+        # Kill any Python processes running our app
+        try:
+            if self.platform == 'darwin':  # macOS
+                # Find Python processes running app.py
+                cmd = "ps aux | grep -E 'python.*app\\.py|python.*run\\.py' | grep -v grep | awk '{print $2}'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout.strip():
+                    for pid in result.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid)
+                            os.kill(pid, signal.SIGTERM)
+                            self.print_status(f"Killed Python process PID {pid}", "success", 2)
+                            stopped_count += 1
+                        except:
+                            pass
+                
+                # Find Node/Vite processes for our app
+                cmd = "ps aux | grep -E 'node.*vite|npm.*dev.*EQDataScraper' | grep -v grep | awk '{print $2}'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout.strip():
+                    for pid in result.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid)
+                            os.kill(pid, signal.SIGTERM)
+                            self.print_status(f"Killed Node process PID {pid}", "success", 2)
+                            stopped_count += 1
+                        except:
+                            pass
+            
+            elif self.platform == 'linux':  # Linux
+                # Similar commands for Linux
+                subprocess.run("pkill -f 'python.*app\\.py'", shell=True)
+                subprocess.run("pkill -f 'python.*run\\.py'", shell=True)
+                subprocess.run("pkill -f 'node.*vite'", shell=True)
+                
+            elif self.platform == 'win32':  # Windows
+                # Kill Python processes
+                subprocess.run('taskkill /F /IM python.exe /FI "WINDOWTITLE eq *app.py*"', shell=True, capture_output=True)
+                subprocess.run('taskkill /F /IM python.exe /FI "WINDOWTITLE eq *run.py*"', shell=True, capture_output=True)
+                # Kill Node processes
+                subprocess.run('taskkill /F /IM node.exe /FI "WINDOWTITLE eq *vite*"', shell=True, capture_output=True)
+                
+        except Exception as e:
+            self.print_status(f"Error searching for processes: {e}", "warning", 2)
                     
         # Clean up PID file
         if self.pids_file.exists():
             self.pids_file.unlink()
-            
-        self.print_status("All services stopped", "success", 1)
+        
+        # Final summary
+        if stopped_count > 0:
+            self.print_status(f"All services stopped (stopped {stopped_count} processes)", "success", 1)
+        else:
+            self.print_status("No running services found", "info", 1)
         
     def status(self):
         """Check status of services"""
@@ -1166,7 +1469,22 @@ class AppRunner:
         services_running = False
         for name, pid in pids.items():
             if self.is_process_running(pid):
-                self.print_status(f"{name.capitalize()}: Running (PID: {pid})", "success", 1)
+                # Try to determine which port the service is actually running on
+                actual_port = None
+                if name == "backend":
+                    actual_port = self._get_process_port(pid, [5000, 5001, 5002, 5003])
+                    if actual_port:
+                        self.print_status(f"{name.capitalize()}: Running (PID: {pid}) on port {actual_port}", "success", 1)
+                    else:
+                        self.print_status(f"{name.capitalize()}: Running (PID: {pid}) on port {self.config['backend_port']}", "success", 1)
+                elif name == "frontend":
+                    actual_port = self._get_process_port(pid, [3000, 3001, 3002, 3003])
+                    if actual_port:
+                        self.print_status(f"{name.capitalize()}: Running (PID: {pid}) on port {actual_port}", "success", 1)
+                    else:
+                        self.print_status(f"{name.capitalize()}: Running (PID: {pid}) on port {self.config['frontend_port']}", "success", 1)
+                else:
+                    self.print_status(f"{name.capitalize()}: Running (PID: {pid})", "success", 1)
                 services_running = True
             else:
                 self.print_status(f"{name.capitalize()}: Not running", "error", 1)
@@ -1366,6 +1684,54 @@ class AppRunner:
         
         # Start services again
         self.start_services()
+    
+    def monitor_services(self, daemon=False, interval=30):
+        """Monitor services and auto-restart if needed"""
+        self.print_header("EQDataScraper Service Monitor")
+        
+        # First check if monitor script is available
+        try:
+            import psutil
+        except ImportError:
+            self.print_status("psutil not installed - required for monitoring", "error", 1)
+            self.print_status("Install with: pip install psutil", "info", 2)
+            return
+        
+        # Import and use monitor directly
+        try:
+            from monitor import ServiceMonitor
+            
+            self.print_status("Starting service monitor...", "step", 1)
+            self.print_status(f"Check interval: {interval} seconds", "detail", 2)
+            self.print_status(f"Backend port: {self.config['backend_port']}", "detail", 2)
+            self.print_status(f"Frontend port: {self.config['frontend_port']}", "detail", 2)
+            
+            if daemon:
+                self.print_status("Starting monitor in daemon mode...", "info", 1)
+                self.print_status("Monitor will run in background and auto-restart failed services", "detail", 2)
+                # Fork to background on Unix-like systems
+                if sys.platform != "win32":
+                    if os.fork() > 0:
+                        self.print_status("Monitor started in background (check monitor.log for activity)", "success", 1)
+                        self.print_status("Use 'python3 run.py stop' to stop all services including monitor", "info", 1)
+                        return
+                    os.setsid()
+                    if os.fork() > 0:
+                        sys.exit(0)
+                else:
+                    self.print_status("Daemon mode not supported on Windows", "warning", 1)
+                    self.print_status("Running in foreground mode instead", "info", 1)
+            
+            monitor = ServiceMonitor()
+            monitor.monitor_loop()
+            
+        except ImportError:
+            self.print_status("Monitor module not found", "error", 1)
+            self.print_status("Ensure monitor.py exists in the project root", "info", 2)
+        except KeyboardInterrupt:
+            self.print_status("Monitor stopped by user", "info", 1)
+        except Exception as e:
+            self.print_status(f"Error starting monitor: {e}", "error", 1)
                 
     def install_deps(self):
         """Install all dependencies"""
@@ -1462,9 +1828,13 @@ def main():
 Examples:
   python3 run.py install    # First-time setup: install all dependencies
   python3 run.py start      # Start both frontend and backend services
+  python3 run.py start -m     # Start services with monitoring (30s interval)
+  python3 run.py start -m 60  # Start services with monitoring (60s interval)
   python3 run.py status     # Check if services are running
-  python3 run.py stop       # Stop all services
+  python3 run.py stop       # Stop all services (including monitor)
   python3 run.py restart    # Restart all services
+  python3 run.py monitor    # Monitor services and auto-restart if needed
+  python3 run.py monitor --daemon  # Run monitor in background
 
 Platform-specific shortcuts:
   Windows: run.bat [command]
@@ -1477,10 +1847,16 @@ First-time setup:
 
 For help with common issues, see the README.md file.
 """)
-    parser.add_argument("command", choices=["start", "stop", "status", "install", "restart"], 
+    parser.add_argument("command", choices=["start", "stop", "status", "install", "restart", "monitor"], 
                        help="Command to execute")
     parser.add_argument("--skip-deps", "--ignore-deps", action="store_true",
                        help="Skip dependency checking (use with caution)")
+    parser.add_argument("-m", "--with-monitor", nargs='?', const=30, type=int,
+                       help="Start services with monitoring enabled. Optional: specify interval in seconds (default: 30)")
+    parser.add_argument("--daemon", action="store_true",
+                       help="Run monitor in background (daemon mode)")
+    parser.add_argument("--monitor-interval", type=int, default=30,
+                       help="Monitor check interval in seconds (default: 30)")
     
     args = parser.parse_args()
     runner = AppRunner()
@@ -1492,6 +1868,13 @@ For help with common issues, see the README.md file.
     
     if args.command == "start":
         runner.start_services()
+        # If -m/--with-monitor flag is set, start monitor after services
+        if args.with_monitor is not None:
+            print()  # Add spacing
+            monitor_interval = args.with_monitor
+            runner.print_status(f"Starting monitoring service with {monitor_interval}s interval...", "step")
+            time.sleep(3)  # Give services time to fully start
+            runner.monitor_services(daemon=True, interval=monitor_interval)
     elif args.command == "stop":
         runner.stop_services()
     elif args.command == "status":
@@ -1500,6 +1883,8 @@ For help with common issues, see the README.md file.
         runner.install_deps()
     elif args.command == "restart":
         runner.restart_command()
+    elif args.command == "monitor":
+        runner.monitor_services(daemon=args.daemon, interval=args.monitor_interval)
 
 if __name__ == "__main__":
     main()
