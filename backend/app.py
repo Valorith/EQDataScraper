@@ -3417,23 +3417,36 @@ def cache_integrity():
         return jsonify({'error': str(e)}), 500
 
 
+# Database configuration management
+from utils.db_config_manager import DatabaseConfigManager
+from utils.db_connection_pool import close_connection_pool
+
+# Initialize config manager
+config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
+db_config_manager = DatabaseConfigManager(config_path)
+
+# Add callback to close pool when config changes
+def on_db_config_change():
+    """Close connection pool when database config changes."""
+    logger.info("Database configuration changed, closing connection pool")
+    close_connection_pool()
+
+db_config_manager.add_reload_callback(on_db_config_change)
+
 # Helper function for EQEmu database connection
 def get_eqemu_db_connection():
-    """Get connection to the configured EQEmu database."""
-    import json
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
-    config = {}
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+    """Get connection to the configured EQEmu database using connection pooling."""
+    # Get current config
+    config = db_config_manager.get_config()
     
     # Get database URL from config
     database_url = config.get('production_database_url', '')
     if not database_url:
         return None, None, "Database not configured"
     
-    # Import database connector
+    # Import required modules
     from utils.database_connectors import get_database_connector
+    from utils.db_connection_pool import get_connection_pool
     from urllib.parse import urlparse
     
     # Parse database URL
@@ -3450,11 +3463,17 @@ def get_eqemu_db_connection():
     }
     
     try:
-        # Get appropriate connection
-        conn = get_database_connector(db_type, db_config)
-        return conn, db_type, None
+        # Create connection function for the pool
+        def create_connection():
+            return get_database_connector(db_type, db_config)
+        
+        # Get or create connection pool (will reuse existing pool if config hasn't changed)
+        pool = get_connection_pool(create_connection, max_connections=10)
+        
+        # Return pool context manager, db_type, and no error
+        return pool, db_type, None
     except Exception as e:
-        app.logger.error(f"Database connection error: {e}")
+        app.logger.error(f"Database connection pool error: {e}")
         app.logger.error(f"Database config: host={db_config.get('host')}, port={db_config.get('port')}, db={db_config.get('database')}, user={db_config.get('username')}")
         return None, None, str(e)
 
@@ -3496,37 +3515,39 @@ def search_items():
         max_level: Filter by maximum required level
     """
     try:
-        # Get EQEmu database connection
-        conn, db_type, error = get_eqemu_db_connection()
-        if not conn:
+        # Get EQEmu database connection pool
+        pool, db_type, error = get_eqemu_db_connection()
+        if not pool:
             return jsonify({'error': error or 'Database not configured'}), 503
         
-        # Validate and sanitize all input parameters
-        validated_params = validate_item_search_params(request.args)
-        
-        search_query = validated_params.get('q', '')
-        limit = validated_params.get('limit', 20)
-        offset = validated_params.get('offset', 0)
-        item_type = validated_params.get('type')
-        item_class = validated_params.get('class')
-        min_level = validated_params.get('min_level')
-        max_level = validated_params.get('max_level')
-        advanced_filters = validated_params.get('filters', [])
-        
-        # Security logging
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        if client_ip:
-            client_ip = client_ip.split(',')[0].strip()
-        
-        # Log search activity
-        app.logger.info(f"Item search request from {client_ip} - q: '{search_query}', type: '{item_type}', class: '{item_class}', min_level: '{min_level}', max_level: '{max_level}', filters: {len(advanced_filters)}")
-        
-        if not search_query and not item_type and not item_class and not min_level and not max_level and not advanced_filters:
-            return jsonify({'error': 'Search query or filter required'}), 400
-        
-        # Build SQL query with JOIN to discovered_items
-        conditions = []
-        params = []
+        # Use connection from pool
+        with pool.get_connection() as conn:
+            # Validate and sanitize all input parameters
+            validated_params = validate_item_search_params(request.args)
+            
+            search_query = validated_params.get('q', '')
+            limit = validated_params.get('limit', 20)
+            offset = validated_params.get('offset', 0)
+            item_type = validated_params.get('type')
+            item_class = validated_params.get('class')
+            min_level = validated_params.get('min_level')
+            max_level = validated_params.get('max_level')
+            advanced_filters = validated_params.get('filters', [])
+            
+            # Security logging
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            
+            # Log search activity
+            app.logger.info(f"Item search request from {client_ip} - q: '{search_query}', type: '{item_type}', class: '{item_class}', min_level: '{min_level}', max_level: '{max_level}', filters: {len(advanced_filters)}")
+            
+            if not search_query and not item_type and not item_class and not min_level and not max_level and not advanced_filters:
+                return jsonify({'error': 'Search query or filter required'}), 400
+            
+            # Build SQL query with JOIN to discovered_items
+            conditions = []
+            params = []
         
         if search_query:
             # Use LIKE for MySQL compatibility (ILIKE is PostgreSQL specific)
@@ -3798,20 +3819,20 @@ def search_items():
                     }
                 items_list.append(item_dict)
             
-            cursor.close()
-            return jsonify({
-                    'items': items_list,
-                    'total_count': total_count,
-                    'limit': limit,
-                    'offset': offset,
-                    'search_query': search_query,
-                    'discovered_only': True
-            })
-            
-        finally:
-            if cursor:
                 cursor.close()
-            conn.close()
+                return jsonify({
+                        'items': items_list,
+                        'total_count': total_count,
+                        'limit': limit,
+                        'offset': offset,
+                        'search_query': search_query,
+                        'discovered_only': True
+                })
+                
+            finally:
+                if cursor:
+                    cursor.close()
+                # Connection is automatically returned to pool by context manager
             
     except Exception as e:
         import traceback
@@ -4105,7 +4126,18 @@ def get_item_types():
         return jsonify({'error': f'Failed to get item types: {str(e)}'}), 500
 
 
+def cleanup_resources():
+    """Clean up resources on shutdown."""
+    logger.info("Cleaning up resources...")
+    close_connection_pool()
+    logger.info("Connection pool closed")
+
 if __name__ == '__main__':
+    import atexit
+    
+    # Register cleanup on exit
+    atexit.register(cleanup_resources)
+    
     # Preload spell data before starting server for optimal performance
     # Skip during CI testing to avoid long startup times
     if not os.environ.get('SKIP_STARTUP_CACHE_REFRESH'):
