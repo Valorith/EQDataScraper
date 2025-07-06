@@ -5,8 +5,24 @@ static-backup/
 run.log
 frontend.log
 backend.log
+backend_debug.log
+backend_manual.log
+frontend_manual.log
+monitor.log
+startup.log
 __pycache__/
 download_icons.py
+
+# Debug and testing artifacts
+oauth_debug.txt
+test_oauth.html
+*_debug.txt
+
+# Test coverage reports
+coverage/
+htmlcov/
+.coverage
+coverage.xml
 node_modules/
 .app_pids.json
 
