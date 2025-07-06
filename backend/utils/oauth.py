@@ -83,6 +83,15 @@ class GoogleOAuth:
         code_verifier, code_challenge = self.generate_pkce_pair()
         state = self.generate_state()
         
+        # Double-check redirect URI before generating auth URL
+        if self.redirect_uri and ('/api/' in self.redirect_uri or 'backend' in self.redirect_uri):
+            safe_log(f"[OAuth] ERROR: Redirect URI still points to backend in get_authorization_url: {self.redirect_uri}")
+            # Force correction
+            if os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+                frontend_url = os.environ.get('FRONTEND_URL', 'https://eqdatascraper-frontend-production.up.railway.app')
+                self.redirect_uri = f"{frontend_url}/auth/callback"
+                safe_log(f"[OAuth] FORCED correction to: {self.redirect_uri}")
+        
         params = {
             'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
@@ -97,8 +106,9 @@ class GoogleOAuth:
         
         auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params)}"
         
-        # Log the redirect URI being used
+        # Log the full auth URL for debugging
         safe_log(f"[OAuth] Authorization URL generated with redirect_uri: {self.redirect_uri}")
+        safe_log(f"[OAuth] Full auth URL params: {params}")
         
         return {
             'auth_url': auth_url,

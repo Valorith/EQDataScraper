@@ -271,8 +271,23 @@ def google_callback():
             safe_log(f"[OAuth Error] Error type: {type(e).__name__}")
             # Log more details for debugging
             safe_log(f"[OAuth Error] Traceback: {traceback.format_exc()}")
-            # Include redirect URI in error response for debugging
-            return create_error_response(f"Failed to exchange code for tokens: {str(e)} (redirect_uri: {google_oauth.redirect_uri})", 500)
+            
+            # Check for specific error types
+            error_msg = str(e)
+            if "redirect_uri_mismatch" in error_msg:
+                return create_error_response(
+                    f"OAuth redirect URI mismatch. The redirect URI used ({google_oauth.redirect_uri}) doesn't match what's configured in Google Cloud Console. "
+                    f"Please ensure the Google Cloud Console has '{google_oauth.redirect_uri}' as an authorized redirect URI.", 
+                    500
+                )
+            elif "invalid_grant" in error_msg:
+                return create_error_response(
+                    "OAuth authorization code is invalid or expired. This can happen if you take too long to complete the login or if you refresh the page. Please try logging in again.", 
+                    500
+                )
+            else:
+                # Include redirect URI in error response for debugging
+                return create_error_response(f"Failed to exchange code for tokens: {str(e)} (redirect_uri: {google_oauth.redirect_uri})", 500)
         
         user_info = token_data['user_info']
         
