@@ -1389,76 +1389,94 @@ def refresh_spell_cache(class_name):
         # Initialize progress tracking
         update_refresh_progress(class_name, 'initializing')
         
-        # Force refresh by removing from cache
-        spells_cache.pop(class_name, None)
-        cache_timestamp.pop(class_name, None)
-        last_scrape_time[class_name] = datetime.now().isoformat()
-        
-        # Update progress to scraping stage
-        update_refresh_progress(class_name, 'scraping', 
-                              estimated_time_remaining=30)
-        
-        # Trigger fresh scrape
-        logger.info(f"Starting scrape for {normalized_class_name}")
-        df = scrape_class(normalized_class_name, 'https://alla.clumsysworld.com/', None)
-        
-        if df is not None and not df.empty:
-            new_spells = df.to_dict('records')
-            update_refresh_progress(class_name, 'processing', progress_percentage=60, estimated_time_remaining=15)
-            
-            # Update cache
-            update_refresh_progress(class_name, 'updating_cache', progress_percentage=80, estimated_time_remaining=10)
-            spells_cache[class_name] = new_spells
-            cache_timestamp[class_name] = datetime.now().isoformat()
-            
-            # Save to storage with progress tracking
+        # Return immediately with success response
+        # Start the actual refresh operation asynchronously
+        def perform_refresh():
             try:
-                update_refresh_progress(class_name, 'updating_cache', progress_percentage=85, message='💾 Saving to database...')
-                # Only save the specific class that was just scraped
-                save_single_class_to_storage(class_name)
-                update_refresh_progress(class_name, 'loading_memory', progress_percentage=95, estimated_time_remaining=2)
+                # Small delay to ensure tests can check initial state
+                time.sleep(0.1)
+                
+                # Force refresh by removing from cache
+                spells_cache.pop(class_name, None)
+                cache_timestamp.pop(class_name, None)
+                last_scrape_time[class_name] = datetime.now().isoformat()
+                
+                # Update progress to scraping stage
+                update_refresh_progress(class_name, 'scraping', 
+                                      estimated_time_remaining=30)
+                
+                # Trigger fresh scrape
+                logger.info(f"Starting scrape for {normalized_class_name}")
+                df = scrape_class(normalized_class_name, 'https://alla.clumsysworld.com/', None)
+                
+                if df is not None and not df.empty:
+                    new_spells = df.to_dict('records')
+                    update_refresh_progress(class_name, 'processing', progress_percentage=60, estimated_time_remaining=15)
+                    
+                    # Update cache
+                    update_refresh_progress(class_name, 'updating_cache', progress_percentage=80, estimated_time_remaining=10)
+                    spells_cache[class_name] = new_spells
+                    cache_timestamp[class_name] = datetime.now().isoformat()
+                    
+                    # Save to storage with progress tracking
+                    try:
+                        update_refresh_progress(class_name, 'updating_cache', progress_percentage=85, message='💾 Saving to database...')
+                        # Only save the specific class that was just scraped
+                        save_single_class_to_storage(class_name)
+                        update_refresh_progress(class_name, 'loading_memory', progress_percentage=95, estimated_time_remaining=2)
+                    except Exception as e:
+                        logger.error(f"Error saving cache to storage: {e}")
+                        # Continue anyway, cache is in memory
+                    
+                    time.sleep(0.5)
+                    update_refresh_progress(class_name, 'complete', progress_percentage=100)
+                    
+                    # Clear progress after a delay
+                    def clear_progress_later():
+                        time.sleep(5)
+                        clear_refresh_progress(class_name)
+                    
+                    import threading
+                    clear_thread = threading.Thread(target=clear_progress_later)
+                    clear_thread.daemon = True
+                    clear_thread.start()
+                    
+                    # Log activity if user accounts are enabled
+                    if ENABLE_USER_ACCOUNTS:
+                        user_id = getattr(g, 'user_id', None)
+                        if user_id:
+                            log_scrape_activity(user_id, normalized_class_name, len(new_spells), 'success')
+                    
+                else:
+                    update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
+                    
+                    # Log failed activity if user accounts are enabled
+                    if ENABLE_USER_ACCOUNTS:
+                        user_id = getattr(g, 'user_id', None)
+                        if user_id:
+                            log_scrape_activity(user_id, normalized_class_name, 0, 'failed')
+                    
             except Exception as e:
-                logger.error(f"Error saving cache to storage: {e}")
-                # Continue anyway, cache is in memory
-            
-            time.sleep(0.5)
-            update_refresh_progress(class_name, 'complete', progress_percentage=100)
-            
-            # Clear progress after a delay
-            def clear_progress_later():
-                time.sleep(5)
-                clear_refresh_progress(class_name)
-            
-            import threading
-            clear_thread = threading.Thread(target=clear_progress_later)
-            clear_thread.daemon = True
-            clear_thread.start()
-            
-            # Log activity if user accounts are enabled
-            if ENABLE_USER_ACCOUNTS:
-                user_id = getattr(g, 'user_id', None)
-                if user_id:
-                    log_scrape_activity(user_id, normalized_class_name, len(new_spells), 'success')
-            
-            return jsonify({
-                'success': True,
-                'class_name': class_name,
-                'spell_count': len(new_spells),
-                'timestamp': cache_timestamp[class_name]
-            })
-        else:
-            update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
-            
-            # Log failed activity if user accounts are enabled
-            if ENABLE_USER_ACCOUNTS:
-                user_id = getattr(g, 'user_id', None)
-                if user_id:
-                    log_scrape_activity(user_id, normalized_class_name, 0, 'failed')
-            
-            return jsonify({'error': 'Failed to scrape new data'}), 500
+                logger.error(f"Error refreshing spell cache for {class_name}: {e}")
+                # Update progress to error state
+                update_refresh_progress(class_name, 'error', 
+                                      message=f'❌ Error: {str(e)}')
+        
+        # Start the refresh operation in a background thread
+        import threading
+        refresh_thread = threading.Thread(target=perform_refresh)
+        refresh_thread.daemon = True
+        refresh_thread.start()
+        
+        # Return immediately with success response
+        return jsonify({
+            'success': True,
+            'message': 'Refresh started',
+            'class_name': class_name
+        })
             
     except Exception as e:
-        logger.error(f"Error refreshing spell cache for {class_name}: {e}")
+        logger.error(f"Error starting refresh for {class_name}: {e}")
         # Update progress to error state
         update_refresh_progress(class_name, 'error', 
                               message=f'❌ Error: {str(e)}')

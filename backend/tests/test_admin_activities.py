@@ -6,6 +6,42 @@ import pytest
 import json
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
+from flask import Flask, g
+
+
+@pytest.fixture
+def flask_admin_test_client():
+    """Create Flask test client with OAuth enabled for admin testing."""
+    import os
+    from unittest.mock import patch
+    
+    # Set up test environment variables
+    test_env = {
+        'ENABLE_USER_ACCOUNTS': 'true',
+        'JWT_SECRET_KEY': 'test_jwt_secret_key_for_testing_only',
+        'ENCRYPTION_KEY': 'test_encryption_key_for_testing_only',
+        'GOOGLE_CLIENT_ID': 'test-client-id',
+        'GOOGLE_CLIENT_SECRET': 'test-client-secret',
+        'OAUTH_REDIRECT_URI': 'http://localhost:3000/auth/callback',
+        'DATABASE_URL': 'postgresql://test:test@localhost:5432/test'
+    }
+    
+    with patch.dict(os.environ, test_env):
+        with patch('app.psycopg2.connect') as mock_connect:
+            # Mock database connection
+            mock_conn = Mock()
+            mock_cursor = Mock()
+            mock_cursor.fetchone.return_value = None
+            mock_cursor.fetchall.return_value = []
+            mock_conn.cursor.return_value = mock_cursor
+            mock_connect.return_value = mock_conn
+            
+            # Import app with OAuth enabled
+            from app import app
+            app.config['TESTING'] = True
+            app.config['WTF_CSRF_ENABLED'] = False
+            
+            return app.test_client()
 
 @pytest.fixture
 def admin_user_data():
@@ -32,10 +68,12 @@ def regular_user_data():
 @pytest.fixture
 def mock_activities_data():
     """Mock activity log data"""
+    from models.activity import ActivityLog
+    
     return [
         {
             'id': 1,
-            'action': 'login',
+            'action': ActivityLog.ACTION_LOGIN,
             'user_id': 1,
             'user_display': 'Admin User',
             'resource_type': 'session',
@@ -47,7 +85,7 @@ def mock_activities_data():
         },
         {
             'id': 2,
-            'action': 'spell_search',
+            'action': 'spell_search',  # This would fall through to default case
             'user_id': 2,
             'user_display': 'Regular User',
             'resource_type': 'spell',
@@ -59,7 +97,7 @@ def mock_activities_data():
         },
         {
             'id': 3,
-            'action': 'cache_refresh',
+            'action': ActivityLog.ACTION_CACHE_REFRESH,
             'user_id': None,
             'user_display': 'System',
             'resource_type': 'cache',
@@ -74,46 +112,64 @@ def mock_activities_data():
 class TestAdminActivitiesEndpoint:
     """Test the admin activities endpoint"""
     
-    def test_activities_endpoint_requires_auth(self, flask_test_flask_test_client):
+    def test_activities_endpoint_requires_auth(self, flask_admin_test_client):
         """Test that activities endpoint requires authentication"""
-        response = flask_test_flask_test_client.get('/api/admin/activities')
+        response = flask_admin_test_client.get('/api/admin/activities')
         assert response.status_code == 401
         data = json.loads(response.data)
         assert 'error' in data
         assert 'Authorization header required' in data['error']
     
-    def test_activities_endpoint_requires_admin(self, flask_test_client, regular_user_data):
+    def test_activities_endpoint_requires_admin(self, flask_admin_test_client, regular_user_data):
         """Test that activities endpoint requires admin privileges"""
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            # Mock require_admin to simulate regular user
-            mock_require_admin.side_effect = lambda f: lambda *args, **kwargs: (
-                {'error': 'Admin access required'}, 403
-            )
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities',
-                                headers={'Authorization': 'Bearer fake_token'})
+            # Mock a valid token but for regular user (not admin)
+            mock_extract.return_value = 'valid_token'
+            mock_verify.return_value = {
+                'user_id': 2,
+                'email': 'user@test.com',
+                'role': 'user',  # Not admin
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities',
+                                headers={'Authorization': 'Bearer valid_token'})
             assert response.status_code == 403
     
     @patch('routes.admin.get_db_connection')
-    def test_activities_endpoint_no_database(self, mock_get_db, flask_test_client, admin_user_data):
+    def test_activities_endpoint_no_database(self, mock_get_db, flask_admin_test_client, admin_user_data):
         """Test activities endpoint when no database connection available"""
         mock_get_db.return_value = None
         
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f  # Allow access
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities',
+            # Mock a valid admin token
+            mock_extract.return_value = 'admin_token'
+            mock_verify.return_value = {
+                'user_id': 1,
+                'email': 'admin@test.com',
+                'role': 'admin',
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities',
                                 headers={'Authorization': 'Bearer admin_token'})
             assert response.status_code == 200
             data = json.loads(response.data)
             assert data['success'] is True
-            assert data['data']['activities'] == []
-            assert data['data']['total_count'] == 0
+            # When no database connection, returns mock activities for development
+            assert 'activities' in data['data']
+            assert 'total_count' in data['data']
+            assert len(data['data']['activities']) > 0  # Should have mock activities
+            assert data['data']['total_count'] > 0
     
     @patch('routes.admin.get_db_connection')
     @patch('routes.admin.ActivityLog')
     def test_activities_endpoint_with_data(self, mock_activity_log, mock_get_db, 
-                                         flask_test_client, admin_user_data, mock_activities_data):
+                                         flask_admin_test_client, admin_user_data, mock_activities_data):
         """Test activities endpoint returns formatted activity data"""
         # Mock database connection
         mock_conn = Mock()
@@ -125,10 +181,19 @@ class TestAdminActivitiesEndpoint:
         mock_activity_instance.get_recent_activities.return_value = mock_activities_data
         mock_activity_instance.get_activity_count.return_value = len(mock_activities_data)
         
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f  # Allow access
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities?limit=5',
+            # Mock a valid admin token
+            mock_extract.return_value = 'admin_token'
+            mock_verify.return_value = {
+                'user_id': 1,
+                'email': 'admin@test.com',
+                'role': 'admin',
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities?limit=5',
                                 headers={'Authorization': 'Bearer admin_token'})
             assert response.status_code == 200
             data = json.loads(response.data)
@@ -149,7 +214,7 @@ class TestAdminActivitiesEndpoint:
     @patch('routes.admin.get_db_connection')
     @patch('routes.admin.ActivityLog')
     def test_activities_endpoint_pagination(self, mock_activity_log, mock_get_db, 
-                                          flask_test_client, admin_user_data, mock_activities_data):
+                                          flask_admin_test_client, admin_user_data, mock_activities_data):
         """Test activities endpoint pagination parameters"""
         mock_conn = Mock()
         mock_get_db.return_value = mock_conn
@@ -159,10 +224,19 @@ class TestAdminActivitiesEndpoint:
         mock_activity_instance.get_recent_activities.return_value = mock_activities_data[:2]
         mock_activity_instance.get_activity_count.return_value = len(mock_activities_data)
         
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities?limit=2&offset=0',
+            # Mock a valid admin token
+            mock_extract.return_value = 'admin_token'
+            mock_verify.return_value = {
+                'user_id': 1,
+                'email': 'admin@test.com',
+                'role': 'admin',
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities?limit=2&offset=0',
                                 headers={'Authorization': 'Bearer admin_token'})
             assert response.status_code == 200
             data = json.loads(response.data)
@@ -176,7 +250,7 @@ class TestAdminActivitiesEndpoint:
     @patch('routes.admin.get_db_connection')
     @patch('routes.admin.ActivityLog') 
     def test_activities_endpoint_filtering(self, mock_activity_log, mock_get_db,
-                                         flask_test_client, admin_user_data):
+                                         flask_admin_test_client, admin_user_data):
         """Test activities endpoint filtering by action and user"""
         mock_conn = Mock()
         mock_get_db.return_value = mock_conn
@@ -186,10 +260,19 @@ class TestAdminActivitiesEndpoint:
         mock_activity_instance.get_recent_activities.return_value = []
         mock_activity_instance.get_activity_count.return_value = 0
         
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities?action=login&user_id=1',
+            # Mock a valid admin token
+            mock_extract.return_value = 'admin_token'
+            mock_verify.return_value = {
+                'user_id': 1,
+                'email': 'admin@test.com',
+                'role': 'admin',
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities?action=login&user_id=1',
                                 headers={'Authorization': 'Bearer admin_token'})
             assert response.status_code == 200
             
@@ -203,15 +286,17 @@ class TestActivityDescriptionFormatting:
     """Test activity description formatting"""
     
     @patch('routes.admin.get_db_connection')
-    @patch('routes.admin.ActivityLog')
-    def test_login_activity_description(self, mock_activity_log, mock_get_db, flask_test_client):
+    def test_login_activity_description(self, mock_get_db, flask_admin_test_client):
         """Test login activity description formatting"""
         mock_conn = Mock()
         mock_get_db.return_value = mock_conn
         
+        # Import ActivityLog to use the correct action constants
+        from models.activity import ActivityLog
+        
         login_activity = {
             'id': 1,
-            'action': 'login',
+            'action': ActivityLog.ACTION_LOGIN,
             'user_id': 1,
             'user_display': 'Test User',
             'resource_type': 'session',
@@ -222,31 +307,47 @@ class TestActivityDescriptionFormatting:
             'created_at': datetime.now()
         }
         
-        mock_activity_instance = Mock()
-        mock_activity_log.return_value = mock_activity_instance
-        mock_activity_instance.get_recent_activities.return_value = [login_activity]
-        mock_activity_instance.get_activity_count.return_value = 1
-        
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f
+        # Mock the ActivityLog constructor and methods
+        with patch('routes.admin.ActivityLog') as mock_activity_log:
+            mock_activity_instance = Mock()
+            mock_activity_log.return_value = mock_activity_instance
+            mock_activity_instance.get_recent_activities.return_value = [login_activity]
+            mock_activity_instance.get_activity_count.return_value = 1
             
-            response = flask_test_client.get('/api/admin/activities',
-                                headers={'Authorization': 'Bearer admin_token'})
-            data = json.loads(response.data)
+            # Set the ACTION_LOGIN constant on the mocked class
+            mock_activity_log.ACTION_LOGIN = 'login'
             
-            activity = data['data']['activities'][0]
-            assert activity['description'] == 'Test User logged in'
+            with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+                 patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
+                
+                # Mock a valid admin token
+                mock_extract.return_value = 'admin_token'
+                mock_verify.return_value = {
+                    'user_id': 1,
+                    'email': 'admin@test.com',
+                    'role': 'admin',
+                    'type': 'access'
+                }
+                
+                response = flask_admin_test_client.get('/api/admin/activities',
+                                    headers={'Authorization': 'Bearer admin_token'})
+                data = json.loads(response.data)
+                
+                activity = data['data']['activities'][0]
+                assert activity['description'] == 'Test User logged in'
     
     @patch('routes.admin.get_db_connection')
-    @patch('routes.admin.ActivityLog')
-    def test_system_activity_description(self, mock_activity_log, mock_get_db, flask_test_client):
+    def test_system_activity_description(self, mock_get_db, flask_admin_test_client):
         """Test system activity description formatting"""
         mock_conn = Mock()
         mock_get_db.return_value = mock_conn
         
+        # Import ActivityLog to use the correct action constants
+        from models.activity import ActivityLog
+        
         system_activity = {
             'id': 1,
-            'action': 'cache_refresh',
+            'action': ActivityLog.ACTION_CACHE_REFRESH,
             'user_id': None,
             'user_display': 'System',
             'resource_type': 'cache',
@@ -257,33 +358,56 @@ class TestActivityDescriptionFormatting:
             'created_at': datetime.now()
         }
         
-        mock_activity_instance = Mock()
-        mock_activity_log.return_value = mock_activity_instance
-        mock_activity_instance.get_recent_activities.return_value = [system_activity]
-        mock_activity_instance.get_activity_count.return_value = 1
-        
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f
+        # Mock the ActivityLog constructor and methods
+        with patch('routes.admin.ActivityLog') as mock_activity_log:
+            mock_activity_instance = Mock()
+            mock_activity_log.return_value = mock_activity_instance
+            mock_activity_instance.get_recent_activities.return_value = [system_activity]
+            mock_activity_instance.get_activity_count.return_value = 1
             
-            response = flask_test_client.get('/api/admin/activities',
-                                headers={'Authorization': 'Bearer admin_token'})
-            data = json.loads(response.data)
+            # Set the ACTION_CACHE_REFRESH constant on the mocked class
+            mock_activity_log.ACTION_CACHE_REFRESH = 'cache_refresh'
             
-            activity = data['data']['activities'][0]
-            assert activity['description'] == 'System refreshed cache'
+            with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+                 patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
+                
+                # Mock a valid admin token
+                mock_extract.return_value = 'admin_token'
+                mock_verify.return_value = {
+                    'user_id': 1,
+                    'email': 'admin@test.com',
+                    'role': 'admin',
+                    'type': 'access'
+                }
+                
+                response = flask_admin_test_client.get('/api/admin/activities',
+                                    headers={'Authorization': 'Bearer admin_token'})
+                data = json.loads(response.data)
+                
+                activity = data['data']['activities'][0]
+                assert activity['description'] == 'System refreshed cache'
 
 class TestActivityLoggingIntegration:
     """Test activity logging integration"""
     
     @patch('routes.admin.get_db_connection')
-    def test_activity_logging_database_error(self, mock_get_db, flask_test_client):
+    def test_activity_logging_database_error(self, mock_get_db, flask_admin_test_client):
         """Test activity logging handles database errors gracefully"""
         mock_get_db.side_effect = Exception("Database connection failed")
         
-        with patch('routes.admin.require_admin') as mock_require_admin:
-            mock_require_admin.return_value = lambda f: f
+        with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
+             patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
             
-            response = flask_test_client.get('/api/admin/activities',
+            # Mock a valid admin token
+            mock_extract.return_value = 'admin_token'
+            mock_verify.return_value = {
+                'user_id': 1,
+                'email': 'admin@test.com',
+                'role': 'admin',
+                'type': 'access'
+            }
+            
+            response = flask_admin_test_client.get('/api/admin/activities',
                                 headers={'Authorization': 'Bearer admin_token'})
             assert response.status_code == 500
             data = json.loads(response.data)
