@@ -142,7 +142,15 @@ class GoogleOAuth:
             safe_log(f"[OAuth] Token exchange data: client_id={self.client_id[:10]}..., redirect_uri={self.redirect_uri}, code={code[:10]}...")
             safe_log(f"[OAuth] Code verifier length: {len(code_verifier) if code_verifier else 0}")
             
-            response = requests.post(self.token_url, data=token_data)
+            # Make the request with timeout
+            try:
+                response = requests.post(self.token_url, data=token_data, timeout=30)
+            except requests.exceptions.Timeout:
+                safe_log(f"[OAuth] ERROR: Token exchange request timed out after 30 seconds")
+                raise Exception("Token exchange request timed out. Please try again.")
+            except requests.exceptions.ConnectionError as e:
+                safe_log(f"[OAuth] ERROR: Connection error during token exchange: {str(e)}")
+                raise Exception(f"Network error during token exchange: {str(e)}")
             
             # Log response details before checking status
             safe_log(f"[OAuth] Token exchange response status: {response.status_code}")

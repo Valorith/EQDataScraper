@@ -257,10 +257,12 @@ def google_callback():
             safe_log(f"[OAuth Debug] Code: {code[:10]}...")
             safe_log(f"[OAuth Debug] State: {state}")
             safe_log(f"[OAuth Debug] Code verifier present: {bool(stored_state.get('code_verifier'))}")
+            safe_log(f"[OAuth Debug] Stored state data: {stored_state}")
             
             # Add diagnostic info to help debug
             safe_log(f"[OAuth Debug] Environment OAUTH_REDIRECT_URI: {os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')}")
             safe_log(f"[OAuth Debug] Railway environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT SET')}")
+            safe_log(f"[OAuth Debug] FRONTEND_URL: {os.environ.get('FRONTEND_URL', 'NOT SET')}")
             
             token_data = google_oauth.exchange_code_for_tokens(
                 code, 
