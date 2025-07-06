@@ -555,6 +555,7 @@ class TestClassNameHandling:
         from unittest.mock import patch
         
         app.spells_cache.clear()
+        app.last_scrape_time.clear()  # Clear rate limiting
         
         # Set up cache with lowercase keys (as the backend does)
         for class_name in CLASSES.keys():
