@@ -3548,45 +3548,45 @@ def search_items():
             # Build SQL query with JOIN to discovered_items
             conditions = []
             params = []
-        
-        if search_query:
-            # Use LIKE for MySQL compatibility (ILIKE is PostgreSQL specific)
-            if db_type == 'postgresql':
-                conditions.append("(items.Name ILIKE %s OR items.lore ILIKE %s)")
-            else:
-                conditions.append("(items.Name LIKE %s OR items.lore LIKE %s)")
-            params.extend([f'%{search_query}%', f'%{search_query}%'])
-        
-        if item_type is not None:
-            conditions.append("items.itemtype = %s")
-            params.append(item_type)
-        
-        if item_class:
-            # EQEmu uses bitmask for classes - we'll do a simple search in the classes field
-            if db_type == 'postgresql':
-                conditions.append("items.classes::text LIKE %s")
-            else:
-                # For MySQL/MSSQL, use CAST function
-                conditions.append("CAST(items.classes AS CHAR) LIKE %s")
-            params.append(f'%{item_class}%')
-        
-        if min_level is not None:
-            conditions.append("items.reqlevel >= %s")
-            params.append(min_level)
-        
-        if max_level is not None:
-            conditions.append("items.reqlevel <= %s")
-            params.append(max_level)
-        
-        # Process advanced filters
-        for filter_item in advanced_filters:
-            field = filter_item.get('field')
-            operator = filter_item.get('operator')
-            value = filter_item.get('value')
-            value2 = filter_item.get('value2')  # For 'between' operator
             
-            # Map frontend field names to database column names
-            field_mapping = {
+            if search_query:
+                # Use LIKE for MySQL compatibility (ILIKE is PostgreSQL specific)
+                if db_type == 'postgresql':
+                    conditions.append("(items.Name ILIKE %s OR items.lore ILIKE %s)")
+                else:
+                    conditions.append("(items.Name LIKE %s OR items.lore LIKE %s)")
+                params.extend([f'%{search_query}%', f'%{search_query}%'])
+            
+            if item_type is not None:
+                conditions.append("items.itemtype = %s")
+                params.append(item_type)
+            
+            if item_class:
+                # EQEmu uses bitmask for classes - we'll do a simple search in the classes field
+                if db_type == 'postgresql':
+                    conditions.append("items.classes::text LIKE %s")
+                else:
+                    # For MySQL/MSSQL, use CAST function
+                    conditions.append("CAST(items.classes AS CHAR) LIKE %s")
+                params.append(f'%{item_class}%')
+            
+            if min_level is not None:
+                conditions.append("items.reqlevel >= %s")
+                params.append(min_level)
+            
+            if max_level is not None:
+                conditions.append("items.reqlevel <= %s")
+                params.append(max_level)
+            
+            # Process advanced filters
+            for filter_item in advanced_filters:
+                field = filter_item.get('field')
+                operator = filter_item.get('operator')
+                value = filter_item.get('value')
+                value2 = filter_item.get('value2')  # For 'between' operator
+                
+                # Map frontend field names to database column names
+                field_mapping = {
                 'lore': 'items.lore',
                 'price': 'items.price',
                 'weight': 'items.weight',
@@ -3611,89 +3611,89 @@ def search_items():
                 'proceffect': 'items.proceffect',
                 'worneffect': 'items.worneffect',
                 'focuseffect': 'items.focuseffect',
-                'slots': 'items.slots'
-            }
-            
-            db_field = field_mapping.get(field)
-            if not db_field:
-                continue
-            
-            # Handle different operators
-            if operator == 'equals':
-                conditions.append(f"{db_field} = %s")
-                params.append(value)
-            elif operator == 'not equals':
-                conditions.append(f"{db_field} != %s")
-                params.append(value)
-            elif operator == 'contains':
-                if db_type == 'postgresql':
-                    conditions.append(f"{db_field} ILIKE %s")
-                else:
-                    conditions.append(f"{db_field} LIKE %s")
-                params.append(f'%{value}%')
-            elif operator == 'starts with':
-                if db_type == 'postgresql':
-                    conditions.append(f"{db_field} ILIKE %s")
-                else:
-                    conditions.append(f"{db_field} LIKE %s")
-                params.append(f'{value}%')
-            elif operator == 'ends with':
-                if db_type == 'postgresql':
-                    conditions.append(f"{db_field} ILIKE %s")
-                else:
-                    conditions.append(f"{db_field} LIKE %s")
-                params.append(f'%{value}')
-            elif operator == 'greater than':
-                conditions.append(f"{db_field} > %s")
-                params.append(value)
-            elif operator == 'less than':
-                conditions.append(f"{db_field} < %s")
-                params.append(value)
-            elif operator == 'between':
-                conditions.append(f"{db_field} BETWEEN %s AND %s")
-                params.extend([value, value2])
-            elif operator == 'exists':
-                conditions.append(f"{db_field} IS NOT NULL")
-            elif operator == 'includes' and field == 'slots':
-                # Special handling for slots (bitmask)
-                conditions.append(f"(items.slots & %s) > 0")
-                params.append(value)
-        
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-        
-        # Execute query with database connection (READ-ONLY)
-        try:
-            cursor = conn.cursor()
-            # Set connection to read-only mode
-            if db_type == 'mysql':
-                cursor.execute("SET SESSION TRANSACTION READ ONLY")
-            elif db_type == 'postgresql':
-                cursor.execute("SET TRANSACTION READ ONLY")
-            elif db_type == 'mssql':
-                # SQL Server doesn't have a direct equivalent, we rely on permissions
-                pass
+                    'slots': 'items.slots'
+                }
                 
+                db_field = field_mapping.get(field)
+                if not db_field:
+                    continue
+                
+                # Handle different operators
+                if operator == 'equals':
+                    conditions.append(f"{db_field} = %s")
+                    params.append(value)
+                elif operator == 'not equals':
+                    conditions.append(f"{db_field} != %s")
+                    params.append(value)
+                elif operator == 'contains':
+                    if db_type == 'postgresql':
+                        conditions.append(f"{db_field} ILIKE %s")
+                    else:
+                        conditions.append(f"{db_field} LIKE %s")
+                    params.append(f'%{value}%')
+                elif operator == 'starts with':
+                    if db_type == 'postgresql':
+                        conditions.append(f"{db_field} ILIKE %s")
+                    else:
+                        conditions.append(f"{db_field} LIKE %s")
+                    params.append(f'{value}%')
+                elif operator == 'ends with':
+                    if db_type == 'postgresql':
+                        conditions.append(f"{db_field} ILIKE %s")
+                    else:
+                        conditions.append(f"{db_field} LIKE %s")
+                    params.append(f'%{value}')
+                elif operator == 'greater than':
+                    conditions.append(f"{db_field} > %s")
+                    params.append(value)
+                elif operator == 'less than':
+                    conditions.append(f"{db_field} < %s")
+                    params.append(value)
+                elif operator == 'between':
+                    conditions.append(f"{db_field} BETWEEN %s AND %s")
+                    params.extend([value, value2])
+                elif operator == 'exists':
+                    conditions.append(f"{db_field} IS NOT NULL")
+                elif operator == 'includes' and field == 'slots':
+                    # Special handling for slots (bitmask)
+                    conditions.append(f"(items.slots & %s) > 0")
+                    params.append(value)
             
-            # Get total count with JOIN
-            count_query = f"""
-                SELECT COUNT(DISTINCT items.id) AS total_count
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            
+            # Execute query with database connection (READ-ONLY)
+            try:
+                cursor = conn.cursor()
+                # Set connection to read-only mode
+                if db_type == 'mysql':
+                    cursor.execute("SET SESSION TRANSACTION READ ONLY")
+                elif db_type == 'postgresql':
+                    cursor.execute("SET TRANSACTION READ ONLY")
+                elif db_type == 'mssql':
+                    # SQL Server doesn't have a direct equivalent, we rely on permissions
+                    pass
+                    
+                
+                # Get total count with JOIN
+                count_query = f"""
+                    SELECT COUNT(DISTINCT items.id) AS total_count
                     FROM items 
                     INNER JOIN discovered_items ON items.id = discovered_items.item_id
                     WHERE {where_clause}
                 """
-            cursor.execute(count_query, params)
-            result = cursor.fetchone()
-            # Handle both dict and tuple results
-            if result:
-                if isinstance(result, dict):
-                    total_count = result.get('total_count', 0)
+                cursor.execute(count_query, params)
+                result = cursor.fetchone()
+                # Handle both dict and tuple results
+                if result:
+                    if isinstance(result, dict):
+                        total_count = result.get('total_count', 0)
+                    else:
+                        total_count = result[0]
                 else:
-                    total_count = result[0]
-            else:
-                total_count = 0
-            
-            # Get items with JOIN (only discovered items)
-            items_query = f"""
+                    total_count = 0
+                
+                # Get items with JOIN (only discovered items)
+                items_query = f"""
                     SELECT DISTINCT 
                         items.id,
                         items.Name,
@@ -3734,17 +3734,17 @@ def search_items():
                     ORDER BY items.Name
                     LIMIT %s OFFSET %s
                 """
-            cursor.execute(items_query, params + [limit, offset])
-            items = cursor.fetchall()
-            
-            # Convert to list of dictionaries with proper field mapping
-            items_list = []
-            debug_logged = False  # Only log first item for debugging
-            for item in items:
-                # Handle both dict and tuple cursor results
-                if isinstance(item, dict):
-                    # MySQL DictCursor returns field names as they appear in query
-                    item_dict = {
+                cursor.execute(items_query, params + [limit, offset])
+                items = cursor.fetchall()
+                
+                # Convert to list of dictionaries with proper field mapping
+                items_list = []
+                debug_logged = False  # Only log first item for debugging
+                for item in items:
+                    # Handle both dict and tuple cursor results
+                    if isinstance(item, dict):
+                        # MySQL DictCursor returns field names as they appear in query
+                        item_dict = {
                         'id': item.get('id'),
                         'item_id': str(item.get('id')),  # Use id as item_id for consistency
                         'name': item.get('Name'),
@@ -3775,16 +3775,16 @@ def search_items():
                         'stackable': bool(item.get('stackable')),
                         'stacksize': _safe_int(item.get('stacksize')),
                         'icon': _safe_int(item.get('icon')),
-                        'discovery_count': _safe_int(item.get('discovery_count'))
-                    }
-                else:
-                    # Handle tuple results (MySQL)
-                    if not debug_logged:
-                        logger.info(f"Debug item tuple - norent field (index 18): {item[18] if len(item) > 18 else 'NO INDEX 18'}")
-                        logger.info(f"Debug item tuple - magic field (index 16): {item[16] if len(item) > 16 else 'NO INDEX 16'}")
-                        logger.info(f"Debug item tuple - nodrop field (index 17): {item[17] if len(item) > 17 else 'NO INDEX 17'}")
-                        debug_logged = True
-                    item_dict = {
+                            'discovery_count': _safe_int(item.get('discovery_count'))
+                        }
+                    else:
+                        # Handle tuple results (MySQL)
+                        if not debug_logged:
+                            logger.info(f"Debug item tuple - norent field (index 18): {item[18] if len(item) > 18 else 'NO INDEX 18'}")
+                            logger.info(f"Debug item tuple - magic field (index 16): {item[16] if len(item) > 16 else 'NO INDEX 16'}")
+                            logger.info(f"Debug item tuple - nodrop field (index 17): {item[17] if len(item) > 17 else 'NO INDEX 17'}")
+                            debug_logged = True
+                        item_dict = {
                         'id': item[0],
                         'item_id': str(item[0]),
                         'name': item[1],
@@ -3815,10 +3815,10 @@ def search_items():
                         'stackable': bool(item[24]),
                         'stacksize': _safe_int(item[25]),
                         'icon': _safe_int(item[26]),
-                        'discovery_count': _safe_int(item[27])
-                    }
-                items_list.append(item_dict)
-            
+                            'discovery_count': _safe_int(item[27])
+                        }
+                    items_list.append(item_dict)
+                
                 cursor.close()
                 return jsonify({
                         'items': items_list,
@@ -3829,10 +3829,10 @@ def search_items():
                         'discovered_only': True
                 })
                 
-        finally:
-            if cursor:
-                cursor.close()
-            # Connection is automatically returned to pool by context manager
+            finally:
+                if cursor:
+                    cursor.close()
+                # Connection is automatically returned to pool by context manager
             
     except Exception as e:
         import traceback

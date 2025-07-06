@@ -33,17 +33,23 @@ class DatabaseConfigManager:
                 stat = os.stat(self.config_path)
                 mtime = datetime.fromtimestamp(stat.st_mtime)
                 
-                if self._last_modified is None or mtime > self._last_modified:
+                # Only reload if more than 1 second has passed to avoid false positives
+                should_reload = (self._last_modified is None or 
+                               (mtime > self._last_modified and 
+                                (mtime - self._last_modified) > timedelta(seconds=1)))
+                
+                if should_reload:
                     # Reload configuration
                     self._load_config()
                     self._last_modified = mtime
                     
-                    # Call reload callbacks
-                    for callback in self._reload_callbacks:
-                        try:
-                            callback()
-                        except Exception as e:
-                            logger.error(f"Error in config reload callback: {e}")
+                    # Call reload callbacks only if config was already loaded before
+                    if self._config is not None:
+                        for callback in self._reload_callbacks:
+                            try:
+                                callback()
+                            except Exception as e:
+                                logger.error(f"Error in config reload callback: {e}")
                             
             except OSError:
                 # File doesn't exist
