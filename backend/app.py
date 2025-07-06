@@ -259,21 +259,6 @@ if DATABASE_URL and ENABLE_USER_ACCOUNTS:
     }
     logger.info(f"Database configured for OAuth: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
     logger.info(f"DB_CONFIG is now set: {bool(DB_CONFIG)}")
-    
-    # Initialize OAuth database tables if needed
-    try:
-        from utils.init_oauth_db import init_oauth_database, check_oauth_tables
-        table_status = check_oauth_tables(DB_CONFIG)
-        logger.info(f"OAuth table status: {table_status}")
-        
-        if not all(table_status.values()):
-            logger.info("Initializing missing OAuth database tables...")
-            if init_oauth_database(DB_CONFIG):
-                logger.info("OAuth database tables initialized successfully")
-            else:
-                logger.error("Failed to initialize OAuth database tables")
-    except Exception as e:
-        logger.error(f"Error checking/initializing OAuth database: {e}")
         
 elif DATABASE_URL and not ENABLE_USER_ACCOUNTS:
     logger.info("DATABASE_URL is set but OAuth is disabled")
