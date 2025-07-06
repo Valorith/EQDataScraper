@@ -11,6 +11,8 @@ import psycopg2
 import traceback  # Import at module level to avoid dynamic import issues
 import logging
 import os
+import re
+import urllib.parse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -81,7 +83,6 @@ def google_login():
         
         # Check if redirect_uri is complete in the auth URL
         if 'redirect_uri=' in auth_data['auth_url']:
-            import re
             redirect_match = re.search(r'redirect_uri=([^&]+)', auth_data['auth_url'])
             if redirect_match:
                 encoded_redirect = redirect_match.group(1)
