@@ -123,13 +123,22 @@ if ENABLE_USER_ACCOUNTS:
         def inject_db_connection():
             """Inject database connection for OAuth routes."""
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
-                if USE_DATABASE_CACHE:
+                # Connect to database if DB_CONFIG is available (for OAuth)
+                if DB_CONFIG:
                     try:
-                        g.db_connection = psycopg2.connect(**DB_CONFIG)
+                        if DB_TYPE == 'postgresql':
+                            g.db_connection = psycopg2.connect(**DB_CONFIG)
+                            app.logger.debug(f"Database connection established for endpoint: {request.endpoint}")
+                        else:
+                            # For other database types, we'd need to import and use appropriate drivers
+                            app.logger.warning(f"Database type {DB_TYPE} not yet supported for OAuth")
+                            g.db_connection = None
                     except Exception as e:
                         app.logger.error(f"Failed to connect to database for OAuth: {e}")
+                        app.logger.error(f"DB_CONFIG: host={DB_CONFIG.get('host')}, port={DB_CONFIG.get('port')}, database={DB_CONFIG.get('database')}")
                         g.db_connection = None
                 else:
+                    app.logger.debug(f"No DB_CONFIG available for OAuth endpoint: {request.endpoint}")
                     g.db_connection = None
         
         @app.teardown_request
@@ -221,27 +230,60 @@ else:
 # The database URL is for the EQEmu database, not for cache storage
 USE_DATABASE_CACHE = False
 
-if USE_DATABASE_CACHE:
+# Parse database configuration if OAuth is enabled
+DB_CONFIG = None
+DB_TYPE = None
+
+if DATABASE_URL and ENABLE_USER_ACCOUNTS:
+    logger.info(f"Configuring database for OAuth from DATABASE_URL")
+    # Parse DATABASE_URL for OAuth user storage
     # Detect database type from URL
     if DATABASE_URL.startswith('mysql://'):
         DB_TYPE = 'mysql'
-        logger.info("Using MySQL database for cache storage")
+        logger.info("Using MySQL database for user accounts")
     elif DATABASE_URL.startswith('postgresql://') or DATABASE_URL.startswith('postgres://'):
         DB_TYPE = 'postgresql'
-        logger.info("Using PostgreSQL database for cache storage")
+        logger.info("Using PostgreSQL database for user accounts")
     else:
         DB_TYPE = 'postgresql'  # Default to PostgreSQL
-        logger.info("Using PostgreSQL database for cache storage (default)")
+        logger.info("Using PostgreSQL database for user accounts (default)")
     
     # Parse DATABASE_URL for connection
     parsed = urlparse(DATABASE_URL)
     DB_CONFIG = {
         'host': parsed.hostname,
-        'port': parsed.port,
+        'port': parsed.port or (5432 if DB_TYPE == 'postgresql' else 3306),
         'database': parsed.path[1:],  # Remove leading slash
         'user': parsed.username,
         'password': parsed.password
     }
+    logger.info(f"Database configured for OAuth: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+    logger.info(f"DB_CONFIG is now set: {bool(DB_CONFIG)}")
+    
+    # Initialize OAuth database tables if needed
+    try:
+        from utils.init_oauth_db import init_oauth_database, check_oauth_tables
+        table_status = check_oauth_tables(DB_CONFIG)
+        logger.info(f"OAuth table status: {table_status}")
+        
+        if not all(table_status.values()):
+            logger.info("Initializing missing OAuth database tables...")
+            if init_oauth_database(DB_CONFIG):
+                logger.info("OAuth database tables initialized successfully")
+            else:
+                logger.error("Failed to initialize OAuth database tables")
+    except Exception as e:
+        logger.error(f"Error checking/initializing OAuth database: {e}")
+        
+elif DATABASE_URL and not ENABLE_USER_ACCOUNTS:
+    logger.info("DATABASE_URL is set but OAuth is disabled")
+elif not DATABASE_URL:
+    logger.warning("No DATABASE_URL found - OAuth will work without persistence")
+else:
+    logger.info("OAuth is enabled but no DATABASE_URL is set")
+
+if USE_DATABASE_CACHE:
+    logger.info("Database cache is enabled")
 else:
     logger.info("Using file system for cache storage")
     # Fallback to file cache for local development

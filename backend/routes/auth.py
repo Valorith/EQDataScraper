@@ -330,6 +330,10 @@ def google_callback():
         # For local development without database, create a simple in-memory user
         if not conn:
             safe_log("Warning: No database connection, using in-memory user storage")
+            safe_log(f"DB connection status: {conn}")
+            safe_log(f"Has g.db_connection attribute: {hasattr(g, 'db_connection')}")
+            if hasattr(g, 'db_connection'):
+                safe_log(f"g.db_connection value: {g.db_connection}")
             # Create JWT tokens without database
             access_token = jwt_manager.create_access_token(
                 user_id=user_info['google_id'],  # Use Google ID as user ID
