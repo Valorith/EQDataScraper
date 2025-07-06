@@ -233,6 +233,16 @@ const loadCacheStatus = async () => {
     console.log('Cache details:', cacheDetails.value)
   } catch (error) {
     console.error('Error loading cache status:', error)
+    // Set default values on error
+    cacheStatus.value = {
+      total_cached: 0,
+      total_size: 0,
+      last_update: null,
+      memory_cache: {},
+      storage: {},
+      environment: {},
+      config: {}
+    }
   }
 }
 

@@ -3709,13 +3709,30 @@ def search_items():
                     pass
                     
                 
-                # Get total count with JOIN
-                count_query = f"""
-                    SELECT COUNT(DISTINCT items.id) AS total_count
-                    FROM items 
-                    INNER JOIN discovered_items ON items.id = discovered_items.item_id
-                    WHERE {where_clause}
-                """
+                # Get total count - optimized with EXISTS and hints
+                if db_type == 'mysql':
+                    # MySQL-specific optimization hints
+                    count_query = f"""
+                        SELECT /*+ MAX_EXECUTION_TIME(25000) */ COUNT(*) AS total_count
+                        FROM items 
+                        WHERE EXISTS (
+                            SELECT 1 FROM discovered_items 
+                            WHERE discovered_items.item_id = items.id
+                            LIMIT 1
+                        )
+                        AND {where_clause}
+                    """
+                else:
+                    count_query = f"""
+                        SELECT COUNT(*) AS total_count
+                        FROM items 
+                        WHERE EXISTS (
+                            SELECT 1 FROM discovered_items 
+                            WHERE discovered_items.item_id = items.id
+                            LIMIT 1
+                        )
+                        AND {where_clause}
+                    """
                 cursor.execute(count_query, params)
                 result = cursor.fetchone()
                 # Handle both dict and tuple results
@@ -3727,48 +3744,90 @@ def search_items():
                 else:
                     total_count = 0
                 
-                # Get items with JOIN (only discovered items)
-                items_query = f"""
-                    SELECT DISTINCT 
-                        items.id,
-                        items.Name,
-                        items.itemtype,
-                        items.ac,
-                        items.hp,
-                        items.mana,
-                        items.astr,
-                        items.asta,
-                        items.aagi,
-                        items.adex,
-                        items.awis,
-                        items.aint,
-                        items.acha,
-                        items.weight,
-                        items.damage,
-                        items.delay,
-                        items.magic,
-                        items.nodrop,
-                        items.norent,
-                        items.classes,
-                        items.races,
-                        items.slots,
-                        items.lore,
-                        items.reqlevel,
-                        items.stackable,
-                        items.stacksize,
-                        items.icon,
-                        COUNT(discovered_items.item_id) as discovery_count
-                    FROM items 
-                    INNER JOIN discovered_items ON items.id = discovered_items.item_id
-                    WHERE {where_clause}
-                    GROUP BY items.id, items.Name, items.itemtype, items.ac, items.hp, items.mana,
-                             items.astr, items.asta, items.aagi, items.adex, items.awis, items.aint, items.acha,
-                             items.weight, items.damage, items.delay, items.magic, items.nodrop, items.norent,
-                             items.classes, items.races, items.slots, items.lore, items.reqlevel,
-                             items.stackable, items.stacksize, items.icon
-                    ORDER BY items.Name
-                    LIMIT %s OFFSET %s
-                """
+                # Get items - optimized with STRAIGHT_JOIN for MySQL
+                if db_type == 'mysql':
+                    # Use STRAIGHT_JOIN to force join order and add execution time limit
+                    items_query = f"""
+                        SELECT /*+ MAX_EXECUTION_TIME(25000) */ STRAIGHT_JOIN
+                            items.id,
+                            items.Name,
+                            items.itemtype,
+                            items.ac,
+                            items.hp,
+                            items.mana,
+                            items.astr,
+                            items.asta,
+                            items.aagi,
+                            items.adex,
+                            items.awis,
+                            items.aint,
+                            items.acha,
+                            items.weight,
+                            items.damage,
+                            items.delay,
+                            items.magic,
+                            items.nodrop,
+                            items.norent,
+                            items.classes,
+                            items.races,
+                            items.slots,
+                            items.lore,
+                            items.reqlevel,
+                            items.stackable,
+                            items.stacksize,
+                            items.icon,
+                            1 as discovery_count
+                        FROM items 
+                        INNER JOIN (
+                            SELECT DISTINCT item_id 
+                            FROM discovered_items
+                        ) di ON items.id = di.item_id
+                        WHERE {where_clause}
+                        ORDER BY items.Name
+                        LIMIT %s OFFSET %s
+                    """
+                else:
+                    # PostgreSQL/other DB optimization
+                    items_query = f"""
+                        SELECT 
+                            items.id,
+                            items.Name,
+                            items.itemtype,
+                            items.ac,
+                            items.hp,
+                            items.mana,
+                            items.astr,
+                            items.asta,
+                            items.aagi,
+                            items.adex,
+                            items.awis,
+                            items.aint,
+                            items.acha,
+                            items.weight,
+                            items.damage,
+                            items.delay,
+                            items.magic,
+                            items.nodrop,
+                            items.norent,
+                            items.classes,
+                            items.races,
+                            items.slots,
+                            items.lore,
+                            items.reqlevel,
+                            items.stackable,
+                            items.stacksize,
+                            items.icon,
+                            1 as discovery_count
+                        FROM items 
+                        WHERE EXISTS (
+                            SELECT 1 FROM discovered_items 
+                            WHERE discovered_items.item_id = items.id
+                            LIMIT 1
+                        )
+                        AND {where_clause}
+                        ORDER BY items.Name
+                        LIMIT %s OFFSET %s
+                    """
                 cursor.execute(items_query, params + [limit, offset])
                 items = cursor.fetchall()
                 
@@ -3884,6 +3943,7 @@ def search_items():
             return jsonify({'error': 'Database not configured. Please contact administrator.'}), 503
         else:
             return jsonify({'error': f'Search failed: {error_msg}'}), 500
+
 
 
 @app.route('/api/items/<item_id>', methods=['GET'])

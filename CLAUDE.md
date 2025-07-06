@@ -153,10 +153,13 @@ docs/description-of-update       # Documentation updates
 
 ### Commit Guidelines
 - **All commits and pull requests should be attributed solely to the repository owner**
-- **Do not include Co-Authored-By tags or Claude attribution in commits**
+- **NEVER include Co-Authored-By tags or Claude attribution in commits**
+- **NEVER add "Generated with Claude Code" or similar attributions**
+- **NEVER mention AI, Claude, or any AI assistance in commit messages**
 - Keep commit messages concise and descriptive of the actual changes
 - Use conventional commit format when appropriate (feat:, fix:, refactor:, etc.)
 - Each commit should represent a logical unit of work
+- Write commit messages as if the repository owner wrote them directly
 
 ## Railway Deployment Lessons Learned
 

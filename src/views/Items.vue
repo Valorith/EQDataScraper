@@ -886,7 +886,15 @@ const performSearch = async (page = 1) => {
     // Debug log
     console.log('Search params:', params.toString())
 
-    const response = await fetch(`${API_BASE_URL}/api/items/search?${params}`)
+    // Add timeout to prevent hanging on slow queries
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 28000) // 28s timeout (under Railway's 30s)
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/items/search?${params}`, {
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
     
     if (!response.ok) {
       if (response.status === 503) {
@@ -901,12 +909,16 @@ const performSearch = async (page = 1) => {
     items.value = data.items || []
     totalCount.value = data.total_count || 0
     databaseAvailable.value = true
-  } catch (error) {
-    console.error('Error searching items:', error)
-    alert('Error searching items: ' + error.message)
-    items.value = []
-    totalCount.value = 0
-  } finally {
+    } catch (error) {
+      console.error('Error searching items:', error)
+      if (error.name === 'AbortError') {
+        alert('Search timed out. The query is taking too long. Try using more specific search terms.')
+      } else {
+        alert('Error searching items: ' + error.message)
+      }
+      items.value = []
+      totalCount.value = 0
+    } finally {
     searching.value = false
     paginating.value = false
   }
