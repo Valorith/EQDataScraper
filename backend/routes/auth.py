@@ -33,7 +33,8 @@ def google_login():
         google_oauth = GoogleOAuth()
         
         # Override redirect URI based on request origin for local development
-        if 'localhost' in origin:
+        # In production, use the configured redirect URI
+        if 'localhost' in origin and 'localhost' in google_oauth.redirect_uri:
             google_oauth.redirect_uri = f"{origin}/auth/callback"
         
         # Generate authorization URL with PKCE
@@ -96,18 +97,28 @@ def google_callback():
         google_oauth = GoogleOAuth()
         
         # Override redirect URI based on request origin for local development
-        if 'localhost' in origin:
+        # In production, use the configured redirect URI
+        if 'localhost' in origin and 'localhost' in google_oauth.redirect_uri:
             google_oauth.redirect_uri = f"{origin}/auth/callback"
         
         # Exchange code for tokens
         try:
-            print(f"Exchanging code for tokens with redirect_uri: {google_oauth.redirect_uri}")
+            print(f"[OAuth Debug] Exchanging code for tokens")
+            print(f"[OAuth Debug] Client ID: {google_oauth.client_id[:10]}...")
+            print(f"[OAuth Debug] Redirect URI: {google_oauth.redirect_uri}")
+            print(f"[OAuth Debug] Code: {code[:10]}...")
+            print(f"[OAuth Debug] State: {state}")
+            
             token_data = google_oauth.exchange_code_for_tokens(
                 code, 
                 stored_state['code_verifier']
             )
         except Exception as e:
-            print(f"Token exchange failed: {str(e)}")
+            print(f"[OAuth Error] Token exchange failed: {str(e)}")
+            print(f"[OAuth Error] Error type: {type(e).__name__}")
+            # Log more details for debugging
+            import traceback
+            print(f"[OAuth Error] Traceback: {traceback.format_exc()}")
             return create_error_response(f"Failed to exchange code for tokens: {str(e)}", 500)
         
         user_info = token_data['user_info']
