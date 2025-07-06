@@ -116,7 +116,7 @@
           <!-- Filter Configuration Modal -->
           <div v-if="showFilterConfig && currentFilterConfig && currentFilterConfig.field" class="filter-config-modal">
             <div class="filter-config-header">
-              <h4>Configure Filter: {{ currentFilterConfig.field.label }}</h4>
+              <h4>Configure Filter: {{ currentFilterConfig.field?.label }}</h4>
               <button @click="cancelFilterConfig" class="filter-config-close">
                 <i class="fas fa-times"></i>
               </button>
@@ -127,14 +127,14 @@
               <div class="filter-config-group">
                 <label>Operator:</label>
                 <select v-model="currentFilterConfig.operator" class="filter-config-select">
-                  <option v-for="op in currentFilterConfig.field.operators" :key="op" :value="op">
+                  <option v-for="op in (currentFilterConfig.field?.operators || [])" :key="op" :value="op">
                     {{ formatOperatorVerbose(op) }}
                   </option>
                 </select>
               </div>
               
               <!-- Value Input(s) -->
-              <div v-if="currentFilterConfig.field.type === 'boolean'" class="filter-config-group">
+              <div v-if="currentFilterConfig.field?.type === 'boolean'" class="filter-config-group">
                 <label>Value:</label>
                 <select v-model="currentFilterConfig.value" class="filter-config-select">
                   <option :value="true">Yes</option>
@@ -143,23 +143,23 @@
               </div>
               
               <div v-else-if="currentFilterConfig.operator === 'exists'" class="filter-config-group">
-                <p class="filter-config-info">This will find items where {{ currentFilterConfig.field.label }} has any value.</p>
+                <p class="filter-config-info">This will find items where {{ currentFilterConfig.field?.label }} has any value.</p>
               </div>
               
               <div v-else-if="currentFilterConfig.operator === 'between'" class="filter-config-group">
                 <label>Min Value:</label>
                 <input 
                   v-model="currentFilterConfig.value" 
-                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  :type="currentFilterConfig.field?.type === 'number' ? 'number' : 'text'"
                   class="filter-config-input"
-                  :placeholder="`Minimum ${currentFilterConfig.field.label}`"
+                  :placeholder="`Minimum ${currentFilterConfig.field?.label}`"
                 />
                 <label>Max Value:</label>
                 <input 
                   v-model="currentFilterConfig.value2" 
-                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  :type="currentFilterConfig.field?.type === 'number' ? 'number' : 'text'"
                   class="filter-config-input"
-                  :placeholder="`Maximum ${currentFilterConfig.field.label}`"
+                  :placeholder="`Maximum ${currentFilterConfig.field?.label}`"
                 />
               </div>
               
@@ -167,9 +167,9 @@
                 <label>Value:</label>
                 <input 
                   v-model="currentFilterConfig.value" 
-                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  :type="currentFilterConfig.field?.type === 'number' ? 'number' : 'text'"
                   class="filter-config-input"
-                  :placeholder="`Enter ${currentFilterConfig.field.label}`"
+                  :placeholder="`Enter ${currentFilterConfig.field?.label}`"
                   @keyup.enter="applyFilterConfig"
                 />
               </div>
@@ -190,9 +190,9 @@
             v-for="(filter, index) in activeFilters"
             :key="index"
             class="filter-pill"
-            :title="`${filter.field.label} ${formatOperatorVerbose(filter.operator)} ${formatFilterValue(filter)}`"
+            :title="`${filter.field?.label} ${formatOperatorVerbose(filter.operator)} ${formatFilterValue(filter)}`"
           >
-            <span class="filter-pill-field">{{ filter.field.label }}</span>
+            <span class="filter-pill-field">{{ filter.field?.label }}</span>
             <span class="filter-pill-operator">{{ formatOperator(filter.operator) }}</span>
             <span class="filter-pill-value">{{ formatFilterValue(filter) }}</span>
             <button @click="removeFilter(index)" class="filter-pill-remove" title="Remove filter">
@@ -988,6 +988,8 @@ const removeFilter = (index) => {
 }
 
 const formatFilterValue = (filter) => {
+  if (!filter || !filter.field) return 'Not set'
+  
   if (filter.field.type === 'boolean') {
     return filter.value ? 'Yes' : 'No'
   }
