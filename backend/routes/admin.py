@@ -876,9 +876,13 @@ def get_database_config():
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)
+            logger.info(f"Loaded config.json - production_database_url present: {bool(config.get('production_database_url'))}")
+        else:
+            logger.warning(f"config.json not found at {config_path}")
         
-        # Get current database URL from environment or config
-        current_db_url = os.environ.get('DATABASE_URL', config.get('production_database_url', ''))
+        # Prefer saved config over environment variable for production database
+        # This ensures the configured database persists across deployments
+        current_db_url = config.get('production_database_url', '') or os.environ.get('DATABASE_URL', '')
         
         # Parse URL to get connection details (without password)
         if current_db_url:
@@ -963,16 +967,18 @@ def get_database_config():
                     'error': str(e)
                 }
         else:
-            # No database URL, but check if we have saved config
+            # No database URL configured
+            logger.info("No EQEmu database URL found in config.json or environment")
             db_type = config.get('database_type', 'mysql')
             db_info = {
                 'connected': False,
                 'status': 'no_database_configured',
                 'db_type': db_type,
-                'host': config.get('database_host'),
-                'port': config.get('database_port'),
-                'database': config.get('database_name'),
-                'username': config.get('database_username')
+                'host': None,
+                'port': None,
+                'database': None,
+                'username': None,
+                'message': 'EQEmu database not configured. Please configure through admin dashboard.'
             }
         
         return jsonify(create_success_response({
