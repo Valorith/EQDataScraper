@@ -61,6 +61,8 @@ class TestAuthRoutes:
         """Test successful OAuth callback with new user creation."""
         # Setup mocks
         mock_oauth_instance = Mock()
+        mock_oauth_instance.redirect_uri = 'http://localhost:3000/auth/callback'
+        mock_oauth_instance.client_id = 'test_client_id'
         mock_google_oauth.return_value = mock_oauth_instance
         
         # Mock database connection
@@ -156,6 +158,8 @@ class TestAuthRoutes:
         """Test successful OAuth callback with existing user."""
         # Setup mocks
         mock_oauth_instance = Mock()
+        mock_oauth_instance.redirect_uri = 'http://localhost:3000/auth/callback'
+        mock_oauth_instance.client_id = 'test_client_id'
         mock_google_oauth.return_value = mock_oauth_instance
         
         # Mock database connection
@@ -288,6 +292,8 @@ class TestAuthRoutes:
     def test_oauth_callback_token_exchange_failure(self, mock_google_oauth, mock_oauth_storage, flask_oauth_test_client, test_env_vars):
         """Test OAuth callback when token exchange fails."""
         mock_oauth_instance = Mock()
+        mock_oauth_instance.redirect_uri = 'http://localhost:3000/auth/callback'
+        mock_oauth_instance.client_id = 'test_client_id'
         mock_google_oauth.return_value = mock_oauth_instance
         
         # Mock OAuth storage to return stored state
