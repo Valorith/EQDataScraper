@@ -123,12 +123,8 @@ class GoogleOAuth:
             'prompt': 'consent'  # Always show consent screen for refresh token
         }
         
-        # Build URL manually to ensure no truncation
-        param_strings = []
-        for key, value in params.items():
-            param_strings.append(f"{key}={urllib.parse.quote(str(value), safe='')}")
-        
-        auth_url = f"{self.auth_url}?{'&'.join(param_strings)}"
+        # Build URL using urlencode but with quote_via to ensure consistent encoding
+        auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote_plus)}"
         
         # Log the full auth URL for debugging
         safe_log(f"[OAuth] Authorization URL generated with redirect_uri: {self.redirect_uri}")
