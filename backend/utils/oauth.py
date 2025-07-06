@@ -265,11 +265,11 @@ class GoogleOAuth:
         allowed_uris = [
             self.redirect_uri,
             'http://localhost:3000/auth/callback',
-            'http://localhost:3001/auth/callback',
-            'http://localhost:3002/auth/callback',
-            'http://localhost:3003/auth/callback',
-            'http://localhost:3005/auth/callback',
-            'http://localhost:8080/auth/callback'
+            'http://localhost:3000/auth/callback',
+            'http://localhost:3000/auth/callback',
+            'http://localhost:3000/auth/callback',
+            'http://localhost:3000/auth/callback',
+            'http://localhost:3000/auth/callback'
         ]
         
         return redirect_uri in allowed_uris

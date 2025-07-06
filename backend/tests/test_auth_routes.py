@@ -313,12 +313,17 @@ class TestAuthRoutes:
         assert 'error' in response_data
         assert 'Failed to exchange code for tokens' in response_data['error']
     
+    @patch('routes.auth.get_db_connection')
     @patch('routes.auth.jwt_manager')
     @patch('routes.auth.User')
     @patch('routes.auth.OAuthSession')
     def test_token_refresh_success(self, mock_oauth_session, mock_user, mock_jwt_manager, 
-                                  flask_oauth_test_client, test_env_vars):
+                                  mock_get_db_connection, flask_oauth_test_client, test_env_vars):
         """Test successful access token refresh."""
+        # Mock database connection
+        mock_conn = Mock()
+        mock_get_db_connection.return_value = mock_conn
+        
         # Mock JWT manager
         mock_jwt_manager.refresh_access_token.return_value = {
             'access_token': 'new_access_token',
@@ -338,9 +343,17 @@ class TestAuthRoutes:
         # Verify JWT manager was called
         mock_jwt_manager.refresh_access_token.assert_called_once()
     
+    @patch('routes.auth.get_db_connection')
     @patch('routes.auth.jwt_manager')
-    def test_token_refresh_invalid_token(self, mock_jwt_manager, flask_oauth_test_client, test_env_vars):
+    @patch('routes.auth.User')
+    @patch('routes.auth.OAuthSession')
+    def test_token_refresh_invalid_token(self, mock_oauth_session, mock_user, mock_jwt_manager, 
+                                       mock_get_db_connection, flask_oauth_test_client, test_env_vars):
         """Test token refresh with invalid refresh token."""
+        # Mock database connection
+        mock_conn = Mock()
+        mock_get_db_connection.return_value = mock_conn
+        
         # Mock JWT manager to return None for invalid token
         mock_jwt_manager.refresh_access_token.return_value = None
         

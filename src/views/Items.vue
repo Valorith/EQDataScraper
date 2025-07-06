@@ -1,0 +1,3017 @@
+<template>
+  <div class="items-page">
+    <div class="page-header">
+      <h1>Item Database</h1>
+      <p class="subtitle">Search and explore items from the database</p>
+    </div>
+
+    <!-- Search Section -->
+    <div class="search-section">
+      <div class="search-container">
+        <div class="search-input-group">
+          <input
+            v-model="searchQuery"
+            @keyup.enter="performSearch()"
+            type="text"
+            placeholder="Search items by name..."
+            class="search-input"
+          />
+          <button @click="performSearch()" class="search-button" :disabled="searching">
+            <i :class="searching ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
+            <span class="search-button-text">{{ searching ? 'Searching...' : 'Search' }}</span>
+          </button>
+        </div>
+        
+        <!-- Filters -->
+        <div class="filters-container">
+          <div class="filter-group">
+            <label for="type-filter">Type:</label>
+            <select id="type-filter" v-model="selectedType" class="filter-select">
+              <option value="">All Types</option>
+              <option v-for="type in itemTypes" :key="type.type" :value="type.type">
+                {{ type.type }} ({{ type.count }})
+              </option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="class-filter">Class:</label>
+            <select id="class-filter" v-model="selectedClass" class="filter-select">
+              <option value="">All Classes</option>
+              <option value="1">Warrior</option>
+              <option value="2">Cleric</option>
+              <option value="4">Paladin</option>
+              <option value="8">Ranger</option>
+              <option value="16">Shadow Knight</option>
+              <option value="32">Druid</option>
+              <option value="64">Monk</option>
+              <option value="128">Bard</option>
+              <option value="256">Rogue</option>
+              <option value="512">Shaman</option>
+              <option value="1024">Necromancer</option>
+              <option value="2048">Wizard</option>
+              <option value="4096">Magician</option>
+              <option value="8192">Enchanter</option>
+              <option value="16384">Beastlord</option>
+              <option value="32768">Berserker</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="level-min">Min Level:</label>
+            <input 
+              id="level-min"
+              v-model="minLevel" 
+              type="number" 
+              class="filter-input"
+              placeholder="1"
+              min="1"
+              max="255"
+            />
+          </div>
+          
+          <div class="filter-group">
+            <label for="level-max">Max Level:</label>
+            <input 
+              id="level-max"
+              v-model="maxLevel" 
+              type="number" 
+              class="filter-input"
+              placeholder="255"
+              min="1"
+              max="255"
+            />
+          </div>
+          
+          <button @click="clearFilters" class="clear-filters-button">
+            <i class="fas fa-times"></i>
+            Clear Filters
+          </button>
+          
+          <!-- Advanced Filter Button -->
+          <div class="advanced-filter-container">
+            <button @click="toggleFilterDropdown" class="advanced-filter-button">
+              <i class="fas fa-filter"></i>
+              Advanced Filters
+            </button>
+            
+            <!-- Filter Field Dropdown -->
+            <div v-if="showFilterDropdown && !showFilterConfig" class="filter-dropdown">
+              <div class="filter-search-wrapper">
+                <input
+                  v-model="filterSearchQuery"
+                  @keydown.escape="showFilterDropdown = false"
+                  type="text"
+                  placeholder="Search filter fields..."
+                  class="filter-search-input"
+                  ref="filterSearchInput"
+                />
+                <i class="fas fa-search filter-search-icon"></i>
+              </div>
+              
+              <div class="filter-fields-list">
+                <div
+                  v-for="field in filteredFields"
+                  :key="field.name"
+                  @click="selectFilterField(field)"
+                  class="filter-field-item"
+                >
+                  <span class="filter-field-label">{{ field.label }}</span>
+                  <span class="filter-field-type">{{ field.type }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Filter Configuration Modal -->
+          <div v-if="showFilterConfig && currentFilterConfig" class="filter-config-modal">
+            <div class="filter-config-header">
+              <h4>Configure Filter: {{ currentFilterConfig.field.label }}</h4>
+              <button @click="cancelFilterConfig" class="filter-config-close">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            
+            <div class="filter-config-body">
+              <!-- Operator Selection -->
+              <div class="filter-config-group">
+                <label>Operator:</label>
+                <select v-model="currentFilterConfig.operator" class="filter-config-select">
+                  <option v-for="op in currentFilterConfig.field.operators" :key="op" :value="op">
+                    {{ formatOperatorVerbose(op) }}
+                  </option>
+                </select>
+              </div>
+              
+              <!-- Value Input(s) -->
+              <div v-if="currentFilterConfig.field.type === 'boolean'" class="filter-config-group">
+                <label>Value:</label>
+                <select v-model="currentFilterConfig.value" class="filter-config-select">
+                  <option :value="true">Yes</option>
+                  <option :value="false">No</option>
+                </select>
+              </div>
+              
+              <div v-else-if="currentFilterConfig.operator === 'exists'" class="filter-config-group">
+                <p class="filter-config-info">This will find items where {{ currentFilterConfig.field.label }} has any value.</p>
+              </div>
+              
+              <div v-else-if="currentFilterConfig.operator === 'between'" class="filter-config-group">
+                <label>Min Value:</label>
+                <input 
+                  v-model="currentFilterConfig.value" 
+                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  class="filter-config-input"
+                  :placeholder="`Minimum ${currentFilterConfig.field.label}`"
+                />
+                <label>Max Value:</label>
+                <input 
+                  v-model="currentFilterConfig.value2" 
+                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  class="filter-config-input"
+                  :placeholder="`Maximum ${currentFilterConfig.field.label}`"
+                />
+              </div>
+              
+              <div v-else class="filter-config-group">
+                <label>Value:</label>
+                <input 
+                  v-model="currentFilterConfig.value" 
+                  :type="currentFilterConfig.field.type === 'number' ? 'number' : 'text'"
+                  class="filter-config-input"
+                  :placeholder="`Enter ${currentFilterConfig.field.label}`"
+                  @keyup.enter="applyFilterConfig"
+                />
+              </div>
+            </div>
+            
+            <div class="filter-config-footer">
+              <button @click="cancelFilterConfig" class="filter-config-cancel">Cancel</button>
+              <button @click="applyFilterConfig" class="filter-config-apply" :disabled="!isFilterConfigValid">
+                Apply Filter
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Active Filter Pills -->
+        <div v-if="activeFilters.length > 0" class="filter-pills-container">
+          <div
+            v-for="(filter, index) in activeFilters"
+            :key="index"
+            class="filter-pill"
+            :title="`${filter.field.label} ${formatOperatorVerbose(filter.operator)} ${formatFilterValue(filter)}`"
+          >
+            <span class="filter-pill-field">{{ filter.field.label }}</span>
+            <span class="filter-pill-operator">{{ formatOperator(filter.operator) }}</span>
+            <span class="filter-pill-value">{{ formatFilterValue(filter) }}</span>
+            <button @click="removeFilter(index)" class="filter-pill-remove" title="Remove filter">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Database Status -->
+    <div v-if="!databaseAvailable" class="database-status">
+      <div class="status-card error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div>
+          <h3>Database Not Available</h3>
+          <p>Please configure a database connection in the admin panel to search items.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decorative Image (shown when no search is active) -->
+    <div v-if="!searching && !searchPerformed" class="decorative-image-container">
+      <div class="image-wrapper">
+        <img 
+          src="@/assets/images/goblin-scholar.png" 
+          alt="Goblin scholar studying ancient tomes"
+          class="decorative-image"
+        />
+        <div class="image-overlay">
+          <h2 class="overlay-title">Item Search</h2>
+          <p class="overlay-subtitle">Discover legendary artifacts and treasures</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search Results Section -->
+    <div v-if="searching || searchPerformed" class="results-section">
+      <!-- Loading Modals -->
+      <LoadingModal 
+        :visible="searching && !paginating"
+        text="Searching"
+      />
+      <!-- Pagination Loading Modal -->
+      <LoadingModal 
+        :visible="paginating"
+        text="Loading"
+      />
+      
+      <div v-if="!searching && items.length > 0" class="results-header">
+        <div class="results-title-section">
+          <h2>Search Results</h2>
+          <div class="results-info">
+            <span>{{ totalCount }} items found</span>
+            <span v-if="searchQuery">(searching for "{{ searchQuery }}")</span>
+          </div>
+        </div>
+        <div class="view-toggle-container">
+          <span class="view-toggle-label">View:</span>
+          <div class="view-toggle">
+            <button 
+              @click="viewMode = 'grid'" 
+              :class="['view-button', { active: viewMode === 'grid' }]"
+              title="Grid View"
+            >
+              <i class="fas fa-th"></i>
+              <span class="view-button-text">Grid</span>
+            </button>
+            <button 
+              @click="viewMode = 'list'" 
+              :class="['view-button', { active: viewMode === 'list' }]"
+              title="List View"
+            >
+              <i class="fas fa-list"></i>
+              <span class="view-button-text">List</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Pagination -->
+      <div v-if="totalPages > 1 && !searching && items.length > 0" class="pagination pagination-top">
+        <button 
+          @click="changePage(currentPage - 1)"
+          :disabled="currentPage <= 1"
+          class="page-button"
+        >
+          <i class="fas fa-chevron-left"></i>
+          Previous
+        </button>
+        
+        <div class="page-info">
+          Page {{ currentPage }} of {{ totalPages }}
+        </div>
+        
+        <button 
+          @click="changePage(currentPage + 1)"
+          :disabled="currentPage >= totalPages"
+          class="page-button"
+        >
+          Next
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+
+      <!-- Grid View -->
+      <div v-if="viewMode === 'grid' && items.length > 0 && !searching" class="items-grid">
+        <div 
+          v-for="item in items" 
+          :key="item.item_id"
+          class="item-card"
+          @click="selectItem(item)"
+        >
+          <div class="item-header">
+            <div class="item-icon-container-grid">
+              <img 
+                v-if="item.icon" 
+                :src="`/icons/items/${item.icon}.gif`" 
+                :alt="`${item.name} icon`"
+                class="item-icon-grid"
+                @error="handleIconError"
+              />
+              <div v-else class="item-icon-placeholder-grid">
+                <i class="fas fa-cube"></i>
+              </div>
+            </div>
+            <div class="item-header-text">
+              <h3 class="item-name">{{ item.name }}</h3>
+              <div class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</div>
+            </div>
+          </div>
+          
+          <div class="item-stats">
+            <!-- Primary Stats -->
+            <div v-if="item.damage && item.delay" class="stat weapon">
+              <span class="stat-label">Damage:</span>
+              <span class="stat-value">{{ item.damage }}/{{ item.delay }}</span>
+              <span class="weapon-ratio">{{ getWeaponRatio(item.damage, item.delay) }}</span>
+            </div>
+            <div v-if="item.ac" class="stat">
+              <span class="stat-label">AC:</span>
+              <span class="stat-value">{{ item.ac }}</span>
+            </div>
+            <div v-if="item.hp" class="stat">
+              <span class="stat-label">HP:</span>
+              <span class="stat-value">+{{ item.hp }}</span>
+            </div>
+            <div v-if="item.mana" class="stat">
+              <span class="stat-label">Mana:</span>
+              <span class="stat-value">+{{ item.mana }}</span>
+            </div>
+            
+            <!-- Show top attributes -->
+            <div v-if="(item.str || item.stats?.str) || (item.sta || item.stats?.sta) || (item.agi || item.stats?.agi)" class="stat">
+              <span class="stat-label">Stats:</span>
+              <span class="stat-value">
+                <span v-if="item.str || item.stats?.str">+{{ item.str || item.stats?.str }} STR </span>
+                <span v-if="item.sta || item.stats?.sta">+{{ item.sta || item.stats?.sta }} STA </span>
+                <span v-if="item.agi || item.stats?.agi">+{{ item.agi || item.stats?.agi }} AGI </span>
+              </span>
+            </div>
+          </div>
+          
+          <div class="item-properties">
+            <span v-if="item.magic" class="property magic">Magic</span>
+            <span v-if="item.lore || item.lore_flag" class="property lore">Lore</span>
+            <span v-if="item.nodrop" class="property nodrop">No Drop</span>
+            <span v-if="item.norent" class="property norent">No Rent</span>
+          </div>
+          
+          <div class="item-bottom-info">
+            <div v-if="getSlotDisplay(item.slots)" class="item-slot">
+              <span class="slot-value">{{ getSlotDisplay(item.slots) }}</span>
+            </div>
+            <div v-if="item.classes" class="item-classes">
+              <span class="classes-value">{{ getClassDisplay(item.classes) }}</span>
+            </div>
+            <div v-if="item.reqlevel" class="item-level">
+              <span class="level-label">Lvl</span>
+              <span class="level-value">{{ item.reqlevel }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- List View -->
+      <div v-if="viewMode === 'list' && items.length > 0 && !searching" class="items-list">
+        <div 
+          v-for="item in items" 
+          :key="item.item_id"
+          class="item-row"
+          @click="selectItem(item)"
+        >
+          <div class="item-icon-container">
+            <img 
+              v-if="item.icon" 
+              :src="`/icons/items/${item.icon}.gif`" 
+              :alt="`${item.name} icon`"
+              class="item-icon"
+              @error="handleIconError"
+            />
+            <div v-else class="item-icon-placeholder">
+              <i class="fas fa-cube"></i>
+            </div>
+          </div>
+          <div class="item-main-info">
+            <h3 class="item-name">{{ item.name }}</h3>
+            <div class="item-meta">
+              <span class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</span>
+              <div class="item-properties">
+                <span v-if="item.magic" class="property magic">Magic</span>
+                <span v-if="item.lore || item.lore_flag" class="property lore">Lore</span>
+                <span v-if="item.nodrop" class="property nodrop">No Drop</span>
+                <span v-if="item.norent" class="property norent">No Rent</span>
+                <span v-if="item.artifact" class="property artifact">Artifact</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="item-center-content">
+            <!-- Primary Stats Row -->
+            <div class="item-stats-primary">
+              <div v-if="item.damage && item.delay" class="stat-inline weapon-stats">
+                <span class="stat-label">DMG:</span>
+                <span class="stat-value">{{ item.damage }}</span>
+                <span class="stat-label">DLY:</span>
+                <span class="stat-value">{{ item.delay }}</span>
+                <span class="weapon-ratio">{{ getWeaponRatio(item.damage, item.delay) }}</span>
+              </div>
+              <div v-if="item.ac" class="stat-inline">
+                <span class="stat-label">AC:</span>
+                <span class="stat-value">{{ item.ac }}</span>
+              </div>
+              <div v-if="item.hp" class="stat-inline">
+                <span class="stat-label">HP:</span>
+                <span class="stat-value">{{ item.hp }}</span>
+              </div>
+              <div v-if="item.mana" class="stat-inline">
+                <span class="stat-label">Mana:</span>
+                <span class="stat-value">{{ item.mana }}</span>
+              </div>
+              
+              <!-- Show only top 3 stats -->
+              <template v-if="hasAnyStats(item)">
+                <div v-for="stat in getTopStatsDisplay(item)" :key="stat.name" class="stat-inline attr">
+                  <span class="stat-label">{{ stat.name }}:</span>
+                  <span class="stat-value">+{{ stat.value }}</span>
+                </div>
+              </template>
+            </div>
+            
+            <!-- Bottom Row with Slot/Class/Level -->
+            <div class="item-info-row">
+              <div v-if="getSlotDisplay(item.slots)" class="info-item">
+                <span class="info-label">Slot:</span>
+                <span class="info-value">{{ getSlotDisplay(item.slots) }}</span>
+              </div>
+              <div v-if="item.classes" class="info-item">
+                <span class="info-label">Class:</span>
+                <span class="info-value">{{ getClassDisplay(item.classes) }}</span>
+              </div>
+              <div v-if="item.races" class="info-item">
+                <span class="info-label">Race:</span>
+                <span class="info-value">{{ getRaceDisplay(item.races) }}</span>
+              </div>
+              <div v-if="item.reqlevel" class="info-item">
+                <span class="info-label">Req:</span>
+                <span class="info-value">{{ item.reqlevel }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="item-action">
+            <i class="fas fa-chevron-right"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="searchPerformed && totalPages > 1 && !searching" class="pagination">
+      <button 
+        @click="changePage(currentPage - 1)"
+        :disabled="currentPage <= 1"
+        class="page-button"
+      >
+        <i class="fas fa-chevron-left"></i>
+        Previous
+      </button>
+      
+      <div class="page-info">
+        Page {{ currentPage }} of {{ totalPages }}
+      </div>
+      
+      <button 
+        @click="changePage(currentPage + 1)"
+        :disabled="currentPage >= totalPages"
+        class="page-button"
+      >
+        Next
+        <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+
+    <!-- No Results -->
+    <div v-if="searchPerformed && items.length === 0 && !searching" class="no-results">
+      <div class="no-results-icon">
+        <i class="fas fa-search"></i>
+      </div>
+      <h3>No items found</h3>
+      <p v-if="searchQuery">No items match your search for "{{ searchQuery }}"</p>
+      <p v-else>Try searching with different criteria</p>
+    </div>
+
+    <!-- Item Details Modal -->
+    <div v-if="selectedItemDetail" class="modal-overlay" @click="closeItemModal">
+      <div class="modal-content item-modal" @click.stop>
+        <div class="modal-header">
+          <div class="modal-header-content">
+            <div class="item-icon-modal-container">
+              <img 
+                v-if="selectedItemDetail.icon" 
+                :src="`/icons/items/${selectedItemDetail.icon}.gif`" 
+                :alt="`${selectedItemDetail.name} icon`"
+                class="item-icon-modal"
+                @error="handleIconError"
+              />
+              <div v-else class="item-icon-placeholder-modal">
+                <i class="fas fa-cube"></i>
+              </div>
+            </div>
+            <div class="item-header-info">
+              <h3>{{ selectedItemDetail.name }}</h3>
+              <div class="item-header-meta">
+                <span class="item-type-badge">{{ getItemTypeDisplay(selectedItemDetail.itemtype) }}</span>
+                <span v-if="selectedItemDetail.magic" class="property-badge magic">Magic</span>
+                <span v-if="selectedItemDetail.lore" class="property-badge lore">Lore</span>
+                <span v-if="selectedItemDetail.nodrop" class="property-badge nodrop">No Drop</span>
+                <span v-if="selectedItemDetail.norent" class="property-badge norent">No Rent</span>
+              </div>
+            </div>
+          </div>
+          <button @click="closeItemModal" class="modal-close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="item-details">
+            <!-- Primary Stats -->
+            <div v-if="selectedItemDetail.damage || selectedItemDetail.ac || selectedItemDetail.hp || selectedItemDetail.mana" class="detail-section primary-stats">
+              <h4>Primary Stats</h4>
+              <div class="primary-stats-grid">
+                <div v-if="selectedItemDetail.damage && selectedItemDetail.delay" class="primary-stat-item weapon">
+                  <div class="stat-icon"><i class="fas fa-sword"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">{{ selectedItemDetail.damage }} / {{ selectedItemDetail.delay }}</span>
+                    <span class="stat-label">Damage / Delay</span>
+                    <span class="stat-extra">Ratio: {{ getWeaponRatio(selectedItemDetail.damage, selectedItemDetail.delay) }}</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.ac" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-shield-alt"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">{{ selectedItemDetail.ac }}</span>
+                    <span class="stat-label">Armor Class</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.hp" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-heart"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">+{{ selectedItemDetail.hp }}</span>
+                    <span class="stat-label">Hit Points</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.mana" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-star"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">+{{ selectedItemDetail.mana }}</span>
+                    <span class="stat-label">Mana</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Attributes -->
+            <div v-if="hasAnyStats(selectedItemDetail)" class="detail-section">
+              <h4>Attributes</h4>
+              <div class="attributes-grid">
+                <div v-if="selectedItemDetail.str" class="attribute-item">
+                  <span class="attr-label">STR</span>
+                  <span class="attr-value">+{{ selectedItemDetail.str }}</span>
+                </div>
+                <div v-if="selectedItemDetail.sta" class="attribute-item">
+                  <span class="attr-label">STA</span>
+                  <span class="attr-value">+{{ selectedItemDetail.sta }}</span>
+                </div>
+                <div v-if="selectedItemDetail.agi" class="attribute-item">
+                  <span class="attr-label">AGI</span>
+                  <span class="attr-value">+{{ selectedItemDetail.agi }}</span>
+                </div>
+                <div v-if="selectedItemDetail.dex" class="attribute-item">
+                  <span class="attr-label">DEX</span>
+                  <span class="attr-value">+{{ selectedItemDetail.dex }}</span>
+                </div>
+                <div v-if="selectedItemDetail.wis" class="attribute-item">
+                  <span class="attr-label">WIS</span>
+                  <span class="attr-value">+{{ selectedItemDetail.wis }}</span>
+                </div>
+                <div v-if="selectedItemDetail.int" class="attribute-item">
+                  <span class="attr-label">INT</span>
+                  <span class="attr-value">+{{ selectedItemDetail.int }}</span>
+                </div>
+                <div v-if="selectedItemDetail.cha" class="attribute-item">
+                  <span class="attr-label">CHA</span>
+                  <span class="attr-value">+{{ selectedItemDetail.cha }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Resistances -->
+            <div v-if="hasResistValues(selectedItemDetail)" class="detail-section">
+              <h4>Resistances</h4>
+              <div class="resistances-grid">
+                <div v-if="(selectedItemDetail.resistances?.fire || selectedItemDetail.fr) && (selectedItemDetail.resistances?.fire || selectedItemDetail.fr) !== 0" class="resist-item fire">
+                  <span class="resist-label">Fire</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.fire || selectedItemDetail.fr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.cold || selectedItemDetail.cr) && (selectedItemDetail.resistances?.cold || selectedItemDetail.cr) !== 0" class="resist-item cold">
+                  <span class="resist-label">Cold</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.cold || selectedItemDetail.cr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.magic || selectedItemDetail.mr) && (selectedItemDetail.resistances?.magic || selectedItemDetail.mr) !== 0" class="resist-item magic">
+                  <span class="resist-label">Magic</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.magic || selectedItemDetail.mr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.disease || selectedItemDetail.dr) && (selectedItemDetail.resistances?.disease || selectedItemDetail.dr) !== 0" class="resist-item disease">
+                  <span class="resist-label">Disease</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.disease || selectedItemDetail.dr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.poison || selectedItemDetail.pr) && (selectedItemDetail.resistances?.poison || selectedItemDetail.pr) !== 0" class="resist-item poison">
+                  <span class="resist-label">Poison</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.poison || selectedItemDetail.pr }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Requirements & Restrictions -->
+            <div class="detail-section">
+              <h4>Requirements & Restrictions</h4>
+              <div class="requirements-grid">
+                <div v-if="selectedItemDetail.classes" class="requirement-item">
+                  <span class="req-label">Classes:</span>
+                  <span class="req-value">{{ getClassDisplay(selectedItemDetail.classes) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.races" class="requirement-item">
+                  <span class="req-label">Races:</span>
+                  <span class="req-value">{{ getRaceDisplay(selectedItemDetail.races) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.slots" class="requirement-item">
+                  <span class="req-label">Slot:</span>
+                  <span class="req-value">{{ getSlotDisplay(selectedItemDetail.slots) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.reqlevel" class="requirement-item">
+                  <span class="req-label">Required Level:</span>
+                  <span class="req-value">{{ selectedItemDetail.reqlevel }}</span>
+                </div>
+                <div v-if="selectedItemDetail.weight" class="requirement-item">
+                  <span class="req-label">Weight:</span>
+                  <span class="req-value">{{ (selectedItemDetail.weight / 10).toFixed(1) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Effects -->
+            <div v-if="hasEffects(selectedItemDetail)" class="detail-section">
+              <h4>Effects</h4>
+              <div class="effects-list">
+                <div v-if="selectedItemDetail.effects?.click && selectedItemDetail.effects.click !== -1" class="effect-item">
+                  <span class="effect-type">Click:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.click }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.proc && selectedItemDetail.effects.proc !== -1" class="effect-item">
+                  <span class="effect-type">Proc:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.proc }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.worn && selectedItemDetail.effects.worn !== -1" class="effect-item">
+                  <span class="effect-type">Worn:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.worn }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.focus && selectedItemDetail.effects.focus !== -1" class="effect-item">
+                  <span class="effect-type">Focus:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.focus }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Lore Text -->
+            <div v-if="selectedItemDetail.lore" class="detail-section lore-section">
+              <h4>Lore</h4>
+              <div class="lore-text">{{ selectedItemDetail.lore }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { API_BASE_URL } from '../config/api'
+import LoadingModal from '../components/LoadingModal.vue'
+
+// State
+const searchQuery = ref('')
+const selectedType = ref('')
+const selectedClass = ref('')
+const minLevel = ref('')
+const maxLevel = ref('')
+const items = ref([])
+const itemTypes = ref([])
+const totalCount = ref(0)
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
+const searching = ref(false)
+const searchPerformed = ref(false)
+const databaseAvailable = ref(true)
+const selectedItemDetail = ref(null)
+const viewMode = ref('list') // Default to list view
+const paginating = ref(false) // Loading state for pagination
+
+// Advanced filtering state
+const showFilterDropdown = ref(false)
+const filterSearchQuery = ref('')
+const activeFilters = ref([])
+const filterFieldInput = ref('')
+const filterSearchInput = ref(null)
+const showFilterConfig = ref(false)
+const currentFilterConfig = ref(null)
+
+// Available filter fields based on item schema
+const filterFields = [
+  // Basic fields
+  { name: 'lore', label: 'Lore Text', type: 'text', operators: ['contains', 'equals'] },
+  { name: 'price', label: 'Price', type: 'number', operators: ['equals', 'not equals', 'greater than', 'less than', 'between'] },
+  { name: 'weight', label: 'Weight', type: 'number', operators: ['equals', 'not equals', 'greater than', 'less than', 'between'] },
+  { name: 'size', label: 'Size', type: 'number', operators: ['equals', 'not equals', 'greater than', 'less than'] },
+  
+  // Combat stats
+  { name: 'damage', label: 'Damage', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'delay', label: 'Delay', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'ac', label: 'Armor Class', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'hp', label: 'Hit Points', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'mana', label: 'Mana', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  
+  // Attributes
+  { name: 'str', label: 'Strength', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'sta', label: 'Stamina', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'agi', label: 'Agility', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'dex', label: 'Dexterity', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'wis', label: 'Wisdom', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'int', label: 'Intelligence', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'cha', label: 'Charisma', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  
+  // Resistances
+  { name: 'mr', label: 'Magic Resist', type: 'number', operators: ['equals', 'greater than', 'less than'] },
+  { name: 'fr', label: 'Fire Resist', type: 'number', operators: ['equals', 'greater than', 'less than'] },
+  { name: 'cr', label: 'Cold Resist', type: 'number', operators: ['equals', 'greater than', 'less than'] },
+  { name: 'dr', label: 'Disease Resist', type: 'number', operators: ['equals', 'greater than', 'less than'] },
+  { name: 'pr', label: 'Poison Resist', type: 'number', operators: ['equals', 'greater than', 'less than'] },
+  
+  // Flags
+  { name: 'magic', label: 'Magic Item', type: 'boolean', operators: ['is'] },
+  { name: 'lore_flag', label: 'Lore Item', type: 'boolean', operators: ['is'] },
+  { name: 'nodrop', label: 'No Drop', type: 'boolean', operators: ['is'] },
+  { name: 'norent', label: 'No Rent', type: 'boolean', operators: ['is'] },
+  { name: 'artifact', label: 'Artifact', type: 'boolean', operators: ['is'] },
+  
+  // Requirements
+  { name: 'reqlevel', label: 'Required Level', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  { name: 'reclevel', label: 'Recommended Level', type: 'number', operators: ['equals', 'greater than', 'less than', 'between'] },
+  
+  // Slots
+  { name: 'slots', label: 'Equipment Slot', type: 'slot', operators: ['includes'] },
+  
+  // Effects
+  { name: 'clickeffect', label: 'Click Effect', type: 'text', operators: ['exists', 'contains'] },
+  { name: 'proceffect', label: 'Proc Effect', type: 'text', operators: ['exists', 'contains'] },
+  { name: 'worneffect', label: 'Worn Effect', type: 'text', operators: ['exists', 'contains'] },
+  { name: 'focuseffect', label: 'Focus Effect', type: 'text', operators: ['exists', 'contains'] }
+]
+
+// Computed
+const totalPages = computed(() => Math.ceil(totalCount.value / itemsPerPage.value))
+
+const filteredFields = computed(() => {
+  if (!filterSearchQuery.value) return filterFields
+  
+  const query = filterSearchQuery.value.toLowerCase()
+  return filterFields.filter(field => 
+    field.label.toLowerCase().includes(query) || 
+    field.name.toLowerCase().includes(query)
+  )
+})
+
+const isFilterConfigValid = computed(() => {
+  if (!currentFilterConfig.value) return false
+  
+  const config = currentFilterConfig.value
+  
+  // For 'exists' operator, no value needed
+  if (config.operator === 'exists') return true
+  
+  // For 'between' operator, both values needed
+  if (config.operator === 'between') {
+    return config.value !== '' && config.value !== null && 
+           config.value2 !== '' && config.value2 !== null
+  }
+  
+  // For all other operators, just need value
+  return config.value !== '' && config.value !== null
+})
+
+// Methods
+const loadItemTypes = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/types`)
+    if (!response.ok) {
+      if (response.status === 503) {
+        databaseAvailable.value = false
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    itemTypes.value = data.types || []
+  } catch (error) {
+    console.error('Error loading item types:', error)
+  }
+}
+
+const performSearch = async (page = 1) => {
+  if (!searchQuery.value && !selectedType.value && !selectedClass.value && !minLevel.value && !maxLevel.value && activeFilters.value.length === 0) {
+    alert('Please enter a search term or select a filter')
+    return
+  }
+
+  // If paginating is already true, we're doing a page change
+  // Otherwise, show the normal searching state
+  if (!paginating.value) {
+    searching.value = true
+  }
+  searchPerformed.value = true
+  currentPage.value = page
+
+  try {
+    const params = new URLSearchParams()
+    if (searchQuery.value) params.append('q', searchQuery.value)
+    if (selectedType.value) params.append('type', selectedType.value)
+    if (selectedClass.value) params.append('class', selectedClass.value)
+    
+    // Validate numeric inputs before sending
+    if (minLevel.value !== '' && minLevel.value !== null) {
+      const minLevelNum = parseInt(minLevel.value)
+      if (!isNaN(minLevelNum) && minLevelNum > 0) {
+        params.append('min_level', minLevelNum.toString())
+      }
+    }
+    
+    if (maxLevel.value !== '' && maxLevel.value !== null) {
+      const maxLevelNum = parseInt(maxLevel.value)
+      if (!isNaN(maxLevelNum) && maxLevelNum > 0) {
+        params.append('max_level', maxLevelNum.toString())
+      }
+    }
+    
+    params.append('limit', itemsPerPage.value.toString())
+    params.append('offset', ((page - 1) * itemsPerPage.value).toString())
+    
+    // Add advanced filters
+    if (activeFilters.value.length > 0) {
+      const filters = activeFilters.value.map(filter => ({
+        field: filter.field.name,
+        operator: filter.operator,
+        value: filter.value,
+        value2: filter.value2
+      }))
+      params.append('filters', JSON.stringify(filters))
+    }
+    
+    // Debug log
+    console.log('Search params:', params.toString())
+
+    const response = await fetch(`${API_BASE_URL}/api/items/search?${params}`)
+    
+    if (!response.ok) {
+      if (response.status === 503) {
+        databaseAvailable.value = false
+        throw new Error('Database not available')
+      }
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    items.value = data.items || []
+    totalCount.value = data.total_count || 0
+    databaseAvailable.value = true
+  } catch (error) {
+    console.error('Error searching items:', error)
+    alert('Error searching items: ' + error.message)
+    items.value = []
+    totalCount.value = 0
+  } finally {
+    searching.value = false
+    paginating.value = false
+  }
+}
+
+const changePage = (page) => {
+  if (page >= 1 && page <= totalPages.value) {
+    // Clear current items to show loading state
+    items.value = []
+    
+    // Set paginating state
+    paginating.value = true
+    
+    // Perform the search
+    performSearch(page)
+  }
+}
+
+const clearFilters = () => {
+  searchQuery.value = ''
+  selectedType.value = ''
+  selectedClass.value = ''
+  minLevel.value = ''
+  maxLevel.value = ''
+  items.value = []
+  totalCount.value = 0
+  searchPerformed.value = false
+  currentPage.value = 1
+  activeFilters.value = []
+}
+
+// Advanced filter methods
+const toggleFilterDropdown = async () => {
+  showFilterDropdown.value = !showFilterDropdown.value
+  if (showFilterDropdown.value) {
+    filterSearchQuery.value = ''
+    // Wait for next DOM update cycle
+    await nextTick()
+    // Focus the search input
+    if (filterSearchInput.value) {
+      filterSearchInput.value.focus()
+    }
+  }
+}
+
+
+const selectFilterField = (field) => {
+  // Set up the filter configuration
+  currentFilterConfig.value = {
+    field: field,
+    operator: field.operators[0],
+    value: '',
+    value2: '' // For 'between' operator
+  }
+  
+  // Hide dropdown and show configuration modal
+  showFilterDropdown.value = false
+  showFilterConfig.value = true
+}
+
+const removeFilter = (index) => {
+  activeFilters.value.splice(index, 1)
+}
+
+const formatFilterValue = (filter) => {
+  if (filter.field.type === 'boolean') {
+    return filter.value ? 'Yes' : 'No'
+  }
+  if (filter.operator === 'between' && filter.value2) {
+    return `${filter.value} - ${filter.value2}`
+  }
+  if (filter.operator === 'exists') {
+    return 'Any'
+  }
+  return filter.value || 'Not set'
+}
+
+const formatOperator = (operator) => {
+  const operatorMap = {
+    'equals': '=',
+    'not equals': '≠',
+    'contains': 'contains',
+    'starts with': 'starts with',
+    'ends with': 'ends with',
+    'greater than': '>',
+    'less than': '<',
+    'between': 'between',
+    'exists': 'has value'
+  }
+  return operatorMap[operator] || operator
+}
+
+const formatOperatorVerbose = (operator) => {
+  const operatorMap = {
+    'equals': 'Equals',
+    'not equals': 'Not Equals',
+    'contains': 'Contains',
+    'starts with': 'Starts With',
+    'ends with': 'Ends With',
+    'greater than': 'Greater Than',
+    'less than': 'Less Than',
+    'between': 'Between',
+    'exists': 'Has Value'
+  }
+  return operatorMap[operator] || operator
+}
+
+const applyFilterConfig = () => {
+  if (isFilterConfigValid.value) {
+    activeFilters.value.push({
+      field: currentFilterConfig.value.field,
+      operator: currentFilterConfig.value.operator,
+      value: currentFilterConfig.value.value,
+      value2: currentFilterConfig.value.value2
+    })
+    
+    // Reset and close
+    currentFilterConfig.value = null
+    showFilterConfig.value = false
+  }
+}
+
+const cancelFilterConfig = () => {
+  currentFilterConfig.value = null
+  showFilterConfig.value = false
+}
+
+const selectItem = async (item) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${item.item_id}`)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    selectedItemDetail.value = data.item
+  } catch (error) {
+    console.error('Error loading item details:', error)
+    alert('Error loading item details: ' + error.message)
+  }
+}
+
+const closeItemModal = () => {
+  selectedItemDetail.value = null
+}
+
+const hasStats = (item) => {
+  return item.ac || item.hp || item.mana || item.str || item.sta || item.agi || 
+         item.dex || item.wis || item.int || item.cha
+}
+
+const handleIconError = (event) => {
+  // Try fallback to icon 0 (blank/default icon)
+  if (!event.target.dataset.fallbackAttempted) {
+    event.target.dataset.fallbackAttempted = 'true'
+    event.target.src = '/icons/items/0.gif'
+  } else {
+    // If fallback also fails, hide the image and show placeholder
+    event.target.style.display = 'none'
+    // Show the placeholder by finding the sibling element
+    const placeholder = event.target.nextElementSibling || event.target.parentElement.querySelector('.item-icon-placeholder, .item-icon-placeholder-grid, .item-icon-placeholder-modal')
+    if (placeholder) {
+      placeholder.style.display = 'flex'
+    }
+  }
+}
+
+// Utility functions for item display
+const getItemTypeDisplay = (itemtype) => {
+  const typeMap = {
+    0: 'None', 1: '1H Slash', 2: '2H Slash', 3: '1H Blunt', 4: '2H Blunt',
+    5: '1H Piercing', 7: '2H Piercing', 8: 'Archery', 9: 'Shield',
+    10: 'Armor', 11: 'Misc', 12: 'Lock Pick', 13: 'Food',
+    14: 'Drink', 15: 'Light', 16: 'Combinable', 17: 'Bandages',
+    18: 'Throwing', 19: 'Scroll', 20: 'Potion', 21: 'Book',
+    22: 'Note', 23: 'Key', 24: 'Coin', 25: 'Arrow',
+    26: 'Compass', 27: 'Poison', 28: 'Jewelry', 29: 'Instrument',
+    30: 'Alcohol', 31: 'Spell', 32: 'Augmentation', 33: 'Augmentation Solvent',
+    34: 'Augmentation Distiller', 35: 'Banner', 36: 'Campfire',
+    37: 'Charm', 38: 'Dye', 39: 'Fish', 40: 'Fishing Bait',
+    41: 'Fishing Pole', 42: 'Martial', 43: 'Melee Projectile',
+    44: 'Projectile', 45: 'Ranged', 46: 'Symbol', 47: 'Tome',
+    48: 'Trap', 49: 'Research', 50: 'Type 20', 51: 'Familiar',
+    52: 'Mount'
+  }
+  return typeMap[itemtype] || `Type ${itemtype}`
+}
+
+const getSlotDisplay = (slots) => {
+  if (!slots) return null
+  const slotMap = {
+    1: 'Charm', 2: 'Ear', 4: 'Head', 8: 'Face',
+    16: 'Ear', 32: 'Neck', 64: 'Shoulders', 128: 'Arms',
+    256: 'Back', 512: 'Wrist', 1024: 'Wrist', 2048: 'Range',
+    4096: 'Hands', 8192: 'Primary', 16384: 'Secondary',
+    32768: 'Fingers', 65536: 'Chest', 131072: 'Legs',
+    262144: 'Feet', 524288: 'Waist', 1048576: 'Power Source',
+    2097152: 'Ammo'
+  }
+  
+  const slotNames = []
+  for (let [bit, name] of Object.entries(slotMap)) {
+    if (slots & parseInt(bit)) {
+      slotNames.push(name)
+    }
+  }
+  
+  // Remove duplicates using Set
+  const uniqueSlots = [...new Set(slotNames)]
+  
+  return uniqueSlots.length > 0 ? uniqueSlots.join(', ') : null
+}
+
+const getClassDisplay = (classes) => {
+  if (!classes || classes === 0) return 'None'
+  
+  // Check for all classes - 65535 is the bitmask for all 16 classes
+  if (classes === 65535) return 'ALL'
+  
+  const classMap = {
+    1: 'WAR', 2: 'CLR', 4: 'PAL', 8: 'RNG',
+    16: 'SHD', 32: 'DRU', 64: 'MNK', 128: 'BRD',
+    256: 'ROG', 512: 'SHM', 1024: 'NEC', 2048: 'WIZ',
+    4096: 'MAG', 8192: 'ENC', 16384: 'BST', 32768: 'BER'
+  }
+  
+  const classNames = []
+  for (let [bit, name] of Object.entries(classMap)) {
+    if (classes & parseInt(bit)) {
+      classNames.push(name)
+    }
+  }
+  
+  // If all classes are included, return ALL
+  if (classNames.length === Object.keys(classMap).length) {
+    return 'ALL'
+  }
+  
+  return classNames.length > 0 ? classNames.join(' ') : 'None'
+}
+
+const getRaceDisplay = (races) => {
+  if (!races || races === 0) return 'None'
+  
+  // Check for all races - 65535 is the bitmask for all 16 races
+  // Also check for other common "all races" values
+  if (races === 65535 || races === 131071 || races === 32767) return 'ALL'
+  
+  const raceMap = {
+    1: 'HUM', 2: 'BAR', 4: 'ERU', 8: 'ELF',
+    16: 'HIE', 32: 'DEF', 64: 'HEF', 128: 'DWF',
+    256: 'TRL', 512: 'OGR', 1024: 'HFL', 2048: 'GNM',
+    4096: 'IKS', 8192: 'VAH', 16384: 'FRG', 32768: 'DRK'
+  }
+  
+  const includedRaces = []
+  const excludedRaces = []
+  
+  for (let [bit, name] of Object.entries(raceMap)) {
+    if (races & parseInt(bit)) {
+      includedRaces.push(name)
+    } else {
+      excludedRaces.push(name)
+    }
+  }
+  
+  // If all races are included, return ALL
+  if (includedRaces.length === Object.keys(raceMap).length) {
+    return 'ALL'
+  }
+  
+  // If more than half the races can use it, show "All but X Y Z"
+  if (includedRaces.length > Object.keys(raceMap).length / 2) {
+    return `All but ${excludedRaces.join(' ')}`
+  }
+  
+  return includedRaces.length > 0 ? includedRaces.join(' ') : 'None'
+}
+
+const hasAnyStats = (item) => {
+  return item.str || item.sta || item.agi || item.dex || 
+         item.wis || item.int || item.cha ||
+         (item.stats && (item.stats.str || item.stats.sta || item.stats.agi || 
+          item.stats.dex || item.stats.wis || item.stats.int || item.stats.cha))
+}
+
+const hasResists = (item) => {
+  return item.mr || item.fr || item.cr || item.dr || item.pr || item.svcorruption
+}
+
+const hasResistValues = (item) => {
+  return (item.mr && item.mr !== 0) || 
+         (item.fr && item.fr !== 0) || 
+         (item.cr && item.cr !== 0) || 
+         (item.dr && item.dr !== 0) || 
+         (item.pr && item.pr !== 0) ||
+         (item.resistances && (
+           (item.resistances.fire && item.resistances.fire !== 0) ||
+           (item.resistances.cold && item.resistances.cold !== 0) ||
+           (item.resistances.magic && item.resistances.magic !== 0) ||
+           (item.resistances.disease && item.resistances.disease !== 0) ||
+           (item.resistances.poison && item.resistances.poison !== 0)
+         ))
+}
+
+const hasEffects = (item) => {
+  return item.effects && (
+    (item.effects.click && item.effects.click !== -1) ||
+    (item.effects.proc && item.effects.proc !== -1) ||
+    (item.effects.worn && item.effects.worn !== -1) ||
+    (item.effects.focus && item.effects.focus !== -1)
+  )
+}
+
+const getWeaponRatio = (damage, delay) => {
+  if (!damage || !delay) return null
+  return (damage / delay).toFixed(2)
+}
+
+const getTopStatsDisplay = (item) => {
+  const stats = []
+  const statValues = {
+    str: item.str || item.stats?.str,
+    sta: item.sta || item.stats?.sta,
+    agi: item.agi || item.stats?.agi,
+    dex: item.dex || item.stats?.dex,
+    wis: item.wis || item.stats?.wis,
+    int: item.int || item.stats?.int,
+    cha: item.cha || item.stats?.cha
+  }
+  
+  // Get all stats that have values
+  Object.entries(statValues).forEach(([stat, value]) => {
+    if (value) {
+      stats.push({ name: stat.toUpperCase(), value })
+    }
+  })
+  
+  // Sort by value and take top 3
+  stats.sort((a, b) => b.value - a.value)
+  const topStats = stats.slice(0, 3)
+  
+  // Return as array instead of string for template rendering
+  return topStats
+}
+
+// Lifecycle
+onMounted(async () => {
+  await loadItemTypes()
+  
+  // Click outside handler for filter dropdown
+  document.addEventListener('click', handleClickOutside)
+})
+
+// Cleanup on unmount
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
+
+// Click outside handler
+const handleClickOutside = (event) => {
+  const dropdown = document.querySelector('.filter-dropdown')
+  const button = document.querySelector('.advanced-filter-button')
+  
+  if (dropdown && !dropdown.contains(event.target) && !button.contains(event.target)) {
+    showFilterDropdown.value = false
+  }
+}
+</script>
+
+<style scoped>
+@import '../style-constants.css';
+
+.items-page {
+  padding: 20px;
+  padding-top: var(--header-height);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 40px;
+  margin-top: 20px;
+}
+
+.page-header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.search-section {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 30px;
+  margin-bottom: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  z-index: 1;
+}
+
+.search-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.search-input-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: 15px 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.search-input::placeholder {
+  color: #9ca3af;
+}
+
+.search-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 15px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.search-button i {
+  font-size: 1rem;
+}
+
+.search-button-text {
+  font-weight: 600;
+}
+
+.search-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+}
+
+.search-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.filters-container {
+  display: flex;
+  gap: 20px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-group label {
+  color: #f7fafc;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.filter-select, .filter-input {
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #f7fafc;
+  min-width: 150px;
+  transition: all 0.3s ease;
+}
+
+.filter-input {
+  min-width: 100px;
+}
+
+.filter-select:focus, .filter-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.filter-input::placeholder {
+  color: #9ca3af;
+}
+
+.clear-filters-button {
+  padding: 10px 16px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clear-filters-button:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Advanced Filters */
+.advanced-filter-container {
+  position: relative;
+  z-index: 10000;
+}
+
+.advanced-filter-button {
+  padding: 10px 16px;
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.advanced-filter-button:hover {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 320px;
+  max-width: calc(100vw - 40px);
+  max-height: 400px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-search-wrapper {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-search-input {
+  width: 100%;
+  padding: 10px 36px 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #f7fafc;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+}
+
+.filter-search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.filter-search-icon {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.filter-fields-list {
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.filter-field-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filter-field-item:hover {
+  background: rgba(102, 126, 234, 0.2);
+}
+
+.filter-field-label {
+  color: #f7fafc;
+  font-weight: 500;
+}
+
+.filter-field-type {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Filter Pills */
+.filter-pills-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(147, 112, 219, 0.2) 100%);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+.filter-pill-field {
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+.filter-pill-operator {
+  color: #60a5fa;
+  font-weight: 500;
+  font-size: 0.85rem;
+  margin: 0 4px;
+  font-style: italic;
+}
+
+.filter-pill-value {
+  color: #f7fafc;
+  font-weight: 500;
+}
+
+.filter-pill-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 50%;
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.filter-pill-remove:hover {
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
+.filter-pill-remove i {
+  font-size: 0.7rem;
+}
+
+/* Filter Configuration Modal */
+.filter-config-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 450px;
+  max-width: calc(100vw - 40px);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.98) 0%, rgba(45, 55, 72, 0.98) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 9999999;
+}
+
+.filter-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-config-header h4 {
+  color: #f7fafc;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.filter-config-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.filter-config-close:hover {
+  color: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.filter-config-body {
+  padding: 24px;
+}
+
+.filter-config-group {
+  margin-bottom: 20px;
+}
+
+.filter-config-group:last-child {
+  margin-bottom: 0;
+}
+
+.filter-config-group label {
+  display: block;
+  color: #e5e7eb;
+  font-weight: 500;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.filter-config-select,
+.filter-config-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #f7fafc;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+}
+
+.filter-config-select:focus,
+.filter-config-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.filter-config-info {
+  color: #9ca3af;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.filter-config-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-config-cancel,
+.filter-config-apply {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  font-size: 0.95rem;
+}
+
+.filter-config-cancel {
+  background: rgba(0, 0, 0, 0.3);
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.filter-config-cancel:hover {
+  background: rgba(0, 0, 0, 0.4);
+  color: #f7fafc;
+}
+
+.filter-config-apply {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.filter-config-apply:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+  transform: translateY(-1px);
+}
+
+.filter-config-apply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.database-status {
+  margin-bottom: 30px;
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.status-card.error i {
+  font-size: 1.5rem;
+}
+
+/* Decorative Image Container */
+.decorative-image-container {
+  margin: 40px auto;
+  max-width: 800px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.image-wrapper {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.decorative-image {
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.image-overlay {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 10;
+  padding: 30px 50px;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+  width: auto;
+  min-width: 300px;
+}
+
+.overlay-title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin: 0;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 50%, #c084fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 30px rgba(167, 139, 250, 0.6);
+  letter-spacing: 2px;
+  filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8));
+}
+
+.overlay-subtitle {
+  font-size: 1.1rem;
+  color: #e0e7ff;
+  margin: 0;
+  font-weight: 500;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8),
+               0 0 15px rgba(167, 139, 250, 0.4);
+  letter-spacing: 1px;
+  opacity: 0.95;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.results-section {
+  margin-bottom: 40px;
+  position: relative;
+  min-height: 400px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding: 30px 30px 0;
+}
+
+.results-title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.results-header h2 {
+  color: #f7fafc;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.results-info {
+  color: #9ca3af;
+  font-size: 0.95rem;
+}
+
+.view-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-toggle-label {
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.view-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.view-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  color: #9ca3af;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.95rem;
+}
+
+.view-button i {
+  font-size: 0.9rem;
+}
+
+.view-button-text {
+  font-weight: 500;
+}
+
+.view-button:hover {
+  color: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.view-button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+  padding: 0 30px;
+}
+
+.item-card {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.item-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.item-name {
+  color: #f7fafc;
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+  margin-right: 12px;
+}
+
+.item-type {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.item-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.stat-label {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.stat-value {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.weapon-ratio {
+  color: #fbbf24;
+  font-weight: 700;
+  margin-left: 8px;
+  font-size: 0.95rem;
+}
+
+.weapon-ratio::before {
+  content: "Ratio: ";
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.item-properties {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.property {
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.property.magic {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.property.lore {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.property.nodrop {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.property.norent {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.property.artifact {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+  border-color: rgba(236, 72, 153, 0.3);
+}
+
+.item-classes {
+  font-size: 0.9rem;
+}
+
+.classes-label {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.classes-value {
+  color: #e5e7eb;
+}
+
+.item-bottom-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.item-slot {
+  color: #d1d5db;
+  font-weight: 600;
+  flex: 1;
+}
+
+.item-bottom-info .item-classes {
+  color: #a78bfa;
+  font-weight: 600;
+  text-align: center;
+  flex: 1;
+}
+
+.item-level {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.level-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.level-value {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.stat.weapon {
+  grid-column: 1 / -1;
+}
+
+/* List View Styles */
+.items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 30px;
+}
+
+.item-row {
+  display: grid;
+  grid-template-columns: 48px 280px 1fr 48px;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-height: 90px;
+}
+
+.item-row:hover {
+  transform: translateX(4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+}
+
+.item-main-info {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.item-row .item-name {
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.item-row .item-type {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.item-row .item-properties {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.item-center-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.item-stats-primary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.item-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  overflow: hidden;
+}
+
+.stat-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.stat-inline.weapon-stats {
+  background: rgba(102, 126, 234, 0.15);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.stat-inline.attr {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.stat-inline.resist {
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+}
+
+.stat-inline .stat-label {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.stat-inline .stat-value {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.stat-inline .stat-value.ratio {
+  color: #a78bfa;
+}
+
+.info-item {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.info-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #d1d5db;
+  font-weight: 600;
+}
+
+.item-classes-row {
+  min-width: 200px;
+  font-size: 0.9rem;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-action {
+  color: #9ca3af;
+  font-size: 1.2rem;
+  transition: all 0.3s ease;
+  width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-row:hover .item-action {
+  color: #667eea;
+  transform: translateX(4px);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-top: 30px;
+  margin-bottom: 40px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pagination-top {
+  margin: 20px 30px;
+}
+
+.page-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.page-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.page-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.page-info {
+  color: #f7fafc;
+  font-weight: 600;
+  font-size: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 150px;
+  text-align: center;
+}
+
+.no-results {
+  text-align: center;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+.no-results-icon i {
+  font-size: 3rem;
+  color: #4b5563;
+  margin-bottom: 20px;
+}
+
+.no-results h3 {
+  color: #e5e7eb;
+  margin-bottom: 12px;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.item-modal {
+  max-width: 800px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px 30px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-header h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f7fafc;
+  margin: 0;
+}
+
+.item-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-header-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.item-type-badge {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.property-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.property-badge.magic {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.property-badge.lore {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.property-badge.nodrop {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.property-badge.norent {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.modal-close:hover {
+  color: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-body {
+  padding: 30px;
+}
+
+.item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-section h4 {
+  color: #f7fafc;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+}
+
+.detail-item, .stat-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.detail-label, .stat-label {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.detail-value, .stat-value {
+  color: #f7fafc;
+  font-weight: 600;
+}
+
+.classes-detail, .races-detail, .slots-detail, .effect-detail, .description-detail {
+  color: #e5e7eb;
+  line-height: 1.6;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+/* Primary Stats Section */
+.primary-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.primary-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.primary-stat-item.weapon {
+  grid-column: 1 / -1;
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.2);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: #a78bfa;
+}
+
+.stat-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.primary-stat-item .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f7fafc;
+}
+
+.primary-stat-item .stat-label {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.stat-extra {
+  font-size: 0.85rem;
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+/* Attributes Grid */
+.attributes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px;
+}
+
+.attribute-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 10px;
+}
+
+.attr-label {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.attr-value {
+  font-size: 1.1rem;
+  color: #4ade80;
+  font-weight: 700;
+}
+
+/* Resistances Grid */
+.resistances-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.resist-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid;
+}
+
+.resist-item.fire {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.resist-item.cold {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.resist-item.magic {
+  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(168, 85, 247, 0.2);
+}
+
+.resist-item.disease {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.resist-item.poison {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.resist-label {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.resist-value {
+  font-size: 1rem;
+  color: #f7fafc;
+  font-weight: 700;
+}
+
+/* Requirements Grid */
+.requirements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.requirement-item {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.req-label {
+  color: #9ca3af;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.req-value {
+  color: #f7fafc;
+  font-weight: 600;
+  flex: 1;
+}
+
+/* Effects List */
+.effects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.effect-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 8px;
+}
+
+.effect-type {
+  color: #a78bfa;
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.effect-value {
+  color: #e5e7eb;
+}
+
+/* Lore Section */
+.lore-section {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  border-radius: 12px;
+}
+
+.lore-text {
+  color: #fbbf24;
+  font-style: italic;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 768px) {
+  .page-header h1 {
+    font-size: 2rem;
+  }
+
+  .filters-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    min-width: 100%;
+  }
+
+  .filter-select {
+    min-width: 100%;
+  }
+
+  .items-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .view-toggle-container {
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .view-button-text {
+    display: inline;
+  }
+
+  .item-row {
+    grid-template-columns: 48px 1fr;
+    height: auto;
+    min-height: 90px;
+    gap: 12px;
+    padding: 16px;
+  }
+  
+  .item-row .item-icon-container {
+    grid-row: 1 / 3;
+  }
+  
+  .item-row .item-main-info {
+    grid-column: 2;
+  }
+  
+  .item-row .item-center-content {
+    grid-column: 1 / -1;
+  }
+
+  .item-stats-row {
+    gap: 8px;
+  }
+
+  .stat-inline {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+  }
+
+  .item-classes-row {
+    min-width: unset;
+    white-space: normal;
+  }
+
+  .item-action {
+    display: none;
+  }
+
+  .pagination {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .modal-content {
+    margin: 10px;
+    max-width: none;
+  }
+
+  .modal-header, .modal-body {
+    padding: 20px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-dropdown {
+    max-height: 60vh;
+  }
+
+  .advanced-filter-container {
+    position: static;
+  }
+
+  .advanced-filter-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Item Icon Styles */
+
+/* List View Icons */
+.item-icon-container {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.item-icon-placeholder {
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 1.2rem;
+}
+
+/* Grid View Icons */
+.item-icon-container-grid {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-icon-grid {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.item-icon-placeholder-grid {
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 1.5rem;
+}
+
+.item-header-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Modal Icons */
+.item-icon-modal-container {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-icon-modal {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.item-icon-placeholder-modal {
+  width: 56px;
+  height: 56px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 1.8rem;
+}
+
+/* Ensure placeholders show when images fail */
+.item-icon[style*="display: none"] + .item-icon-placeholder,
+.item-icon-grid[style*="display: none"] + .item-icon-placeholder-grid,
+.item-icon-modal[style*="display: none"] + .item-icon-placeholder-modal {
+  display: flex !important;
+}
+</style>

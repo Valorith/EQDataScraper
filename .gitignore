@@ -17,6 +17,7 @@ download_icons.py
 oauth_debug.txt
 test_oauth.html
 *_debug.txt
+test-clear-cache.html
 
 # Test coverage reports
 coverage/
