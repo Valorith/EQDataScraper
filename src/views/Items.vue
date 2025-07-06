@@ -114,7 +114,7 @@
           </div>
           
           <!-- Filter Configuration Modal -->
-          <div v-if="showFilterConfig && currentFilterConfig" class="filter-config-modal">
+          <div v-if="showFilterConfig && currentFilterConfig && currentFilterConfig.field" class="filter-config-modal">
             <div class="filter-config-header">
               <h4>Configure Filter: {{ currentFilterConfig.field.label }}</h4>
               <button @click="cancelFilterConfig" class="filter-config-close">
@@ -800,7 +800,7 @@ const filteredFields = computed(() => {
 })
 
 const isFilterConfigValid = computed(() => {
-  if (!currentFilterConfig.value) return false
+  if (!currentFilterConfig.value || !currentFilterConfig.value.field) return false
   
   const config = currentFilterConfig.value
   
@@ -965,10 +965,15 @@ const toggleFilterDropdown = async () => {
 
 
 const selectFilterField = (field) => {
+  if (!field) {
+    console.error('No field provided to selectFilterField')
+    return
+  }
+  
   // Set up the filter configuration
   currentFilterConfig.value = {
     field: field,
-    operator: field.operators[0],
+    operator: field.operators && field.operators[0] ? field.operators[0] : 'equals',
     value: '',
     value2: '' // For 'between' operator
   }
@@ -1026,7 +1031,7 @@ const formatOperatorVerbose = (operator) => {
 }
 
 const applyFilterConfig = () => {
-  if (isFilterConfigValid.value) {
+  if (isFilterConfigValid.value && currentFilterConfig.value && currentFilterConfig.value.field) {
     activeFilters.value.push({
       field: currentFilterConfig.value.field,
       operator: currentFilterConfig.value.operator,
