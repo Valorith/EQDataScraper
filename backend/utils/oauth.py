@@ -42,6 +42,14 @@ class GoogleOAuth:
         if not all([self.client_id, self.client_secret, self.redirect_uri]):
             raise ValueError("Missing Google OAuth configuration. Check environment variables.")
         
+        # Log the raw redirect URI to check for truncation
+        safe_log(f"[OAuth Init] Raw OAUTH_REDIRECT_URI from env: '{self.redirect_uri}' (length: {len(self.redirect_uri) if self.redirect_uri else 0})")
+        
+        # Check if redirect URI is truncated
+        if self.redirect_uri and self.redirect_uri.endswith('/auth/callba'):
+            safe_log(f"[OAuth Init] ERROR: Redirect URI is truncated! Fixing...")
+            self.redirect_uri = self.redirect_uri + 'ck'
+        
         # Fix common misconfiguration where redirect URI points to backend instead of frontend
         if self.redirect_uri and ('/api/' in self.redirect_uri or 'backend' in self.redirect_uri):
             safe_log(f"[OAuth Init] Warning: Redirect URI appears to point to backend: {self.redirect_uri}")
@@ -92,9 +100,16 @@ class GoogleOAuth:
                 self.redirect_uri = f"{frontend_url}/auth/callback"
                 safe_log(f"[OAuth] FORCED correction to: {self.redirect_uri}")
         
+        # Ensure redirect_uri is complete
+        redirect_uri = self.redirect_uri
+        if redirect_uri.endswith('/auth/callba'):
+            safe_log(f"[OAuth] WARNING: Redirect URI appears truncated: {redirect_uri}")
+            redirect_uri = redirect_uri + 'ck'  # Add missing characters
+            safe_log(f"[OAuth] Fixed redirect URI: {redirect_uri}")
+        
         params = {
             'client_id': self.client_id,
-            'redirect_uri': self.redirect_uri,
+            'redirect_uri': redirect_uri,
             'scope': ' '.join(self.scopes),
             'response_type': 'code',
             'state': state,
@@ -104,8 +119,12 @@ class GoogleOAuth:
             'prompt': 'consent'  # Always show consent screen for refresh token
         }
         
-        # URL encode with safe parameter to avoid issues
-        auth_url = f"{self.auth_url}?{urllib.parse.urlencode(params, safe='')}"
+        # Build URL manually to ensure no truncation
+        param_strings = []
+        for key, value in params.items():
+            param_strings.append(f"{key}={urllib.parse.quote(str(value), safe='')}")
+        
+        auth_url = f"{self.auth_url}?{'&'.join(param_strings)}"
         
         # Log the full auth URL for debugging
         safe_log(f"[OAuth] Authorization URL generated with redirect_uri: {self.redirect_uri}")
