@@ -369,29 +369,88 @@ class OAuthStorage:
     
     def __init__(self):
         self._storage = {}
+        self._file_storage_path = "/tmp/oauth_states.json"
+        self._use_file_storage = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+        
+        if self._use_file_storage:
+            safe_log("[OAuth Storage] Using file-based storage for production environment")
+            # Load existing states from file if it exists
+            try:
+                if os.path.exists(self._file_storage_path):
+                    with open(self._file_storage_path, 'r') as f:
+                        self._storage = json.load(f)
+                    safe_log(f"[OAuth Storage] Loaded {len(self._storage)} existing states from file")
+            except Exception as e:
+                safe_log(f"[OAuth Storage] Error loading states from file: {str(e)}")
+                self._storage = {}
+    
+    def _save_to_file(self):
+        """Save current state to file in production."""
+        if self._use_file_storage:
+            try:
+                with open(self._file_storage_path, 'w') as f:
+                    json.dump(self._storage, f)
+                safe_log(f"[OAuth Storage] Saved {len(self._storage)} states to file")
+            except Exception as e:
+                safe_log(f"[OAuth Storage] Error saving states to file: {str(e)}")
     
     def store_oauth_state(self, state: str, code_verifier: str, user_ip: str = None) -> None:
         """Store OAuth state and code verifier temporarily."""
         self._storage[state] = {
             'code_verifier': code_verifier,
             'user_ip': user_ip,
-            'timestamp': secrets.token_urlsafe(16)  # Simple timestamp replacement
+            'timestamp': time.time()  # Use actual timestamp for cleanup
         }
+        safe_log(f"[OAuth Storage] Stored state: {state[:20]}... with code_verifier: {code_verifier[:20]}...")
+        self._save_to_file()
+        
+        # Clean up old states (older than 10 minutes)
+        self.cleanup_expired_states()
     
     def get_oauth_state(self, state: str) -> Optional[Dict[str, Any]]:
         """Retrieve OAuth state data."""
-        return self._storage.get(state)
+        # In production, reload from file to get states from other workers
+        if self._use_file_storage:
+            try:
+                if os.path.exists(self._file_storage_path):
+                    with open(self._file_storage_path, 'r') as f:
+                        self._storage = json.load(f)
+                    safe_log(f"[OAuth Storage] Reloaded states from file, found {len(self._storage)} states")
+            except Exception as e:
+                safe_log(f"[OAuth Storage] Error reloading states from file: {str(e)}")
+        
+        result = self._storage.get(state)
+        if result:
+            safe_log(f"[OAuth Storage] Found state: {state[:20]}...")
+        else:
+            safe_log(f"[OAuth Storage] State not found: {state[:20]}...")
+            safe_log(f"[OAuth Storage] Available states: {list(self._storage.keys())[:5]}")
+        return result
     
     def remove_oauth_state(self, state: str) -> None:
         """Remove OAuth state after use."""
-        self._storage.pop(state, None)
+        if state in self._storage:
+            self._storage.pop(state, None)
+            safe_log(f"[OAuth Storage] Removed state: {state[:20]}...")
+            self._save_to_file()
     
     def cleanup_expired_states(self, max_age_minutes: int = 10) -> None:
         """Clean up expired OAuth states."""
-        # In a real implementation, you'd check timestamps
-        # For now, we'll just clear all states older than the limit
-        # This is a simplified implementation
-        pass
+        current_time = time.time()
+        max_age_seconds = max_age_minutes * 60
+        
+        states_to_remove = []
+        for state, data in self._storage.items():
+            if isinstance(data.get('timestamp'), (int, float)):
+                if current_time - data['timestamp'] > max_age_seconds:
+                    states_to_remove.append(state)
+        
+        for state in states_to_remove:
+            self._storage.pop(state, None)
+            
+        if states_to_remove:
+            safe_log(f"[OAuth Storage] Cleaned up {len(states_to_remove)} expired states")
+            self._save_to_file()
 
 
 # Global OAuth storage instance

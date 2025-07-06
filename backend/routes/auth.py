@@ -225,9 +225,14 @@ def google_callback():
             return create_error_response("Missing code or state parameter", 400)
         
         # Retrieve stored OAuth state
+        safe_log(f"[OAuth Debug] Attempting to retrieve stored state for: {state}")
         stored_state = oauth_storage.get_oauth_state(state)
         if not stored_state:
-            return create_error_response("Invalid or expired state parameter", 400)
+            safe_log(f"[OAuth Error] No stored state found for state: {state}")
+            safe_log(f"[OAuth Error] Current storage keys: {list(oauth_storage._storage.keys()) if hasattr(oauth_storage, '_storage') else 'N/A'}")
+            return create_error_response("Invalid or expired state parameter. This can happen if you take too long to complete the login or if cookies are disabled.", 400)
+        
+        safe_log(f"[OAuth Debug] Retrieved stored state successfully")
         
         # Clean up used state
         oauth_storage.remove_oauth_state(state)
