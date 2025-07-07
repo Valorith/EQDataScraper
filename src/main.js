@@ -32,12 +32,12 @@ spellsStore.warmupBackend()
     if (success) {
       console.log('✅ Backend connection established')
     } else {
-      console.log('⚠️ Backend connection failed, will retry on demand')
+      // Only show warning in development mode
+      if (import.meta.env.MODE === 'development') {
+        console.debug('⚠️ Backend not available, will connect on demand')
+      }
     }
   })
   .catch(error => {
-    // Silently handle errors to avoid console spam
-    if (error.response?.status !== 429) {
-      console.warn('Backend check failed:', error.message)
-    }
+    // Silently handle all errors - warmupBackend already logs if needed
   }) 

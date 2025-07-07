@@ -85,7 +85,8 @@ axios.interceptors.response.use(
     const url = error.config?.url || ''
     if (!url.includes('/api/health') && 
         !url.includes('/api/startup-status') &&
-        !url.includes('/api/cache-status')) {
+        !url.includes('/api/cache-status') &&
+        !url.includes('/api/auth/dev-status')) {
       console.error('API Error:', error.message)
     }
     return Promise.reject(error)

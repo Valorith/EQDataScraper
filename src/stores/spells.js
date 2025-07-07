@@ -123,8 +123,11 @@ export const useSpellsStore = defineStore('spells', {
         console.log(`✅ Backend responded in ${duration}ms`)
         return true
       } catch (error) {
-        // Silently handle 429 errors during startup
-        if (error.response?.status !== 429) {
+        // Silently handle expected errors during startup
+        if (error.response?.status !== 429 && 
+            error.code !== 'ERR_NETWORK' && 
+            error.code !== 'ECONNREFUSED') {
+          // Only log unexpected errors
           console.warn('Backend warmup failed:', error.message)
         }
         return false
