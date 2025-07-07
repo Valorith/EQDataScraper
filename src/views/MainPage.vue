@@ -224,9 +224,14 @@ export default {
   async mounted() {
     document.addEventListener('click', this.handleOutsideClick)
     
-    // Check if dev auth is enabled (only in development)
-    if (import.meta.env.MODE === 'development') {
-      this.checkDevAuthStatus()
+    // Skip dev auth check if we know backend isn't available
+    // This prevents unnecessary network errors in the console
+    if (import.meta.env.MODE === 'development' && !import.meta.env.VITE_SKIP_BACKEND_CHECK) {
+      // Only check if we haven't already determined backend is unavailable
+      const backendAvailable = sessionStorage.getItem('backend_available')
+      if (backendAvailable !== 'false') {
+        this.checkDevAuthStatus()
+      }
     }
   },
   beforeUnmount() {

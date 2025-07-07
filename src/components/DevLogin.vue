@@ -205,6 +205,15 @@ export default {
       console.debug('DevLogin: Environment mode:', import.meta.env.MODE)
       console.debug('DevLogin: API Base URL:', API_BASE_URL)
       
+      // Skip dev auth check if backend is unavailable
+      const backendAvailable = sessionStorage.getItem('backend_available')
+      if (backendAvailable === 'false') {
+        console.debug('DevLogin: Skipping auth check - backend unavailable')
+        isDevAuthEnabled.value = false
+        showDevLogin.value = false
+        return
+      }
+      
       // Use nextTick to avoid reactivity issues
       import('vue').then(({ nextTick }) => {
         nextTick(() => {

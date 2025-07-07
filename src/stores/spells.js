@@ -110,6 +110,12 @@ export const useSpellsStore = defineStore('spells', {
   actions: {
     // Warmup the backend connection with a single attempt
     async warmupBackend() {
+      // Skip backend check entirely in offline mode
+      if (import.meta.env.VITE_OFFLINE_MODE === 'true') {
+        sessionStorage.setItem('backend_available', 'false')
+        return false
+      }
+      
       const startTime = Date.now()
       const healthUrl = buildApiUrl(API_ENDPOINTS.HEALTH)
       
@@ -121,8 +127,14 @@ export const useSpellsStore = defineStore('spells', {
         
         const duration = Date.now() - startTime
         console.log(`✅ Backend responded in ${duration}ms`)
+        sessionStorage.setItem('backend_available', 'true')
         return true
       } catch (error) {
+        // Mark backend as unavailable to prevent further checks
+        if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+          sessionStorage.setItem('backend_available', 'false')
+        }
+        
         // Silently handle expected errors during startup
         if (error.response?.status !== 429 && 
             error.code !== 'ERR_NETWORK' && 
