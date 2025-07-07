@@ -4,6 +4,9 @@
 
 import axios from 'axios'
 
+// Set a reasonable default timeout for all requests
+axios.defaults.timeout = 10000 // 10 seconds
+
 // Track rate limit warnings to avoid console spam
 let rateLimitWarningShown = false
 let lastRateLimitWarning = 0
@@ -22,6 +25,16 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    // Handle timeout errors specially
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      const url = error.config?.url || ''
+      // Only log timeouts for non-auth endpoints
+      if (!url.includes('/api/auth/') && !url.includes('/api/user/')) {
+        console.warn(`Request timeout: ${url}`)
+      }
+      return Promise.reject(error)
+    }
+    
     // Handle specific error cases silently
     if (error.response) {
       const status = error.response.status

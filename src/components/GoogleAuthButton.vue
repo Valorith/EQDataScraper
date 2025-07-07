@@ -77,14 +77,25 @@ export default {
     
     // Reset loading state on mount (in case of race condition)
     onMounted(() => {
-      // If we're not on the callback page and loading is stuck, reset it
-      if (!window.location.pathname.includes('/auth/callback')) {
-        if (userStore.isLoading && !userStore.isAuthenticated) {
-          console.log('Resetting stuck loading state on mount')
-          userStore.isLoading = false
+      // Add a small delay to ensure App.vue initialization has started
+      setTimeout(() => {
+        // If we're not on the callback page and loading is stuck, reset it
+        if (!window.location.pathname.includes('/auth/callback')) {
+          // Only reset if loading has been stuck for more than reasonable time
+          // and user is not authenticated
+          if (userStore.isLoading && !userStore.isAuthenticated && !localLoading.value) {
+            console.log('Detected stuck loading state in GoogleAuthButton')
+            // Don't immediately reset - give it a moment more
+            setTimeout(() => {
+              if (userStore.isLoading && !userStore.isAuthenticated) {
+                console.log('Force resetting stuck loading state')
+                userStore.isLoading = false
+              }
+            }, 2000)
+          }
+          localLoading.value = false
         }
-        localLoading.value = false
-      }
+      }, 100) // Small delay to avoid race with App.vue initialization
     })
 
     return {

@@ -1672,11 +1672,21 @@ def database_diagnostics():
             'environment': {
                 'RAILWAY_ENVIRONMENT': os.environ.get('RAILWAY_ENVIRONMENT', 'not set'),
                 'EQEMU_DATABASE_URL': 'set' if os.environ.get('EQEMU_DATABASE_URL') else 'not set',
-                'DATABASE_URL': 'set' if os.environ.get('DATABASE_URL') else 'not set (good - reserved for auth DB)',
+                'DATABASE_URL': 'set' if os.environ.get('DATABASE_URL') else 'not set',
+                'EQEMU_DATABASE_TYPE': os.environ.get('EQEMU_DATABASE_TYPE', 'not set'),
+                'EQEMU_DATABASE_SSL': os.environ.get('EQEMU_DATABASE_SSL', 'not set'),
+                'EQEMU_DATABASE_HOST': os.environ.get('EQEMU_DATABASE_HOST', 'not set'),
+                'EQEMU_DATABASE_PORT': os.environ.get('EQEMU_DATABASE_PORT', 'not set'),
+                'EQEMU_DATABASE_NAME': os.environ.get('EQEMU_DATABASE_NAME', 'not set'),
+                'ENABLE_USER_ACCOUNTS': os.environ.get('ENABLE_USER_ACCOUNTS', 'not set'),
+                'PYTHON_VERSION': os.environ.get('PYTHON_VERSION', 'not set'),
+                'NODE_ENV': os.environ.get('NODE_ENV', 'not set'),
             },
             'config_checks': {},
             'connection_test': {},
-            'persistent_storage': {}
+            'persistent_storage': {},
+            'runtime_config': {},
+            'config_sources': {}
         }
         
         # Check persistent config
@@ -1697,6 +1707,13 @@ def database_diagnostics():
                     diagnostics['config_checks']['database'] = parsed.path[1:] if parsed.path else ''
                     diagnostics['config_checks']['username'] = parsed.username
                     diagnostics['config_checks']['has_password'] = bool(parsed.password)
+                    
+                # Include all config values (excluding password)
+                diagnostics['config_checks']['database_type'] = db_config.get('database_type', 'not set')
+                diagnostics['config_checks']['use_production_database'] = db_config.get('use_production_database', False)
+                diagnostics['config_checks']['database_read_only'] = db_config.get('database_read_only', True)
+                diagnostics['config_checks']['database_ssl'] = db_config.get('database_ssl', False)
+                diagnostics['config_checks']['config_timestamp'] = db_config.get('updated_at', 'not set')
             else:
                 diagnostics['config_checks']['persistent_config_found'] = False
         except Exception as e:
@@ -1704,18 +1721,40 @@ def database_diagnostics():
         
         # Check database connection
         try:
+            import time
             from app import get_eqemu_db_connection, db_config_manager
             
             # Force reload config
             logger.info("Diagnostics: About to force reload db_config_manager")
+            reload_start = time.time()
             current_config = db_config_manager.force_reload()
+            reload_time = time.time() - reload_start
             logger.info(f"Diagnostics: db_config_manager force reload returned: {type(current_config)}")
+            diagnostics['config_checks']['config_reload_time_ms'] = round(reload_time * 1000, 2)
             
             diagnostics['config_checks']['db_config_manager_keys'] = list(current_config.keys()) if current_config else []
             diagnostics['config_checks']['db_config_manager_has_url'] = 'production_database_url' in current_config if current_config else False
             diagnostics['config_checks']['db_config_manager_type'] = str(type(current_config))
             
+            # Get the actual connection parameters being used
+            if hasattr(db_config_manager, '_parsed_config') and db_config_manager._parsed_config:
+                parsed = db_config_manager._parsed_config
+                diagnostics['config_checks']['active_connection'] = {
+                    'host': parsed.get('host', 'not set'),
+                    'port': parsed.get('port', 'not set'),
+                    'database': parsed.get('database', 'not set'),
+                    'username': parsed.get('username', 'not set'),
+                    'has_password': bool(parsed.get('password')),
+                    'use_ssl': parsed.get('use_ssl', False),
+                    'db_type': parsed.get('db_type', 'not set')
+                }
+            else:
+                diagnostics['config_checks']['active_connection'] = 'No parsed configuration available'
+            
+            connection_start = time.time()
             test_conn, db_type, error = get_eqemu_db_connection()
+            connection_time = time.time() - connection_start
+            diagnostics['connection_test']['connection_time_ms'] = round(connection_time * 1000, 2)
             
             if test_conn:
                 diagnostics['connection_test']['success'] = True
@@ -1727,6 +1766,27 @@ def database_diagnostics():
                     cursor.execute("SELECT 1")
                     result = cursor.fetchone()
                     diagnostics['connection_test']['query_test'] = 'success'
+                    
+                    # Get database version
+                    if db_type == 'mysql':
+                        cursor.execute("SELECT VERSION()")
+                        version_result = cursor.fetchone()
+                        diagnostics['connection_test']['db_version'] = version_result.get('VERSION()') if isinstance(version_result, dict) else version_result[0]
+                        
+                        # Check if we have access to EQEmu tables
+                        cursor.execute("SHOW TABLES LIKE 'items'")
+                        items_table = cursor.fetchone()
+                        diagnostics['connection_test']['items_table_exists'] = bool(items_table)
+                        
+                        cursor.execute("SHOW TABLES LIKE 'discovered_items'")
+                        discovered_table = cursor.fetchone()
+                        diagnostics['connection_test']['discovered_items_table_exists'] = bool(discovered_table)
+                        
+                        # Get current database name
+                        cursor.execute("SELECT DATABASE()")
+                        db_name_result = cursor.fetchone()
+                        diagnostics['connection_test']['current_database'] = db_name_result.get('DATABASE()') if isinstance(db_name_result, dict) else db_name_result[0]
+                        
                     cursor.close()
                 except Exception as qe:
                     diagnostics['connection_test']['query_test'] = f'failed: {str(qe)}'
@@ -1748,8 +1808,56 @@ def database_diagnostics():
                 'config_file': str(persistent_config.config_file) if persistent_config.config_file else None,
                 'config_file_exists': persistent_config.config_file.exists() if persistent_config.config_file else False
             }
+            
+            # Get raw config content
+            if persistent_config.config_file and persistent_config.config_file.exists():
+                try:
+                    raw_config = persistent_config.load()
+                    # Remove sensitive data
+                    safe_config = raw_config.copy()
+                    if 'production_database_url' in safe_config:
+                        # Mask password in URL
+                        url = safe_config['production_database_url']
+                        if '@' in url:
+                            parts = url.split('@')
+                            if ':' in parts[0]:
+                                user_parts = parts[0].split(':')
+                                masked_url = f"{user_parts[0]}:****@{parts[1]}"
+                                safe_config['production_database_url'] = masked_url
+                    diagnostics['persistent_storage']['config_content'] = safe_config
+                    diagnostics['persistent_storage']['config_keys'] = list(raw_config.keys())
+                except Exception as e:
+                    diagnostics['persistent_storage']['config_read_error'] = str(e)
         except Exception as e:
             diagnostics['persistent_storage']['error'] = str(e)
+            
+        # Check runtime configuration state
+        try:
+            from config import config
+            diagnostics['runtime_config'] = {
+                'use_production_database': config.get('use_production_database', False),
+                'database_read_only': config.get('database_read_only', True),
+                'database_cache_timeout': config.get('database_cache_timeout', 300),
+                'cache_expiry_hours': config.get('cache_expiry_hours', 24),
+                'min_scrape_interval_minutes': config.get('min_scrape_interval_minutes', 5),
+                'backend_port': config.get('backend_port', 5001),
+                'frontend_port': config.get('frontend_port', 3000)
+            }
+        except Exception as e:
+            diagnostics['runtime_config']['error'] = str(e)
+            
+        # Check config source priority
+        diagnostics['config_sources'] = {
+            'priority_order': [
+                '1. Persistent storage (highest priority)',
+                '2. Environment variables (EQEMU_*)',
+                '3. config.json file (lowest priority)'
+            ],
+            'current_source': diagnostics['config_checks'].get('config_source', 'unknown'),
+            'persistent_available': diagnostics['config_checks'].get('persistent_config_found', False),
+            'env_vars_available': bool(os.environ.get('EQEMU_DATABASE_URL')),
+            'config_json_exists': os.path.exists(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'config.json'))
+        }
         
         # Recommendations
         recommendations = []
