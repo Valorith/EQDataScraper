@@ -59,11 +59,22 @@ class DatabaseConfigManager:
         return self._config
         
     def _load_config(self):
-        """Load configuration from file."""
+        """Load configuration from file or persistent storage."""
         try:
+            # Try persistent config first (for production)
+            from utils.persistent_config import get_persistent_config
+            persistent_config = get_persistent_config()
+            db_config = persistent_config.get_database_config()
+            
+            if db_config:
+                self._config = db_config
+                logger.info("Database configuration loaded from persistent storage")
+                return
+            
+            # Fall back to config.json
             with open(self.config_path, 'r') as f:
                 self._config = json.load(f)
-                logger.info("Database configuration reloaded")
+                logger.info("Database configuration reloaded from config.json")
         except Exception as e:
             logger.error(f"Error loading database configuration: {e}")
             if self._config is None:

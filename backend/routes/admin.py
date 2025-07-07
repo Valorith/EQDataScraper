@@ -870,21 +870,30 @@ def get_database_config():
     try:
         import json
         import os
+        from utils.persistent_config import get_persistent_config
         
-        # Load current config from config.json
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
-        config = {}
+        # Try persistent config first (for production)
+        persistent_config = get_persistent_config()
+        db_config = persistent_config.get_database_config()
         
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            logger.info(f"Loaded config.json - production_database_url present: {bool(config.get('production_database_url'))}")
+        if db_config:
+            current_db_url = db_config['production_database_url']
+            config = db_config
+            logger.info("Loaded database config from persistent storage")
         else:
-            logger.warning(f"config.json not found at {config_path}")
-        
-        # Prefer saved config over environment variable for production database
-        # This ensures the configured database persists across deployments
-        current_db_url = config.get('production_database_url', '') or os.environ.get('DATABASE_URL', '')
+            # Fall back to config.json for local development
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
+            config = {}
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                logger.info(f"Loaded config.json - production_database_url present: {bool(config.get('production_database_url'))}")
+            else:
+                logger.warning(f"config.json not found at {config_path}")
+            
+            # Get production database URL from config only
+            current_db_url = config.get('production_database_url', '')
         
         # Parse URL to get connection details (without password)
         if current_db_url:
@@ -1091,10 +1100,23 @@ def update_database_config():
         except Exception as e:
             return create_error_response(f"Database connection test failed: {str(e)}", 400)
         
-        # Update config.json
+        # Save configuration
         import json
         import os
+        from utils.persistent_config import get_persistent_config
         
+        # Save to persistent storage (for production)
+        persistent_config = get_persistent_config()
+        saved_to_persistent = persistent_config.save_database_config(
+            db_url=connection_url,
+            db_type=db_type,
+            use_ssl=use_ssl
+        )
+        
+        if saved_to_persistent:
+            logger.info("Database config saved to persistent storage")
+        
+        # Also update config.json for local development
         config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
         config = {}
         
@@ -1106,9 +1128,14 @@ def update_database_config():
         config['use_production_database'] = True
         config['database_read_only'] = True  # Mark as read-only
         config['database_type'] = db_type  # Save database type
+        config['database_ssl'] = use_ssl  # Save SSL setting
         
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            logger.info("Database config saved to config.json")
+        except Exception as e:
+            logger.warning(f"Could not save to config.json: {e}")
         
         # Invalidate the database configuration cache to force reload
         try:
