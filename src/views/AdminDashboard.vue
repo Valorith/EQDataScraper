@@ -3083,9 +3083,7 @@ onUnmounted(() => {
     opacity: 0;
   }
 }
-</style>
 
-<style>
 /* Network Test Modal Styles */
 .quick-tests {
   margin: 20px 0;
@@ -3181,7 +3179,6 @@ onUnmounted(() => {
   font-size: 0.9em;
   font-family: monospace;
 }
-
 
 /* Diagnostics Modal Styles */
 .diagnostics-modal {
@@ -3638,3 +3635,4 @@ onUnmounted(() => {
 .test-results.error {
   background: rgba(244, 67, 54, 0.05);
 }
+</style>
