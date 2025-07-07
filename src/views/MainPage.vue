@@ -189,12 +189,14 @@ export default {
       searchTimeout: null,
       currentPage: 0,
       resultsPerPage: 10,
-      showRightArrowGlow: false
+      showRightArrowGlow: false,
+      isDevAuthEnabled: false
     }
   },
   computed: {
     isDev() {
-      return import.meta.env.MODE === 'development'
+      // Show DEV badge only when dev auth is actually enabled (run.py start dev)
+      return this.isDevAuthEnabled
     },
     
     totalPages() {
@@ -221,6 +223,11 @@ export default {
   },
   async mounted() {
     document.addEventListener('click', this.handleOutsideClick)
+    
+    // Check if dev auth is enabled (only in development)
+    if (import.meta.env.MODE === 'development') {
+      this.checkDevAuthStatus()
+    }
   },
   beforeUnmount() {
     document.removeEventListener('click', this.handleOutsideClick)
@@ -438,6 +445,15 @@ export default {
       }
     },
     
+    async checkDevAuthStatus() {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`)
+        this.isDevAuthEnabled = response.data.dev_auth_enabled || false
+      } catch (err) {
+        // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
+        this.isDevAuthEnabled = false
+      }
+    },
 
     toggleDebugPanel() {
       this.$emit('toggle-debug-panel')

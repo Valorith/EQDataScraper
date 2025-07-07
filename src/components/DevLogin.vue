@@ -78,20 +78,32 @@ export default {
     
     // Check if dev auth is enabled
     const checkDevAuth = async () => {
+      // Skip check entirely in production
+      if (isProduction) {
+        console.debug('DevLogin: Disabled in production')
+        isDevAuthEnabled.value = false
+        showDevLogin.value = false
+        return
+      }
+      
       try {
-        console.log('🔍 Checking dev auth status...')
+        console.debug('DevLogin: Checking dev auth status...')
         const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
           timeout: 2000 // Quick timeout for dev check
         })
         isDevAuthEnabled.value = response.data.dev_auth_enabled || false
-        console.log('✅ Dev auth enabled:', isDevAuthEnabled.value)
+        console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value)
         showDevLogin.value = isDevAuthEnabled.value // Only show if enabled
       } catch (err) {
         // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
         if (err.response?.status === 404) {
-          console.log('ℹ️ Dev auth not available (ENABLE_DEV_AUTH not set)')
+          // Don't log 404s as they're expected when dev auth is disabled
+          console.debug('DevLogin: Auth endpoint not available (404)')
+        } else if (err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK') {
+          // Network errors are also expected in some environments
+          console.debug('DevLogin: Auth check timed out or network error')
         } else {
-          console.log('⚠️ Dev auth check failed:', err.message)
+          console.debug('DevLogin: Auth check failed:', err.message)
         }
         isDevAuthEnabled.value = false
         showDevLogin.value = false // Hide the panel if dev auth is not available
@@ -152,11 +164,17 @@ export default {
     }
     
     const toggleMinimize = () => {
-      // If not showing, show it first
-      if (!showDevLogin.value) {
+      // Don't do anything in production
+      if (isProduction) {
+        console.debug('DevLogin: Toggle ignored in production')
+        return
+      }
+      
+      // If not showing, show it first (only if dev auth is enabled)
+      if (!showDevLogin.value && isDevAuthEnabled.value) {
         showDevLogin.value = true
         isMinimized.value = false
-      } else {
+      } else if (showDevLogin.value) {
         isMinimized.value = !isMinimized.value
         // Reset custom form when minimizing
         if (isMinimized.value) {
@@ -167,18 +185,19 @@ export default {
     }
     
     onMounted(() => {
-      console.log('🚀 DevLogin component mounted')
-      console.log('📍 Running in production?', import.meta.env.PROD)
-      console.log('📍 Environment mode:', import.meta.env.MODE)
-      console.log('📍 API Base URL:', API_BASE_URL)
-      
-      // Only check dev auth if not in production
-      if (!isProduction) {
-        checkDevAuth()
-      } else {
-        console.log('🚫 Skipping dev auth in production')
+      // Early exit for production
+      if (isProduction) {
+        console.debug('DevLogin: Disabled in production')
         showDevLogin.value = false
+        return
       }
+      
+      console.debug('DevLogin: Component mounted')
+      console.debug('DevLogin: Environment mode:', import.meta.env.MODE)
+      console.debug('DevLogin: API Base URL:', API_BASE_URL)
+      
+      // Check dev auth only in development
+      checkDevAuth()
     })
     
     return {

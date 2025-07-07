@@ -125,8 +125,10 @@ export default {
       }
     },
     toggleDevLogin() {
-      if (this.$refs.devLogin) {
+      if (this.$refs.devLogin && typeof this.$refs.devLogin.toggleMinimize === 'function') {
         this.$refs.devLogin.toggleMinimize()
+      } else {
+        console.debug('DevLogin component not available or toggleMinimize method not found')
       }
     }
   },

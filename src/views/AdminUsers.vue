@@ -836,15 +836,15 @@ onMounted(() => {
 }
 
 .role-badge.user {
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 .role-badge.admin {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
 .action-buttons {
@@ -1129,12 +1129,12 @@ onMounted(() => {
 .user-details h3 {
   margin: 0 0 8px 0;
   font-size: 1.3rem;
-  color: #1a202c;
+  color: #e2e8f0;
 }
 
 .user-details p {
   margin: 0 0 10px 0;
-  color: #666;
+  color: #a0aec0;
 }
 
 .actions-list {
@@ -1146,7 +1146,7 @@ onMounted(() => {
 .actions-list h3 {
   margin: 0 0 15px 0;
   font-size: 1.1rem;
-  color: #4a5568;
+  color: #cbd5e0;
 }
 
 .action-item {
@@ -1154,8 +1154,8 @@ onMounted(() => {
   align-items: center;
   gap: 15px;
   padding: 15px;
-  background: #f7fafc;
-  border: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
@@ -1164,9 +1164,10 @@ onMounted(() => {
 }
 
 .action-item:hover {
-  background: #e2e8f0;
-  border-color: #cbd5e0;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
   transform: translateX(5px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .action-item i {
@@ -1189,13 +1190,13 @@ onMounted(() => {
 
 .action-title {
   font-weight: 600;
-  color: #1a202c;
+  color: #e2e8f0;
   font-size: 1rem;
 }
 
 .action-desc {
   font-size: 0.85rem;
-  color: #666;
+  color: #a0aec0;
 }
 
 .action-item.danger .action-title {
@@ -1203,8 +1204,8 @@ onMounted(() => {
 }
 
 .action-item.danger:hover {
-  background: #fee2e2;
-  border-color: #fca5a5;
+  background: rgba(220, 38, 38, 0.2);
+  border-color: rgba(220, 38, 38, 0.4);
 }
 
 /* Role selector in modal */
@@ -1223,22 +1224,29 @@ onMounted(() => {
 .role-select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   font-size: 0.9rem;
-  background: white;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.role-select option {
+  background: #1a202c;
+  color: #e2e8f0;
 }
 
 .role-select:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
 }
 
 .role-select:hover {
-  border-color: #cbd5e0;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 @media (max-width: 1200px) {
