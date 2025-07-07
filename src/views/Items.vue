@@ -2157,6 +2157,11 @@ const handleClickOutside = (event) => {
 .stat-row.ratio .stat-value {
   color: #fbbf24;
   font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid #fbbf24;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.1);
+  display: inline-block;
 }
 
 
@@ -2381,6 +2386,17 @@ const handleClickOutside = (event) => {
 
 .stat-inline .stat-value.ratio {
   color: #a78bfa;
+}
+
+/* Weapon Ratio Styling */
+.weapon-ratio {
+  color: #fbbf24;
+  font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid #fbbf24;
+  border-radius: 4px;
+  margin-left: 4px;
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .info-item {
