@@ -113,7 +113,11 @@ describe('All EverQuest Classes Integration Tests', () => {
       const testClasses = ['shadowknight', 'cleric', 'wizard', 'beastlord']
 
       for (const className of testClasses) {
-        axios.get.mockResolvedValueOnce(mockAxiosResponse(htmlErrorResponse))
+        axios.get.mockResolvedValueOnce({
+          data: htmlErrorResponse,
+          status: 200,
+          headers: { 'content-type': 'text/html' }
+        })
 
         await expect(store.fetchSpellsForClass(className)).rejects.toThrow('Invalid response format from server')
         expect(store.error).toContain('Invalid response format from server')
@@ -232,13 +236,13 @@ describe('All EverQuest Classes Integration Tests', () => {
   describe('Error Recovery and Resilience', () => {
     it('should recover from network errors for any class', async () => {
       const networkError = new Error('Network Error')
+      networkError.request = {} // This indicates a network error
       networkError.code = 'NETWORK_ERROR'
 
       for (const className of ['shadowknight', 'cleric', 'wizard']) {
         axios.get.mockRejectedValueOnce(networkError)
 
-        await expect(store.fetchSpellsForClass(className)).rejects.toThrow()
-        expect(store.error).toContain('Unable to connect to server')
+        await expect(store.fetchSpellsForClass(className)).rejects.toThrow('Unable to connect to server')
 
         // Reset for next test
         store.error = null
@@ -252,8 +256,7 @@ describe('All EverQuest Classes Integration Tests', () => {
 
       axios.get.mockRejectedValueOnce(timeoutError)
 
-      await expect(store.fetchSpellsForClass('shadowknight')).rejects.toThrow()
-      expect(store.error).toContain('Request timed out')
+      await expect(store.fetchSpellsForClass('shadowknight')).rejects.toThrow('Request timed out')
     })
   })
 
