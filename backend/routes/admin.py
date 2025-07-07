@@ -872,28 +872,52 @@ def get_database_config():
         import os
         from utils.persistent_config import get_persistent_config
         
-        # Try persistent config first (for production)
+        # Get diagnostic info about persistent storage
         persistent_config = get_persistent_config()
+        storage_info = {
+            'data_directory': str(persistent_config.data_dir),
+            'config_file': str(persistent_config.config_file) if persistent_config.config_file else None,
+            'storage_available': persistent_config._available,
+            'directory_exists': persistent_config.data_dir.exists() if persistent_config.data_dir else False,
+            'directory_writable': os.access(persistent_config.data_dir, os.W_OK) if persistent_config.data_dir and persistent_config.data_dir.exists() else False,
+            'config_file_exists': persistent_config.config_file.exists() if persistent_config.config_file else False
+        }
+        
+        # Try persistent config first (for production)
         db_config = persistent_config.get_database_config()
         
         if db_config:
             current_db_url = db_config['production_database_url']
             config = db_config
             logger.info("Loaded database config from persistent storage")
+            storage_info['config_source'] = 'persistent_storage'
         else:
-            # Fall back to config.json for local development
-            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
-            config = {}
-            
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                logger.info(f"Loaded config.json - production_database_url present: {bool(config.get('production_database_url'))}")
+            # Check environment variable
+            env_db_url = os.environ.get('EQEMU_DATABASE_URL')
+            if env_db_url:
+                current_db_url = env_db_url
+                config = {
+                    'production_database_url': env_db_url,
+                    'database_type': os.environ.get('EQEMU_DATABASE_TYPE', 'mysql'),
+                    'database_ssl': os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true'
+                }
+                logger.info("Loaded database config from environment variable")
+                storage_info['config_source'] = 'environment_variable'
             else:
-                logger.warning(f"config.json not found at {config_path}")
-            
-            # Get production database URL from config only
-            current_db_url = config.get('production_database_url', '')
+                # Fall back to config.json for local development
+                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.json')
+                config = {}
+                
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    logger.info(f"Loaded config.json - production_database_url present: {bool(config.get('production_database_url'))}")
+                else:
+                    logger.warning(f"config.json not found at {config_path}")
+                
+                # Get production database URL from config only
+                current_db_url = config.get('production_database_url', '')
+                storage_info['config_source'] = 'config_json' if current_db_url else 'none'
         
         # Parse URL to get connection details (without password)
         if current_db_url:
@@ -994,7 +1018,8 @@ def get_database_config():
         
         return jsonify(create_success_response({
             'database': db_info,
-            'use_database_cache': config.get('use_production_database', False)
+            'use_database_cache': config.get('use_production_database', False),
+            'storage_info': storage_info
         }))
         
     except Exception as e:
@@ -1400,3 +1425,107 @@ def test_database_connection():
 # The EQEmu database should already have the required tables:
 # - items: Main items table with EQEmu schema
 # - discovered_items: Tracks which items have been discovered by players
+
+
+@admin_bp.route('/admin/database/persist-check', methods=['GET'])
+@require_admin
+def check_persistence():
+    """
+    Check persistence capabilities and diagnose storage issues.
+    
+    Returns:
+        JSON response with persistence diagnostics
+    """
+    try:
+        import os
+        from pathlib import Path
+        from utils.persistent_config import get_persistent_config
+        
+        persistent_config = get_persistent_config()
+        
+        # Comprehensive persistence check
+        diagnostics = {
+            'environment': {
+                'RAILWAY_ENVIRONMENT': os.environ.get('RAILWAY_ENVIRONMENT', 'not set'),
+                'IS_PRODUCTION': os.environ.get('RAILWAY_ENVIRONMENT') == 'production',
+                'EQEMU_DATABASE_URL': 'set' if os.environ.get('EQEMU_DATABASE_URL') else 'not set',
+                'HOME': os.environ.get('HOME', 'not set'),
+                'PWD': os.environ.get('PWD', 'not set')
+            },
+            'persistent_storage': {
+                'configured_directory': str(persistent_config.data_dir),
+                'directory_exists': persistent_config.data_dir.exists() if persistent_config.data_dir else False,
+                'directory_writable': False,
+                'config_file_path': str(persistent_config.config_file) if persistent_config.config_file else None,
+                'config_file_exists': False,
+                'config_content': None
+            },
+            'tested_directories': []
+        }
+        
+        # Test write permissions
+        if persistent_config.data_dir and persistent_config.data_dir.exists():
+            try:
+                test_file = persistent_config.data_dir / '.write_test'
+                test_file.write_text('test write')
+                test_file.unlink()
+                diagnostics['persistent_storage']['directory_writable'] = True
+            except Exception as e:
+                diagnostics['persistent_storage']['write_error'] = str(e)
+        
+        # Check config file
+        if persistent_config.config_file and persistent_config.config_file.exists():
+            diagnostics['persistent_storage']['config_file_exists'] = True
+            try:
+                diagnostics['persistent_storage']['config_content'] = persistent_config.load()
+            except Exception as e:
+                diagnostics['persistent_storage']['config_read_error'] = str(e)
+        
+        # Test various potential persistent directories
+        test_dirs = [
+            '/app/data',
+            '/data',
+            '/persist',
+            '/tmp',
+            str(Path.home()),
+            str(Path.home() / '.eqdata'),
+            '/var/lib/eqdata'
+        ]
+        
+        for dir_path in test_dirs:
+            dir_test = {
+                'path': dir_path,
+                'exists': False,
+                'writable': False,
+                'error': None
+            }
+            
+            try:
+                path = Path(dir_path)
+                dir_test['exists'] = path.exists()
+                
+                if path.exists():
+                    # Test write
+                    test_file = path / '.eqdata_write_test'
+                    test_file.write_text('test')
+                    test_file.unlink()
+                    dir_test['writable'] = True
+            except Exception as e:
+                dir_test['error'] = str(e)
+            
+            diagnostics['tested_directories'].append(dir_test)
+        
+        # Recommendations
+        recommendations = []
+        if not diagnostics['persistent_storage']['directory_writable']:
+            recommendations.append("No writable persistent directory found. Consider setting EQEMU_DATABASE_URL environment variable.")
+        
+        if os.environ.get('RAILWAY_ENVIRONMENT') and not any(d['writable'] for d in diagnostics['tested_directories'] if d['path'].startswith('/app')):
+            recommendations.append("Railway persistent volume may not be properly mounted. Check Railway volume configuration.")
+        
+        diagnostics['recommendations'] = recommendations
+        
+        return jsonify(create_success_response(diagnostics))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to check persistence: {str(e)}", 500)
