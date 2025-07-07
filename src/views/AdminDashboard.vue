@@ -178,17 +178,9 @@
             <i class="fas fa-cog"></i>
             Configure
           </button>
-          <button @click="refreshConnection" class="action-button secondary" :disabled="refreshingConnection">
-            <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshingConnection }"></i>
-            Refresh
-          </button>
-          <button @click="runDiagnostics" class="action-button secondary" :disabled="runningDiagnostics">
-            <i class="fas fa-stethoscope" :class="{ 'fa-spin': runningDiagnostics }"></i>
+          <button @click="openDiagnosticsModal" class="action-button secondary">
+            <i class="fas fa-stethoscope"></i>
             Diagnose
-          </button>
-          <button @click="openNetworkTestModal" class="action-button secondary">
-            <i class="fas fa-network-wired"></i>
-            Test Network
           </button>
         </div>
       </div>
@@ -335,6 +327,99 @@
           </button>
           <button @click="closeNetworkTestModal" class="secondary-button">
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Database Diagnostics Modal -->
+    <div v-if="showDiagnosticsModal" class="modal-overlay" @click.self="closeDiagnosticsModal">
+      <div class="modal-content diagnostics-modal">
+        <div class="modal-header">
+          <h2>Database Diagnostics</h2>
+          <button @click="closeDiagnosticsModal" class="close-button">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <p class="modal-description">
+            Run various diagnostic tests to troubleshoot database connection issues.
+          </p>
+          
+          <!-- Test Options -->
+          <div class="diagnostic-tests">
+            <div class="test-card">
+              <div class="test-header">
+                <i class="fas fa-sync-alt"></i>
+                <h3>Refresh Connection</h3>
+              </div>
+              <p>Attempt to reconnect to the database using stored configuration.</p>
+              <button 
+                @click="refreshConnection" 
+                class="test-button"
+                :disabled="refreshingConnection"
+              >
+                <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshingConnection }"></i>
+                {{ refreshingConnection ? 'Refreshing...' : 'Refresh Connection' }}
+              </button>
+            </div>
+            
+            <div class="test-card">
+              <div class="test-header">
+                <i class="fas fa-clipboard-check"></i>
+                <h3>Full Diagnostics</h3>
+              </div>
+              <p>Run comprehensive diagnostics including environment checks, configuration validation, and connection tests.</p>
+              <button 
+                @click="runDiagnostics" 
+                class="test-button"
+                :disabled="runningDiagnostics"
+              >
+                <i class="fas fa-clipboard-check" :class="{ 'fa-spin': runningDiagnostics }"></i>
+                {{ runningDiagnostics ? 'Running...' : 'Run Full Diagnostics' }}
+              </button>
+            </div>
+            
+            <div class="test-card">
+              <div class="test-header">
+                <i class="fas fa-network-wired"></i>
+                <h3>Network Test</h3>
+              </div>
+              <p>Test network connectivity to various hosts to isolate connection issues.</p>
+              <button 
+                @click="openNetworkTest" 
+                class="test-button"
+              >
+                <i class="fas fa-network-wired"></i>
+                Open Network Test
+              </button>
+            </div>
+          </div>
+          
+          <!-- Diagnostics Results -->
+          <div v-if="diagnosticsResult" class="diagnostics-result">
+            <h3>Diagnostics Report</h3>
+            <div class="result-content">
+              <pre>{{ diagnosticsResult }}</pre>
+            </div>
+          </div>
+          
+          <!-- Connection Status -->
+          <div v-if="connectionTestResult" class="connection-result" :class="connectionTestResult.success ? 'success' : 'error'">
+            <div class="result-header">
+              <i class="fas" :class="connectionTestResult.success ? 'fa-check-circle' : 'fa-times-circle'"></i>
+              <strong>{{ connectionTestResult.message }}</strong>
+            </div>
+            <div v-if="connectionTestResult.details" class="result-details">
+              {{ connectionTestResult.details }}
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button @click="closeDiagnosticsModal" class="secondary-button">
+            Close
           </button>
         </div>
       </div>
@@ -564,6 +649,10 @@ const networkTestForm = ref({
   password: '',
   database: ''
 })
+
+// Diagnostics modal state
+const showDiagnosticsModal = ref(false)
+const connectionTestResult = ref(null)
 const storageInfo = ref({
   config_source: 'unknown',
   storage_available: false,
@@ -1205,6 +1294,7 @@ const testDatabaseConnection = async () => {
 
 const refreshConnection = async () => {
   refreshingConnection.value = true
+  connectionTestResult.value = null
   
   try {
     // First, try to refresh the database configuration
@@ -1430,6 +1520,24 @@ const saveDatabaseConfig = async () => {
 }
 
 // Remove mock data generation - we'll use real data from the API
+
+// Diagnostics modal functions
+const openDiagnosticsModal = () => {
+  showDiagnosticsModal.value = true
+  diagnosticsResult.value = null
+  connectionTestResult.value = null
+}
+
+const closeDiagnosticsModal = () => {
+  showDiagnosticsModal.value = false
+}
+
+const openNetworkTest = () => {
+  closeDiagnosticsModal()
+  setTimeout(() => {
+    openNetworkTestModal()
+  }, 300)
+}
 
 // Network test functions
 const openNetworkTestModal = () => {
@@ -2586,4 +2694,161 @@ onUnmounted(() => {
   color: #888;
   font-size: 0.9em;
   font-family: monospace;
+}
+
+
+/* Diagnostics Modal Styles */
+.diagnostics-modal {
+  max-width: 700px;
+}
+
+.diagnostic-tests {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.test-card {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(138, 43, 226, 0.3);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.test-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.test-card .test-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.test-card .test-header i {
+  font-size: 24px;
+  color: var(--primary);
+}
+
+.test-card h3 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 1.2em;
+}
+
+.test-card p {
+  margin: 10px 0 15px 0;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.test-button {
+  padding: 10px 20px;
+  background: rgba(138, 43, 226, 0.2);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-button:hover {
+  background: rgba(138, 43, 226, 0.3);
+  transform: translateY(-1px);
+}
+
+.test-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.diagnostics-result {
+  margin-top: 30px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.diagnostics-result h3 {
+  margin: 0 0 15px 0;
+  color: var(--primary);
+}
+
+.result-content {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 15px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.result-content pre {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #ddd;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.connection-result {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid;
+}
+
+.connection-result.success {
+  background: rgba(76, 175, 80, 0.1);
+  border-color: #4caf50;
+}
+
+.connection-result.error {
+  background: rgba(244, 67, 54, 0.1);
+  border-color: #f44336;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.result-header i {
+  font-size: 20px;
+}
+
+.result-header .fa-check-circle {
+  color: #4caf50;
+}
+
+.result-header .fa-times-circle {
+  color: #f44336;
+}
+
+.result-details {
+  color: #ccc;
+  font-size: 0.95em;
+  line-height: 1.5;
+}
+
+/* Update database actions to prevent cramping */
+.database-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.database-actions .action-button {
+  flex: 1;
+  min-width: 120px;
 }
