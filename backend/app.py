@@ -58,8 +58,8 @@ if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
         'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
+        'http://localhost:3000',
+        'http://localhost:3000',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     
@@ -139,6 +139,8 @@ if ENABLE_USER_ACCOUNTS:
                     except Exception as e:
                         app.logger.error(f"Failed to connect to database for OAuth: {e}")
                         app.logger.error(f"DB_CONFIG: host={DB_CONFIG.get('host')}, port={DB_CONFIG.get('port')}, database={DB_CONFIG.get('database')}")
+                        app.logger.error(f"DB_TYPE: {DB_TYPE}")
+                        app.logger.error(f"Full error: {str(e)}")
                         g.db_connection = None
                 else:
                     app.logger.debug(f"No DB_CONFIG available for OAuth endpoint: {request.endpoint}")
@@ -512,6 +514,17 @@ server_startup_progress = {
     'total_steps': 5,
     'startup_complete': False,
     'startup_time': None
+}
+
+# Global scraping status tracking
+scraping_status = {
+    'is_scraping': False,
+    'current_class': None,
+    'progress_percent': 0,
+    'classes_completed': 0,
+    'total_classes': 0,
+    'start_time': None,
+    'last_update': None
 }
 
 CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
@@ -1322,8 +1335,21 @@ def get_spells(class_name):
 @app.route('/api/scrape-all', methods=['POST'])
 def scrape_all_classes():
     """Scrape spells for all classes"""
+    global scraping_status
+    
     try:
         from scrape_spells import scrape_all
+        
+        # Update scraping status
+        scraping_status = {
+            'is_scraping': True,
+            'current_class': 'Initializing...',
+            'progress_percent': 0,
+            'classes_completed': 0,
+            'total_classes': len(CLASSES),
+            'start_time': datetime.now().isoformat(),
+            'last_update': datetime.now().isoformat()
+        }
         
         # Log scrape start activity
         if ENABLE_USER_ACCOUNTS:
@@ -1340,6 +1366,7 @@ def scrape_all_classes():
         scrape_all('https://alla.clumsysworld.com/', None)
         
         # Load the scraped data
+        classes_processed = 0
         for class_name in CLASSES.keys():
             try:
                 df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
@@ -1381,11 +1408,23 @@ def scrape_all_classes():
                     cache_key = class_name.lower()
                     spells_cache[cache_key] = spells
                     cache_timestamp[cache_key] = datetime.now().isoformat()
+                    
+                    # Update scraping progress
+                    classes_processed += 1
+                    scraping_status['classes_completed'] = classes_processed
+                    scraping_status['current_class'] = class_name
+                    scraping_status['progress_percent'] = int((classes_processed / len(CLASSES)) * 100)
+                    scraping_status['last_update'] = datetime.now().isoformat()
             except Exception as e:
                 print(f"Error scraping {class_name}: {e}")
         
         # Save to disk after scraping all classes
         save_cache_to_storage()
+        
+        # Reset scraping status
+        scraping_status['is_scraping'] = False
+        scraping_status['current_class'] = None
+        scraping_status['progress_percent'] = 100
         
         # Log successful completion
         if ENABLE_USER_ACCOUNTS:
@@ -1406,6 +1445,11 @@ def scrape_all_classes():
         })
     
     except Exception as e:
+        # Reset scraping status on error
+        scraping_status['is_scraping'] = False
+        scraping_status['current_class'] = None
+        scraping_status['progress_percent'] = 0
+        
         # Log scrape error
         if ENABLE_USER_ACCOUNTS:
             log_scrape_activity(
@@ -1576,7 +1620,17 @@ def refresh_spell_cache(class_name):
         # Return immediately with success response
         # Start the actual refresh operation asynchronously
         def perform_refresh():
+            global scraping_status
             try:
+                # Update global scraping status
+                scraping_status['is_scraping'] = True
+                scraping_status['current_class'] = normalized_class_name
+                scraping_status['progress_percent'] = 0
+                scraping_status['classes_completed'] = 0
+                scraping_status['total_classes'] = 1
+                scraping_status['start_time'] = datetime.now().isoformat()
+                scraping_status['last_update'] = datetime.now().isoformat()
+                
                 # Small delay to ensure tests can check initial state
                 time.sleep(0.1)
                 
@@ -1588,6 +1642,7 @@ def refresh_spell_cache(class_name):
                 # Update progress to scraping stage
                 update_refresh_progress(class_name, 'scraping', 
                                       estimated_time_remaining=30)
+                scraping_status['progress_percent'] = 30
                 
                 # Trigger fresh scrape
                 logger.info(f"Starting scrape for {normalized_class_name}")
@@ -1615,6 +1670,12 @@ def refresh_spell_cache(class_name):
                     time.sleep(0.5)
                     update_refresh_progress(class_name, 'complete', progress_percentage=100)
                     
+                    # Reset global scraping status
+                    scraping_status['is_scraping'] = False
+                    scraping_status['current_class'] = None
+                    scraping_status['progress_percent'] = 100
+                    scraping_status['classes_completed'] = 1
+                    
                     # Clear progress after a delay
                     def clear_progress_later():
                         time.sleep(5)
@@ -1634,6 +1695,11 @@ def refresh_spell_cache(class_name):
                 else:
                     update_refresh_progress(class_name, 'error', message='❌ Failed to scrape new data')
                     
+                    # Reset global scraping status
+                    scraping_status['is_scraping'] = False
+                    scraping_status['current_class'] = None
+                    scraping_status['progress_percent'] = 0
+                    
                     # Log failed activity if user accounts are enabled
                     if ENABLE_USER_ACCOUNTS:
                         user_id = getattr(g, 'user_id', None)
@@ -1645,6 +1711,11 @@ def refresh_spell_cache(class_name):
                 # Update progress to error state
                 update_refresh_progress(class_name, 'error', 
                                       message=f'❌ Error: {str(e)}')
+                
+                # Reset global scraping status
+                scraping_status['is_scraping'] = False
+                scraping_status['current_class'] = None
+                scraping_status['progress_percent'] = 0
         
         # Start the refresh operation in a background thread
         import threading
@@ -2841,8 +2912,26 @@ def get_spell_pricing():
 
 @app.route('/api/startup-status', methods=['GET'])
 def startup_status():
-    """Get server startup progress status"""
-    return jsonify(server_startup_progress)
+    """Get current scraping status"""
+    # Return scraping status if scraping is active, otherwise return server startup status
+    if scraping_status['is_scraping']:
+        return jsonify({
+            'scraping_in_progress': True,
+            'current_class': scraping_status['current_class'],
+            'progress_percent': scraping_status['progress_percent'],
+            'classes_completed': scraping_status['classes_completed'],
+            'total_classes': scraping_status['total_classes'],
+            'start_time': scraping_status['start_time'],
+            'last_update': scraping_status['last_update']
+        })
+    else:
+        # Return idle status when not scraping
+        return jsonify({
+            'scraping_in_progress': False,
+            'current_class': None,
+            'progress_percent': 0,
+            'startup_complete': server_startup_progress['startup_complete']
+        })
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -3557,6 +3646,80 @@ def on_db_config_change():
 
 db_config_manager.add_reload_callback(on_db_config_change)
 
+# Initialize database connection on startup
+def initialize_database_connection(max_retries=3, initial_delay=2):
+    """Initialize and test database connection on startup with retry logic."""
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Initializing database connection on startup (attempt {attempt + 1}/{max_retries})...")
+            
+            # Get current config
+            config = db_config_manager.get_config()
+            
+            # Check if we have a database URL configured
+            database_url = config.get('production_database_url', '')
+            if not database_url:
+                logger.warning("No database URL configured. Checking environment variables...")
+                # Force a config reload to pick up env vars
+                db_config_manager.invalidate()
+                config = db_config_manager.get_config()
+                database_url = config.get('production_database_url', '')
+                
+            if database_url:
+                logger.info(f"Found database configuration from: {config.get('config_source', 'unknown')}")
+                # Test the connection
+                conn, db_type, error = get_eqemu_db_connection()
+                if conn:
+                    try:
+                        # Verify connection works
+                        cursor = conn.cursor()
+                        if db_type == 'mysql':
+                            cursor.execute("SELECT VERSION()")
+                        elif db_type == 'postgresql':
+                            cursor.execute("SELECT version()")
+                        elif db_type == 'mssql':
+                            cursor.execute("SELECT @@VERSION")
+                        
+                        result = cursor.fetchone()
+                        version = result[0] if result else "Unknown"
+                        cursor.close()
+                        conn.close()
+                        
+                        logger.info(f"✅ Database connection successful! Type: {db_type}, Version: {version.split()[0]}")
+                        return True
+                    except Exception as e:
+                        logger.error(f"❌ Database connection test failed: {e}")
+                        if conn:
+                            try:
+                                conn.close()
+                            except:
+                                pass
+                else:
+                    logger.error(f"❌ Failed to establish database connection: {error}")
+                    
+                # If we have more retries, wait with exponential backoff
+                if attempt < max_retries - 1:
+                    delay = initial_delay * (2 ** attempt)  # Exponential backoff
+                    logger.info(f"⏳ Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                    
+            else:
+                logger.warning("⚠️ No database configuration found. Database features will be unavailable.")
+                logger.info("💡 Set EQEMU_DATABASE_URL environment variable or configure through admin panel")
+                return False  # No point retrying if no config
+            
+        except Exception as e:
+            logger.error(f"❌ Error during database initialization attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                delay = initial_delay * (2 ** attempt)
+                logger.info(f"⏳ Retrying in {delay} seconds...")
+                time.sleep(delay)
+    
+    logger.error(f"❌ Failed to establish database connection after {max_retries} attempts")
+    return False
+
 # Helper function for EQEmu database connection
 def get_eqemu_db_connection():
     """Get connection to the configured EQEmu database - simplified without pooling for debugging."""
@@ -4242,10 +4405,22 @@ if __name__ == '__main__':
     # Register cleanup on exit
     atexit.register(cleanup_resources)
     
+    # Initialize database connection on startup
+    initialize_database_connection()
+    
     # Preload spell data before starting server for optimal performance
     # Skip during CI testing to avoid long startup times
     if not os.environ.get('SKIP_STARTUP_CACHE_REFRESH'):
         preload_spell_data_on_startup()
     else:
         logger.info("⚠️ Skipping startup cache refresh (SKIP_STARTUP_CACHE_REFRESH=1)")
+    
+    # Mark server startup as complete
+    server_startup_progress['is_starting'] = False
+    server_startup_progress['startup_complete'] = True
+    server_startup_progress['current_step'] = 'Server ready'
+    server_startup_progress['progress_percent'] = 100
+    server_startup_progress['startup_time'] = datetime.now().isoformat()
+    logger.info("✅ Server startup complete")
+    
     app.run(debug=True, host='0.0.0.0', port=config['backend_port']) 

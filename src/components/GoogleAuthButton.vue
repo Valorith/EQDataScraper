@@ -30,23 +30,62 @@
 
 <script>
 import { useUserStore } from '@/stores/userStore'
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 export default {
   name: 'GoogleAuthButton',
   setup() {
     const userStore = useUserStore()
+    const localLoading = ref(false)
+    const loadingTimeout = ref(null)
 
-    const isLoading = computed(() => userStore.isLoading)
+    const isLoading = computed(() => localLoading.value || userStore.isLoading)
     const errorMessage = computed(() => userStore.loginError)
 
     const handleLogin = async () => {
+      // Prevent multiple clicks
+      if (localLoading.value || userStore.isLoading) {
+        return
+      }
+      
+      localLoading.value = true
+      
+      // Set a timeout to reset loading state if something goes wrong
+      loadingTimeout.value = setTimeout(() => {
+        localLoading.value = false
+        userStore.isLoading = false
+        console.warn('Login timeout - resetting loading state')
+      }, 10000) // 10 second timeout
+      
       try {
         await userStore.loginWithGoogle()
+        // The page will redirect, so we don't need to reset loading here
       } catch (error) {
         console.error('Login failed:', error)
+        localLoading.value = false
+        clearTimeout(loadingTimeout.value)
       }
     }
+    
+    // Watch for userStore loading changes
+    watch(() => userStore.isLoading, (newVal) => {
+      if (!newVal && loadingTimeout.value) {
+        clearTimeout(loadingTimeout.value)
+        localLoading.value = false
+      }
+    })
+    
+    // Reset loading state on mount (in case of race condition)
+    onMounted(() => {
+      // If we're not on the callback page and loading is stuck, reset it
+      if (!window.location.pathname.includes('/auth/callback')) {
+        if (userStore.isLoading && !userStore.isAuthenticated) {
+          console.log('Resetting stuck loading state on mount')
+          userStore.isLoading = false
+        }
+        localLoading.value = false
+      }
+    })
 
     return {
       handleLogin,

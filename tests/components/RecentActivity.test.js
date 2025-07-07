@@ -8,13 +8,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import AdminDashboard from '../../src/views/AdminDashboard.vue'
 
-// Mock API calls
-const mockApiGet = vi.fn()
+// Mock axios first before any other imports that might use it
 vi.mock('axios', () => ({
   default: {
-    get: mockApiGet
+    get: vi.fn()
   }
 }))
+
+// Then import axios to get the mocked version
+import axios from 'axios'
+const mockApiGet = axios.get
 
 // Mock router
 const mockRouter = {

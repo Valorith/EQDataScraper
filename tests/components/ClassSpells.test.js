@@ -40,6 +40,9 @@ describe('ClassSpells Component', () => {
     await router.push('/class/cleric')
     
     wrapper = mount(ClassSpells, {
+      props: {
+        className: 'cleric'
+      },
       global: {
         plugins: [router],
         stubs: {
