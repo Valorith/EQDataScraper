@@ -63,6 +63,12 @@ def get_postgresql_connection(config):
 def get_mysql_connection(config):
     """Get MySQL connection."""
     import pymysql
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Log connection attempt details
+    logger.info(f"Attempting MySQL connection to {config['host']}:{config['port']}")
     
     conn_params = {
         'host': config['host'],
@@ -71,14 +77,24 @@ def get_mysql_connection(config):
         'user': config['username'],
         'password': config['password'],
         'charset': 'utf8mb4',
-        'cursorclass': pymysql.cursors.DictCursor
+        'cursorclass': pymysql.cursors.DictCursor,
+        'connect_timeout': 30  # Increase timeout to 30 seconds
     }
     
+    # Try without SSL first if we're getting connection errors
     if config.get('use_ssl', True):
-        # MySQL SSL configuration
-        conn_params['ssl'] = {'ssl': True}
-        
-    return pymysql.connect(**conn_params)
+        # For now, disable SSL to test if that's the issue
+        logger.warning("SSL requested but temporarily disabled for debugging")
+        # conn_params['ssl'] = {}  # Commenting out SSL for now
+    
+    try:
+        logger.info("Attempting MySQL connection...")
+        conn = pymysql.connect(**conn_params)
+        logger.info("MySQL connection successful!")
+        return conn
+    except Exception as e:
+        logger.error(f"MySQL connection failed: {type(e).__name__}: {str(e)}")
+        raise
 
 
 def get_mssql_connection(config):
