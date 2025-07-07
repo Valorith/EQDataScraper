@@ -539,6 +539,17 @@
                     <div class="mismatch-header">
                       <strong>{{ formatFieldName(error.field) }}</strong>
                       <span class="mismatch-description">{{ error.message }}</span>
+                      <div v-if="error.url_value && error.env_value" class="mismatch-info">
+                        <span v-if="error.url_value.toLowerCase() === error.env_value.toLowerCase()" class="info-badge case-diff">
+                          <i class="fas fa-info-circle"></i> Case difference only
+                        </span>
+                        <span v-else-if="Math.abs(error.url_value.length - error.env_value.length) <= 2" class="info-badge typo-likely">
+                          <i class="fas fa-exclamation-triangle"></i> Likely typo ({{ Math.abs(error.url_value.length - error.env_value.length) }} char difference)
+                        </span>
+                        <span v-else class="info-badge major-diff">
+                          <i class="fas fa-times-circle"></i> Significant difference
+                        </span>
+                      </div>
                     </div>
                     <div v-if="error.url_value && error.env_value" class="mismatch-resolution">
                       <div class="mismatch-option">
@@ -551,7 +562,7 @@
                         />
                         <label :for="`url-${error.field}`">
                           <span class="option-source">URL Value:</span>
-                          <code>{{ error.url_value }}</code>
+                          <code v-html="highlightDifferences(error.url_value, error.env_value).str1"></code>
                         </label>
                       </div>
                       <div class="mismatch-option">
@@ -564,7 +575,7 @@
                         />
                         <label :for="`env-${error.field}`">
                           <span class="option-source">Environment Variable:</span>
-                          <code>{{ error.env_value }}</code>
+                          <code v-html="highlightDifferences(error.url_value, error.env_value).str2"></code>
                         </label>
                       </div>
                       <button 
@@ -1969,6 +1980,98 @@ const formatFieldName = (field) => {
   return fieldNames[field] || field.split('_').map(word => 
     word.charAt(0).toUpperCase() + word.slice(1)
   ).join(' ')
+}
+
+const highlightDifferences = (str1, str2) => {
+  // Convert to strings and handle null/undefined
+  const s1 = String(str1 || '')
+  const s2 = String(str2 || '')
+  
+  // If strings are identical, return plain text
+  if (s1 === s2) {
+    return { str1: s1, str2: s2, hasDiff: false }
+  }
+  
+  // For simpler visualization, use a character-by-character approach with some optimization
+  let result1 = []
+  let result2 = []
+  
+  // Find common prefix
+  let prefixLen = 0
+  while (prefixLen < s1.length && prefixLen < s2.length && s1[prefixLen] === s2[prefixLen]) {
+    prefixLen++
+  }
+  
+  // Find common suffix
+  let suffixLen = 0
+  while (suffixLen < (s1.length - prefixLen) && 
+         suffixLen < (s2.length - prefixLen) && 
+         s1[s1.length - 1 - suffixLen] === s2[s2.length - 1 - suffixLen]) {
+    suffixLen++
+  }
+  
+  // Add common prefix
+  if (prefixLen > 0) {
+    const prefix = s1.substring(0, prefixLen)
+    result1.push(prefix)
+    result2.push(prefix)
+  }
+  
+  // Add different middle part
+  const mid1 = s1.substring(prefixLen, s1.length - suffixLen)
+  const mid2 = s2.substring(prefixLen, s2.length - suffixLen)
+  
+  if (mid1 || mid2) {
+    // For better visualization of small differences, highlight character by character for short strings
+    if (mid1.length <= 10 && mid2.length <= 10) {
+      // Character-by-character comparison for short differences
+      const maxLen = Math.max(mid1.length, mid2.length)
+      let diff1 = []
+      let diff2 = []
+      
+      for (let i = 0; i < maxLen; i++) {
+        const c1 = i < mid1.length ? mid1[i] : ''
+        const c2 = i < mid2.length ? mid2[i] : ''
+        
+        if (c1 === c2 && c1 !== '') {
+          // Same character
+          diff1.push(c1)
+          diff2.push(c2)
+        } else {
+          // Different or missing character
+          if (c1) diff1.push(`<span class="diff-highlight">${escapeHtml(c1)}</span>`)
+          if (c2) diff2.push(`<span class="diff-highlight">${escapeHtml(c2)}</span>`)
+        }
+      }
+      
+      result1.push(diff1.join(''))
+      result2.push(diff2.join(''))
+    } else {
+      // For longer differences, highlight the whole section
+      if (mid1) result1.push(`<span class="diff-highlight">${escapeHtml(mid1)}</span>`)
+      if (mid2) result2.push(`<span class="diff-highlight">${escapeHtml(mid2)}</span>`)
+    }
+  }
+  
+  // Add common suffix
+  if (suffixLen > 0) {
+    const suffix = s1.substring(s1.length - suffixLen)
+    result1.push(suffix)
+    result2.push(suffix)
+  }
+  
+  return {
+    str1: result1.join(''),
+    str2: result2.join(''),
+    hasDiff: true
+  }
+}
+
+// Helper function to escape HTML
+const escapeHtml = (str) => {
+  const div = document.createElement('div')
+  div.textContent = str
+  return div.innerHTML
 }
 
 const resolveMismatch = async (field) => {
@@ -3459,6 +3562,40 @@ onUnmounted(() => {
   font-size: 0.9rem;
 }
 
+.mismatch-info {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+.info-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.info-badge.case-diff {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.info-badge.typo-likely {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.info-badge.major-diff {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
 .mismatch-resolution {
   display: flex;
   flex-direction: column;
@@ -3506,6 +3643,34 @@ onUnmounted(() => {
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.9rem;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+/* Diff highlighting styles */
+.diff-highlight {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  margin: 0 1px;
+}
+
+.mismatch-option:hover .diff-highlight {
+  background: rgba(239, 68, 68, 0.4);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+/* Selected option styling */
+.mismatch-option input[type="radio"]:checked + label {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.mismatch-option input[type="radio"]:checked + label code {
+  background: rgba(59, 130, 246, 0.2);
 }
 
 .resolve-button {
