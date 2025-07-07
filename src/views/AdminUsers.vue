@@ -59,10 +59,19 @@
             <td>
               <div class="user-info">
                 <img 
-                  v-if="user.avatar_url" 
-                  :src="user.avatar_url" 
+                  v-if="user.avatar_class" 
+                  :src="`/icons/${user.avatar_class}.gif`" 
+                  alt="Avatar"
+                  class="user-avatar class-avatar"
+                >
+                <img 
+                  v-else-if="user.avatar_url" 
+                  :src="getAvatarUrl(user)" 
                   alt="Avatar"
                   class="user-avatar"
+                  @error="handleAvatarError($event, user)"
+                  referrerpolicy="no-referrer"
+                  loading="lazy"
                 >
                 <div v-else class="user-avatar-fallback">
                   {{ getInitials(user) }}
@@ -210,10 +219,19 @@
         <div class="modal-body">
           <div class="user-info-summary">
             <img 
-              v-if="actionUser.avatar_url" 
-              :src="actionUser.avatar_url" 
+              v-if="actionUser.avatar_class" 
+              :src="`/icons/${actionUser.avatar_class}.gif`" 
+              alt="Avatar"
+              class="user-avatar-large class-avatar"
+            >
+            <img 
+              v-else-if="actionUser.avatar_url" 
+              :src="getAvatarUrl(actionUser)" 
               alt="Avatar"
               class="user-avatar-large"
+              @error="handleAvatarError($event, actionUser)"
+              referrerpolicy="no-referrer"
+              loading="lazy"
             >
             <div v-else class="user-avatar-fallback-large">
               {{ getInitials(actionUser) }}
@@ -339,6 +357,42 @@ const loadUsers = async () => {
     const data = response.data.data
     users.value = data.users
     totalPages.value = data.total_pages
+    
+    // Debug: Log user avatar data
+    console.log('Users loaded:', users.value.map(u => ({
+      name: `${u.first_name} ${u.last_name}`,
+      avatar_url: u.avatar_url,
+      avatar_class: u.avatar_class
+    })))
+    
+    // Check specific users with Google avatars
+    const googleAvatarUsers = users.value.filter(u => u.avatar_url && !u.avatar_class)
+    console.log('Users with Google avatars:', googleAvatarUsers.map(u => ({
+      name: `${u.first_name} ${u.last_name}`,
+      avatar_url: u.avatar_url
+    })))
+    
+    // Also log users without any avatar
+    const noAvatarUsers = users.value.filter(u => !u.avatar_url && !u.avatar_class)
+    console.log('Users without avatars:', noAvatarUsers.map(u => ({
+      name: `${u.first_name} ${u.last_name}`,
+      email: u.email,
+      avatar_url: u.avatar_url,
+      avatar_class: u.avatar_class
+    })))
+    
+    // Debug: Check specific users
+    users.value.forEach(user => {
+      if (user.email === 'don.l.patterson@gmail.com' || user.email === 'darkmiredm@gmail.com') {
+        console.log('Debug user data:', {
+          email: user.email,
+          avatar_url: user.avatar_url,
+          avatar_class: user.avatar_class,
+          has_avatar_url: !!user.avatar_url,
+          avatar_url_type: typeof user.avatar_url
+        })
+      }
+    })
     
     // Store total count if available
     const totalCount = data.total || (data.total_pages * perPage.value) || users.value.length
@@ -491,6 +545,56 @@ const getInitials = (user) => {
   return (first + last).toUpperCase() || user.email[0].toUpperCase()
 }
 
+const getAvatarUrl = (user) => {
+  // If it's a Google avatar URL, return it directly for now
+  // We can switch to proxy later if needed
+  if (user.avatar_url) {
+    console.log(`Loading avatar for ${user.email}: ${user.avatar_url}`)
+    return user.avatar_url
+  }
+  return null
+}
+
+const handleAvatarError = (event, user) => {
+  console.error('Avatar failed to load:', {
+    user: user.email,
+    url: user.avatar_url,
+    error: event.type,
+    src: event.target.src
+  })
+  
+  // Try different approaches to load the Google avatar
+  if (!event.target.dataset.retried) {
+    event.target.dataset.retried = 'true'
+    
+    // If it's a Google avatar URL, try without parameters first
+    if (user.avatar_url && user.avatar_url.includes('googleusercontent.com')) {
+      // Try the original URL without modification
+      console.log('Retrying Google avatar with original URL')
+      event.target.src = user.avatar_url
+      return
+    }
+  } else if (event.target.dataset.retried === 'true' && !event.target.dataset.retriedWithSize) {
+    event.target.dataset.retriedWithSize = 'true'
+    
+    // Second retry: try with size parameter
+    if (user.avatar_url && user.avatar_url.includes('googleusercontent.com')) {
+      try {
+        const url = new URL(user.avatar_url)
+        url.searchParams.set('sz', '100')
+        console.log('Retrying Google avatar with size parameter:', url.toString())
+        event.target.src = url.toString()
+        return
+      } catch (e) {
+        console.error('Error modifying avatar URL:', e)
+      }
+    }
+  }
+  
+  // If all retries failed, don't hide the image - let Vue's v-else handle the fallback
+  console.error('All avatar load attempts failed for', user.email)
+}
+
 const formatDate = (date) => {
   if (!date) return null
   return new Date(date).toLocaleDateString()
@@ -520,9 +624,11 @@ onMounted(() => {
 <style scoped>
 .admin-users {
   padding: 20px;
-  padding-top: 80px; /* Add padding to account for fixed header elements */
+  padding-top: var(--header-height);
   max-width: 1400px;
   margin: 0 auto;
+  min-height: 100vh;
+  background: #0f0f1e;
 }
 
 .page-header {
@@ -585,16 +691,23 @@ onMounted(() => {
 .search-box input {
   width: 100%;
   padding: 12px 12px 12px 45px;
-  border: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   font-size: 14px;
   transition: all 0.2s;
+  color: #e2e8f0;
+}
+
+.search-box input::placeholder {
+  color: #a0aec0;
 }
 
 .search-box input:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .stats-grid {
@@ -605,31 +718,35 @@ onMounted(() => {
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: 20px;
   text-align: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #1a202c;
+  color: #ffffff;
   margin-bottom: 5px;
 }
 
 .stat-label {
-  color: #666;
+  color: #a0aec0;
   font-size: 0.9rem;
 }
 
 .users-table-container {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
+  backdrop-filter: blur(20px);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
@@ -639,12 +756,12 @@ onMounted(() => {
 }
 
 .users-table th {
-  background: #f7fafc;
+  background: rgba(0, 0, 0, 0.3);
   padding: 15px;
   text-align: left;
   font-weight: 600;
-  color: #4a5568;
-  border-bottom: 1px solid #e5e7eb;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .users-table th:last-child {
@@ -653,12 +770,12 @@ onMounted(() => {
 
 .users-table td {
   padding: 15px;
-  border-bottom: 1px solid #e5e7eb;
-  color: #1a202c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
 }
 
 .users-table tbody tr:hover {
-  background: #f7fafc;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .user-info {
@@ -672,6 +789,16 @@ onMounted(() => {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-avatar.class-avatar {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px;
 }
 
 .user-avatar-fallback {
@@ -685,15 +812,16 @@ onMounted(() => {
   color: white;
   font-weight: 600;
   font-size: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
 }
 
 .user-name {
   font-weight: 500;
-  color: #1a202c;
+  color: #e2e8f0;
 }
 
 .display-name {
-  color: #6b7280;
+  color: #a0aec0;
   font-weight: 400;
   font-style: italic;
   margin-left: 4px;
@@ -840,13 +968,15 @@ onMounted(() => {
 }
 
 .modal-content {
-  background: white;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.98) 0%, rgba(45, 55, 72, 0.98) 100%);
   border-radius: 12px;
   max-width: 800px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .modal-header {
@@ -854,20 +984,22 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 25px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 1.5rem;
+  color: #e2e8f0;
 }
 
 .close-btn {
   width: 40px;
   height: 40px;
   border: none;
-  background: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 8px;
+  color: #e2e8f0;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -876,7 +1008,7 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  background: #e2e8f0;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .modal-body {
@@ -893,7 +1025,7 @@ onMounted(() => {
 
 .detail-section h3 {
   margin: 0 0 15px 0;
-  color: #4a5568;
+  color: #e2e8f0;
   font-size: 1.1rem;
 }
 
@@ -910,13 +1042,13 @@ onMounted(() => {
 }
 
 .detail-item .label {
-  color: #718096;
+  color: #a0aec0;
   font-size: 0.85rem;
   font-weight: 500;
 }
 
 .detail-item .value {
-  color: #1a202c;
+  color: #e2e8f0;
   font-weight: 500;
 }
 
@@ -957,9 +1089,10 @@ onMounted(() => {
   align-items: center;
   gap: 20px;
   padding: 25px;
-  background: #f7fafc;
+  background: rgba(0, 0, 0, 0.3);
   border-radius: 12px;
   margin-bottom: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .user-avatar-large {
@@ -967,6 +1100,16 @@ onMounted(() => {
   height: 80px;
   border-radius: 50%;
   object-fit: cover;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-avatar-large.class-avatar {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
 }
 
 .user-avatar-fallback-large {
@@ -980,6 +1123,7 @@ onMounted(() => {
   color: white;
   font-weight: 600;
   font-size: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
 }
 
 .user-details h3 {

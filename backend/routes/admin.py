@@ -3,7 +3,7 @@ Admin routes for user management.
 """
 
 from flask import Blueprint, request, jsonify, g
-from utils.jwt_utils import require_admin, create_error_response, create_success_response
+from utils.jwt_utils import require_admin, require_auth, create_error_response, create_success_response
 from models.user import User, OAuthSession
 from models.activity import ActivityLog
 import psycopg2
@@ -81,7 +81,7 @@ def get_all_users():
                     offset = (page - 1) * per_page
                     cursor.execute("""
                         SELECT id, google_id, email, first_name, last_name, avatar_url, role, 
-                               is_active, created_at, updated_at, last_login
+                               is_active, created_at, updated_at, last_login, display_name, avatar_class
                         FROM users 
                         WHERE is_active = TRUE 
                         AND (
@@ -107,7 +107,9 @@ def get_all_users():
                             'is_active': row[7],
                             'created_at': row[8].isoformat() if row[8] else None,
                             'updated_at': row[9].isoformat() if row[9] else None,
-                            'last_login': row[10].isoformat() if row[10] else None
+                            'last_login': row[10].isoformat() if row[10] else None,
+                            'display_name': row[11],
+                            'avatar_class': row[12]
                         })
                     
                     result = {
@@ -1139,7 +1141,10 @@ def update_database_config():
         saved_to_persistent = persistent_config.save_database_config(
             db_url=connection_url,
             db_type=db_type,
-            use_ssl=use_ssl
+            use_ssl=use_ssl,
+            db_name=database,
+            db_password=password,
+            db_port=str(port)
         )
         
         if saved_to_persistent:
@@ -1533,6 +1538,45 @@ def check_persistence():
         
     except Exception as e:
         return create_error_response(f"Failed to check persistence: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/database/reconnect', methods=['POST'])
+@require_admin
+def reconnect_database():
+    """
+    Force database reconnection by invalidating the connection pool.
+    
+    Returns:
+        JSON response with reconnection status
+    """
+    try:
+        from flask import current_app
+        from utils.db_connection_pool import close_connection_pool
+        
+        # Close existing connection pool to force reconnection
+        close_connection_pool()
+        
+        # Invalidate config cache to reload from env vars
+        if hasattr(current_app, 'db_config_manager'):
+            current_app.db_config_manager.invalidate()
+            logger.info("Database configuration cache invalidated for reconnection")
+        
+        # Test new connection
+        from app import get_eqemu_db_connection
+        test_conn = get_eqemu_db_connection()
+        
+        if test_conn:
+            # Connection successful
+            test_conn.close()
+            return jsonify(create_success_response({
+                'message': 'Database reconnection successful',
+                'connected': True
+            }))
+        else:
+            return jsonify(create_error_response('Failed to reconnect to database', 500))
+            
+    except Exception as e:
+        return create_error_response(f"Reconnection failed: {str(e)}", 500)
 
 
 # System monitoring data storage
@@ -2003,3 +2047,97 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
     
     # Update timeline data
     update_query_timeline(table_name)
+
+
+@admin_bp.route('/admin/debug/avatars', methods=['GET'])
+@require_admin
+def debug_avatars():
+    """Debug endpoint to check avatar URLs."""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return create_error_response("Database connection failed", 500)
+        
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, email, avatar_url, avatar_class 
+                FROM users 
+                WHERE is_active = TRUE
+                ORDER BY created_at DESC
+                LIMIT 20
+            """)
+            
+            users = []
+            for row in cursor.fetchall():
+                user_data = {
+                    'id': row[0],
+                    'email': row[1],
+                    'avatar_url': row[2],
+                    'avatar_class': row[3],
+                    'has_google_avatar': bool(row[2] and not row[3]),
+                    'has_class_avatar': bool(row[3])
+                }
+                users.append(user_data)
+            
+            return create_success_response({
+                'users': users,
+                'total': len(users)
+            })
+            
+    except Exception as e:
+        logger.error(f"Error in debug avatars endpoint: {str(e)}")
+        return create_error_response(f"Failed to get avatar debug info: {str(e)}", 500)
+
+
+@admin_bp.route('/api/avatar-proxy/<int:user_id>', methods=['GET'])
+@require_auth
+def proxy_avatar(user_id):
+    """Proxy Google avatars to avoid CORS issues."""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return create_error_response("Database connection failed", 500)
+        
+        # Get the user's avatar URL
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT avatar_url, avatar_class 
+                FROM users 
+                WHERE id = %s AND is_active = TRUE
+            """, (user_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return create_error_response("User not found", 404)
+            
+            avatar_url = result[0]
+            avatar_class = result[1]
+            
+            # If user has a class avatar, they shouldn't be using this endpoint
+            if avatar_class:
+                return create_error_response("User has class avatar", 400)
+            
+            # If no avatar URL, return 404
+            if not avatar_url:
+                return create_error_response("No avatar URL", 404)
+            
+            # Fetch the avatar from Google
+            import requests
+            response = requests.get(avatar_url, headers={'User-Agent': 'EQDataScraper/1.0'})
+            
+            if response.status_code == 200:
+                from flask import Response
+                return Response(
+                    response.content,
+                    mimetype=response.headers.get('content-type', 'image/jpeg'),
+                    headers={
+                        'Cache-Control': 'public, max-age=86400',  # Cache for 1 day
+                        'Access-Control-Allow-Origin': '*'
+                    }
+                )
+            else:
+                return create_error_response(f"Failed to fetch avatar: {response.status_code}", 500)
+                
+    except Exception as e:
+        logger.error(f"Error in avatar proxy: {str(e)}")
+        return create_error_response(f"Failed to proxy avatar: {str(e)}", 500)

@@ -263,6 +263,9 @@ class GoogleOAuth:
                 'email_verified': id_info.get('email_verified', False)
             }
             
+            # Debug: Log the avatar URL
+            safe_log(f"[OAuth] User avatar URL from Google: {user_info.get('avatar_url')}")
+            
             return {
                 'access_token': tokens.get('access_token'),
                 'refresh_token': tokens.get('refresh_token'),

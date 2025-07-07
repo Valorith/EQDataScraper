@@ -120,24 +120,37 @@ class PersistentConfig:
         return self.save({key: value})
     
     def get_database_config(self) -> Optional[Dict[str, Any]]:
-        """Get database configuration."""
+        """Get database configuration - prioritizes Railway env vars over file storage."""
+        # First priority: Check Railway environment variables
+        db_url = os.environ.get('EQEMU_DATABASE_URL')
+        
+        if db_url:
+            logger.info("Loaded database configuration from Railway environment variables")
+            # Get all config from environment variables
+            db_config = {
+                'production_database_url': db_url,
+                'database_type': os.environ.get('EQEMU_DATABASE_TYPE', 'mysql'),
+                'use_production_database': True,
+                'database_read_only': True,
+                'database_ssl': os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true',
+                'database_name': os.environ.get('EQEMU_DATABASE_NAME', ''),
+                'database_password': os.environ.get('EQEMU_DATABASE_PW', ''),
+                'database_port': os.environ.get('EQEMU_DATABASE_PORT', ''),
+                'config_source': 'environment_variables'
+            }
+            
+            # Optionally save to persistent storage as backup
+            # This helps during development or if env vars are temporarily unavailable
+            try:
+                self.save(db_config)
+            except Exception as e:
+                logger.warning(f"Could not save env config to persistent storage: {e}")
+            
+            return db_config
+        
+        # Second priority: Check persistent file storage
         config = self.load()
-        
-        # Check for database URL in persistent config
         db_url = config.get('production_database_url')
-        
-        # If not in file, check environment variable as backup
-        # Use a specific env var for content database to avoid confusion with auth database
-        if not db_url:
-            db_url = os.environ.get('EQEMU_DATABASE_URL')
-            if db_url:
-                logger.info("Loaded database URL from EQEMU_DATABASE_URL environment variable")
-                # Also get other settings from environment
-                db_type = os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')
-                use_ssl = os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true'
-                
-                # Save to persistent storage for next time
-                self.save_database_config(db_url, db_type, use_ssl)
         
         # Note: We do NOT fall back to DATABASE_URL environment variable
         # as that's reserved for the PostgreSQL auth database
@@ -145,24 +158,40 @@ class PersistentConfig:
         if not db_url:
             return None
         
-        # Return combined config
+        # Return config from file
         return {
             'production_database_url': db_url,
-            'database_type': config.get('database_type', os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')),
+            'database_type': config.get('database_type', 'mysql'),
             'use_production_database': config.get('use_production_database', True),
             'database_read_only': config.get('database_read_only', True),
-            'database_ssl': config.get('database_ssl', os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true')
+            'database_ssl': config.get('database_ssl', True),
+            'database_name': config.get('database_name', ''),
+            'database_password': config.get('database_password', ''),
+            'database_port': config.get('database_port', ''),
+            'config_source': 'persistent_storage'
         }
     
-    def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True) -> bool:
+    def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True, 
+                           db_name: str = '', db_password: str = '', db_port: str = '') -> bool:
         """Save database configuration persistently."""
-        return self.save({
+        config = {
             'production_database_url': db_url,
             'database_type': db_type,
             'use_production_database': True,
             'database_read_only': True,
-            'database_ssl': use_ssl
-        })
+            'database_ssl': use_ssl,
+            'database_name': db_name,
+            'database_password': db_password,
+            'database_port': db_port
+        }
+        
+        # Also update environment variables if we're on Railway
+        if os.environ.get('RAILWAY_ENVIRONMENT'):
+            logger.info("Attempting to update Railway environment variables (note: this requires Railway API)")
+            # Note: Direct env var updates from within the app won't persist across deploys
+            # Users need to set these through Railway dashboard or CLI
+        
+        return self.save(config)
 
 
 # Singleton instance

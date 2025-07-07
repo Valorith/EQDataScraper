@@ -120,6 +120,17 @@ export const useUserStore = defineStore('user', {
      * Initialize authentication state on app load
      */
     async initializeAuth() {
+      // Check if we were in the middle of OAuth redirect
+      const oauthInProgress = sessionStorage.getItem('oauth_redirect_in_progress')
+      if (oauthInProgress && !window.location.pathname.includes('/auth/callback')) {
+        // OAuth redirect was interrupted or failed
+        console.log('OAuth redirect was interrupted, cleaning up')
+        sessionStorage.removeItem('oauth_redirect_in_progress')
+        this.isLoading = false
+        this.loginError = null
+        return
+      }
+      
       this.isLoading = true
       this.loginError = null
 
@@ -130,11 +141,23 @@ export const useUserStore = defineStore('user', {
           const isValid = await this.verifyToken()
           if (!isValid && this.refreshToken) {
             // Try to refresh the token
-            await this.refreshAccessToken()
+            try {
+              await this.refreshAccessToken()
+            } catch (refreshError) {
+              console.log('Token refresh failed, clearing auth')
+              this.clearAuth()
+            }
+          } else if (!isValid) {
+            // No refresh token available, clear auth
+            console.log('Invalid token with no refresh token, clearing auth')
+            this.clearAuth()
           }
         }
       } catch (error) {
-        console.error('Auth initialization failed:', error)
+        // Only log non-401 errors, as 401 is expected for expired tokens
+        if (!error.response || error.response.status !== 401) {
+          console.error('Auth initialization failed:', error)
+        }
         this.clearAuth()
       } finally {
         this.isLoading = false
@@ -158,6 +181,9 @@ export const useUserStore = defineStore('user', {
           this.oauthState = state
           console.log('🔐 Storing OAuth state:', state)
           
+          // Set a flag to indicate we're redirecting
+          sessionStorage.setItem('oauth_redirect_in_progress', 'true')
+          
           // Redirect to Google OAuth
           window.location.href = auth_url
         } else {
@@ -167,6 +193,8 @@ export const useUserStore = defineStore('user', {
         console.error('Login initiation failed:', error)
         this.loginError = error.response?.data?.error || 'Failed to start login process'
         this.isLoading = false
+        // Clean up redirect flag on error
+        sessionStorage.removeItem('oauth_redirect_in_progress')
       }
     },
 
@@ -242,7 +270,10 @@ export const useUserStore = defineStore('user', {
           throw new Error('Token refresh failed')
         }
       } catch (error) {
-        console.error('Token refresh failed:', error)
+        // Don't log 401 errors during refresh - they're expected when refresh token is expired
+        if (!error.response || error.response.status !== 401) {
+          console.error('Token refresh failed:', error)
+        }
         this.clearAuth()
         throw error
       }
@@ -269,7 +300,10 @@ export const useUserStore = defineStore('user', {
           return false
         }
       } catch (error) {
-        console.error('Token verification failed:', error)
+        // Don't log 401 errors during token verification - they're expected
+        if (!error.response || error.response.status !== 401) {
+          console.error('Token verification failed:', error)
+        }
         return false
       }
     },
@@ -393,11 +427,14 @@ export const useUserStore = defineStore('user', {
       this.isAuthenticated = false
       this.oauthState = null
       this.loginError = null
+      this.isLoading = false
       this.preferences = {
         default_class: null,
         theme_preference: 'auto',
         results_per_page: 20
       }
+      // Clean up any OAuth redirect flags
+      sessionStorage.removeItem('oauth_redirect_in_progress')
     },
 
     /**

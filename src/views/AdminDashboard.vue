@@ -79,7 +79,7 @@
         <div class="card-content">
           <div class="stat-row">
             <span class="stat-label">Status</span>
-            <span class="stat-value" :class="scrapingStatus.active ? 'warning' : 'success'">
+            <span class="stat-value" :class="scrapingStatus.active ? 'warning' : 'info'">
               {{ scrapingStatus.active ? 'In Progress' : 'Idle' }}
             </span>
           </div>
@@ -132,13 +132,16 @@
         </div>
       </div>
 
-      <!-- Database Connection Card -->
+      <!-- Content Database Card -->
       <div class="dashboard-card">
         <div class="card-header">
-          <div class="card-icon database">
-            <i class="fas fa-database"></i>
+          <div class="card-icon database" :class="{
+            'status-connected': databaseStatus.connected,
+            'status-disconnected': !databaseStatus.connected
+          }">
+            <i class="fas" :class="databaseStatus.connected ? 'fa-check-circle' : 'fa-exclamation-circle'"></i>
           </div>
-          <h2>Database Connection</h2>
+          <h2>Content Database</h2>
         </div>
         <div class="card-content">
           <div class="stat-row">
@@ -170,14 +173,14 @@
             <span class="warning-text">Database configuration will be lost on deployment!</span>
           </div>
         </div>
-        <div class="card-actions">
+        <div class="card-actions database-actions">
           <button @click="openDatabaseModal" class="action-button primary">
             <i class="fas fa-cog"></i>
-            Configure Database
+            Configure
           </button>
-          <button @click="checkPersistence" class="action-button secondary" :disabled="checkingPersistence">
-            <i class="fas fa-info-circle" :class="{ 'fa-spin': checkingPersistence }"></i>
-            Check Persistence
+          <button @click="refreshConnection" class="action-button secondary" :disabled="refreshingConnection">
+            <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshingConnection }"></i>
+            Refresh
           </button>
         </div>
       </div>
@@ -458,7 +461,7 @@ const databaseForm = ref({
 const databaseTestResult = ref(null)
 const testingConnection = ref(false)
 const savingConfig = ref(false)
-const checkingPersistence = ref(false)
+const refreshingConnection = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -706,8 +709,13 @@ const loadDashboardData = async () => {
     // Check if any scraping is in progress
     const startupRes = await axios.get(`${API_BASE_URL}/api/startup-status`)
     if (startupRes.data) {
+      // Only mark as active if we have actual scraping activity
+      const isActuallyScraping = startupRes.data.scraping_in_progress || 
+                                 (startupRes.data.current_class && startupRes.data.current_class !== 'None') ||
+                                 (startupRes.data.progress_percent && startupRes.data.progress_percent > 0)
+      
       scrapingStatus.value = {
-        active: !startupRes.data.startup_complete || startupRes.data.scraping_in_progress,
+        active: isActuallyScraping,
         currentClass: startupRes.data.current_class || null,
         progress: startupRes.data.progress_percent ? `${startupRes.data.progress_percent}%` : null
       }
@@ -1049,49 +1057,60 @@ const testDatabaseConnection = async () => {
   }
 }
 
-const checkPersistence = async () => {
-  checkingPersistence.value = true
+const refreshConnection = async () => {
+  refreshingConnection.value = true
   
   try {
-    const response = await axios.get(`${API_BASE_URL}/api/admin/database/persist-check`, {
-      headers: {
-        Authorization: `Bearer ${userStore.accessToken}`
-      }
+    // First, try to refresh the database configuration
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
+      headers: { Authorization: `Bearer ${token}` }
     })
     
-    if (response.data.success) {
-      const diagnostics = response.data.data
+    if (dbConfigRes.data.success && dbConfigRes.data.data?.database) {
+      const dbData = dbConfigRes.data.data.database
       
-      // Create a detailed message
-      let message = 'Persistence Status:\n\n'
-      
-      // Environment info
-      message += `Environment: ${diagnostics.environment.RAILWAY_ENVIRONMENT || 'Local'}\n`
-      message += `Config Source: ${storageInfo.value.config_source}\n\n`
-      
-      // Storage info
-      message += 'Storage Locations Tested:\n'
-      diagnostics.tested_directories.forEach(dir => {
-        const status = dir.writable ? '✅ Writable' : dir.exists ? '⚠️ Read-only' : '❌ Not found'
-        message += `${status} ${dir.path}\n`
-      })
-      
-      // Recommendations
-      if (diagnostics.recommendations && diagnostics.recommendations.length > 0) {
-        message += '\nRecommendations:\n'
-        diagnostics.recommendations.forEach(rec => {
-          message += `• ${rec}\n`
-        })
+      // Update the database status
+      databaseStatus.value = {
+        connected: dbData.connected || false,
+        host: dbData.host || null,
+        port: dbData.port || null,
+        database: dbData.database || null,
+        username: dbData.username || null,
+        db_type: dbData.db_type || null,
+        use_ssl: dbData.use_ssl !== undefined ? dbData.use_ssl : true,
+        status: dbData.status || 'unknown',
+        version: dbData.version || null,
+        connection_type: dbData.connection_type || 'unknown'
       }
       
-      // Show in alert (you might want to use a modal instead)
-      alert(message)
+      // Update storage info if available
+      if (dbConfigRes.data.data.storage_info) {
+        storageInfo.value = dbConfigRes.data.data.storage_info
+      }
+      
+      // Force backend to reconnect by invalidating cache
+      try {
+        await axios.post(`${API_BASE_URL}/api/admin/database/reconnect`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      } catch (e) {
+        // Endpoint might not exist yet, that's ok
+        console.log('Reconnect endpoint not available, connection will refresh on next use')
+      }
+      
+      // Show success message
+      if (databaseStatus.value.connected) {
+        alert('Database connection refreshed successfully!')
+      } else {
+        alert('Database configuration loaded but connection failed. Please check your settings.')
+      }
     }
   } catch (error) {
-    console.error('Failed to check persistence:', error)
-    alert('Failed to check persistence status. Check console for details.')
+    console.error('Failed to refresh connection:', error)
+    alert('Failed to refresh database connection. Check console for details.')
   } finally {
-    checkingPersistence.value = false
+    refreshingConnection.value = false
   }
 }
 
@@ -1302,6 +1321,14 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
 }
 
+.card-icon.database.status-connected {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+}
+
+.card-icon.database.status-disconnected {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+}
+
 .card-header h2 {
   font-size: 1.4rem;
   margin: 0;
@@ -1372,6 +1399,12 @@ onUnmounted(() => {
 
 .card-actions {
   text-align: center;
+}
+
+.card-actions.database-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
 }
 
 .action-button {

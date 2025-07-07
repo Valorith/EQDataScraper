@@ -1026,6 +1026,87 @@ class AppRunner:
             except (OSError, ProcessLookupError):
                 pass
     
+    def _cleanup_existing_services(self):
+        """Clean up any existing services before starting new ones"""
+        stopped_count = 0
+        
+        # 1. Check for tracked processes from PID file
+        pids = self.load_pids()
+        for name, pid in pids.items():
+            if self.is_process_running(pid):
+                try:
+                    self._terminate_process_by_pid(pid)
+                    stopped_count += 1
+                except (OSError, ProcessLookupError):
+                    pass
+        
+        # 2. Check for processes on common ports
+        # Backend ports
+        backend_ports = [5000, 5001, 5002, 5003]
+        for port in backend_ports:
+            if self.is_port_in_use(port):
+                process_info = self.get_port_conflict_process(port)
+                if process_info and any(indicator in process_info.lower() for indicator in ["python", "flask", "app.py"]):
+                    if self.kill_port_process(port) or self._force_kill_port(port):
+                        stopped_count += 1
+        
+        # Frontend ports
+        frontend_ports = [3000, 3001, 3002, 3003, 3005, 8080]
+        for port in frontend_ports:
+            if self.is_port_in_use(port):
+                process_info = self.get_port_conflict_process(port)
+                if process_info and any(indicator in process_info.lower() for indicator in ["node", "vite", "npm"]):
+                    if self.kill_port_process(port) or self._force_kill_port(port):
+                        stopped_count += 1
+        
+        # 3. Search for processes by name pattern
+        try:
+            if self.platform == 'darwin':  # macOS
+                # Find Python processes running app.py
+                cmd = "ps aux | grep -E 'python.*app\\.py|python.*run\\.py' | grep -v grep | awk '{print $2}'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout.strip():
+                    for pid in result.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid)
+                            os.kill(pid, signal.SIGTERM)
+                            stopped_count += 1
+                        except:
+                            pass
+                
+                # Find Node/Vite processes
+                cmd = "ps aux | grep -E 'node.*vite|npm.*dev.*EQDataScraper' | grep -v grep | awk '{print $2}'"
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.stdout.strip():
+                    for pid in result.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid)
+                            os.kill(pid, signal.SIGTERM)
+                            stopped_count += 1
+                        except:
+                            pass
+            
+            elif self.platform == 'linux':  # Linux
+                subprocess.run("pkill -f 'python.*app\\.py'", shell=True)
+                subprocess.run("pkill -f 'python.*run\\.py'", shell=True)
+                subprocess.run("pkill -f 'node.*vite'", shell=True)
+                stopped_count += 3  # Estimate
+                
+            elif self.platform == 'win32':  # Windows
+                subprocess.run('taskkill /F /IM python.exe /FI "WINDOWTITLE eq *app.py*"', shell=True, capture_output=True)
+                subprocess.run('taskkill /F /IM python.exe /FI "WINDOWTITLE eq *run.py*"', shell=True, capture_output=True)
+                subprocess.run('taskkill /F /IM node.exe /FI "WINDOWTITLE eq *vite*"', shell=True, capture_output=True)
+                stopped_count += 3  # Estimate
+                
+        except Exception:
+            pass
+        
+        # Clean up PID file
+        if self.pids_file.exists():
+            self.pids_file.unlink()
+        
+        return stopped_count
+    
     def _stop_monitor_process(self):
         """Stop any running monitor processes"""
         self.print_status("Checking for monitor processes...", "step", 1)
@@ -1235,6 +1316,19 @@ class AppRunner:
     def start_services(self):
         """Start both frontend and backend services"""
         self.print_header("Starting EQDataScraper Application")
+        
+        # Clean up any existing services first
+        self.print_status("Checking for existing services...", "step")
+        existing_services = self._cleanup_existing_services()
+        
+        if existing_services > 0:
+            self.print_status(f"Cleaned up {existing_services} existing service(s)", "info", 1)
+            self.print_status("Waiting for processes to fully terminate...", "info", 1)
+            time.sleep(2)  # Give processes time to fully shut down
+        else:
+            self.print_status("No existing services found", "info", 1)
+        
+        print()  # Add spacing
         
         if self.skip_dependency_check:
             self.print_status("Skipping dependency check as requested", "warning")

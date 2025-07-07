@@ -137,11 +137,22 @@ export default {
     // Initialize authentication system
     try {
       console.log('🔐 Initializing authentication...')
+      
+      // Check for stuck OAuth redirect state
+      const oauthInProgress = sessionStorage.getItem('oauth_redirect_in_progress')
+      if (oauthInProgress && !this.$route.path.includes('/auth/callback')) {
+        console.log('Cleaning up stuck OAuth redirect state')
+        sessionStorage.removeItem('oauth_redirect_in_progress')
+        this.userStore.isLoading = false
+      }
+      
       await this.userStore.initializeAuth()
       this.userStore.setupTokenRefresh()
       console.log('✅ Authentication initialized')
     } catch (error) {
       console.error('❌ Authentication initialization failed:', error)
+      // Ensure loading state is reset on error
+      this.userStore.isLoading = false
     }
     
     // Skip cache initialization in App.vue since main.js already handles it

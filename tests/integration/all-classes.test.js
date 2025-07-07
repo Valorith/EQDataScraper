@@ -15,9 +15,10 @@ vi.mock('axios', () => ({
   }
 }))
 
+import axios from 'axios'
+
 describe('All EverQuest Classes Integration Tests', () => {
   let store
-  let mockAxios
 
   // All EQ classes as defined in the application
   const ALL_EQ_CLASSES = [
@@ -29,7 +30,6 @@ describe('All EverQuest Classes Integration Tests', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     store = useSpellsStore()
-    mockAxios = await import('axios')
     vi.clearAllMocks()
   })
 
@@ -52,12 +52,12 @@ describe('All EverQuest Classes Integration Tests', () => {
             spell_count: 2
           }
 
-          mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+          axios.get.mockResolvedValueOnce(mockAxiosResponse(response))
 
           const result = await store.fetchSpellsForClass(testCase)
 
           // Verify API call was made with lowercase class name
-          expect(mockAxios.default.get).toHaveBeenCalledWith(
+          expect(axios.get).toHaveBeenCalledWith(
             expect.stringContaining(`/api/spells/${className.toLowerCase()}`),
             expect.any(Object)
           )
@@ -89,12 +89,12 @@ describe('All EverQuest Classes Integration Tests', () => {
           spell_count: 2
         }
 
-        mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+        axios.get.mockResolvedValueOnce(mockAxiosResponse(response))
 
         const result = await store.fetchSpellsForClass(variation)
 
         // Should always call API with 'shadowknight' (lowercase)
-        expect(mockAxios.default.get).toHaveBeenCalledWith(
+        expect(axios.get).toHaveBeenCalledWith(
           expect.stringContaining('/api/spells/shadowknight'),
           expect.any(Object)
         )
@@ -113,7 +113,11 @@ describe('All EverQuest Classes Integration Tests', () => {
       const testClasses = ['shadowknight', 'cleric', 'wizard', 'beastlord']
 
       for (const className of testClasses) {
-        mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(htmlErrorResponse))
+        axios.get.mockResolvedValueOnce({
+          data: htmlErrorResponse,
+          status: 200,
+          headers: { 'content-type': 'text/html' }
+        })
 
         await expect(store.fetchSpellsForClass(className)).rejects.toThrow('Invalid response format from server')
         expect(store.error).toContain('Invalid response format from server')
@@ -136,7 +140,7 @@ describe('All EverQuest Classes Integration Tests', () => {
 </body>
 </html>`
 
-      mockAxios.default.get.mockResolvedValueOnce({
+      axios.get.mockResolvedValueOnce({
         status: 200,
         data: htmlPage,
         headers: { 'content-type': 'text/html' }
@@ -161,7 +165,7 @@ describe('All EverQuest Classes Integration Tests', () => {
           expired: false
         }
 
-        mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(validResponse))
+        axios.get.mockResolvedValueOnce(mockAxiosResponse(validResponse))
 
         const result = await store.fetchSpellsForClass(className)
 
@@ -191,7 +195,7 @@ describe('All EverQuest Classes Integration Tests', () => {
       ]
 
       for (const malformedResponse of malformedResponses) {
-        mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(malformedResponse))
+        axios.get.mockResolvedValueOnce(mockAxiosResponse(malformedResponse))
 
         await expect(store.fetchSpellsForClass('shadowknight')).rejects.toThrow()
         
@@ -232,13 +236,13 @@ describe('All EverQuest Classes Integration Tests', () => {
   describe('Error Recovery and Resilience', () => {
     it('should recover from network errors for any class', async () => {
       const networkError = new Error('Network Error')
+      networkError.request = {} // This indicates a network error
       networkError.code = 'NETWORK_ERROR'
 
       for (const className of ['shadowknight', 'cleric', 'wizard']) {
-        mockAxios.default.get.mockRejectedValueOnce(networkError)
+        axios.get.mockRejectedValueOnce(networkError)
 
-        await expect(store.fetchSpellsForClass(className)).rejects.toThrow()
-        expect(store.error).toContain('Unable to connect to server')
+        await expect(store.fetchSpellsForClass(className)).rejects.toThrow('Unable to connect to server')
 
         // Reset for next test
         store.error = null
@@ -250,10 +254,9 @@ describe('All EverQuest Classes Integration Tests', () => {
       const timeoutError = new Error('timeout of 60000ms exceeded')
       timeoutError.code = 'ECONNABORTED'
 
-      mockAxios.default.get.mockRejectedValueOnce(timeoutError)
+      axios.get.mockRejectedValueOnce(timeoutError)
 
-      await expect(store.fetchSpellsForClass('shadowknight')).rejects.toThrow()
-      expect(store.error).toContain('Request timed out')
+      await expect(store.fetchSpellsForClass('shadowknight')).rejects.toThrow('Request timed out')
     })
   })
 
@@ -268,7 +271,7 @@ describe('All EverQuest Classes Integration Tests', () => {
 
       // Mock responses for all classes
       responses.forEach(response => {
-        mockAxios.default.get.mockResolvedValueOnce(mockAxiosResponse(response))
+        axios.get.mockResolvedValueOnce(mockAxiosResponse(response))
       })
 
       // Start all requests concurrently
@@ -282,7 +285,7 @@ describe('All EverQuest Classes Integration Tests', () => {
       })
 
       // Should have made one call per class
-      expect(mockAxios.default.get).toHaveBeenCalledTimes(testClasses.length)
+      expect(axios.get).toHaveBeenCalledTimes(testClasses.length)
     })
   })
 })

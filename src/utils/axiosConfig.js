@@ -4,10 +4,19 @@
 
 import axios from 'axios'
 
+// Track rate limit warnings to avoid console spam
+let rateLimitWarningShown = false
+let lastRateLimitWarning = 0
+
 // Add response interceptor to handle common errors
 axios.interceptors.response.use(
   response => response,
   error => {
+    // Check if error was already handled by auth interceptor
+    if (error.handled) {
+      return Promise.reject(error)
+    }
+    
     // Suppress console errors for expected cases
     if (error.config?.suppressErrors) {
       return Promise.reject(error)
@@ -18,24 +27,36 @@ axios.interceptors.response.use(
       const status = error.response.status
       const url = error.config?.url || ''
       
-      // Silent handling for common cases
+      // Silent handling for 404s on admin endpoints
       if (status === 404 && url.includes('/api/admin/')) {
         // Admin endpoints may not exist if OAuth is disabled
         return Promise.reject(error)
       }
       
-      if (status === 401 && url.includes('/api/admin/')) {
-        // Authentication required for admin endpoints
-        return Promise.reject(error)
+      // Silent handling for 401s on auth/admin endpoints
+      if (status === 401) {
+        const authEndpoints = ['/api/auth/', '/api/user/', '/api/admin/']
+        if (authEndpoints.some(endpoint => url.includes(endpoint))) {
+          // Expected when not authenticated
+          return Promise.reject(error)
+        }
       }
       
+      // Handle rate limiting with smart warning
       if (status === 429) {
-        // Rate limiting - expected behavior
+        const now = Date.now()
+        // Only show rate limit warning once every 30 seconds
+        if (!rateLimitWarningShown || now - lastRateLimitWarning > 30000) {
+          console.warn(`Rate limit reached. Retrying later...`)
+          rateLimitWarningShown = true
+          lastRateLimitWarning = now
+        }
         return Promise.reject(error)
       }
     }
     
-    // Let other errors bubble up
+    // Let other errors bubble up with logging
+    console.error('API Error:', error.message)
     return Promise.reject(error)
   }
 )

@@ -52,6 +52,9 @@ export default {
 
     const handleCallback = async () => {
       try {
+        // Clean up OAuth redirect flag immediately
+        sessionStorage.removeItem('oauth_redirect_in_progress')
+        
         // Get query parameters from URL
         const code = route.query.code
         const state = route.query.state
@@ -91,6 +94,8 @@ export default {
       } catch (err) {
         console.error('OAuth callback error:', err)
         error.value = err.message || 'An unexpected error occurred during sign in'
+        // Ensure userStore loading state is reset on error
+        userStore.isLoading = false
       } finally {
         isLoading.value = false
       }
