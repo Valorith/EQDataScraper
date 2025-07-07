@@ -306,8 +306,9 @@
           class="item-card"
           @click="selectItem(item)"
         >
-          <div class="item-header">
-            <div class="item-icon-container-grid">
+          <!-- Card Header with Icon and Name -->
+          <div class="card-header">
+            <div class="card-icon-section">
               <img 
                 v-if="item.icon" 
                 :src="`/icons/items/${item.icon}.gif`" 
@@ -319,60 +320,100 @@
                 <i class="fas fa-cube"></i>
               </div>
             </div>
-            <div class="item-header-text">
+            <div class="card-title-section">
               <h3 class="item-name">{{ item.name }}</h3>
-              <div class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</div>
+              <span class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</span>
             </div>
           </div>
           
-          <div class="item-stats">
-            <!-- Primary Stats -->
-            <div v-if="item.damage && item.delay" class="stat weapon">
-              <span class="stat-label">Damage:</span>
-              <span class="stat-value">{{ item.damage }}/{{ item.delay }}</span>
-              <span class="weapon-ratio">{{ getWeaponRatio(item.damage, item.delay) }}</span>
-            </div>
-            <div v-if="item.ac" class="stat">
-              <span class="stat-label">AC:</span>
-              <span class="stat-value">{{ item.ac }}</span>
-            </div>
-            <div v-if="item.hp" class="stat">
-              <span class="stat-label">HP:</span>
-              <span class="stat-value">+{{ item.hp }}</span>
-            </div>
-            <div v-if="item.mana" class="stat">
-              <span class="stat-label">Mana:</span>
-              <span class="stat-value">+{{ item.mana }}</span>
-            </div>
-            
-            <!-- Show top attributes -->
-            <div v-if="(item.str || item.stats?.str) || (item.sta || item.stats?.sta) || (item.agi || item.stats?.agi)" class="stat">
-              <span class="stat-label">Stats:</span>
-              <span class="stat-value">
-                <span v-if="item.str || item.stats?.str">+{{ item.str || item.stats?.str }} STR </span>
-                <span v-if="item.sta || item.stats?.sta">+{{ item.sta || item.stats?.sta }} STA </span>
-                <span v-if="item.agi || item.stats?.agi">+{{ item.agi || item.stats?.agi }} AGI </span>
-              </span>
-            </div>
-          </div>
-          
-          <div class="item-properties">
+          <!-- Item Properties -->
+          <div v-if="item.magic || item.lore_flag || item.nodrop || item.norent" class="card-properties">
             <span v-if="item.magic" class="property magic">Magic</span>
             <span v-if="item.lore_flag" class="property lore">Lore</span>
             <span v-if="item.nodrop" class="property nodrop">No Drop</span>
             <span v-if="item.norent" class="property norent">No Rent</span>
           </div>
           
-          <div class="item-bottom-info">
-            <div v-if="getSlotDisplay(item.slots)" class="item-slot">
-              <span class="slot-value">{{ getSlotDisplay(item.slots) }}</span>
+          <!-- Primary Stats Section -->
+          <div class="card-stats">
+            <!-- Weapon Stats -->
+            <div v-if="item.damage && item.delay" class="stat-group weapon-stats">
+              <div class="stat-row">
+                <span class="stat-label">Damage</span>
+                <span class="stat-value">{{ item.damage }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Delay</span>
+                <span class="stat-value">{{ item.delay }}</span>
+              </div>
+              <div class="stat-row ratio">
+                <span class="stat-label">Ratio</span>
+                <span class="stat-value">{{ getWeaponRatio(item.damage, item.delay) }}</span>
+              </div>
             </div>
-            <div v-if="item.classes" class="item-classes">
-              <span class="classes-value">{{ getClassDisplay(item.classes) }}</span>
+            
+            <!-- Defensive Stats -->
+            <div v-if="item.ac || item.hp || item.mana" class="stat-group defensive-stats">
+              <div v-if="item.ac" class="stat-row">
+                <span class="stat-label">AC</span>
+                <span class="stat-value">{{ item.ac }}</span>
+              </div>
+              <div v-if="item.hp" class="stat-row">
+                <span class="stat-label">HP</span>
+                <span class="stat-value">+{{ item.hp }}</span>
+              </div>
+              <div v-if="item.mana" class="stat-row">
+                <span class="stat-label">Mana</span>
+                <span class="stat-value">+{{ item.mana }}</span>
+              </div>
             </div>
-            <div v-if="item.reqlevel" class="item-level">
-              <span class="level-label">Lvl</span>
-              <span class="level-value">{{ item.reqlevel }}</span>
+            
+            <!-- Attributes -->
+            <div v-if="hasAnyStats(item)" class="stat-group attributes">
+              <div v-if="item.str" class="stat-row">
+                <span class="stat-label">STR</span>
+                <span class="stat-value">+{{ item.str }}</span>
+              </div>
+              <div v-if="item.sta" class="stat-row">
+                <span class="stat-label">STA</span>
+                <span class="stat-value">+{{ item.sta }}</span>
+              </div>
+              <div v-if="item.agi" class="stat-row">
+                <span class="stat-label">AGI</span>
+                <span class="stat-value">+{{ item.agi }}</span>
+              </div>
+              <div v-if="item.dex" class="stat-row">
+                <span class="stat-label">DEX</span>
+                <span class="stat-value">+{{ item.dex }}</span>
+              </div>
+              <div v-if="item.wis" class="stat-row">
+                <span class="stat-label">WIS</span>
+                <span class="stat-value">+{{ item.wis }}</span>
+              </div>
+              <div v-if="item.int" class="stat-row">
+                <span class="stat-label">INT</span>
+                <span class="stat-value">+{{ item.int }}</span>
+              </div>
+              <div v-if="item.cha" class="stat-row">
+                <span class="stat-label">CHA</span>
+                <span class="stat-value">+{{ item.cha }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Card Footer -->
+          <div class="card-footer">
+            <div v-if="getSlotDisplay(item.slots)" class="footer-item">
+              <i class="fas fa-shield-alt"></i>
+              <span>{{ getSlotDisplay(item.slots) }}</span>
+            </div>
+            <div v-if="item.reqlevel" class="footer-item level">
+              <i class="fas fa-signal"></i>
+              <span>Level {{ item.reqlevel }}</span>
+            </div>
+            <div v-if="item.classes" class="footer-item classes">
+              <i class="fas fa-users"></i>
+              <span>{{ getClassDisplay(item.classes) }}</span>
             </div>
           </div>
         </div>
@@ -402,13 +443,11 @@
             <h3 class="item-name">{{ item.name }}</h3>
             <div class="item-meta">
               <span class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</span>
-              <div class="item-properties">
-                <span v-if="item.magic" class="property magic">Magic</span>
-                <span v-if="item.lore_flag" class="property lore">Lore</span>
-                <span v-if="item.nodrop" class="property nodrop">No Drop</span>
-                <span v-if="item.norent" class="property norent">No Rent</span>
-                <span v-if="item.artifact" class="property artifact">Artifact</span>
-              </div>
+              <span v-if="item.magic" class="property magic">Magic</span>
+              <span v-if="item.lore_flag" class="property lore">Lore</span>
+              <span v-if="item.nodrop" class="property nodrop">No Drop</span>
+              <span v-if="item.norent" class="property norent">No Rent</span>
+              <span v-if="item.artifact" class="property artifact">Artifact</span>
             </div>
           </div>
           
@@ -1994,10 +2033,13 @@ const handleClickOutside = (event) => {
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
               0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  padding: 24px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .item-card:hover {
@@ -2007,85 +2049,130 @@ const handleClickOutside = (event) => {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.item-header {
+.card-header {
   display: flex;
-  justify-content: space-between;
-  align-items: start;
-  margin-bottom: 16px;
+  gap: 16px;
+  align-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.item-name {
+.card-icon-section {
+  flex-shrink: 0;
+}
+
+.card-title-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.card-title-section .item-name {
   color: #f7fafc;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 700;
   margin: 0;
-  flex: 1;
-  margin-right: 12px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-title-section .item-type {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .item-type {
   background: rgba(102, 126, 234, 0.2);
   color: #a78bfa;
   padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: 5px;
+  font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid rgba(102, 126, 234, 0.3);
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
-.item-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+.card-properties {
+  display: flex;
+  gap: 6px;
+  padding: 12px 20px;
+  background: rgba(102, 126, 234, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-wrap: wrap;
+}
+
+.card-stats {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stat-group {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
-.stat {
+.stat-group.weapon-stats {
+  background: rgba(102, 126, 234, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.stat-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
   font-size: 0.9rem;
 }
 
-.stat-label {
+.stat-row.ratio {
+  border-top: 1px solid rgba(102, 126, 234, 0.2);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.stat-row .stat-label {
   color: #9ca3af;
   font-weight: 500;
 }
 
-.stat-value {
+.stat-row .stat-value {
   color: #4ade80;
   font-weight: 600;
 }
 
-.weapon-ratio {
+.stat-row.ratio .stat-value {
   color: #fbbf24;
   font-weight: 700;
-  margin-left: 8px;
-  font-size: 0.95rem;
 }
 
-.weapon-ratio::before {
-  content: "Ratio: ";
-  color: #9ca3af;
-  font-weight: 500;
-}
 
-.item-properties {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
+
+
 
 .property {
-  padding: 3px 6px;
+  padding: 4px 8px;
   border-radius: 5px;
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .property.magic {
@@ -2118,62 +2205,43 @@ const handleClickOutside = (event) => {
   border-color: rgba(236, 72, 153, 0.3);
 }
 
-.item-classes {
-  font-size: 0.9rem;
-}
 
-.classes-label {
-  color: #9ca3af;
-  font-weight: 500;
-}
-
-.classes-value {
-  color: #e5e7eb;
-}
-
-.item-bottom-info {
+.card-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
   gap: 12px;
-  margin-top: 12px;
-  padding-top: 12px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.3);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 0.85rem;
+  flex-wrap: wrap;
+  margin-top: auto;
 }
 
-.item-slot {
-  color: #d1d5db;
-  font-weight: 600;
-  flex: 1;
-}
-
-.item-bottom-info .item-classes {
-  color: #a78bfa;
-  font-weight: 600;
-  text-align: center;
-  flex: 1;
-}
-
-.item-level {
+.footer-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  color: #9ca3af;
 }
 
-.level-label {
-  color: #6b7280;
+.footer-item i {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.footer-item span {
+  color: #e5e7eb;
   font-weight: 500;
 }
 
-.level-value {
+.footer-item.level span {
   color: #fbbf24;
-  font-weight: 600;
 }
 
-.stat.weapon {
-  grid-column: 1 / -1;
+.footer-item.classes {
+  margin-left: auto;
 }
+
 
 /* List View Styles */
 .items-list {
@@ -2230,26 +2298,25 @@ const handleClickOutside = (event) => {
 
 .item-meta {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .item-row .item-type {
   background: rgba(102, 126, 234, 0.2);
   color: #a78bfa;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid rgba(102, 126, 234, 0.3);
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
-.item-row .item-properties {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
 
 .item-center-content {
   display: flex;
@@ -2491,28 +2558,31 @@ const handleClickOutside = (event) => {
   gap: 8px;
 }
 
-.item-header-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
 .item-type-badge {
   background: rgba(102, 126, 234, 0.2);
   color: #a78bfa;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid rgba(102, 126, 234, 0.3);
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .property-badge {
   padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: 5px;
+  font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .property-badge.magic {
@@ -2992,12 +3062,6 @@ const handleClickOutside = (event) => {
   font-size: 1.5rem;
 }
 
-.item-header-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 /* Modal Icons */
 .item-icon-modal-container {

@@ -5,27 +5,39 @@ Supports PostgreSQL, MySQL, and Microsoft SQL Server connections.
 
 import os
 from urllib.parse import quote_plus, urlparse
+from .query_tracker import create_tracked_connection
 
 
-def get_database_connector(db_type, config):
+def get_database_connector(db_type, config, track_queries=True):
     """
     Get the appropriate database connector based on database type.
     
     Args:
         db_type: Type of database ('postgresql', 'mysql', 'mssql')
         config: Database configuration dict
+        track_queries: Whether to track query metrics (default: True)
         
     Returns:
-        Database connection object
+        Database connection object (optionally with query tracking)
     """
     if db_type == 'postgresql':
-        return get_postgresql_connection(config)
+        conn = get_postgresql_connection(config)
     elif db_type == 'mysql':
-        return get_mysql_connection(config)
+        conn = get_mysql_connection(config)
     elif db_type == 'mssql':
-        return get_mssql_connection(config)
+        conn = get_mssql_connection(config)
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
+    
+    # Wrap connection with query tracking if enabled
+    if track_queries:
+        try:
+            return create_tracked_connection(conn, db_type)
+        except ImportError:
+            # If tracking not available, return raw connection
+            return conn
+    
+    return conn
 
 
 def get_postgresql_connection(config):

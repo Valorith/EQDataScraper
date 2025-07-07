@@ -121,7 +121,10 @@ if ENABLE_USER_ACCOUNTS:
         # Database connection injection for OAuth routes
         @app.before_request
         def inject_db_connection():
-            """Inject database connection for OAuth routes."""
+            """Inject database connection for OAuth routes and track request start time."""
+            # Track request start time for metrics
+            g.request_start_time = time.time()
+            
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
                 # Connect to database if DB_CONFIG is available (for OAuth)
                 if DB_CONFIG:
@@ -146,6 +149,45 @@ if ENABLE_USER_ACCOUNTS:
             """Close database connection after OAuth requests."""
             if hasattr(g, 'db_connection') and g.db_connection:
                 g.db_connection.close()
+        
+        @app.after_request
+        def track_request_metrics(response):
+            """Track metrics for each request."""
+            if hasattr(g, 'request_start_time'):
+                # Calculate response time
+                response_time = (time.time() - g.request_start_time) * 1000  # Convert to milliseconds
+                
+                # Build endpoint identifier
+                method = request.method
+                path = request.path
+                endpoint_key = f"{method} {path}"
+                
+                # Normalize paths with parameters
+                if ':' in path or any(segment.isdigit() for segment in path.split('/')):
+                    # Replace numeric IDs with placeholders
+                    path_parts = path.split('/')
+                    normalized_parts = []
+                    for part in path_parts:
+                        if part.isdigit():
+                            normalized_parts.append(':id')
+                        elif part and len(part) > 20 and not '.' in part:  # Likely a token or hash
+                            normalized_parts.append(':token')
+                        else:
+                            normalized_parts.append(part)
+                    normalized_path = '/'.join(normalized_parts)
+                    endpoint_key = f"{method} {normalized_path}"
+                
+                # Track the metric
+                try:
+                    from routes.admin import track_endpoint_metric
+                    is_error = response.status_code >= 400
+                    track_endpoint_metric(endpoint_key, response_time, is_error)
+                except ImportError:
+                    pass  # Admin routes not loaded
+                except Exception as e:
+                    app.logger.error(f"Error tracking metrics: {e}")
+            
+            return response
         
         # Register OAuth blueprints
         app.register_blueprint(auth_bp, url_prefix='/api')
@@ -205,6 +247,53 @@ logger = logging.getLogger(__name__)
 
 # Load configuration
 config = load_config()
+
+# Global request tracking for non-OAuth routes
+if not ENABLE_USER_ACCOUNTS:
+    @app.before_request
+    def track_request_start():
+        """Track request start time for metrics."""
+        g.request_start_time = time.time()
+    
+    @app.after_request
+    def track_request_end(response):
+        """Track metrics for each request."""
+        if hasattr(g, 'request_start_time'):
+            # Calculate response time
+            response_time = (time.time() - g.request_start_time) * 1000  # Convert to milliseconds
+            
+            # Build endpoint identifier
+            method = request.method
+            path = request.path
+            endpoint_key = f"{method} {path}"
+            
+            # Normalize paths with parameters
+            if any(segment for segment in path.split('/') if segment.isdigit() or (segment and len(segment) > 30)):
+                # Replace numeric IDs and long strings with placeholders
+                path_parts = path.split('/')
+                normalized_parts = []
+                for part in path_parts:
+                    if part.isdigit():
+                        normalized_parts.append(':id')
+                    elif part and len(part) > 30 and not '.' in part:  # Likely a spell ID or hash
+                        normalized_parts.append(':id')
+                    else:
+                        normalized_parts.append(part)
+                normalized_path = '/'.join(normalized_parts)
+                endpoint_key = f"{method} {normalized_path}"
+            
+            # Track the metric if admin routes are available
+            try:
+                if ENABLE_USER_ACCOUNTS:
+                    from routes.admin import track_endpoint_metric
+                    is_error = response.status_code >= 400
+                    track_endpoint_metric(endpoint_key, response_time, is_error)
+            except ImportError:
+                pass  # Admin routes not loaded
+            except Exception as e:
+                logger.error(f"Error tracking metrics: {e}")
+        
+        return response
 
 # Environment detection
 IS_PRODUCTION = os.environ.get('RAILWAY_ENVIRONMENT') == 'production' or os.environ.get('PORT') is not None

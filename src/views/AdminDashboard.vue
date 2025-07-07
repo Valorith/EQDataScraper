@@ -125,10 +125,10 @@
           </div>
         </div>
         <div class="card-actions">
-          <router-link to="/admin/system" class="action-button primary">
+          <button @click="navigateToSystem" class="action-button primary">
             <i class="fas fa-arrow-right"></i>
             System Details
-          </router-link>
+          </button>
         </div>
       </div>
 
@@ -465,7 +465,7 @@ let activityRefreshInterval = null
 
 // Methods
 const loadDashboardData = async () => {
-  console.log('Loading dashboard data...')
+  // Silently load dashboard data
   
   // Load stats
   try {
@@ -481,9 +481,17 @@ const loadDashboardData = async () => {
     }
   } catch (error) {
     if (error.response?.status === 401) {
-      console.warn('Authentication issue loading stats')
-    } else if (error.response?.status !== undefined) {
-      console.error('Error loading stats:', error.response.status)
+      console.log('Admin stats require authentication')
+    } else if (error.response?.status === 403) {
+      console.log('Admin stats require admin privileges')
+    } else if (error.response?.status === 404) {
+      console.log('Admin stats endpoint not found - OAuth may be disabled')
+    } else if (error.response) {
+      console.warn('Error loading stats:', error.response.status, error.response.data?.message || '')
+    } else if (error.request) {
+      console.warn('No response from server when loading stats')
+    } else {
+      console.warn('Error setting up stats request:', error.message)
     }
     // Set default values
     stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
@@ -535,7 +543,15 @@ const loadDashboardData = async () => {
       }
     }
   } catch (error) {
-    console.error('Error loading database config:', error)
+    if (error.response?.status === 404) {
+      console.log('Database config endpoint not found - OAuth may be disabled')
+    } else if (error.response?.status === 401 || error.response?.status === 403) {
+      console.log('Database config requires admin authentication')
+    } else if (error.response) {
+      console.warn('Error loading database config:', error.response.status)
+    } else {
+      console.warn('Could not reach database config endpoint')
+    }
     // Set default values
     databaseStatus.value = {
       connected: false,
@@ -601,7 +617,9 @@ const loadDashboardData = async () => {
       console.log('Summary endpoint not available')
     }
   } catch (error) {
-    console.error('Error loading cache status:', error)
+    if (!error.response || error.response.status !== 404) {
+      console.warn('Error loading cache status:', error.message)
+    }
     
     // Fallback: try to count cached classes from the classes endpoint
     try {
@@ -617,26 +635,90 @@ const loadDashboardData = async () => {
         cacheStatus.value = { healthy: false, cachedClasses: 0, lastUpdate: null }
       }
     } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError)
+      console.warn('Cache status endpoints not available')
       cacheStatus.value = { healthy: false, cachedClasses: 0, lastUpdate: null }
     }
   }
 
-  // Load health
+  // Load health and system metrics
   try {
+    // First get basic health status
     const healthRes = await axios.get(`${API_BASE_URL}/api/health`)
     const healthData = healthRes.data
     
-    // Map the response to our expected format
-    systemHealth.value = {
-      apiStatus: healthData.status === 'healthy' ? 'Online' : healthData.status || 'Online',
-      avgResponseTime: healthData.avgResponseTime || healthData.response_time_ms || 0,
-      errorRate: healthData.errorRate || healthData.error_rate || 0
+    // Then try to get detailed metrics if user is admin
+    if (userStore.user?.role === 'admin') {
+      try {
+        const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+        const metricsRes = await axios.get(`${API_BASE_URL}/api/admin/system/metrics`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        
+        if (metricsRes.data.success && metricsRes.data.data) {
+          const metrics = metricsRes.data.data
+          systemHealth.value = {
+            apiStatus: healthData.status === 'healthy' ? 'Online' : 'Offline',
+            avgResponseTime: Math.round(metrics.performance.avg_response_time || 0),
+            errorRate: Math.round(metrics.performance.error_rate * 10) / 10 || 0
+          }
+        } else {
+          // Fallback to basic health data
+          systemHealth.value = {
+            apiStatus: healthData.status === 'healthy' ? 'Online' : 'Offline',
+            avgResponseTime: 0,
+            errorRate: 0
+          }
+        }
+      } catch (metricsError) {
+        // Silently fall back to basic health data for non-critical errors
+        if (metricsError.response?.status !== 404 && metricsError.response?.status !== 401) {
+          console.log('Using basic health data')
+        }
+        // Use basic health data
+        systemHealth.value = {
+          apiStatus: healthData.status === 'healthy' ? 'Online' : 'Offline',
+          avgResponseTime: 0,
+          errorRate: 0
+        }
+      }
+    } else {
+      // Non-admin users just see basic status
+      systemHealth.value = {
+        apiStatus: healthData.status === 'healthy' ? 'Online' : 'Offline',
+        avgResponseTime: 0,
+        errorRate: 0
+      }
     }
   } catch (error) {
-    console.error('Error loading health:', error)
+    if (error.response?.status === 404) {
+      console.log('Health endpoint not found')
+    } else if (error.request) {
+      console.warn('Backend server is not responding')
+    } else {
+      console.warn('Error checking system health:', error.message)
+    }
     // If health check fails, API is likely down
     systemHealth.value = { apiStatus: 'Offline', avgResponseTime: 0, errorRate: 0 }
+  }
+
+  // Load scraping status
+  try {
+    // Check if any scraping is in progress
+    const startupRes = await axios.get(`${API_BASE_URL}/api/startup-status`)
+    if (startupRes.data) {
+      scrapingStatus.value = {
+        active: !startupRes.data.startup_complete || startupRes.data.scraping_in_progress,
+        currentClass: startupRes.data.current_class || null,
+        progress: startupRes.data.progress_percent ? `${startupRes.data.progress_percent}%` : null
+      }
+    }
+  } catch (error) {
+    // Silently ignore - scraping status is optional
+    scrapingStatus.value = {
+      active: false,
+      currentClass: null,
+      progress: null
+    }
   }
 
   // Load activities
@@ -671,17 +753,19 @@ const loadDashboardData = async () => {
     }))
   } catch (error) {
     if (error.response?.status === 429) {
-      console.warn('Rate limit reached for activities API')
-    } else if (error.response?.status === 401) {
-      console.warn('Authentication issue loading activities')
-    } else if (error.response?.status !== undefined) {
-      console.error('Error loading activities:', error.response.status, error.response.data)
+      console.log('Rate limit reached for activities - will retry later')
+    } else if (error.response?.status === 401 || error.response?.status === 403) {
+      console.log('Activities require admin authentication')
+    } else if (error.response?.status === 404) {
+      console.log('Activities endpoint not found - OAuth may be disabled')
+    } else if (error.response) {
+      console.warn('Error loading activities:', error.response.status)
     }
     // Show empty state if no activities can be loaded
     recentActivities.value = []
   }
   
-  console.log('Recent activities loaded:', recentActivities.value)
+  // Activities loaded successfully
 
   // Load database status
   try {
@@ -701,7 +785,9 @@ const loadDashboardData = async () => {
       }
     }
   } catch (error) {
-    console.error('Error loading database status:', error)
+    if (error.response?.status !== 404) {
+      console.warn('Could not load database status')
+    }
     databaseStatus.value = {
       connected: false,
       host: null,
@@ -851,6 +937,19 @@ const formatActivityDescription = (activity) => {
     default:
       return activity.description || `${action} performed`
   }
+}
+
+// Navigate to system page
+const navigateToSystem = () => {
+  console.log('Navigating to system page...')
+  console.log('Current user:', userStore.user)
+  console.log('Is authenticated:', userStore.isAuthenticated)
+  console.log('Is admin:', userStore.user?.role === 'admin')
+  
+  // Force navigation to system page
+  router.push('/admin/system').catch(err => {
+    console.error('Navigation error:', err)
+  })
 }
 
 // Database configuration methods
@@ -1057,7 +1156,9 @@ const saveDatabaseConfig = async () => {
 
 // Lifecycle
 onMounted(async () => {
+  // Load dashboard data on mount
   await loadDashboardData()
+  
   // Refresh dashboard data every 30 seconds
   refreshInterval = setInterval(loadDashboardData, 30000)
   
@@ -1288,6 +1389,8 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  border: none;
+  cursor: pointer;
 }
 
 .action-button::before {

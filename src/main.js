@@ -4,6 +4,7 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import router from './router'
 import App from './App.vue'
 import './style.css'
+import './utils/axiosConfig' // Import axios configuration
 import { useSpellsStore } from './stores/spells'
 
 const app = createApp(App)
