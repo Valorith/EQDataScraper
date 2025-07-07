@@ -120,25 +120,45 @@ export const useUserStore = defineStore('user', {
      * Initialize authentication state on app load
      */
     async initializeAuth() {
-      // Check if we were in the middle of OAuth redirect
-      const oauthInProgress = sessionStorage.getItem('oauth_redirect_in_progress')
-      if (oauthInProgress && !window.location.pathname.includes('/auth/callback')) {
-        // OAuth redirect was interrupted or failed
-        console.log('OAuth redirect was interrupted, cleaning up')
-        sessionStorage.removeItem('oauth_redirect_in_progress')
+      // Set a timeout to prevent infinite loading
+      const initTimeout = setTimeout(() => {
+        console.warn('Auth initialization timeout - forcing completion')
         this.isLoading = false
-        this.loginError = null
-        return
-      }
-      
-      this.isLoading = true
-      this.loginError = null
+      }, 8000) // 8 second timeout to account for slow backends
 
       try {
-        // Check if tokens exist in storage
-        if (this.accessToken) {
-          // Verify token is still valid
-          const isValid = await this.verifyToken()
+        // Check if we were in the middle of OAuth redirect
+        const oauthInProgress = sessionStorage.getItem('oauth_redirect_in_progress')
+        if (oauthInProgress && !window.location.pathname.includes('/auth/callback')) {
+          // OAuth redirect was interrupted or failed
+          console.log('OAuth redirect was interrupted, cleaning up')
+          sessionStorage.removeItem('oauth_redirect_in_progress')
+          this.isLoading = false
+          this.loginError = null
+          clearTimeout(initTimeout)
+          return
+        }
+        
+        // Skip setting loading if no tokens exist (user is not logged in)
+        if (!this.accessToken) {
+          console.log('No access token found, user is not logged in')
+          this.isLoading = false
+          clearTimeout(initTimeout)
+          return
+        }
+        
+        this.isLoading = true
+        this.loginError = null
+
+        // Verify token is still valid with timeout
+        const verifyPromise = this.verifyToken()
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Token verification timeout')), 4000)
+        )
+        
+        try {
+          const isValid = await Promise.race([verifyPromise, timeoutPromise])
+          
           if (!isValid && this.refreshToken) {
             // Try to refresh the token
             try {
@@ -152,6 +172,15 @@ export const useUserStore = defineStore('user', {
             console.log('Invalid token with no refresh token, clearing auth')
             this.clearAuth()
           }
+        } catch (timeoutError) {
+          if (timeoutError.message === 'Token verification timeout') {
+            console.warn('Token verification timed out, clearing auth')
+            this.clearAuth()
+          } else {
+            // It's a network timeout from axios, handle gracefully
+            console.warn('Network timeout during token verification, assuming token is invalid')
+            this.clearAuth()
+          }
         }
       } catch (error) {
         // Only log non-401 errors, as 401 is expected for expired tokens
@@ -160,6 +189,7 @@ export const useUserStore = defineStore('user', {
         }
         this.clearAuth()
       } finally {
+        clearTimeout(initTimeout)
         this.isLoading = false
       }
     },
@@ -258,6 +288,8 @@ export const useUserStore = defineStore('user', {
       try {
         const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
           refresh_token: this.refreshToken
+        }, {
+          timeout: 5000 // 5 second timeout
         })
 
         if (response.data.success) {
@@ -289,7 +321,8 @@ export const useUserStore = defineStore('user', {
         const response = await axios.get(buildApiUrl(API_ENDPOINTS.AUTH_STATUS), {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
-          }
+          },
+          timeout: 5000 // 5 second timeout
         })
 
         if (response.data.success && response.data.data.authenticated) {
@@ -300,8 +333,17 @@ export const useUserStore = defineStore('user', {
           return false
         }
       } catch (error) {
-        // Don't log 401 errors during token verification - they're expected
-        if (!error.response || error.response.status !== 401) {
+        // Handle different error types
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+          // Network timeout - don't log as error
+          console.warn('Token verification timed out')
+        } else if (error.response?.status === 401) {
+          // Expected for expired tokens - don't log
+        } else if (!error.response) {
+          // Network error
+          console.warn('Network error during token verification:', error.message)
+        } else {
+          // Other errors
           console.error('Token verification failed:', error)
         }
         return false

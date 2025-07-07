@@ -1189,7 +1189,8 @@ class AppRunner:
                 # Copy loaded environment variables to subprocess environment
                 oauth_vars = [
                     'ENABLE_USER_ACCOUNTS', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
-                    'JWT_SECRET_KEY', 'ENCRYPTION_KEY', 'OAUTH_REDIRECT_URI', 'DATABASE_URL'
+                    'JWT_SECRET_KEY', 'ENCRYPTION_KEY', 'OAUTH_REDIRECT_URI', 'DATABASE_URL',
+                    'ENABLE_DEV_AUTH'
                 ]
                 for var in oauth_vars:
                     if var in os.environ:
@@ -1922,6 +1923,7 @@ def main():
 Examples:
   python3 run.py install    # First-time setup: install all dependencies
   python3 run.py start      # Start both frontend and backend services
+  python3 run.py start dev  # Start in development mode with auth bypass
   python3 run.py start -m     # Start services with monitoring (30s interval)
   python3 run.py start -m 60  # Start services with monitoring (60s interval)
   python3 run.py status     # Check if services are running
@@ -1943,6 +1945,8 @@ For help with common issues, see the README.md file.
 """)
     parser.add_argument("command", choices=["start", "stop", "status", "install", "restart", "monitor"], 
                        help="Command to execute")
+    parser.add_argument("mode", nargs='?', choices=["dev"], 
+                       help="Optional mode for start command (e.g., 'dev' for development mode)")
     parser.add_argument("--skip-deps", "--ignore-deps", action="store_true",
                        help="Skip dependency checking (use with caution)")
     parser.add_argument("-m", "--with-monitor", nargs='?', const=30, type=int,
@@ -1961,6 +1965,12 @@ For help with common issues, see the README.md file.
         runner._show_first_time_setup_message()
     
     if args.command == "start":
+        # Check if dev mode is requested
+        if args.mode == "dev":
+            os.environ['ENABLE_DEV_AUTH'] = 'true'
+            runner.print_status("🔧 Starting in development mode with auth bypass enabled", "warning")
+            runner.print_status("⚠️  This mode should NEVER be used in production!", "warning")
+            print()  # Add spacing
         runner.start_services()
         # If -m/--with-monitor flag is set, start monitor after services
         if args.with_monitor is not None:

@@ -80,13 +80,21 @@ export default {
     const checkDevAuth = async () => {
       try {
         console.log('🔍 Checking dev auth status...')
-        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`)
+        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
+          timeout: 2000 // Quick timeout for dev check
+        })
         isDevAuthEnabled.value = response.data.dev_auth_enabled || false
         console.log('✅ Dev auth enabled:', isDevAuthEnabled.value)
+        showDevLogin.value = isDevAuthEnabled.value // Only show if enabled
       } catch (err) {
-        // Dev auth not available
-        console.log('❌ Dev auth check failed:', err.message)
+        // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
+        if (err.response?.status === 404) {
+          console.log('ℹ️ Dev auth not available (ENABLE_DEV_AUTH not set)')
+        } else {
+          console.log('⚠️ Dev auth check failed:', err.message)
+        }
         isDevAuthEnabled.value = false
+        showDevLogin.value = false // Hide the panel if dev auth is not available
       }
     }
     
@@ -163,7 +171,14 @@ export default {
       console.log('📍 Running in production?', import.meta.env.PROD)
       console.log('📍 Environment mode:', import.meta.env.MODE)
       console.log('📍 API Base URL:', API_BASE_URL)
-      checkDevAuth()
+      
+      // Only check dev auth if not in production
+      if (!isProduction) {
+        checkDevAuth()
+      } else {
+        console.log('🚫 Skipping dev auth in production')
+        showDevLogin.value = false
+      }
     })
     
     return {

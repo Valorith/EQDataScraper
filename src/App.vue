@@ -138,14 +138,8 @@ export default {
     try {
       console.log('🔐 Initializing authentication...')
       
-      // Check for stuck OAuth redirect state
-      const oauthInProgress = sessionStorage.getItem('oauth_redirect_in_progress')
-      if (oauthInProgress && !this.$route.path.includes('/auth/callback')) {
-        console.log('Cleaning up stuck OAuth redirect state')
-        sessionStorage.removeItem('oauth_redirect_in_progress')
-        this.userStore.isLoading = false
-      }
-      
+      // The userStore.initializeAuth() now handles all OAuth state cleanup
+      // and has proper timeouts to prevent hanging
       await this.userStore.initializeAuth()
       this.userStore.setupTokenRefresh()
       console.log('✅ Authentication initialized')
