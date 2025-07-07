@@ -818,21 +818,6 @@ const isFilterConfigValid = computed(() => {
 })
 
 // Methods
-const loadItemTypes = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/items/types`)
-    if (!response.ok) {
-      if (response.status === 503) {
-        databaseAvailable.value = false
-      }
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    // Item types removed - not needed
-  } catch (error) {
-    console.error('Error loading item types:', error)
-  }
-}
 
 const performSearch = async (page = 1) => {
   if (!searchQuery.value && !selectedClass.value && !minLevel.value && !maxLevel.value && activeFilters.value.length === 0) {
@@ -1272,9 +1257,7 @@ const getTopStatsDisplay = (item) => {
 }
 
 // Lifecycle
-onMounted(async () => {
-  await loadItemTypes()
-  
+onMounted(() => {
   // Click outside handler for filter dropdown
   document.addEventListener('click', handleClickOutside)
 })
