@@ -138,13 +138,18 @@ export default {
     
     // Initialize authentication system
     try {
-      console.log('🔐 Initializing authentication...')
+      if (import.meta.env.MODE === 'development') {
+        console.debug('🔐 Initializing authentication...')
+      }
       
       // The userStore.initializeAuth() now handles all OAuth state cleanup
       // and has proper timeouts to prevent hanging
       await this.userStore.initializeAuth()
       this.userStore.setupTokenRefresh()
-      console.log('✅ Authentication initialized')
+      
+      if (import.meta.env.MODE === 'development') {
+        console.debug('✅ Authentication initialized')
+      }
     } catch (error) {
       console.error('❌ Authentication initialization failed:', error)
       // Ensure loading state is reset on error
@@ -153,7 +158,9 @@ export default {
     
     // Skip cache initialization in App.vue since main.js already handles it
     // This prevents duplicate initialization attempts and 429 errors
-    console.log('🎯 Cache initialization handled by main.js')
+    if (import.meta.env.MODE === 'development') {
+      console.debug('🎯 Cache initialization handled by main.js')
+    }
   }
 }
 </script>

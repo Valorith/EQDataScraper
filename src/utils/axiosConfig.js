@@ -35,15 +35,27 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
     
+    // Handle connection refused errors in development
+    if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+      // In development, backend might not be running
+      if (import.meta.env.MODE === 'development') {
+        // Silently reject without logging
+        return Promise.reject(error)
+      }
+    }
+    
     // Handle specific error cases silently
     if (error.response) {
       const status = error.response.status
       const url = error.config?.url || ''
       
-      // Silent handling for 404s on admin endpoints
-      if (status === 404 && url.includes('/api/admin/')) {
-        // Admin endpoints may not exist if OAuth is disabled
-        return Promise.reject(error)
+      // Silent handling for 404s on admin and auth endpoints
+      if (status === 404) {
+        if (url.includes('/api/admin/') || url.includes('/api/auth/dev-status')) {
+          // Admin endpoints may not exist if OAuth is disabled
+          // Dev status endpoint only exists in dev mode
+          return Promise.reject(error)
+        }
       }
       
       // Silent handling for 401s on auth/admin endpoints
@@ -69,7 +81,13 @@ axios.interceptors.response.use(
     }
     
     // Let other errors bubble up with logging
-    console.error('API Error:', error.message)
+    // Only log unexpected errors
+    const url = error.config?.url || ''
+    if (!url.includes('/api/health') && 
+        !url.includes('/api/startup-status') &&
+        !url.includes('/api/cache-status')) {
+      console.error('API Error:', error.message)
+    }
     return Promise.reject(error)
   }
 )

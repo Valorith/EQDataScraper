@@ -447,10 +447,16 @@ export default {
     
     async checkDevAuthStatus() {
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`)
+        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
+          timeout: 1000 // Quick timeout to avoid hanging
+        })
         this.isDevAuthEnabled = response.data.dev_auth_enabled || false
       } catch (err) {
-        // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
+        // Dev auth not available - this is expected in most cases
+        // Don't log errors unless it's something unexpected
+        if (err.code !== 'ECONNREFUSED' && err.code !== 'ERR_NETWORK' && err.response?.status !== 404) {
+          console.debug('Dev auth check failed:', err.message)
+        }
         this.isDevAuthEnabled = false
       }
     },

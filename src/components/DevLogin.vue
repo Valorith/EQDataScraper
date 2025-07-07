@@ -86,14 +86,24 @@ export default {
         return
       }
       
+      // Set initial state to prevent reactivity issues
+      isDevAuthEnabled.value = false
+      showDevLogin.value = false
+      
       try {
         console.debug('DevLogin: Checking dev auth status...')
         const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
           timeout: 2000 // Quick timeout for dev check
         })
-        isDevAuthEnabled.value = response.data.dev_auth_enabled || false
-        console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value)
-        showDevLogin.value = isDevAuthEnabled.value // Only show if enabled
+        
+        // Use nextTick to update reactive values
+        import('vue').then(({ nextTick }) => {
+          nextTick(() => {
+            isDevAuthEnabled.value = response.data.dev_auth_enabled || false
+            console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value)
+            showDevLogin.value = isDevAuthEnabled.value // Only show if enabled
+          })
+        })
       } catch (err) {
         // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
         if (err.response?.status === 404) {
@@ -105,8 +115,7 @@ export default {
         } else {
           console.debug('DevLogin: Auth check failed:', err.message)
         }
-        isDevAuthEnabled.value = false
-        showDevLogin.value = false // Hide the panel if dev auth is not available
+        // Values already set to false initially
       }
     }
     
@@ -196,8 +205,13 @@ export default {
       console.debug('DevLogin: Environment mode:', import.meta.env.MODE)
       console.debug('DevLogin: API Base URL:', API_BASE_URL)
       
-      // Check dev auth only in development
-      checkDevAuth()
+      // Use nextTick to avoid reactivity issues
+      import('vue').then(({ nextTick }) => {
+        nextTick(() => {
+          // Check dev auth only in development
+          checkDevAuth()
+        })
+      })
     })
     
     return {

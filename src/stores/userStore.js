@@ -141,7 +141,10 @@ export const useUserStore = defineStore('user', {
         
         // Skip setting loading if no tokens exist (user is not logged in)
         if (!this.accessToken) {
-          console.log('No access token found, user is not logged in')
+          // Don't log this in production to reduce console noise
+          if (import.meta.env.MODE === 'development') {
+            console.debug('No access token found, user is not logged in')
+          }
           this.isLoading = false
           clearTimeout(initTimeout)
           return
