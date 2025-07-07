@@ -399,9 +399,122 @@
           
           <!-- Diagnostics Results -->
           <div v-if="diagnosticsResult" class="diagnostics-result">
-            <h3>Diagnostics Report</h3>
-            <div class="result-content">
-              <pre>{{ diagnosticsResult }}</pre>
+            <div class="result-header">
+              <h3><i class="fas fa-clipboard-list"></i> Diagnostics Report</h3>
+              <button @click="copyDiagnostics" class="copy-button" :title="copiedDiagnostics ? 'Copied!' : 'Copy to clipboard'">
+                <i :class="copiedDiagnostics ? 'fas fa-check' : 'fas fa-copy'"></i>
+                {{ copiedDiagnostics ? 'Copied!' : 'Copy Report' }}
+              </button>
+            </div>
+            
+            <!-- Environment Section -->
+            <div v-if="diagnosticsResult.environment" class="result-section">
+              <h4><i class="fas fa-server"></i> Environment</h4>
+              <div class="section-content">
+                <div v-for="(value, key) in diagnosticsResult.environment" :key="key" class="result-item">
+                  <span class="result-label">{{ formatPropertyName(key) }}:</span>
+                  <span class="result-value">{{ value }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Configuration Section -->
+            <div v-if="diagnosticsResult.config_checks" class="result-section">
+              <h4><i class="fas fa-cog"></i> Configuration</h4>
+              <div class="section-content">
+                <div class="result-item">
+                  <span class="result-label">Config Found:</span>
+                  <span class="result-value" :class="diagnosticsResult.config_checks.persistent_config_found ? 'success' : 'error'">
+                    {{ diagnosticsResult.config_checks.persistent_config_found ? 'Yes' : 'No' }}
+                  </span>
+                </div>
+                <div v-if="diagnosticsResult.config_checks.persistent_config_found" class="result-item">
+                  <span class="result-label">Source:</span>
+                  <span class="result-value">{{ diagnosticsResult.config_checks.config_source }}</span>
+                </div>
+                <div v-if="diagnosticsResult.config_checks.host" class="result-item">
+                  <span class="result-label">Host:</span>
+                  <span class="result-value">{{ diagnosticsResult.config_checks.host }}</span>
+                </div>
+                <div v-if="diagnosticsResult.config_checks.port" class="result-item">
+                  <span class="result-label">Port:</span>
+                  <span class="result-value">{{ diagnosticsResult.config_checks.port }}</span>
+                </div>
+                <div v-if="diagnosticsResult.config_checks.database" class="result-item">
+                  <span class="result-label">Database:</span>
+                  <span class="result-value">{{ diagnosticsResult.config_checks.database }}</span>
+                </div>
+                <div v-if="diagnosticsResult.config_checks.error" class="result-item">
+                  <span class="result-label">Error:</span>
+                  <span class="result-value error">{{ diagnosticsResult.config_checks.error }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Connection Test Section -->
+            <div v-if="diagnosticsResult.connection_test" class="result-section">
+              <h4><i class="fas fa-plug"></i> Connection Test</h4>
+              <div class="section-content">
+                <div class="result-item">
+                  <span class="result-label">Status:</span>
+                  <span class="result-value" :class="diagnosticsResult.connection_test.success ? 'success' : 'error'">
+                    {{ diagnosticsResult.connection_test.success ? 'Connected' : 'Failed' }}
+                  </span>
+                </div>
+                <div v-if="diagnosticsResult.connection_test.db_type" class="result-item">
+                  <span class="result-label">Database Type:</span>
+                  <span class="result-value">{{ diagnosticsResult.connection_test.db_type }}</span>
+                </div>
+                <div v-if="diagnosticsResult.connection_test.query_test" class="result-item">
+                  <span class="result-label">Query Test:</span>
+                  <span class="result-value success">{{ diagnosticsResult.connection_test.query_test }}</span>
+                </div>
+                <div v-if="diagnosticsResult.connection_test.error" class="result-item">
+                  <span class="result-label">Error:</span>
+                  <span class="result-value error">{{ diagnosticsResult.connection_test.error }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Persistent Storage Section -->
+            <div v-if="diagnosticsResult.persistent_storage" class="result-section">
+              <h4><i class="fas fa-hdd"></i> Persistent Storage</h4>
+              <div class="section-content">
+                <div class="result-item">
+                  <span class="result-label">Data Directory:</span>
+                  <span class="result-value">{{ diagnosticsResult.persistent_storage.data_directory || 'Not available' }}</span>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Directory Exists:</span>
+                  <span class="result-value" :class="diagnosticsResult.persistent_storage.directory_exists ? 'success' : 'error'">
+                    {{ diagnosticsResult.persistent_storage.directory_exists ? 'Yes' : 'No' }}
+                  </span>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Directory Writable:</span>
+                  <span class="result-value" :class="diagnosticsResult.persistent_storage.directory_writable ? 'success' : 'error'">
+                    {{ diagnosticsResult.persistent_storage.directory_writable ? 'Yes' : 'No' }}
+                  </span>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Config File Exists:</span>
+                  <span class="result-value" :class="diagnosticsResult.persistent_storage.config_file_exists ? 'success' : 'error'">
+                    {{ diagnosticsResult.persistent_storage.config_file_exists ? 'Yes' : 'No' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Recommendations Section -->
+            <div v-if="diagnosticsResult.recommendations && diagnosticsResult.recommendations.length > 0" class="result-section recommendations">
+              <h4><i class="fas fa-lightbulb"></i> Recommendations</h4>
+              <div class="section-content">
+                <ul class="recommendations-list">
+                  <li v-for="(rec, index) in diagnosticsResult.recommendations" :key="index">
+                    {{ rec }}
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
           
@@ -587,6 +700,27 @@
       </div>
     </div>
   </div>
+  
+  <!-- Toast Notifications -->
+  <div class="toast-container">
+    <transition-group name="toast">
+      <div
+        v-for="toast in toasts"
+        :key="toast.id"
+        class="toast"
+        :class="toast.type"
+      >
+        <i class="fas" :class="getToastIcon(toast.type)"></i>
+        <div class="toast-content">
+          <div class="toast-title">{{ toast.title }}</div>
+          <div v-if="toast.message" class="toast-message">{{ toast.message }}</div>
+        </div>
+        <button @click="removeToast(toast.id)" class="toast-close">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </transition-group>
+  </div>
 </template>
 
 <script setup>
@@ -653,6 +787,12 @@ const networkTestForm = ref({
 // Diagnostics modal state
 const showDiagnosticsModal = ref(false)
 const connectionTestResult = ref(null)
+const copiedDiagnostics = ref(false)
+const diagnosticsResult = ref(null)
+
+// Toast notifications
+const toasts = ref([])
+let toastId = 0
 const storageInfo = ref({
   config_source: 'unknown',
   storage_available: false,
@@ -1294,7 +1434,7 @@ const testDatabaseConnection = async () => {
 
 const refreshConnection = async () => {
   refreshingConnection.value = true
-  connectionTestResult.value = null
+  showToast('Refreshing Connection', 'Attempting to reconnect to database...', 'info')
   
   try {
     // First, try to refresh the database configuration
@@ -1337,9 +1477,9 @@ const refreshConnection = async () => {
       
       // Show success message
       if (databaseStatus.value.connected) {
-        alert('Database connection refreshed successfully!')
+        showToast('Connection Refreshed', 'Successfully connected to the database', 'success')
       } else {
-        alert('Database configuration loaded but connection failed. Please check your settings.')
+        showToast('Connection Failed', 'Database configuration loaded but connection failed', 'warning')
       }
     }
   } catch (error) {
@@ -1365,7 +1505,8 @@ const refreshConnection = async () => {
       errorMessage = error.message || 'An unexpected error occurred'
     }
     
-    alert(errorMessage + '\n\nCheck the browser console for more details.')
+    showToast('Connection Error', errorMessage, 'error')
+    console.error('Detailed error information:', error)
   } finally {
     refreshingConnection.value = false
   }
@@ -1373,6 +1514,8 @@ const refreshConnection = async () => {
 
 const runDiagnostics = async () => {
   runningDiagnostics.value = true
+  diagnosticsResult.value = null
+  showToast('Running Diagnostics', 'Performing comprehensive system checks...', 'info')
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
@@ -1438,11 +1581,11 @@ const runDiagnostics = async () => {
         }
       }
       
-      // Show report
-      console.log(report)
-      alert(report)
+      // Store the diagnostics result for display
+      diagnosticsResult.value = diag
+      showToast('Diagnostics Complete', 'System diagnostic report is ready', 'success')
     } else {
-      alert('Failed to run diagnostics. Check console for details.')
+      showToast('Diagnostics Failed', 'Unable to generate diagnostic report', 'error')
     }
   } catch (error) {
     console.error('Diagnostics error:', error)
@@ -1456,7 +1599,7 @@ const runDiagnostics = async () => {
       errorMessage += 'Unknown error'
     }
     
-    alert(errorMessage)
+    showToast('Diagnostics Error', errorMessage, 'error')
   } finally {
     runningDiagnostics.value = false
   }
@@ -1464,7 +1607,7 @@ const runDiagnostics = async () => {
 
 const saveDatabaseConfig = async () => {
   if (!databaseTestResult.value?.success) {
-    alert('Please test the connection first before saving')
+    showToast('Test Required', 'Please test the connection first before saving', 'warning')
     return
   }
   
@@ -1504,16 +1647,16 @@ const saveDatabaseConfig = async () => {
       closeDatabaseModal()
       
       // Show success message
-      alert('Database configuration saved successfully!')
+      showToast('Configuration Saved', 'Database configuration saved successfully!', 'success')
       
       // Refresh dashboard data
       await loadDashboardData()
     } else {
-      alert('Failed to save database configuration: ' + (response.data.message || 'Unknown error'))
+      showToast('Save Failed', response.data.message || 'Failed to save database configuration', 'error')
     }
   } catch (error) {
     console.error('Save database config error:', error)
-    alert('Failed to save database configuration: ' + (error.response?.data?.message || 'Unknown error'))
+    showToast('Save Error', error.response?.data?.message || 'Failed to save database configuration', 'error')
   } finally {
     savingConfig.value = false
   }
@@ -1521,15 +1664,107 @@ const saveDatabaseConfig = async () => {
 
 // Remove mock data generation - we'll use real data from the API
 
+// Toast notification functions
+const showToast = (title, message = '', type = 'info') => {
+  const id = ++toastId
+  toasts.value.push({ id, title, message, type })
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    removeToast(id)
+  }, 5000)
+}
+
+const removeToast = (id) => {
+  const index = toasts.value.findIndex(t => t.id === id)
+  if (index > -1) {
+    toasts.value.splice(index, 1)
+  }
+}
+
+const getToastIcon = (type) => {
+  switch (type) {
+    case 'success': return 'fa-check-circle'
+    case 'error': return 'fa-exclamation-circle'
+    case 'warning': return 'fa-exclamation-triangle'
+    default: return 'fa-info-circle'
+  }
+}
+
 // Diagnostics modal functions
 const openDiagnosticsModal = () => {
   showDiagnosticsModal.value = true
   diagnosticsResult.value = null
   connectionTestResult.value = null
+  copiedDiagnostics.value = false
 }
 
 const closeDiagnosticsModal = () => {
   showDiagnosticsModal.value = false
+}
+
+const copyDiagnostics = async () => {
+  if (!diagnosticsResult.value) return
+  
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(diagnosticsResult.value, null, 2))
+    copiedDiagnostics.value = true
+    showToast('Copied!', 'Diagnostics report copied to clipboard', 'success')
+    setTimeout(() => {
+      copiedDiagnostics.value = false
+    }, 2000)
+  } catch (error) {
+    showToast('Copy Failed', 'Unable to copy to clipboard', 'error')
+  }
+}
+
+const parseDiagnostics = (data) => {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data)
+    } catch {
+      return { raw_data: { content: data } }
+    }
+  }
+  return data || {}
+}
+
+const formatSectionTitle = (key) => {
+  return key.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ')
+}
+
+const formatPropertyName = (prop) => {
+  return prop.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ')
+}
+
+const formatValue = (value) => {
+  if (typeof value === 'boolean') {
+    return value ? '✓ Yes' : '✗ No'
+  }
+  if (value === null || value === undefined) {
+    return 'Not set'
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value, null, 2)
+  }
+  return String(value)
+}
+
+const getValueClass = (value) => {
+  if (typeof value === 'boolean') {
+    return value ? 'value-success' : 'value-error'
+  }
+  if (value === 'connected' || value === 'success' || value === 'set') {
+    return 'value-success'
+  }
+  if (value === 'disconnected' || value === 'error' || value === 'not set') {
+    return 'value-error'
+  }
+  return ''
 }
 
 const openNetworkTest = () => {
@@ -2598,8 +2833,259 @@ onUnmounted(() => {
     flex-direction: column;
   }
 }
+
+/* Diagnostics Result Styles */
+.diagnostics-result {
+  margin-top: 20px;
+}
+
+.diagnostics-result .result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.diagnostics-result h3 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.copy-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(138, 43, 226, 0.1));
+  border: 1px solid rgba(138, 43, 226, 0.5);
+  border-radius: 8px;
+  color: #f7fafc;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.copy-button:hover {
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.3), rgba(138, 43, 226, 0.2));
+  transform: translateY(-1px);
+}
+
+.result-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 15px;
+}
+
+.result-section h4 {
+  margin: 0 0 15px 0;
+  color: #8b5cf6;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-label {
+  color: #9ca3af;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.result-value {
+  color: #f7fafc;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.result-value.success {
+  color: #34d399;
+}
+
+.result-value.error {
+  color: #f87171;
+}
+
+.result-value.warning {
+  color: #fbbf24;
+}
+
+.recommendations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recommendations-list li {
+  padding: 10px 0;
+  padding-left: 25px;
+  position: relative;
+  color: #fbbf24;
+  line-height: 1.5;
+}
+
+.recommendations-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  font-size: 1.2rem;
+}
+
+/* Toast Notification Styles */
+.toast-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 16px 20px;
+  min-width: 300px;
+  max-width: 400px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: all;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: slideIn 0.3s ease-out;
+}
+
+.toast.success {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%);
+}
+
+.toast.error {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%);
+}
+
+.toast.warning {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+}
+
+.toast.info {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%);
+}
+
+.toast-icon {
+  font-size: 1.3rem;
+}
+
+.toast.success .toast-icon {
+  color: #34d399;
+}
+
+.toast.error .toast-icon {
+  color: #f87171;
+}
+
+.toast.warning .toast-icon {
+  color: #fbbf24;
+}
+
+.toast.info .toast-icon {
+  color: #60a5fa;
+}
+
+.toast-content {
+  flex: 1;
+}
+
+.toast-title {
+  font-weight: 600;
+  color: #f7fafc;
+  margin-bottom: 2px;
+}
+
+.toast-message {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+}
+
+.toast-close:hover {
+  color: #f7fafc;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.toast-enter-active {
+  animation: slideIn 0.3s ease-out;
+}
+
+.toast-leave-active {
+  animation: slideOut 0.3s ease-in;
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
 </style>
 
+<style>
 /* Network Test Modal Styles */
 .quick-tests {
   margin: 20px 0;
@@ -2851,4 +3337,304 @@ onUnmounted(() => {
 .database-actions .action-button {
   flex: 1;
   min-width: 120px;
+}
+
+
+/* Refined Diagnostics Modal Styles */
+.diagnostics-modal .modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.diagnostic-tests {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+  margin: 20px 0;
+}
+
+.test-card {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(138, 43, 226, 0.2);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.test-card:hover {
+  background: rgba(138, 43, 226, 0.05);
+  border-color: rgba(138, 43, 226, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(138, 43, 226, 0.2);
+}
+
+.test-button {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(138, 43, 226, 0.1));
+  border: 1px solid rgba(138, 43, 226, 0.5);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.test-button:hover {
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.3), rgba(138, 43, 226, 0.2));
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(138, 43, 226, 0.3);
+}
+
+/* Diagnostics Result Styles */
+.diagnostics-result {
+  margin-top: 30px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(138, 43, 226, 0.2);
+  overflow: hidden;
+}
+
+.diagnostics-result .result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background: rgba(138, 43, 226, 0.1);
+  border-bottom: 1px solid rgba(138, 43, 226, 0.2);
+}
+
+.diagnostics-result h3 {
+  margin: 0;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.copy-button {
+  padding: 8px 16px;
+  background: rgba(138, 43, 226, 0.2);
+  border: 1px solid rgba(138, 43, 226, 0.5);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+}
+
+.copy-button:hover {
+  background: rgba(138, 43, 226, 0.3);
+  transform: translateY(-1px);
+}
+
+.result-sections {
+  padding: 20px;
+}
+
+.result-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.result-section h4 {
+  margin: 0 0 15px 0;
+  color: var(--primary);
+  font-size: 1.1em;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(138, 43, 226, 0.2);
+}
+
+.section-content {
+  display: grid;
+  gap: 10px;
+}
+
+.result-item {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 15px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-label {
+  color: #aaa;
+  font-weight: 500;
+}
+
+.result-value {
+  color: #fff;
+  word-break: break-word;
+}
+
+.value-success {
+  color: #4caf50;
+}
+
+.value-error {
+  color: #f44336;
+}
+
+/* Toast Notification Styles */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(30, 30, 40, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: all;
+  min-width: 300px;
+  max-width: 500px;
+  animation: slideIn 0.3s ease;
+}
+
+.toast.success {
+  border-color: #4caf50;
+  background: rgba(30, 40, 30, 0.95);
+}
+
+.toast.error {
+  border-color: #f44336;
+  background: rgba(40, 30, 30, 0.95);
+}
+
+.toast.warning {
+  border-color: #ff9800;
+  background: rgba(40, 35, 30, 0.95);
+}
+
+.toast.info {
+  border-color: #2196f3;
+  background: rgba(30, 35, 40, 0.95);
+}
+
+.toast i {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.toast.success i { color: #4caf50; }
+.toast.error i { color: #f44336; }
+.toast.warning i { color: #ff9800; }
+.toast.info i { color: #2196f3; }
+
+.toast-content {
+  flex: 1;
+}
+
+.toast-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.toast-message {
+  font-size: 0.9em;
+  color: #ccc;
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 10px;
+  transition: color 0.3s ease;
+}
+
+.toast-close:hover {
+  color: #fff;
+}
+
+/* Toast animations */
+.toast-enter-active {
+  animation: slideIn 0.3s ease;
+}
+
+.toast-leave-active {
+  animation: slideOut 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Network Test Modal Polish */
+.quick-tests {
+  background: rgba(138, 43, 226, 0.05);
+  border: 1px solid rgba(138, 43, 226, 0.2);
+  border-radius: 8px;
+}
+
+.quick-test-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9em;
+}
+
+.quick-test-btn:hover {
+  background: rgba(138, 43, 226, 0.2);
+  border-color: rgba(138, 43, 226, 0.5);
+}
+
+.test-results {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(138, 43, 226, 0.2);
+}
+
+.test-results.success {
+  background: rgba(76, 175, 80, 0.05);
+}
+
+.test-results.error {
+  background: rgba(244, 67, 54, 0.05);
 }
