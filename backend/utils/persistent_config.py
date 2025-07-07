@@ -120,96 +120,56 @@ class PersistentConfig:
         return self.save({key: value})
     
     def get_database_config(self) -> Optional[Dict[str, Any]]:
-        """Get database configuration - prioritizes Railway env vars over file storage."""
-        # Log what we're checking
+        """Get database configuration - reverted to PR #40 working logic."""
         logger.info("Getting database configuration...")
         
-        # Debug: Log all environment variables that start with EQEMU_
-        eqemu_env_vars = {k: v for k, v in os.environ.items() if k.startswith('EQEMU_')}
-        logger.info(f"Found EQEMU_ environment variables: {list(eqemu_env_vars.keys())}")
-        
-        # First priority: Check Railway environment variables
-        db_url = os.environ.get('EQEMU_DATABASE_URL')
-        logger.info(f"EQEMU_DATABASE_URL value: {db_url[:50] if db_url else 'None'}...")
-        
-        if db_url:
-            logger.info("Found EQEMU_DATABASE_URL in environment variables")
-            # Get all config from environment variables
-            db_config = {
-                'production_database_url': db_url,
-                'database_type': os.environ.get('EQEMU_DATABASE_TYPE', 'mysql'),
-                'use_production_database': True,
-                'database_read_only': True,
-                'database_ssl': os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true',
-                'database_name': os.environ.get('EQEMU_DATABASE_NAME', ''),
-                'database_password': os.environ.get('EQEMU_DATABASE_PW', ''),
-                'database_port': os.environ.get('EQEMU_DATABASE_PORT', ''),
-                'config_source': 'environment_variables'
-            }
-            
-            # Optionally save to persistent storage as backup
-            # This helps during development or if env vars are temporarily unavailable
-            try:
-                self.save(db_config)
-            except Exception as e:
-                logger.warning(f"Could not save env config to persistent storage: {e}")
-            
-            return db_config
-        
-        # Fallback: Try to construct URL from individual components
-        host = os.environ.get('EQEMU_DATABASE_HOST')
-        port = os.environ.get('EQEMU_DATABASE_PORT')
-        name = os.environ.get('EQEMU_DATABASE_NAME')
-        password = os.environ.get('EQEMU_DATABASE_PW')
-        user = os.environ.get('EQEMU_DATABASE_USER', 'alla_view')  # Default to alla_view
-        
-        if host and port and name and password:
-            # Construct the database URL from components
-            constructed_url = f"mysql://{user}:{password}@{host}:{port}/{name}"
-            
-            logger.info(f"Constructed database URL from components: {constructed_url[:50]}...")
-            
-            db_config = {
-                'production_database_url': constructed_url,
-                'database_type': os.environ.get('EQEMU_DATABASE_TYPE', 'mysql'),
-                'use_production_database': True,
-                'database_read_only': True,
-                'database_ssl': os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true',
-                'database_name': name,
-                'database_password': password,
-                'database_port': port,
-                'config_source': 'environment_variables_constructed'
-            }
-            
-            # Save to persistent storage
-            try:
-                self.save(db_config)
-            except Exception as e:
-                logger.warning(f"Could not save constructed config to persistent storage: {e}")
-            
-            return db_config
-        
-        logger.info("No EQEMU_DATABASE_URL in environment, checking persistent storage...")
-        
-        # Second priority: Check persistent file storage
+        # REVERT TO PR #40 WORKING LOGIC: Check persistent storage first
         config = self.load()
         logger.info(f"Loaded persistent config keys: {list(config.keys())}")
         
+        # Check for database URL in persistent config
         db_url = config.get('production_database_url')
+        
+        # If not in file, check environment variable as backup
+        # Use a specific env var for content database to avoid confusion with auth database
+        if not db_url:
+            logger.info("No database URL in persistent storage, checking environment variables...")
+            db_url = os.environ.get('EQEMU_DATABASE_URL')
+            if db_url:
+                logger.info("Loaded database URL from EQEMU_DATABASE_URL environment variable")
+                # Also get other settings from environment
+                db_type = os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')
+                use_ssl = os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true'
+                
+                # Save to persistent storage for next time
+                self.save_database_config(db_url, db_type, use_ssl)
+                
+                # Return config from environment variables
+                return {
+                    'production_database_url': db_url,
+                    'database_type': db_type,
+                    'use_production_database': True,
+                    'database_read_only': True,
+                    'database_ssl': use_ssl,
+                    'database_name': os.environ.get('EQEMU_DATABASE_NAME', ''),
+                    'database_password': os.environ.get('EQEMU_DATABASE_PW', ''),
+                    'database_port': os.environ.get('EQEMU_DATABASE_PORT', ''),
+                    'config_source': 'environment_variables'
+                }
         
         # Note: We do NOT fall back to DATABASE_URL environment variable
         # as that's reserved for the PostgreSQL auth database
         
         if not db_url:
-            logger.warning("No production_database_url found in persistent config")
+            logger.warning("No database configuration found")
             return None
         
-        logger.info(f"Found database URL in persistent storage: {db_url[:30]}...")
+        logger.info(f"Using database URL from persistent storage: {db_url[:30]}...")
         
-        # Return config from file
-        db_config = {
+        # Return combined config from persistent storage
+        return {
             'production_database_url': db_url,
-            'database_type': config.get('database_type', 'mysql'),
+            'database_type': config.get('database_type', os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')),
             'use_production_database': config.get('use_production_database', True),
             'database_read_only': config.get('database_read_only', True),
             'database_ssl': config.get('database_ssl', True),
@@ -218,9 +178,6 @@ class PersistentConfig:
             'database_port': config.get('database_port', ''),
             'config_source': 'persistent_storage'
         }
-        
-        logger.info(f"Returning database config from persistent storage with {len(db_config)} keys")
-        return db_config
     
     def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True, 
                            db_name: str = '', db_password: str = '', db_port: str = '') -> bool:
