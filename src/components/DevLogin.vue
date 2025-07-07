@@ -114,6 +114,10 @@ export default {
           userStore.preferences = preferences || userStore.preferences
           userStore.isAuthenticated = true
           
+          // Hide the dev login panel after successful login
+          isMinimized.value = true
+          showCustomForm.value = false
+          
           // Redirect to home
           router.push('/')
         }
