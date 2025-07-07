@@ -107,6 +107,8 @@ const router = createRouter({
 
 // Navigation guards for authentication
 router.beforeEach(async (to, from, next) => {
+  console.log('Navigating to:', to.path, to.name)
+  
   // Allow access to main page and auth callback without login
   const publicRoutes = ['MainPage', 'AuthCallback']
   
@@ -122,6 +124,9 @@ router.beforeEach(async (to, from, next) => {
     const { toastService } = await import('../services/toastService')
     const userStore = useUserStore()
     
+    console.log('Auth check - isAuthenticated:', userStore.isAuthenticated)
+    console.log('Auth check - user role:', userStore.user?.role)
+    
     if (!userStore.isAuthenticated) {
       // Show toast message
       toastService.warning('Please sign in to access this page', 4000)
@@ -132,6 +137,7 @@ router.beforeEach(async (to, from, next) => {
     
     // Check if route specifically requires admin
     if (to.matched.some(record => record.meta.requiresAdmin)) {
+      console.log('Route requires admin. User is admin:', userStore.user?.role === 'admin')
       if (userStore.user?.role !== 'admin') {
         toastService.error('Admin access required', 3000)
         next('/')
@@ -139,6 +145,7 @@ router.beforeEach(async (to, from, next) => {
       }
     }
     
+    console.log('Navigation approved')
     next()
   } catch (err) {
     console.error('Error in route guard:', err)

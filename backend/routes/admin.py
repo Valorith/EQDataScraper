@@ -9,6 +9,10 @@ from models.activity import ActivityLog
 import psycopg2
 from datetime import datetime, timedelta
 import logging
+import os
+import psutil
+import time
+from collections import defaultdict, deque
 
 admin_bp = Blueprint('admin', __name__)
 logger = logging.getLogger(__name__)
@@ -1529,3 +1533,473 @@ def check_persistence():
         
     except Exception as e:
         return create_error_response(f"Failed to check persistence: {str(e)}", 500)
+
+
+# System monitoring data storage
+system_metrics = {
+    'response_times': deque(maxlen=1000),  # Store last 1000 response times
+    'endpoint_stats': defaultdict(lambda: {
+        'total_calls': 0,
+        'total_time': 0,
+        'errors': 0,
+        'last_called': None
+    }),
+    'server_start_time': time.time(),
+    'error_log': deque(maxlen=100),  # Store last 100 errors
+    'database_stats': {
+        'total_queries': 0,
+        'query_times': deque(maxlen=100),  # Store last 100 query times
+        'slow_queries': deque(maxlen=20),  # Store last 20 slow queries
+        'query_types': defaultdict(int),  # Count by query type (SELECT, INSERT, etc.)
+        'tables_accessed': defaultdict(int),  # Count by table name
+        'timeline': deque(maxlen=168)  # Store hourly data for 7 days (24*7=168)
+    }
+}
+
+
+@admin_bp.route('/admin/system/metrics', methods=['GET'])
+@require_admin
+def get_system_metrics():
+    """
+    Get comprehensive system metrics including CPU, memory, and performance data.
+    
+    Returns:
+        JSON response with system metrics
+    """
+    try:
+        # Get system resource usage
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        
+        # System-wide metrics
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Calculate uptime
+        uptime_seconds = time.time() - system_metrics['server_start_time']
+        
+        # Calculate average response time
+        response_times = list(system_metrics['response_times'])
+        avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+        
+        # Calculate error rate
+        total_requests = sum(stats['total_calls'] for stats in system_metrics['endpoint_stats'].values())
+        total_errors = sum(stats['errors'] for stats in system_metrics['endpoint_stats'].values())
+        error_rate = (total_errors / total_requests * 100) if total_requests > 0 else 0
+        
+        # Get cache statistics from main app
+        try:
+            from app import spells_cache, spell_details_cache, cache_timestamp
+            cache_stats = {
+                'cached_classes': len(spells_cache),
+                'cached_spell_details': len(spell_details_cache),
+                'total_spells': sum(len(spells) for spells in spells_cache.values()),
+                'cache_age_hours': {
+                    class_name: (time.time() - timestamp) / 3600
+                    for class_name, timestamp in cache_timestamp.items()
+                }
+            }
+        except ImportError:
+            cache_stats = {
+                'cached_classes': 0,
+                'cached_spell_details': 0,
+                'total_spells': 0,
+                'cache_age_hours': {}
+            }
+        
+        return jsonify(create_success_response({
+            'system': {
+                'uptime_seconds': uptime_seconds,
+                'cpu_percent': cpu_percent,
+                'memory': {
+                    'total': memory.total,
+                    'used': memory.used,
+                    'percent': memory.percent,
+                    'available': memory.available,
+                    'process_rss': memory_info.rss,
+                    'process_vms': memory_info.vms
+                },
+                'disk': {
+                    'total': disk.total,
+                    'used': disk.used,
+                    'free': disk.free,
+                    'percent': disk.percent
+                },
+                'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else [0, 0, 0]
+            },
+            'performance': {
+                'avg_response_time': round(avg_response_time, 2),
+                'total_requests': total_requests,
+                'error_rate': round(error_rate, 2),
+                'error_count': total_errors,
+                'response_time_history': response_times[-20:] if response_times else []  # Last 20 values
+            },
+            'cache': cache_stats,
+            'database': {
+                'total_queries': system_metrics['database_stats']['total_queries'],
+                'avg_query_time': sum(system_metrics['database_stats']['query_times']) / len(system_metrics['database_stats']['query_times']) if system_metrics['database_stats']['query_times'] else 0,
+                'query_types': dict(system_metrics['database_stats']['query_types']),
+                'tables_accessed': dict(system_metrics['database_stats']['tables_accessed']),
+                'slow_queries_count': len(system_metrics['database_stats']['slow_queries']),
+                'recent_slow_queries': list(system_metrics['database_stats']['slow_queries'])[-5:],  # Last 5 slow queries
+                'timeline': format_query_timeline(system_metrics['database_stats']['timeline'])
+            },
+            'health_score': calculate_health_score(cpu_percent, memory.percent, error_rate, avg_response_time)
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to get system metrics: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/system/endpoints', methods=['GET'])
+@require_admin
+def get_endpoint_metrics():
+    """
+    Get detailed metrics for all API endpoints.
+    
+    Returns:
+        JSON response with endpoint performance data
+    """
+    try:
+        endpoints = []
+        
+        for endpoint, stats in system_metrics['endpoint_stats'].items():
+            avg_time = (stats['total_time'] / stats['total_calls']) if stats['total_calls'] > 0 else 0
+            success_rate = ((stats['total_calls'] - stats['errors']) / stats['total_calls'] * 100) if stats['total_calls'] > 0 else 100
+            
+            # Determine endpoint status
+            if stats['errors'] > 5 or success_rate < 90:
+                status = 'critical'
+            elif stats['errors'] > 2 or success_rate < 95:
+                status = 'warning'
+            else:
+                status = 'healthy'
+            
+            # Calculate calls per hour
+            if stats['last_called']:
+                hours_since_start = (time.time() - system_metrics['server_start_time']) / 3600
+                calls_per_hour = stats['total_calls'] / hours_since_start if hours_since_start > 0 else 0
+            else:
+                calls_per_hour = 0
+            
+            endpoints.append({
+                'method': endpoint.split()[0],
+                'path': endpoint.split()[1] if len(endpoint.split()) > 1 else endpoint,
+                'avgTime': round(avg_time, 0),
+                'callsPerHour': round(calls_per_hour, 0),
+                'successRate': round(success_rate, 1),
+                'status': status,
+                'totalCalls': stats['total_calls'],
+                'errors': stats['errors'],
+                'lastCalled': stats['last_called']
+            })
+        
+        # Sort by total calls descending
+        endpoints.sort(key=lambda x: x['totalCalls'], reverse=True)
+        
+        # Add some default endpoints if none exist yet
+        if not endpoints:
+            endpoints = [
+                {
+                    'method': 'GET',
+                    'path': '/api/classes',
+                    'avgTime': 45,
+                    'callsPerHour': 0,
+                    'successRate': 100.0,
+                    'status': 'healthy',
+                    'totalCalls': 0,
+                    'errors': 0,
+                    'lastCalled': None
+                },
+                {
+                    'method': 'GET',
+                    'path': '/api/spells/:class',
+                    'avgTime': 120,
+                    'callsPerHour': 0,
+                    'successRate': 100.0,
+                    'status': 'healthy',
+                    'totalCalls': 0,
+                    'errors': 0,
+                    'lastCalled': None
+                }
+            ]
+        
+        return jsonify(create_success_response({
+            'endpoints': endpoints
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to get endpoint metrics: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/system/logs', methods=['GET'])
+@require_admin
+def get_system_logs():
+    """
+    Get system logs with filtering options.
+    
+    Query parameters:
+        level: Filter by log level (all, error, warning, info)
+        limit: Number of logs to return (default: 50, max: 500)
+    
+    Returns:
+        JSON response with system logs
+    """
+    try:
+        level = request.args.get('level', 'all')
+        limit = min(int(request.args.get('limit', 50)), 500)
+        
+        logs = []
+        
+        # Read from actual log files if available
+        log_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'backend_run.log')
+        
+        if os.path.exists(log_file_path):
+            try:
+                with open(log_file_path, 'r') as f:
+                    # Read last N lines efficiently
+                    lines = deque(f, maxlen=limit * 2)  # Read more to account for filtering
+                    
+                for line in lines:
+                    try:
+                        # Parse log line (assuming standard format: timestamp - level - message)
+                        if ' - ' in line:
+                            parts = line.strip().split(' - ', 2)
+                            if len(parts) >= 3:
+                                timestamp_str = parts[0]
+                                log_level = parts[1].lower()
+                                message = parts[2]
+                                
+                                # Filter by level if specified
+                                if level != 'all' and log_level != level:
+                                    continue
+                                
+                                # Determine context from message
+                                context = None
+                                if 'scraping' in message.lower():
+                                    context = 'Scraping operation'
+                                elif 'cache' in message.lower():
+                                    context = 'Cache operation'
+                                elif 'database' in message.lower() or 'db' in message.lower():
+                                    context = 'Database operation'
+                                elif 'oauth' in message.lower() or 'auth' in message.lower():
+                                    context = 'Authentication'
+                                
+                                logs.append({
+                                    'id': len(logs) + 1,
+                                    'timestamp': timestamp_str,
+                                    'level': log_level,
+                                    'message': message,
+                                    'context': context
+                                })
+                    except Exception:
+                        # Skip malformed log lines
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"Error reading log file: {e}")
+        
+        # If no logs from file, use in-memory error log
+        if not logs and system_metrics['error_log']:
+            for i, error in enumerate(system_metrics['error_log']):
+                if level == 'all' or level == 'error':
+                    logs.append({
+                        'id': i + 1,
+                        'timestamp': error.get('timestamp', datetime.now().isoformat()),
+                        'level': 'error',
+                        'message': error.get('message', 'Unknown error'),
+                        'context': error.get('context')
+                    })
+        
+        # If still no logs, provide some sample logs
+        if not logs:
+            logs = [
+                {
+                    'id': 1,
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'info',
+                    'message': 'System monitoring started',
+                    'context': 'System startup'
+                }
+            ]
+        
+        # Sort by timestamp descending and limit
+        logs.sort(key=lambda x: x['timestamp'], reverse=True)
+        logs = logs[:limit]
+        
+        return jsonify(create_success_response({
+            'logs': logs,
+            'total': len(logs),
+            'level_filter': level
+        }))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to get system logs: {str(e)}", 500)
+
+
+def calculate_health_score(cpu_percent, memory_percent, error_rate, avg_response_time):
+    """Calculate overall system health score (0-100)."""
+    score = 100
+    
+    # CPU penalty
+    if cpu_percent > 80:
+        score -= 20
+    elif cpu_percent > 60:
+        score -= 10
+    
+    # Memory penalty
+    if memory_percent > 85:
+        score -= 20
+    elif memory_percent > 70:
+        score -= 10
+    
+    # Error rate penalty
+    if error_rate > 5:
+        score -= 30
+    elif error_rate > 1:
+        score -= 15
+    
+    # Response time penalty
+    if avg_response_time > 500:
+        score -= 20
+    elif avg_response_time > 200:
+        score -= 10
+    
+    return max(0, score)
+
+
+def track_endpoint_metric(endpoint, response_time, is_error=False):
+    """Track metrics for an endpoint (called by middleware)."""
+    stats = system_metrics['endpoint_stats'][endpoint]
+    stats['total_calls'] += 1
+    stats['total_time'] += response_time
+    stats['last_called'] = time.time()
+    
+    if is_error:
+        stats['errors'] += 1
+    
+    # Add to response time history
+    system_metrics['response_times'].append(response_time)
+
+
+def log_system_error(message, context=None):
+    """Log a system error for monitoring."""
+    system_metrics['error_log'].append({
+        'timestamp': datetime.now().isoformat(),
+        'message': message,
+        'context': context
+    })
+
+
+def format_query_timeline(timeline_data, time_scale='1h'):
+    """Format timeline data for the requested time scale."""
+    if not timeline_data:
+        return []
+    
+    # Convert deque to list for processing
+    all_entries = list(timeline_data)
+    
+    # For now, return the raw hourly data
+    # Frontend will aggregate as needed based on selected time scale
+    formatted_data = []
+    for entry in all_entries:
+        formatted_entry = {
+            'timestamp': entry['timestamp'],
+            'total': entry['total_queries'],
+            'tables': dict(entry['tables'])  # Convert defaultdict to regular dict
+        }
+        formatted_data.append(formatted_entry)
+    
+    return formatted_data[-168:]  # Return up to 7 days of hourly data
+
+
+def update_query_timeline(table_name=None):
+    """Update the timeline data for query tracking."""
+    db_stats = system_metrics['database_stats']
+    current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+    
+    # Get the latest timeline entry or create a new one
+    if not db_stats['timeline'] or db_stats['timeline'][-1]['timestamp'] != current_hour.isoformat():
+        # Create new hourly entry
+        new_entry = {
+            'timestamp': current_hour.isoformat(),
+            'total_queries': 0,
+            'tables': defaultdict(int)
+        }
+        db_stats['timeline'].append(new_entry)
+    
+    # Update the current hour's data
+    current_entry = db_stats['timeline'][-1]
+    current_entry['total_queries'] += 1
+    
+    if table_name:
+        current_entry['tables'][table_name.lower()] += 1
+
+
+def track_database_query(query, execution_time, query_type=None, table_name=None):
+    """Track database query metrics."""
+    db_stats = system_metrics['database_stats']
+    
+    # Track total queries
+    db_stats['total_queries'] += 1
+    
+    # Track query time
+    db_stats['query_times'].append(execution_time)
+    
+    # Track slow queries (> 100ms)
+    if execution_time > 100:
+        db_stats['slow_queries'].append({
+            'query': query[:200] if len(query) > 200 else query,  # Truncate long queries
+            'execution_time': execution_time,
+            'timestamp': datetime.now().isoformat(),
+            'type': query_type,
+            'table': table_name
+        })
+    
+    # Detect query type if not provided
+    if not query_type:
+        query_upper = query.upper().strip()
+        if query_upper.startswith('SELECT'):
+            query_type = 'SELECT'
+        elif query_upper.startswith('INSERT'):
+            query_type = 'INSERT'
+        elif query_upper.startswith('UPDATE'):
+            query_type = 'UPDATE'
+        elif query_upper.startswith('DELETE'):
+            query_type = 'DELETE'
+        else:
+            query_type = 'OTHER'
+    
+    # Track query type
+    db_stats['query_types'][query_type] += 1
+    
+    # Detect table name if not provided
+    if not table_name and query_type in ['SELECT', 'INSERT', 'UPDATE', 'DELETE']:
+        # Simple table name extraction (works for basic queries)
+        query_upper = query.upper()
+        if 'FROM' in query_upper:
+            # Extract table name after FROM
+            parts = query_upper.split('FROM')
+            if len(parts) > 1:
+                table_part = parts[1].strip().split()[0]
+                table_name = table_part.strip('`"\' ')
+        elif 'INTO' in query_upper:
+            # Extract table name after INTO
+            parts = query_upper.split('INTO')
+            if len(parts) > 1:
+                table_part = parts[1].strip().split()[0]
+                table_name = table_part.strip('`"\' ')
+        elif 'UPDATE' in query_upper:
+            # Extract table name after UPDATE
+            parts = query_upper.split('UPDATE')
+            if len(parts) > 1:
+                table_part = parts[1].strip().split()[0]
+                table_name = table_part.strip('`"\' ')
+    
+    # Track table access
+    if table_name:
+        db_stats['tables_accessed'][table_name.lower()] += 1
+    
+    # Update timeline data
+    update_query_timeline(table_name)

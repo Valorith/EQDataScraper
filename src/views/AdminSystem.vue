@@ -49,7 +49,7 @@
           </div>
           <div class="metric-value">{{ systemStats.avgResponseTime || 0 }}ms</div>
           <div class="metric-chart">
-            <div class="mini-chart" v-for="(value, index) in responseTimeHistory" :key="index">
+            <div class="mini-chart" v-for="(value, index) in responseTimeHistory" :key="`chart-${index}`">
               <div 
                 class="chart-bar" 
                 :style="{ height: (value / maxResponseTime * 100) + '%' }"
@@ -111,13 +111,102 @@
       </div>
     </div>
 
+    <!-- Database Metrics -->
+    <div class="metrics-section" v-if="databaseStats">
+      <h2>Database Performance</h2>
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-header">
+            <i class="fas fa-database"></i>
+            <h3>Total Queries</h3>
+          </div>
+          <div class="metric-value">{{ databaseStats.total_queries || 0 }}</div>
+          <div class="metric-info">
+            <span class="good">{{ formatNumber(databaseStats.total_queries) }} queries executed</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <i class="fas fa-clock"></i>
+            <h3>Avg Query Time</h3>
+          </div>
+          <div class="metric-value">{{ Math.round(databaseStats.avg_query_time || 0) }}ms</div>
+          <div class="metric-info">
+            <span :class="queryTimeClass">{{ queryTimeStatus }}</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <i class="fas fa-exclamation-circle"></i>
+            <h3>Slow Queries</h3>
+          </div>
+          <div class="metric-value">{{ databaseStats.slow_queries_count || 0 }}</div>
+          <div class="metric-info">
+            <span :class="slowQueryClass">{{ slowQueryStatus }}</span>
+          </div>
+        </div>
+
+        <div class="metric-card query-breakdown">
+          <div class="metric-header">
+            <i class="fas fa-chart-pie"></i>
+            <h3>Query Breakdown</h3>
+          </div>
+          <div class="query-types">
+            <div v-for="(count, type) in databaseStats.query_types" :key="`query-type-${type}`" class="query-type">
+              <span class="type-label">{{ type }}:</span>
+              <span class="type-count">{{ count }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tables Accessed -->
+      <div class="tables-section" v-if="databaseStats.tables_accessed && Object.keys(databaseStats.tables_accessed).length > 0">
+        <h3>Most Accessed Tables</h3>
+        <div class="tables-grid">
+          <div v-for="(count, table) in sortedTables" :key="`table-${table}`" class="table-item">
+            <span class="table-name">{{ table }}</span>
+            <span class="table-count">{{ count }} queries</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Query Timeline Graph -->
+      <div class="query-timeline-section">
+        <div class="timeline-header">
+          <h3>Query Activity Timeline</h3>
+          <div class="time-scale-selector">
+            <button 
+              v-for="scale in timeScales" 
+              :key="scale.value"
+              @click="selectedTimeScale = scale.value"
+              :class="['scale-btn', { active: selectedTimeScale === scale.value }]"
+            >
+              {{ scale.label }}
+            </button>
+          </div>
+        </div>
+        <div class="timeline-chart">
+          <canvas ref="queryTimelineChart" width="800" height="300"></canvas>
+        </div>
+        <div class="timeline-legend">
+          <div v-for="(color, table) in tableColors" :key="`legend-${table}`" class="legend-item">
+            <span class="legend-color" :style="{ backgroundColor: color }"></span>
+            <span class="legend-label">{{ table }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- API Endpoints Status -->
     <div class="endpoints-section">
       <h2>API Endpoints Status</h2>
       <div class="endpoints-grid">
         <div 
-          v-for="endpoint in apiEndpoints" 
-          :key="endpoint.path"
+          v-for="(endpoint, idx) in apiEndpoints" 
+          :key="`endpoint-${endpoint.method}-${endpoint.path}-${idx}`"
           class="endpoint-card"
           :class="endpoint.status"
         >
@@ -165,7 +254,7 @@
         </div>
       </div>
       <div class="logs-container">
-        <div v-for="log in filteredLogs" :key="log.id" class="log-entry" :class="log.level">
+        <div v-for="(log, logIndex) in filteredLogs" :key="`log-${log.id || logIndex}-${logIndex}`" class="log-entry" :class="log.level">
           <div class="log-time">{{ formatLogTime(log.timestamp) }}</div>
           <div class="log-level">{{ log.level.toUpperCase() }}</div>
           <div class="log-content">
@@ -182,7 +271,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
@@ -210,8 +299,21 @@ const apiEndpoints = ref([])
 const systemLogs = ref([])
 const logLevel = ref('all')
 const refreshingLogs = ref(false)
+const databaseStats = ref(null)
 
 let updateInterval = null
+
+// Query timeline graph state
+const queryTimelineChart = ref(null)
+const selectedTimeScale = ref('1h')
+const timeScales = [
+  { value: '1h', label: '1 Hour' },
+  { value: '6h', label: '6 Hours' },
+  { value: '24h', label: '24 Hours' },
+  { value: '7d', label: '7 Days' }
+]
+const tableColors = ref({})
+const queryTimelineData = ref({})
 
 // Computed
 const systemHealthClass = computed(() => {
@@ -284,183 +386,229 @@ const filteredLogs = computed(() => {
   return systemLogs.value.filter(log => log.level === logLevel.value)
 })
 
+const queryTimeClass = computed(() => {
+  if (!databaseStats.value) return 'good'
+  const time = databaseStats.value.avg_query_time
+  if (time <= 50) return 'good'
+  if (time <= 100) return 'warning'
+  return 'critical'
+})
+
+const queryTimeStatus = computed(() => {
+  if (!databaseStats.value) return 'Fast'
+  const time = databaseStats.value.avg_query_time
+  if (time <= 50) return 'Fast'
+  if (time <= 100) return 'Moderate'
+  return 'Slow'
+})
+
+const slowQueryClass = computed(() => {
+  if (!databaseStats.value) return 'good'
+  const count = databaseStats.value.slow_queries_count
+  if (count === 0) return 'good'
+  if (count <= 5) return 'warning'
+  return 'critical'
+})
+
+const slowQueryStatus = computed(() => {
+  if (!databaseStats.value) return 'None'
+  const count = databaseStats.value.slow_queries_count
+  if (count === 0) return 'None'
+  if (count <= 5) return 'Few slow queries'
+  return 'Many slow queries'
+})
+
+const sortedTables = computed(() => {
+  if (!databaseStats.value || !databaseStats.value.tables_accessed) return {}
+  // Sort tables by access count and take top 5
+  return Object.entries(databaseStats.value.tables_accessed)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .reduce((obj, [key, val]) => {
+      obj[key] = val
+      return obj
+    }, {})
+})
+
 // Methods
 const loadSystemStats = async () => {
   try {
-    // Load health data
-    const healthResponse = await axios.get(`${API_BASE_URL}/api/health`)
-    const healthData = healthResponse.data
+    // Check if user has proper authentication
+    const isAdmin = userStore.user && userStore.user.role === 'admin'
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     
-    // Update system stats
-    systemStats.value = {
-      uptime: healthData.uptime || systemStats.value.uptime, // Keep existing uptime if not provided
-      avgResponseTime: healthData.avgResponseTime || Math.floor(Math.random() * 300) + 50,
-      serverLoad: Math.floor(Math.random() * 60) + 20,
-      memoryUsed: Math.floor(Math.random() * 4294967296) + 1073741824, // 1-5GB
-      memoryTotal: 8589934592, // 8GB
-      errorRate: healthData.errorRate || Math.random() * 2,
-      errorCount: Math.floor(Math.random() * 50)
+    if (!isAdmin) {
+      console.log('Loading limited system metrics for non-admin user')
+      // Load basic health data that doesn't require admin
+      try {
+        const healthResponse = await axios.get(`${API_BASE_URL}/api/health`)
+        if (healthResponse.data) {
+          systemStats.value = {
+            uptime: 0,
+            avgResponseTime: 0,
+            serverLoad: 0,
+            memoryUsed: 0,
+            memoryTotal: 100,
+            errorRate: 0,
+            errorCount: 0
+          }
+          healthScore.value = healthResponse.data.status === 'healthy' ? 100 : 50
+          loading.value = false
+        }
+      } catch (healthError) {
+        console.log('Could not load health data')
+        loading.value = false
+      }
+      return
+    }
+
+    // Load comprehensive system metrics for admins
+    const headers = {
+      'Authorization': `Bearer ${token}`
     }
     
-    // Calculate health score
-    let score = 100
-    if (systemStats.value.avgResponseTime > 500) score -= 20
-    else if (systemStats.value.avgResponseTime > 200) score -= 10
+    const metricsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/metrics`, { headers })
+    const metricsData = metricsResponse.data.data
     
-    if (systemStats.value.serverLoad > 80) score -= 20
-    else if (systemStats.value.serverLoad > 60) score -= 10
+    // Update system stats with real data
+    systemStats.value = {
+      uptime: metricsData.system.uptime_seconds,
+      avgResponseTime: metricsData.performance.avg_response_time,
+      serverLoad: metricsData.system.cpu_percent,
+      memoryUsed: metricsData.system.memory.used,
+      memoryTotal: metricsData.system.memory.total,
+      errorRate: metricsData.performance.error_rate,
+      errorCount: metricsData.performance.error_count
+    }
     
-    if (systemStats.value.errorRate > 5) score -= 30
-    else if (systemStats.value.errorRate > 1) score -= 15
+    // Use the calculated health score from backend
+    healthScore.value = metricsData.health_score
     
-    healthScore.value = Math.max(0, score)
+    // Update database stats
+    databaseStats.value = metricsData.database
+    
+    // Generate table colors if we have table data
+    if (databaseStats.value?.tables_accessed) {
+      tableColors.value = generateTableColors(databaseStats.value.tables_accessed)
+      // Draw the timeline chart
+      setTimeout(() => drawQueryTimeline(), 100)
+    }
     
     // Update response time history
-    responseTimeHistory.value.push(systemStats.value.avgResponseTime)
-    responseTimeHistory.value.shift()
+    if (metricsData.performance.response_time_history && metricsData.performance.response_time_history.length > 0) {
+      responseTimeHistory.value = metricsData.performance.response_time_history
+      // Pad with zeros if less than 20 values
+      while (responseTimeHistory.value.length < 20) {
+        responseTimeHistory.value.unshift(0)
+      }
+    }
     
     // Update last check
     lastCheck.value = new Date()
     
     // Load API endpoints status
-    loadEndpointsStatus()
+    await loadEndpointsStatus()
     
   } catch (error) {
-    console.error('Error loading system stats:', error)
+    if (error.response?.status === 401) {
+      console.log('System metrics require authentication')
+      // Don't redirect, just show limited data
+      systemStats.value = {
+        uptime: 0,
+        avgResponseTime: 0,
+        serverLoad: 0,
+        memoryUsed: 0,
+        memoryTotal: 100,
+        errorRate: 0,
+        errorCount: 0
+      }
+      healthScore.value = 50
+    } else if (error.response?.status === 403) {
+      console.log('System metrics require admin privileges')
+      // Don't redirect, just show limited data
+      systemStats.value = {
+        uptime: 0,
+        avgResponseTime: 0,
+        serverLoad: 0,
+        memoryUsed: 0,
+        memoryTotal: 100,
+        errorRate: 0,
+        errorCount: 0
+      }
+      healthScore.value = 50
+      router.push('/admin')
+    } else if (error.response?.status === 404) {
+      console.log('System metrics endpoint not found')
+    } else if (error.response) {
+      console.warn('Error loading system stats:', error.response.status)
+    } else {
+      console.warn('Could not reach system metrics endpoint')
+    }
   }
 }
 
-const loadEndpointsStatus = () => {
-  // Simulate endpoint status data
-  apiEndpoints.value = [
-    {
-      method: 'GET',
-      path: '/api/classes',
-      avgTime: 45,
-      callsPerHour: 1250,
-      successRate: 99.8,
-      status: 'healthy'
-    },
-    {
-      method: 'GET',
-      path: '/api/spells/:class',
-      avgTime: 120,
-      callsPerHour: 3500,
-      successRate: 98.5,
-      status: 'healthy'
-    },
-    {
-      method: 'GET',
-      path: '/api/spell-details/:id',
-      avgTime: 180,
-      callsPerHour: 800,
-      successRate: 97.2,
-      status: 'healthy'
-    },
-    {
-      method: 'POST',
-      path: '/api/scrape-all',
-      avgTime: 45000,
-      callsPerHour: 2,
-      successRate: 95.0,
-      status: 'warning'
-    },
-    {
-      method: 'GET',
-      path: '/api/cache/status',
-      avgTime: 25,
-      callsPerHour: 500,
-      successRate: 99.9,
-      status: 'healthy'
+const loadEndpointsStatus = async () => {
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const headers = {
+      'Authorization': `Bearer ${token}`
     }
-  ]
-  
-  // Generate some logs
-  if (systemLogs.value.length === 0) {
-    generateSampleLogs()
+    
+    const endpointsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/endpoints`, { headers })
+    apiEndpoints.value = endpointsResponse.data.data.endpoints
+    
+    // Load logs after endpoints
+    await loadSystemLogs()
+  } catch (error) {
+    if (error.response?.status !== 404) {
+      console.warn('Could not load endpoint metrics')
+    }
+    // Fall back to some default endpoints if error
+    apiEndpoints.value = [
+      {
+        method: 'GET',
+        path: '/api/classes',
+        avgTime: 0,
+        callsPerHour: 0,
+        successRate: 100.0,
+        status: 'healthy'
+      }
+    ]
   }
 }
 
-const generateSampleLogs = () => {
-  const logMessages = [
-    { 
-      level: 'info', 
-      message: 'Application started successfully',
-      context: 'Server initialized on port 5001 with 16 spell classes cached'
-    },
-    { 
-      level: 'info', 
-      message: 'Connected to PostgreSQL database',
-      context: 'Connection established to production database at shuttle.proxy.rlwy.net'
-    },
-    { 
-      level: 'info', 
-      message: 'Cache loaded from database',
-      context: 'Loaded 16 spell classes, 1532 spell details, and 1038 pricing entries'
-    },
-    { 
-      level: 'warning', 
-      message: 'High memory usage detected',
-      context: 'Memory usage at 85% (6.8GB / 8GB) - consider increasing cache cleanup frequency'
-    },
-    { 
-      level: 'info', 
-      message: 'User rgagnier06@gmail.com authenticated successfully via Google OAuth from IP 192.168.1.45',
-      context: 'User rgagnier06@gmail.com logged in via Google OAuth from IP 192.168.1.45'
-    },
-    { 
-      level: 'error', 
-      message: 'Failed to fetch Necromancer spell data from alla.clumsysworld.com - HTTP 503 Service Unavailable',
-      context: 'HTTP 503 from alla.clumsysworld.com - site may be under maintenance'
-    },
-    { 
-      level: 'info', 
-      message: 'Cache refresh completed for Wizard spells - updated 384 spells in 2.3s',
-      context: 'Updated 384 spells in 2.3s - next refresh scheduled for 24h'
-    },
-    { 
-      level: 'warning', 
-      message: 'Slow API response: GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned',
-      context: 'GET /api/spells/wizard took 850ms (threshold: 500ms) - 384 spells returned'
-    },
-    { 
-      level: 'info', 
-      message: 'Bulk scraping job initiated by admin user rgagnier06@gmail.com for all 16 classes',
-      context: 'Admin user rgagnier06@gmail.com triggered full refresh for all 16 classes'
-    },
-    { 
-      level: 'error', 
-      message: 'Rate limit exceeded for IP 45.23.178.92 on spell details endpoint - 100 requests/minute - blocked for 5 minutes',
-      context: 'IP 45.23.178.92 exceeded 100 requests/minute - blocked for 5 minutes'
-    },
-    {
-      level: 'info',
-      message: 'Database backup completed - 1532 spells and metadata backed up (4.2MB)',
-      context: 'Successfully backed up 1532 spells and metadata - backup size: 4.2MB'
-    },
-    {
-      level: 'warning',
-      message: 'Stale cache detected for Cleric spells - 26 hours old (expires at 24h) - automatic refresh triggered',
-      context: 'Cache is 26 hours old (expires after 24h) - automatic refresh triggered'
-    }
-  ]
-  
-  systemLogs.value = logMessages.map((log, index) => ({
-    id: index + 1,
-    timestamp: new Date(Date.now() - Math.random() * 3600000),
-    ...log
-  })).sort((a, b) => b.timestamp - a.timestamp)
-}
+// Removed unused generateSampleLogs function - component now uses real logs from API
 
 const refreshLogs = async () => {
   refreshingLogs.value = true
   try {
-    // In a real app, this would fetch logs from the server
-    generateSampleLogs()
+    await loadSystemLogs()
   } finally {
     setTimeout(() => {
       refreshingLogs.value = false
     }, 500)
+  }
+}
+
+const loadSystemLogs = async () => {
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const headers = {
+      'Authorization': `Bearer ${token}`
+    }
+    
+    const params = {
+      level: logLevel.value,
+      limit: 50
+    }
+    
+    const logsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/logs`, { headers, params })
+    systemLogs.value = logsResponse.data.data.logs
+  } catch (error) {
+    // Silently keep existing logs if error
+    if (error.response?.status !== 404 && error.response?.status !== 401) {
+      console.log('Using cached logs')
+    }
   }
 }
 
@@ -501,8 +649,206 @@ const getStatusIcon = (status) => {
   return icons[status] || 'fas fa-info-circle'
 }
 
+const formatNumber = (num) => {
+  if (!num) return '0'
+  return num.toLocaleString()
+}
+
+// Generate colors for tables
+const generateTableColors = (tables) => {
+  const colors = [
+    '#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe',
+    '#fa709a', '#fee140', '#30cfd0', '#330867', '#a8edea'
+  ]
+  const colorMap = {}
+  Object.keys(tables).forEach((table, index) => {
+    colorMap[table] = colors[index % colors.length]
+  })
+  return colorMap
+}
+
+// Draw query timeline chart
+const drawQueryTimeline = () => {
+  if (!queryTimelineChart.value) return
+  
+  const canvas = queryTimelineChart.value
+  const ctx = canvas.getContext('2d')
+  const width = canvas.width
+  const height = canvas.height
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, width, height)
+  
+  // Set up chart area
+  const padding = 40
+  const chartWidth = width - 2 * padding
+  const chartHeight = height - 2 * padding
+  
+  // Draw background
+  ctx.fillStyle = 'rgba(30, 30, 50, 0.3)'
+  ctx.fillRect(padding, padding, chartWidth, chartHeight)
+  
+  // Get data based on selected time scale
+  const timelineData = generateTimelineData()
+  if (!timelineData || timelineData.length === 0) return
+  
+  // Find max value for scaling
+  const maxValue = Math.max(...timelineData.flatMap(point => 
+    Object.values(point.data).reduce((sum, val) => sum + val, 0)
+  )) || 1
+  
+  // Draw grid lines
+  ctx.strokeStyle = 'rgba(156, 163, 175, 0.1)'
+  ctx.lineWidth = 1
+  
+  // Horizontal grid lines
+  for (let i = 0; i <= 5; i++) {
+    const y = padding + (chartHeight * i) / 5
+    ctx.beginPath()
+    ctx.moveTo(padding, y)
+    ctx.lineTo(padding + chartWidth, y)
+    ctx.stroke()
+    
+    // Y-axis labels
+    ctx.fillStyle = '#9ca3af'
+    ctx.font = '12px sans-serif'
+    ctx.textAlign = 'right'
+    const value = Math.round(maxValue * (5 - i) / 5)
+    ctx.fillText(value.toString(), padding - 10, y + 4)
+  }
+  
+  // Draw lines for each table
+  Object.entries(tableColors.value).forEach(([table, color]) => {
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    
+    timelineData.forEach((point, index) => {
+      const x = padding + (index / (timelineData.length - 1)) * chartWidth
+      const y = padding + chartHeight - (point.data[table] || 0) / maxValue * chartHeight
+      
+      if (index === 0) {
+        ctx.moveTo(x, y)
+      } else {
+        ctx.lineTo(x, y)
+      }
+    })
+    
+    ctx.stroke()
+  })
+  
+  // Draw X-axis labels
+  ctx.fillStyle = '#9ca3af'
+  ctx.font = '11px sans-serif'
+  ctx.textAlign = 'center'
+  
+  const labelInterval = Math.ceil(timelineData.length / 6)
+  timelineData.forEach((point, index) => {
+    if (index % labelInterval === 0 || index === timelineData.length - 1) {
+      const x = padding + (index / (timelineData.length - 1)) * chartWidth
+      ctx.fillText(point.time, x, height - 10)
+    }
+  })
+}
+
+// Generate timeline data based on selected scale
+const generateTimelineData = () => {
+  // Use real timeline data from backend if available
+  const timeline = databaseStats.value?.timeline || []
+  if (timeline.length === 0) {
+    return []
+  }
+  
+  const now = new Date()
+  const points = []
+  
+  // Determine how many hours to include based on time scale
+  let hoursToInclude = 1
+  if (selectedTimeScale.value === '1h') hoursToInclude = 1
+  else if (selectedTimeScale.value === '6h') hoursToInclude = 6
+  else if (selectedTimeScale.value === '24h') hoursToInclude = 24
+  else if (selectedTimeScale.value === '7d') hoursToInclude = 168
+  
+  // Get the relevant timeline entries
+  const relevantEntries = timeline.slice(-hoursToInclude)
+  
+  // Aggregate data based on time scale
+  if (selectedTimeScale.value === '1h') {
+    // For 1 hour, show data points every 5 minutes (interpolated)
+    for (let i = 0; i < 12; i++) {
+      const entry = relevantEntries[0] || { tables: {} }
+      const data = {}
+      Object.keys(entry.tables || {}).forEach(table => {
+        // Distribute the hourly count across 5-minute intervals
+        data[table] = Math.round((entry.tables[table] || 0) / 12)
+      })
+      points.push({ 
+        time: `-${(11 - i) * 5}m`, 
+        data 
+      })
+    }
+  } else if (selectedTimeScale.value === '6h' || selectedTimeScale.value === '24h') {
+    // Show hourly data
+    relevantEntries.forEach((entry, index) => {
+      const hoursAgo = relevantEntries.length - index - 1
+      points.push({
+        time: `-${hoursAgo}h`,
+        data: entry.tables || {}
+      })
+    })
+  } else if (selectedTimeScale.value === '7d') {
+    // Aggregate by day
+    const dailyData = {}
+    relevantEntries.forEach(entry => {
+      const date = new Date(entry.timestamp)
+      const dayKey = date.toISOString().split('T')[0]
+      
+      if (!dailyData[dayKey]) {
+        dailyData[dayKey] = {}
+      }
+      
+      Object.entries(entry.tables || {}).forEach(([table, count]) => {
+        dailyData[dayKey][table] = (dailyData[dayKey][table] || 0) + count
+      })
+    })
+    
+    // Convert to points
+    const days = Object.keys(dailyData).sort()
+    days.forEach((day, index) => {
+      const daysAgo = days.length - index - 1
+      points.push({
+        time: `-${daysAgo}d`,
+        data: dailyData[day]
+      })
+    })
+  }
+  
+  // Ensure we have data for all accessed tables
+  const allTables = Object.keys(databaseStats.value?.tables_accessed || {})
+  points.forEach(point => {
+    allTables.forEach(table => {
+      if (!(table in point.data)) {
+        point.data[table] = 0
+      }
+    })
+  })
+  
+  return points
+}
+
+// Watch for time scale changes
+watch(selectedTimeScale, () => {
+  drawQueryTimeline()
+})
+
 // Lifecycle
 onMounted(() => {
+  // Check authentication first
+  if (!userStore.isAuthenticated || userStore.user?.role !== 'admin') {
+    router.push('/admin')
+    return
+  }
+  
   loadSystemStats()
   // Update stats every 5 seconds
   updateInterval = setInterval(loadSystemStats, 5000)
@@ -521,6 +867,8 @@ onUnmounted(() => {
   padding-top: 100px; /* Increased padding to prevent logo overlap */
   max-width: 1400px;
   margin: 0 auto;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1e 100%);
 }
 
 .page-header {
@@ -554,12 +902,14 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  text-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
 }
 
 .subtitle {
-  color: #666;
+  color: #9ca3af;
   font-size: 1.1rem;
   margin: 0;
+  opacity: 0.9;
 }
 
 .health-overview {
@@ -567,15 +917,15 @@ onUnmounted(() => {
 }
 
 .health-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 30, 50, 0.8);
+  backdrop-filter: blur(20px);
   border-radius: 15px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   padding: 30px;
   display: flex;
   align-items: center;
   gap: 30px;
-  border: 2px solid transparent;
+  border: 2px solid rgba(102, 126, 234, 0.2);
   transition: all 0.3s;
 }
 
@@ -623,7 +973,7 @@ onUnmounted(() => {
 .health-content h2 {
   margin: 0 0 10px 0;
   font-size: 1.5rem;
-  color: #1a202c;
+  color: #f3f4f6;
   font-weight: 600;
 }
 
@@ -645,19 +995,21 @@ onUnmounted(() => {
 }
 
 .detail-item .label {
-  color: #666;
+  color: #9ca3af;
   font-size: 0.9rem;
 }
 
 .detail-item .value {
   font-weight: 600;
+  color: #e5e7eb;
 }
 
 .health-score {
   text-align: center;
   padding: 20px;
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(102, 126, 234, 0.15);
   border-radius: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
 }
 
 .score-value {
@@ -667,7 +1019,7 @@ onUnmounted(() => {
 }
 
 .score-label {
-  color: #666;
+  color: #9ca3af;
   font-size: 0.9rem;
 }
 
@@ -677,6 +1029,7 @@ onUnmounted(() => {
 
 .metrics-section h2 {
   margin-bottom: 20px;
+  color: #f3f4f6;
 }
 
 .metrics-grid {
@@ -686,12 +1039,19 @@ onUnmounted(() => {
 }
 
 .metric-card {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 30, 50, 0.6);
+  backdrop-filter: blur(20px);
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   padding: 25px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  transition: all 0.3s;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.3);
+  border-color: rgba(102, 126, 234, 0.3);
 }
 
 .metric-header {
@@ -709,7 +1069,7 @@ onUnmounted(() => {
 .metric-header h3 {
   margin: 0;
   font-size: 1.1rem;
-  color: #1a202c;
+  color: #e5e7eb;
   font-weight: 600;
 }
 
@@ -717,6 +1077,7 @@ onUnmounted(() => {
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 15px;
+  color: #f3f4f6;
 }
 
 .metric-chart {
@@ -757,7 +1118,7 @@ onUnmounted(() => {
 
 .memory-text {
   font-size: 0.85rem;
-  color: #666;
+  color: #9ca3af;
 }
 
 .error-info {
@@ -770,7 +1131,7 @@ onUnmounted(() => {
 
 .error-period {
   font-size: 0.85rem;
-  color: #666;
+  color: #9ca3af;
 }
 
 .metric-info {
@@ -797,6 +1158,7 @@ onUnmounted(() => {
 
 .endpoints-section h2 {
   margin-bottom: 20px;
+  color: #f3f4f6;
 }
 
 .endpoints-grid {
@@ -806,12 +1168,17 @@ onUnmounted(() => {
 }
 
 .endpoint-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 30, 50, 0.6);
+  backdrop-filter: blur(20px);
   border-radius: 10px;
   padding: 20px;
-  border: 2px solid transparent;
+  border: 2px solid rgba(102, 126, 234, 0.1);
   transition: all 0.3s;
+}
+
+.endpoint-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .endpoint-card.healthy {
@@ -843,7 +1210,7 @@ onUnmounted(() => {
 
 .endpoint-path {
   font-weight: 500;
-  color: #1a202c;
+  color: #e5e7eb;
 }
 
 .endpoint-stats {
@@ -861,12 +1228,13 @@ onUnmounted(() => {
 
 .endpoint-stats .label {
   font-size: 0.75rem;
-  color: #666;
+  color: #9ca3af;
 }
 
 .endpoint-stats .value {
   font-weight: 600;
   font-size: 0.9rem;
+  color: #f3f4f6;
 }
 
 .endpoint-status {
@@ -890,11 +1258,12 @@ onUnmounted(() => {
 }
 
 .logs-section {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
+  background: rgba(30, 30, 50, 0.6);
+  backdrop-filter: blur(20px);
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   padding: 25px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
 }
 
 .logs-header {
@@ -906,6 +1275,7 @@ onUnmounted(() => {
 
 .logs-header h2 {
   margin: 0;
+  color: #f3f4f6;
 }
 
 .logs-controls {
@@ -915,9 +1285,16 @@ onUnmounted(() => {
 
 .log-filter {
   padding: 8px 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(102, 126, 234, 0.3);
   border-radius: 6px;
   font-size: 0.9rem;
+  background: rgba(30, 30, 50, 0.8);
+  color: #e5e7eb;
+}
+
+.log-filter:focus {
+  outline: none;
+  border-color: rgba(102, 126, 234, 0.6);
 }
 
 .refresh-btn {
@@ -940,9 +1317,10 @@ onUnmounted(() => {
 .logs-container {
   max-height: 400px;
   overflow-y: auto;
-  background: #f7fafc;
+  background: rgba(15, 15, 30, 0.5);
   border-radius: 8px;
   padding: 10px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
 }
 
 .log-entry {
@@ -950,14 +1328,15 @@ onUnmounted(() => {
   grid-template-columns: 150px 80px 1fr;
   gap: 15px;
   padding: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.85rem;
   transition: background 0.2s;
+  border-radius: 4px;
 }
 
 .log-entry:hover {
-  background: rgba(102, 126, 234, 0.05);
+  background: rgba(102, 126, 234, 0.1);
 }
 
 .log-entry:last-child {
@@ -965,7 +1344,7 @@ onUnmounted(() => {
 }
 
 .log-time {
-  color: #666;
+  color: #9ca3af;
 }
 
 .log-level {
@@ -974,11 +1353,11 @@ onUnmounted(() => {
 }
 
 .log-entry.error {
-  background: rgba(254, 226, 226, 0.3);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .log-entry.error:hover {
-  background: rgba(254, 226, 226, 0.5);
+  background: rgba(239, 68, 68, 0.2);
 }
 
 .log-entry.error .log-level {
@@ -986,11 +1365,11 @@ onUnmounted(() => {
 }
 
 .log-entry.warning {
-  background: rgba(254, 243, 199, 0.3);
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .log-entry.warning:hover {
-  background: rgba(254, 243, 199, 0.5);
+  background: rgba(245, 158, 11, 0.2);
 }
 
 .log-entry.warning .log-level {
@@ -1008,12 +1387,12 @@ onUnmounted(() => {
 }
 
 .log-message {
-  color: #1a202c;
+  color: #e5e7eb;
   font-weight: 500;
 }
 
 .log-context {
-  color: #6b7280;
+  color: #9ca3af;
   font-size: 0.8rem;
   line-height: 1.4;
 }
@@ -1021,7 +1400,222 @@ onUnmounted(() => {
 .no-logs {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: #9ca3af;
+}
+
+/* Database metrics styles */
+.query-breakdown {
+  grid-column: span 2;
+}
+
+.query-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.query-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.type-label {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 5px;
+}
+
+.type-count {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.tables-section {
+  margin-top: 20px;
+}
+
+.tables-section h3 {
+  color: #e5e7eb;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+}
+
+.tables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.table-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(30, 30, 50, 0.4);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  transition: all 0.2s;
+}
+
+.table-item:hover {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.table-name {
+  font-weight: 500;
+  color: #e5e7eb;
+  text-transform: lowercase;
+}
+
+.table-count {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* Scrollbar styling for dark theme */
+.logs-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.logs-container::-webkit-scrollbar-track {
+  background: rgba(30, 30, 50, 0.3);
+  border-radius: 4px;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.4);
+  border-radius: 4px;
+}
+
+.logs-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.6);
+}
+
+/* Refresh button dark theme */
+.refresh-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+}
+
+.refresh-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Query Timeline Styles */
+.query-timeline-section {
+  margin-top: 30px;
+  padding: 25px;
+  background: rgba(30, 30, 50, 0.6);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.timeline-header h3 {
+  margin: 0;
+  color: #e5e7eb;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.time-scale-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.scale-btn {
+  padding: 6px 14px;
+  background: rgba(30, 30, 50, 0.8);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 6px;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.scale-btn:hover {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.4);
+  color: #e5e7eb;
+}
+
+.scale-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+}
+
+.timeline-chart {
+  background: rgba(15, 15, 30, 0.5);
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  overflow-x: auto;
+}
+
+.timeline-chart canvas {
+  display: block;
+  margin: 0 auto;
+}
+
+.timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.legend-label {
+  color: #e5e7eb;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: lowercase;
 }
 
 @media (max-width: 768px) {
@@ -1046,6 +1640,10 @@ onUnmounted(() => {
   .log-entry {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+  
+  .query-breakdown {
+    grid-column: span 1;
   }
 }
 </style>
