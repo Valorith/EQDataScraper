@@ -186,6 +186,10 @@
             <i class="fas fa-stethoscope" :class="{ 'fa-spin': runningDiagnostics }"></i>
             Diagnose
           </button>
+          <button @click="openNetworkTestModal" class="action-button secondary">
+            <i class="fas fa-network-wired"></i>
+            Test Network
+          </button>
         </div>
       </div>
     </div>
@@ -232,6 +236,106 @@
         <div v-if="recentActivities.length === 0" class="no-activity">
           <p>No activity logged yet</p>
           <p class="activity-help">Activity will appear here when users log in, search spells, or perform admin actions</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network Test Modal -->
+    <div v-if="showNetworkTestModal" class="modal-overlay" @click.self="closeNetworkTestModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Network Connectivity Test</h2>
+          <button @click="closeNetworkTestModal" class="close-button">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <p class="modal-description">
+            Test network connectivity from Railway to various hosts to diagnose connection issues.
+          </p>
+          
+          <div class="form-group">
+            <label for="test-host">Host (IP or Domain)</label>
+            <input 
+              id="test-host"
+              v-model="networkTestForm.host" 
+              type="text" 
+              placeholder="e.g., 8.8.8.8 or google.com"
+              class="form-input"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="test-port">Port</label>
+            <input 
+              id="test-port"
+              v-model.number="networkTestForm.port" 
+              type="number" 
+              placeholder="3306"
+              class="form-input"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="test-type">Test Type</label>
+            <select id="test-type" v-model="networkTestForm.test_type" class="form-input">
+              <option value="tcp">TCP Connection</option>
+              <option value="ping">ICMP Ping</option>
+              <option value="mysql">MySQL Connection</option>
+            </select>
+          </div>
+          
+          <!-- Quick test buttons -->
+          <div class="quick-tests">
+            <p>Quick Tests:</p>
+            <button @click="setQuickTest('76.251.85.36', 3306, 'tcp')" class="quick-test-btn">
+              Your SQL Server
+            </button>
+            <button @click="setQuickTest('8.8.8.8', 53, 'tcp')" class="quick-test-btn">
+              Google DNS
+            </button>
+            <button @click="setQuickTest('1.1.1.1', 53, 'tcp')" class="quick-test-btn">
+              Cloudflare DNS
+            </button>
+            <button @click="setQuickTest('google.com', 80, 'tcp')" class="quick-test-btn">
+              Google.com
+            </button>
+          </div>
+          
+          <!-- Test Results -->
+          <div v-if="networkTestResult" class="test-results" :class="{ 'success': networkTestResult.overall_success, 'error': !networkTestResult.overall_success }">
+            <h3>Test Results for {{ networkTestResult.host }}:{{ networkTestResult.port }}</h3>
+            
+            <div v-for="(test, name) in networkTestResult.tests" :key="name" class="test-item">
+              <div class="test-header">
+                <i class="fas" :class="test.success ? 'fa-check-circle' : 'fa-times-circle'"></i>
+                <strong>{{ formatTestName(name) }}</strong>
+                <span v-if="test.time_ms" class="test-time">({{ test.time_ms }}ms)</span>
+              </div>
+              <div class="test-message">{{ test.message }}</div>
+              <div v-if="test.error" class="test-error">
+                Error: {{ test.error_type || 'Unknown' }} - {{ test.error }}
+              </div>
+              <div v-if="test.resolved_addresses" class="test-detail">
+                Resolved IPs: {{ test.resolved_addresses.join(', ') }}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button 
+            @click="runNetworkTest" 
+            class="primary-button"
+            :disabled="testingNetwork || !networkTestForm.host"
+          >
+            <i class="fas" :class="testingNetwork ? 'fa-spinner fa-spin' : 'fa-network-wired'"></i>
+            {{ testingNetwork ? 'Testing...' : 'Run Test' }}
+          </button>
+          <button @click="closeNetworkTestModal" class="secondary-button">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -446,6 +550,19 @@ const databaseStatus = ref({
   host: null,
   database: null,
   status: 'unknown'
+})
+
+// Network test state
+const showNetworkTestModal = ref(false)
+const testingNetwork = ref(false)
+const networkTestResult = ref(null)
+const networkTestForm = ref({
+  host: '',
+  port: 3306,
+  test_type: 'tcp',
+  username: '',
+  password: '',
+  database: ''
 })
 const storageInfo = ref({
   config_source: 'unknown',
@@ -1313,6 +1430,70 @@ const saveDatabaseConfig = async () => {
 }
 
 // Remove mock data generation - we'll use real data from the API
+
+// Network test functions
+const openNetworkTestModal = () => {
+  showNetworkTestModal.value = true
+  networkTestResult.value = null
+}
+
+const closeNetworkTestModal = () => {
+  showNetworkTestModal.value = false
+  networkTestResult.value = null
+}
+
+const setQuickTest = (host, port, type) => {
+  networkTestForm.value.host = host
+  networkTestForm.value.port = port
+  networkTestForm.value.test_type = type
+}
+
+const formatTestName = (name) => {
+  return name.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ')
+}
+
+const runNetworkTest = async () => {
+  testingNetwork.value = true
+  networkTestResult.value = null
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await axios.post(`${API_BASE_URL}/api/admin/network/test`, {
+      host: networkTestForm.value.host,
+      port: networkTestForm.value.port,
+      test_type: networkTestForm.value.test_type,
+      username: networkTestForm.value.username,
+      password: networkTestForm.value.password,
+      database: networkTestForm.value.database
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.success) {
+      networkTestResult.value = response.data.data
+    } else {
+      console.error('Network test failed:', response.data.message)
+    }
+  } catch (error) {
+    console.error('Network test error:', error)
+    networkTestResult.value = {
+      host: networkTestForm.value.host,
+      port: networkTestForm.value.port,
+      overall_success: false,
+      tests: {
+        api_error: {
+          success: false,
+          error: error.message,
+          message: 'Failed to run network test'
+        }
+      }
+    }
+  } finally {
+    testingNetwork.value = false
+  }
+}
 
 // Lifecycle
 onMounted(async () => {
@@ -2310,3 +2491,99 @@ onUnmounted(() => {
   }
 }
 </style>
+
+/* Network Test Modal Styles */
+.quick-tests {
+  margin: 20px 0;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.quick-tests p {
+  margin: 0 0 10px 0;
+  font-weight: bold;
+  color: var(--primary);
+}
+
+.quick-test-btn {
+  margin: 5px;
+  padding: 8px 16px;
+  background: rgba(138, 43, 226, 0.2);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.quick-test-btn:hover {
+  background: rgba(138, 43, 226, 0.3);
+  transform: translateY(-1px);
+}
+
+.test-results {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.test-results.success {
+  border: 1px solid #4caf50;
+}
+
+.test-results.error {
+  border: 1px solid #f44336;
+}
+
+.test-results h3 {
+  margin: 0 0 15px 0;
+  color: var(--primary);
+}
+
+.test-item {
+  margin: 10px 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.test-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.test-header .fa-check-circle {
+  color: #4caf50;
+}
+
+.test-header .fa-times-circle {
+  color: #f44336;
+}
+
+.test-time {
+  margin-left: auto;
+  font-size: 0.9em;
+  color: #888;
+}
+
+.test-message {
+  margin: 5px 0;
+  font-size: 0.95em;
+}
+
+.test-error {
+  margin: 5px 0;
+  color: #ff6b6b;
+  font-size: 0.9em;
+}
+
+.test-detail {
+  margin: 5px 0;
+  color: #888;
+  font-size: 0.9em;
+  font-family: monospace;
+}

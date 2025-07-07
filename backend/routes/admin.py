@@ -1485,6 +1485,175 @@ def get_stored_database_config():
         return create_error_response(f"Error loading stored database configuration: {str(e)}", 500)
 
 
+@admin_bp.route('/admin/network/test', methods=['POST'])
+@require_admin
+def test_network_connectivity():
+    """
+    Test network connectivity to various hosts (admin only).
+    
+    Expected JSON payload:
+    {
+        "host": "string or IP",
+        "port": 3306,
+        "test_type": "ping|tcp|mysql"  # Optional, defaults to "tcp"
+    }
+    
+    Returns:
+        JSON response with connectivity test results
+    """
+    try:
+        import socket
+        import time
+        import subprocess
+        import platform
+        
+        data = request.get_json()
+        if not data or not data.get('host'):
+            return create_error_response("Missing host parameter", 400)
+        
+        host = data.get('host')
+        port = data.get('port', 3306)
+        test_type = data.get('test_type', 'tcp')
+        
+        results = {
+            'host': host,
+            'port': port,
+            'test_type': test_type,
+            'tests': {}
+        }
+        
+        # Test 1: DNS Resolution
+        try:
+            start_time = time.time()
+            addr_info = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            resolution_time = time.time() - start_time
+            
+            results['tests']['dns_resolution'] = {
+                'success': True,
+                'time_ms': round(resolution_time * 1000, 2),
+                'resolved_addresses': [info[4][0] for info in addr_info],
+                'message': f"Successfully resolved {host}"
+            }
+        except Exception as e:
+            results['tests']['dns_resolution'] = {
+                'success': False,
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'message': f"DNS resolution failed: {str(e)}"
+            }
+        
+        # Test 2: TCP Connection
+        if test_type in ['tcp', 'mysql']:
+            try:
+                start_time = time.time()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(10)
+                result = sock.connect_ex((host, port))
+                sock.close()
+                connection_time = time.time() - start_time
+                
+                if result == 0:
+                    results['tests']['tcp_connection'] = {
+                        'success': True,
+                        'time_ms': round(connection_time * 1000, 2),
+                        'message': f"TCP connection to {host}:{port} successful"
+                    }
+                else:
+                    results['tests']['tcp_connection'] = {
+                        'success': False,
+                        'error_code': result,
+                        'message': f"TCP connection failed with error code {result}"
+                    }
+            except Exception as e:
+                results['tests']['tcp_connection'] = {
+                    'success': False,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'message': f"TCP connection failed: {str(e)}"
+                }
+        
+        # Test 3: Ping (if requested and platform supports it)
+        if test_type == 'ping':
+            try:
+                # Determine ping command based on platform
+                system = platform.system().lower()
+                if system == 'windows':
+                    cmd = ['ping', '-n', '1', '-w', '3000', host]
+                else:
+                    cmd = ['ping', '-c', '1', '-W', '3', host]
+                
+                start_time = time.time()
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                ping_time = time.time() - start_time
+                
+                results['tests']['icmp_ping'] = {
+                    'success': result.returncode == 0,
+                    'time_ms': round(ping_time * 1000, 2),
+                    'output': result.stdout if result.returncode == 0 else result.stderr,
+                    'message': "Ping successful" if result.returncode == 0 else "Ping failed"
+                }
+            except subprocess.TimeoutExpired:
+                results['tests']['icmp_ping'] = {
+                    'success': False,
+                    'error': 'Timeout',
+                    'message': 'Ping command timed out after 5 seconds'
+                }
+            except Exception as e:
+                results['tests']['icmp_ping'] = {
+                    'success': False,
+                    'error': str(e),
+                    'message': f"Ping failed: {str(e)}"
+                }
+        
+        # Test 4: MySQL Connection (if requested)
+        if test_type == 'mysql' and results['tests'].get('tcp_connection', {}).get('success'):
+            try:
+                import pymysql
+                
+                # For MySQL test, we need credentials
+                username = data.get('username', 'root')
+                password = data.get('password', '')
+                database = data.get('database', 'test')
+                
+                start_time = time.time()
+                conn = pymysql.connect(
+                    host=host,
+                    port=port,
+                    user=username,
+                    password=password,
+                    database=database,
+                    connect_timeout=10
+                )
+                conn.close()
+                mysql_time = time.time() - start_time
+                
+                results['tests']['mysql_connection'] = {
+                    'success': True,
+                    'time_ms': round(mysql_time * 1000, 2),
+                    'message': f"MySQL connection to {host}:{port} successful"
+                }
+            except Exception as e:
+                results['tests']['mysql_connection'] = {
+                    'success': False,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'message': f"MySQL connection failed: {str(e)}"
+                }
+        
+        # Overall status
+        all_success = all(test.get('success', False) for test in results['tests'].values())
+        results['overall_success'] = all_success
+        results['summary'] = "All tests passed" if all_success else "Some tests failed"
+        
+        return jsonify({
+            'success': True,
+            'data': results
+        })
+        
+    except Exception as e:
+        return create_error_response(f"Network test failed: {str(e)}", 500)
+
+
 @admin_bp.route('/admin/database/diagnostics', methods=['GET'])
 @require_admin
 def database_diagnostics():
