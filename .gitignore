@@ -32,6 +32,9 @@ node_modules/
 # User-specific configuration files
 config.json
 
+# Persistent data directory (for production deployments)
+.data/
+
 # Port management files
 .port_mapping.json
 test_port_management.py
