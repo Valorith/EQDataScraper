@@ -543,7 +543,7 @@
       <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h3>Database Configuration</h3>
-          <button @click="closeDatabaseModal" class="modal-close">
+          <button @click="closeDatabaseModal" class="close-button">
             <i class="fas fa-times"></i>
           </button>
         </div>
@@ -2572,20 +2572,29 @@ onUnmounted(() => {
   -webkit-text-fill-color: transparent;
 }
 
-.modal-close {
+.modal-close,
+.close-button {
   background: none;
   border: none;
   color: #9ca3af;
   font-size: 1.5rem;
   cursor: pointer;
-  padding: 5px;
+  padding: 8px;
   border-radius: 8px;
   transition: all 0.3s ease;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.modal-close:hover {
+.modal-close:hover,
+.close-button:hover {
   color: #f7fafc;
   background: rgba(255, 255, 255, 0.1);
+  transform: rotate(90deg);
 }
 
 .modal-body {
