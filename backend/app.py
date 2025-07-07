@@ -3470,7 +3470,7 @@ db_config_manager.add_reload_callback(on_db_config_change)
 
 # Helper function for EQEmu database connection
 def get_eqemu_db_connection():
-    """Get connection to the configured EQEmu database using connection pooling."""
+    """Get connection to the configured EQEmu database - simplified without pooling for debugging."""
     # Get current config
     config = db_config_manager.get_config()
     
@@ -3481,7 +3481,6 @@ def get_eqemu_db_connection():
     
     # Import required modules
     from utils.database_connectors import get_database_connector
-    from utils.db_connection_pool import get_connection_pool
     from urllib.parse import urlparse
     
     # Parse database URL
@@ -3498,17 +3497,11 @@ def get_eqemu_db_connection():
     }
     
     try:
-        # Create connection function for the pool
-        def create_connection():
-            return get_database_connector(db_type, db_config)
-        
-        # Get or create connection pool (will reuse existing pool if config hasn't changed)
-        pool = get_connection_pool(create_connection, max_connections=10)
-        
-        # Return pool context manager, db_type, and no error
-        return pool, db_type, None
+        # For now, return direct connection instead of pool to debug the issue
+        conn = get_database_connector(db_type, db_config)
+        return conn, db_type, None
     except Exception as e:
-        app.logger.error(f"Database connection pool error: {e}")
+        app.logger.error(f"Database connection error: {e}")
         app.logger.error(f"Database config: host={db_config.get('host')}, port={db_config.get('port')}, db={db_config.get('database')}, user={db_config.get('username')}")
         return None, None, str(e)
 
@@ -3539,411 +3532,178 @@ def search_items():
     """
     Search discovered items in the EQEmu database.
     Only returns items that exist in both items and discovered_items tables.
-    
-    Query parameters:
-        q: Search query
-        limit: Number of results to return (default: 20, max: 100)
-        offset: Offset for pagination (default: 0)
-        type: Filter by item type (itemtype)
-        class: Filter by usable classes
-        min_level: Filter by minimum required level
-        max_level: Filter by maximum required level
     """
+    app.logger.info("=== ITEM SEARCH START ===")
+    conn = None
+    cursor = None
+    
     try:
-        # Get EQEmu database connection pool
-        pool, db_type, error = get_eqemu_db_connection()
-        if not pool:
+        # Get database connection using the helper function
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
             return jsonify({'error': error or 'Database not configured'}), 503
         
-        # Use connection from pool
-        with pool.get_connection() as conn:
-            # Validate and sanitize all input parameters
-            validated_params = validate_item_search_params(request.args)
-            
-            search_query = validated_params.get('q', '')
-            limit = validated_params.get('limit', 20)
-            offset = validated_params.get('offset', 0)
-            item_type = validated_params.get('type')
-            item_class = validated_params.get('class')
-            min_level = validated_params.get('min_level')
-            max_level = validated_params.get('max_level')
-            advanced_filters = validated_params.get('filters', [])
-            
-            # Security logging
-            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            if client_ip:
-                client_ip = client_ip.split(',')[0].strip()
-            
-            # Log search activity
-            app.logger.info(f"Item search request from {client_ip} - q: '{search_query}', type: '{item_type}', class: '{item_class}', min_level: '{min_level}', max_level: '{max_level}', filters: {len(advanced_filters)}")
-            
-            if not search_query and not item_type and not item_class and not min_level and not max_level and not advanced_filters:
-                return jsonify({'error': 'Search query or filter required'}), 400
-            
-            # Build SQL query with JOIN to discovered_items
-            conditions = []
-            params = []
-            
-            if search_query:
-                # Use LIKE for MySQL compatibility (ILIKE is PostgreSQL specific)
-                if db_type == 'postgresql':
-                    conditions.append("(items.Name ILIKE %s OR items.lore ILIKE %s)")
-                else:
-                    conditions.append("(items.Name LIKE %s OR items.lore LIKE %s)")
-                params.extend([f'%{search_query}%', f'%{search_query}%'])
-            
-            if item_type is not None:
-                conditions.append("items.itemtype = %s")
-                params.append(item_type)
-            
-            if item_class:
-                # EQEmu uses bitmask for classes - we'll do a simple search in the classes field
-                if db_type == 'postgresql':
-                    conditions.append("items.classes::text LIKE %s")
-                else:
-                    # For MySQL/MSSQL, use CAST function
-                    conditions.append("CAST(items.classes AS CHAR) LIKE %s")
-                params.append(f'%{item_class}%')
-            
-            if min_level is not None:
-                conditions.append("items.reqlevel >= %s")
-                params.append(min_level)
-            
-            if max_level is not None:
-                conditions.append("items.reqlevel <= %s")
-                params.append(max_level)
-            
-            # Process advanced filters
-            for filter_item in advanced_filters:
-                field = filter_item.get('field')
-                operator = filter_item.get('operator')
-                value = filter_item.get('value')
-                value2 = filter_item.get('value2')  # For 'between' operator
-                
-                # Map frontend field names to database column names
-                field_mapping = {
-                'lore': 'items.lore',
-                'price': 'items.price',
-                'weight': 'items.weight',
-                'size': 'items.size',
-                'damage': 'items.damage',
-                'delay': 'items.delay',
-                'ac': 'items.ac',
-                'hp': 'items.hp',
-                'mana': 'items.mana',
-                'str': 'items.astr',
-                'sta': 'items.asta',
-                'agi': 'items.aagi',
-                'dex': 'items.adex',
-                'wis': 'items.awis',
-                'int': 'items.aint',
-                'cha': 'items.acha',
-                'magic': 'items.magic',
-                'lore': 'items.lore',
-                'nodrop': 'items.nodrop',
-                'norent': 'items.norent',
-                'clickeffect': 'items.clickeffect',
-                'proceffect': 'items.proceffect',
-                'worneffect': 'items.worneffect',
-                'focuseffect': 'items.focuseffect',
-                    'slots': 'items.slots'
-                }
-                
-                db_field = field_mapping.get(field)
-                if not db_field:
-                    continue
-                
-                # Handle different operators
-                if operator == 'equals':
-                    conditions.append(f"{db_field} = %s")
-                    params.append(value)
-                elif operator == 'not equals':
-                    conditions.append(f"{db_field} != %s")
-                    params.append(value)
-                elif operator == 'contains':
-                    if db_type == 'postgresql':
-                        conditions.append(f"{db_field} ILIKE %s")
-                    else:
-                        conditions.append(f"{db_field} LIKE %s")
-                    params.append(f'%{value}%')
-                elif operator == 'starts with':
-                    if db_type == 'postgresql':
-                        conditions.append(f"{db_field} ILIKE %s")
-                    else:
-                        conditions.append(f"{db_field} LIKE %s")
-                    params.append(f'{value}%')
-                elif operator == 'ends with':
-                    if db_type == 'postgresql':
-                        conditions.append(f"{db_field} ILIKE %s")
-                    else:
-                        conditions.append(f"{db_field} LIKE %s")
-                    params.append(f'%{value}')
-                elif operator == 'greater than':
-                    conditions.append(f"{db_field} > %s")
-                    params.append(value)
-                elif operator == 'less than':
-                    conditions.append(f"{db_field} < %s")
-                    params.append(value)
-                elif operator == 'between':
-                    conditions.append(f"{db_field} BETWEEN %s AND %s")
-                    params.extend([value, value2])
-                elif operator == 'exists':
-                    conditions.append(f"{db_field} IS NOT NULL")
-                elif operator == 'includes' and field == 'slots':
-                    # Special handling for slots (bitmask)
-                    conditions.append(f"(items.slots & %s) > 0")
-                    params.append(value)
-            
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
-            
-            # Execute query with database connection (READ-ONLY)
-            try:
-                cursor = conn.cursor()
-                # Set connection to read-only mode
-                if db_type == 'mysql':
-                    cursor.execute("SET SESSION TRANSACTION READ ONLY")
-                elif db_type == 'postgresql':
-                    cursor.execute("SET TRANSACTION READ ONLY")
-                elif db_type == 'mssql':
-                    # SQL Server doesn't have a direct equivalent, we rely on permissions
-                    pass
-                    
-                
-                # Get total count - optimized with EXISTS and hints
-                if db_type == 'mysql':
-                    # MySQL-specific optimization hints
-                    count_query = f"""
-                        SELECT /*+ MAX_EXECUTION_TIME(25000) */ COUNT(*) AS total_count
-                        FROM items 
-                        WHERE EXISTS (
-                            SELECT 1 FROM discovered_items 
-                            WHERE discovered_items.item_id = items.id
-                            LIMIT 1
-                        )
-                        AND {where_clause}
-                    """
-                else:
-                    count_query = f"""
-                        SELECT COUNT(*) AS total_count
-                        FROM items 
-                        WHERE EXISTS (
-                            SELECT 1 FROM discovered_items 
-                            WHERE discovered_items.item_id = items.id
-                            LIMIT 1
-                        )
-                        AND {where_clause}
-                    """
-                cursor.execute(count_query, params)
-                result = cursor.fetchone()
-                # Handle both dict and tuple results
-                if result:
-                    if isinstance(result, dict):
-                        total_count = result.get('total_count', 0)
-                    else:
-                        total_count = result[0]
-                else:
-                    total_count = 0
-                
-                # Get items - optimized with STRAIGHT_JOIN for MySQL
-                if db_type == 'mysql':
-                    # Use STRAIGHT_JOIN to force join order and add execution time limit
-                    items_query = f"""
-                        SELECT /*+ MAX_EXECUTION_TIME(25000) */ STRAIGHT_JOIN
-                            items.id,
-                            items.Name,
-                            items.itemtype,
-                            items.ac,
-                            items.hp,
-                            items.mana,
-                            items.astr,
-                            items.asta,
-                            items.aagi,
-                            items.adex,
-                            items.awis,
-                            items.aint,
-                            items.acha,
-                            items.weight,
-                            items.damage,
-                            items.delay,
-                            items.magic,
-                            items.nodrop,
-                            items.norent,
-                            items.classes,
-                            items.races,
-                            items.slots,
-                            items.lore,
-                            items.reqlevel,
-                            items.stackable,
-                            items.stacksize,
-                            items.icon,
-                            1 as discovery_count
-                        FROM items 
-                        INNER JOIN (
-                            SELECT DISTINCT item_id 
-                            FROM discovered_items
-                        ) di ON items.id = di.item_id
-                        WHERE {where_clause}
-                        ORDER BY items.Name
-                        LIMIT %s OFFSET %s
-                    """
-                else:
-                    # PostgreSQL/other DB optimization
-                    items_query = f"""
-                        SELECT 
-                            items.id,
-                            items.Name,
-                            items.itemtype,
-                            items.ac,
-                            items.hp,
-                            items.mana,
-                            items.astr,
-                            items.asta,
-                            items.aagi,
-                            items.adex,
-                            items.awis,
-                            items.aint,
-                            items.acha,
-                            items.weight,
-                            items.damage,
-                            items.delay,
-                            items.magic,
-                            items.nodrop,
-                            items.norent,
-                            items.classes,
-                            items.races,
-                            items.slots,
-                            items.lore,
-                            items.reqlevel,
-                            items.stackable,
-                            items.stacksize,
-                            items.icon,
-                            1 as discovery_count
-                        FROM items 
-                        WHERE EXISTS (
-                            SELECT 1 FROM discovered_items 
-                            WHERE discovered_items.item_id = items.id
-                            LIMIT 1
-                        )
-                        AND {where_clause}
-                        ORDER BY items.Name
-                        LIMIT %s OFFSET %s
-                    """
-                cursor.execute(items_query, params + [limit, offset])
-                items = cursor.fetchall()
-                
-                # Convert to list of dictionaries with proper field mapping
-                items_list = []
-                debug_logged = False  # Only log first item for debugging
-                for item in items:
-                    # Handle both dict and tuple cursor results
-                    if isinstance(item, dict):
-                        # MySQL DictCursor returns field names as they appear in query
-                        item_dict = {
-                        'id': item.get('id'),
-                        'item_id': str(item.get('id')),  # Use id as item_id for consistency
-                        'name': item.get('Name'),
-                        'itemtype': item.get('itemtype'),
-                        'ac': _safe_int(item.get('ac')),
-                        'hp': _safe_int(item.get('hp')),
-                        'mana': _safe_int(item.get('mana')),
-                        'stats': {
-                            'str': _safe_int(item.get('astr')),  # EQEmu uses astr for strength bonus
-                            'sta': _safe_int(item.get('asta')),  # EQEmu uses asta for stamina bonus
-                            'agi': _safe_int(item.get('aagi')),  # EQEmu uses aagi for agility bonus
-                            'dex': _safe_int(item.get('adex')),  # EQEmu uses adex for dexterity bonus
-                            'wis': _safe_int(item.get('awis')),  # EQEmu uses awis for wisdom bonus
-                            'int': _safe_int(item.get('aint')),  # EQEmu uses aint for intelligence bonus
-                            'cha': _safe_int(item.get('acha'))   # EQEmu uses acha for charisma bonus
-                        },
-                        'weight': _safe_float(item.get('weight')),
-                        'damage': _safe_int(item.get('damage')),
-                        'delay': _safe_int(item.get('delay')),
-                        'magic': bool(item.get('magic')),
-                        'nodrop': bool(item.get('nodrop')),
-                        'norent': bool(item.get('norent')),
-                        'lore': item.get('lore') if item.get('lore') else None,  # lore is text in EQEmu
-                        'classes': _safe_int(item.get('classes')),
-                        'races': _safe_int(item.get('races')),
-                        'slots': _safe_int(item.get('slots')),
-                        'reqlevel': _safe_int(item.get('reqlevel')),
-                        'stackable': bool(item.get('stackable')),
-                        'stacksize': _safe_int(item.get('stacksize')),
-                        'icon': _safe_int(item.get('icon')),
-                            'discovery_count': _safe_int(item.get('discovery_count'))
-                        }
-                    else:
-                        # Handle tuple results (MySQL)
-                        if not debug_logged:
-                            logger.info(f"Debug item tuple - norent field (index 18): {item[18] if len(item) > 18 else 'NO INDEX 18'}")
-                            logger.info(f"Debug item tuple - magic field (index 16): {item[16] if len(item) > 16 else 'NO INDEX 16'}")
-                            logger.info(f"Debug item tuple - nodrop field (index 17): {item[17] if len(item) > 17 else 'NO INDEX 17'}")
-                            debug_logged = True
-                        item_dict = {
-                        'id': item[0],
-                        'item_id': str(item[0]),
-                        'name': item[1],
-                        'itemtype': item[2],
-                        'ac': _safe_int(item[3]),
-                        'hp': _safe_int(item[4]),
-                        'mana': _safe_int(item[5]),
-                        'stats': {
-                            'str': _safe_int(item[6]),
-                            'sta': _safe_int(item[7]),
-                            'agi': _safe_int(item[8]),
-                            'dex': _safe_int(item[9]),
-                            'wis': _safe_int(item[10]),
-                            'int': _safe_int(item[11]),
-                            'cha': _safe_int(item[12])
-                        },
-                        'weight': _safe_float(item[13]),
-                        'damage': _safe_int(item[14]),
-                        'delay': _safe_int(item[15]),
-                        'magic': bool(item[16]),
-                        'nodrop': bool(item[17]),
-                        'norent': bool(item[18]),
-                        'classes': _safe_int(item[19]),
-                        'races': _safe_int(item[20]),
-                        'slots': _safe_int(item[21]),
-                        'lore': item[22],
-                        'reqlevel': _safe_int(item[23]),
-                        'stackable': bool(item[24]),
-                        'stacksize': _safe_int(item[25]),
-                        'icon': _safe_int(item[26]),
-                            'discovery_count': _safe_int(item[27])
-                        }
-                    items_list.append(item_dict)
-                
-                cursor.close()
-                return jsonify({
-                        'items': items_list,
-                        'total_count': total_count,
-                        'limit': limit,
-                        'offset': offset,
-                        'search_query': search_query,
-                        'discovered_only': True
-                })
-                
-            finally:
-                if cursor:
-                    cursor.close()
-                # Connection is automatically returned to pool by context manager
-            
-    except Exception as e:
-        import traceback
-        app.logger.error(f"Error searching items: {e}")
-        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        app.logger.info(f"Got connection, db_type: {db_type}")
         
-        # Provide more specific error messages
-        error_msg = str(e)
-        if "timeout" in error_msg.lower():
-            return jsonify({'error': 'Database connection timeout. Please try again.'}), 503
-        elif "connection pool" in error_msg.lower():
-            return jsonify({'error': 'Database connection pool error. Please try again later.'}), 503
-        elif "not configured" in error_msg.lower():
-            return jsonify({'error': 'Database not configured. Please contact administrator.'}), 503
-        else:
-            return jsonify({'error': f'Search failed: {error_msg}'}), 500
-
+        # Validate parameters
+        validated_params = validate_item_search_params(request.args)
+        search_query = validated_params.get('q', '')
+        limit = validated_params.get('limit', 20)
+        offset = validated_params.get('offset', 0)
+        
+        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}")
+        
+        if not search_query:
+            return jsonify({'error': 'Search query required'}), 400
+        
+        cursor = conn.cursor()
+        
+        # Simple optimized query
+        # First get count
+        count_query = """
+            SELECT COUNT(*) AS total_count
+            FROM items 
+            INNER JOIN discovered_items di ON items.id = di.item_id
+            WHERE items.Name LIKE %s
+        """
+        cursor.execute(count_query, [f'%{search_query}%'])
+        result = cursor.fetchone()
+        total_count = result['total_count'] if isinstance(result, dict) else result[0]
+        
+        # Then get items
+        items_query = """
+            SELECT 
+                items.id,
+                items.Name,
+                items.itemtype,
+                items.ac,
+                items.hp,
+                items.mana,
+                items.astr,
+                items.asta,
+                items.aagi,
+                items.adex,
+                items.awis,
+                items.aint,
+                items.acha,
+                items.weight,
+                items.damage,
+                items.delay,
+                items.magic,
+                items.nodrop,
+                items.norent,
+                items.classes,
+                items.races,
+                items.slots,
+                items.lore,
+                items.reqlevel,
+                items.stackable,
+                items.stacksize,
+                items.icon
+            FROM items 
+            INNER JOIN discovered_items di ON items.id = di.item_id
+            WHERE items.Name LIKE %s
+            ORDER BY items.Name
+            LIMIT %s OFFSET %s
+        """
+        cursor.execute(items_query, [f'%{search_query}%', limit, offset])
+        items = cursor.fetchall()
+        
+        # Convert to response format
+        items_list = []
+        for item in items:
+            if isinstance(item, dict):
+                item_dict = {
+                    'item_id': str(item['id']),
+                    'name': item['Name'],
+                    'itemtype': item['itemtype'],
+                    'ac': _safe_int(item['ac']),
+                    'hp': _safe_int(item['hp']),
+                    'mana': _safe_int(item['mana']),
+                    'str': _safe_int(item['astr']),
+                    'sta': _safe_int(item['asta']),
+                    'agi': _safe_int(item['aagi']),
+                    'dex': _safe_int(item['adex']),
+                    'wis': _safe_int(item['awis']),
+                    'int': _safe_int(item['aint']),
+                    'cha': _safe_int(item['acha']),
+                    'weight': _safe_float(item['weight']),
+                    'damage': _safe_int(item['damage']),
+                    'delay': _safe_int(item['delay']),
+                    'magic': bool(item['magic']),
+                    'nodrop': bool(item['nodrop']),
+                    'norent': bool(item['norent']),
+                    'lore': item['lore'],
+                    'lore_flag': bool(item['lore']),
+                    'classes': _safe_int(item['classes']),
+                    'races': _safe_int(item['races']),
+                    'slots': _safe_int(item['slots']),
+                    'reqlevel': _safe_int(item['reqlevel']),
+                    'stackable': bool(item['stackable']),
+                    'stacksize': _safe_int(item['stacksize']),
+                    'icon': _safe_int(item['icon'])
+                }
+            else:
+                # Handle tuple results
+                item_dict = {
+                    'item_id': str(item[0]),
+                    'name': item[1],
+                    'itemtype': item[2],
+                    'ac': _safe_int(item[3]),
+                    'hp': _safe_int(item[4]),
+                    'mana': _safe_int(item[5]),
+                    'str': _safe_int(item[6]),
+                    'sta': _safe_int(item[7]),
+                    'agi': _safe_int(item[8]),
+                    'dex': _safe_int(item[9]),
+                    'wis': _safe_int(item[10]),
+                    'int': _safe_int(item[11]),
+                    'cha': _safe_int(item[12]),
+                    'weight': _safe_float(item[13]),
+                    'damage': _safe_int(item[14]),
+                    'delay': _safe_int(item[15]),
+                    'magic': bool(item[16]),
+                    'nodrop': bool(item[17]),
+                    'norent': bool(item[18]),
+                    'classes': _safe_int(item[19]),
+                    'races': _safe_int(item[20]),
+                    'slots': _safe_int(item[21]),
+                    'lore': item[22],
+                    'lore_flag': bool(item[22]),
+                    'reqlevel': _safe_int(item[23]),
+                    'stackable': bool(item[24]),
+                    'stacksize': _safe_int(item[25]),
+                    'icon': _safe_int(item[26])
+                }
+            items_list.append(item_dict)
+        
+        return jsonify({
+            'items': items_list,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset,
+            'search_query': search_query
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error searching items: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 
 @app.route('/api/items/<item_id>', methods=['GET'])
