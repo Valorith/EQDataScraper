@@ -109,6 +109,45 @@ python scrape_spells.py --loop --interval 3600
 - **Port Conflict Resolution**: `run.py` automatically detects conflicts and suggests alternatives
 - **macOS Note**: Port 5000 conflicts with AirPlay Receiver (ControlCenter)
 
+## Database Systems (IMPORTANT DISTINCTION)
+
+EQDataScraper uses **TWO SEPARATE DATABASE SYSTEMS** that must not be confused:
+
+### 1. Auth Database (PostgreSQL)
+**Purpose**: User authentication, OAuth sessions, activity logs, AND scraped spell data cache  
+**Connection**: `DATABASE_URL` environment variable  
+**Type**: Always PostgreSQL  
+**Access**: Read/Write (managed by the application)  
+**Tables**: 
+- Auth: `users`, `oauth_sessions`, `user_preferences`, `activity_logs`
+- Spell Cache: Stores scraped spell data from alla.clumsysworld.com
+**Typical Railway URL**: `postgresql://postgres:xxx@postgres.railway.internal:5432/railway`  
+**Configuration**: Set via Railway environment variables, NOT through admin panel
+
+### 2. Content Database (MySQL)
+**Purpose**: EverQuest game data (items, discovered_items)  
+**Connection**: `production_database_url` in config.json or persistent storage  
+**Type**: MySQL only  
+**Access**: READ-ONLY (enforced to protect game data)  
+**Tables**: `items`, `discovered_items` (EQEmu database tables)  
+**Example URL**: `mysql://alla_view:xxx@76.251.85.36:3306/peq`  
+**Configuration**: Set through Admin Dashboard → Database Configuration
+
+### Key Environment Variables
+- `DATABASE_URL`: Auth/spell cache database ONLY (PostgreSQL)
+- `ENABLE_USER_ACCOUNTS`: Set to "true" to enable auth features
+- `JWT_SECRET_KEY`: Required for auth token generation
+- `GOOGLE_CLIENT_ID/SECRET`: Required for OAuth login
+
+### Important Notes
+- **NEVER** configure the content database using DATABASE_URL
+- **NEVER** point the auth database to your EQEmu MySQL database
+- The content database is ALWAYS MySQL (EQEmu standard)
+- The content database connection persists in `/app/data/` on Railway
+- Always use the admin panel to configure the content database
+- The auth database is automatically configured by Railway when you add PostgreSQL
+- Spell data is scraped from the web and cached in PostgreSQL, NOT read from MySQL
+
 ## Cross-Platform Support
 
 - **Windows**: Uses `run.bat`, `taskkill`, `netstat`, `tasklist` for process management
