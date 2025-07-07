@@ -70,6 +70,16 @@ def get_mysql_connection(config):
     # Log connection attempt details
     logger.info(f"Attempting MySQL connection to {config['host']}:{config['port']}")
     
+    # Test if we can resolve the host at all
+    import socket
+    try:
+        # Try to resolve the hostname/IP
+        addr_info = socket.getaddrinfo(config['host'], config['port'], socket.AF_UNSPEC, socket.SOCK_STREAM)
+        logger.info(f"Socket address resolution successful: {addr_info[0] if addr_info else 'No results'}")
+    except Exception as e:
+        logger.error(f"Socket address resolution failed: {type(e).__name__}: {str(e)}")
+        logger.error("This indicates a network-level issue preventing connection to the MySQL server")
+    
     conn_params = {
         'host': config['host'],
         'port': int(config['port']),  # Ensure port is an integer
