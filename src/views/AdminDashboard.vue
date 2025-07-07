@@ -137,17 +137,29 @@
         <div class="card-header">
           <div class="card-icon database" :class="{
             'status-connected': databaseStatus.connected,
-            'status-disconnected': !databaseStatus.connected
+            'status-connecting': databaseStatus.connecting,
+            'status-disconnected': !databaseStatus.connected && !databaseStatus.connecting
           }">
-            <i class="fas" :class="databaseStatus.connected ? 'fa-check-circle' : 'fa-exclamation-circle'"></i>
+            <i class="fas" :class="{
+              'fa-check-circle': databaseStatus.connected,
+              'fa-sync-alt fa-spin': databaseStatus.connecting,
+              'fa-exclamation-circle': !databaseStatus.connected && !databaseStatus.connecting
+            }"></i>
           </div>
           <h2>Content Database</h2>
         </div>
         <div class="card-content">
           <div class="stat-row">
             <span class="stat-label">Status</span>
-            <span class="stat-value" :class="databaseStatus.connected ? 'success' : 'warning'">
-              {{ databaseStatus.connected ? 'Connected' : 'Disconnected' }}
+            <span class="stat-value" :class="{
+              'success': databaseStatus.connected,
+              'warning': databaseStatus.connecting || (!databaseStatus.connected && databaseStatus.retryDelay > 0),
+              'error': !databaseStatus.connected && databaseStatus.retryDelay === 0
+            }">
+              {{ databaseStatus.connecting ? 'Connecting...' :
+                 databaseStatus.connected ? 'Connected' :
+                 databaseStatus.retryDelay > 0 ? `Reconnecting in ${databaseStatus.retryDelay}s` :
+                 'Disconnected' }}
             </span>
           </div>
           <div class="stat-row">
@@ -157,6 +169,10 @@
           <div class="stat-row">
             <span class="stat-label">Database</span>
             <span class="stat-value">{{ databaseStatus.database || 'None' }}</span>
+          </div>
+          <div v-if="databaseStatus.lastAttempt && !databaseStatus.connected" class="stat-row">
+            <span class="stat-label">Last Attempt</span>
+            <span class="stat-value small">{{ databaseStatus.lastAttempt }}</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Config Source</span>
@@ -505,6 +521,119 @@
               </div>
             </div>
             
+            <!-- Config Validation Section -->
+            <div v-if="diagnosticsResult.config_validation" class="result-section">
+              <h4><i class="fas fa-check-double"></i> Configuration Validation</h4>
+              <div class="section-content">
+                <div class="result-item">
+                  <span class="result-label">Validation Status:</span>
+                  <span class="result-value" :class="diagnosticsResult.config_validation.valid ? 'success' : 'error'">
+                    {{ diagnosticsResult.config_validation.valid ? 'Valid' : 'Invalid' }}
+                  </span>
+                </div>
+                
+                <!-- Show errors if any -->
+                <div v-if="diagnosticsResult.config_validation.errors && diagnosticsResult.config_validation.errors.length > 0" class="validation-errors">
+                  <h5><i class="fas fa-exclamation-circle"></i> Configuration Mismatches:</h5>
+                  <div v-for="(error, index) in diagnosticsResult.config_validation.errors" :key="`error-${index}`" class="mismatch-item">
+                    <div class="mismatch-header">
+                      <strong>{{ formatFieldName(error.field) }}</strong>
+                      <span class="mismatch-description">{{ error.message }}</span>
+                    </div>
+                    <div v-if="error.url_value && error.env_value" class="mismatch-resolution">
+                      <div class="mismatch-option">
+                        <input 
+                          type="radio" 
+                          :id="`url-${error.field}`" 
+                          :name="`resolve-${error.field}`"
+                          :value="error.url_value"
+                          v-model="mismatchResolutions[error.field]"
+                        />
+                        <label :for="`url-${error.field}`">
+                          <span class="option-source">URL Value:</span>
+                          <code>{{ error.url_value }}</code>
+                        </label>
+                      </div>
+                      <div class="mismatch-option">
+                        <input 
+                          type="radio" 
+                          :id="`env-${error.field}`" 
+                          :name="`resolve-${error.field}`"
+                          :value="error.env_value"
+                          v-model="mismatchResolutions[error.field]"
+                        />
+                        <label :for="`env-${error.field}`">
+                          <span class="option-source">Environment Variable:</span>
+                          <code>{{ error.env_value }}</code>
+                        </label>
+                      </div>
+                      <button 
+                        v-if="mismatchResolutions[error.field]"
+                        @click="resolveMismatch(error.field)"
+                        class="resolve-button"
+                        :disabled="resolvingMismatch[error.field]"
+                      >
+                        <i class="fas" :class="resolvingMismatch[error.field] ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                        {{ resolvingMismatch[error.field] ? 'Applying...' : 'Apply Selected Value' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Show warnings if any -->
+                <div v-if="diagnosticsResult.config_validation.warnings && diagnosticsResult.config_validation.warnings.length > 0" class="validation-warnings">
+                  <h5><i class="fas fa-exclamation-triangle"></i> Warnings:</h5>
+                  <ul>
+                    <li v-for="(warning, index) in diagnosticsResult.config_validation.warnings" :key="`warn-${index}`" class="warning">
+                      <strong>{{ warning.field }}:</strong> {{ warning.message }}
+                    </li>
+                  </ul>
+                </div>
+                
+                <!-- Show config comparison -->
+                <div v-if="diagnosticsResult.config_validation.config_comparison && Object.keys(diagnosticsResult.config_validation.config_comparison).length > 0" class="config-comparison">
+                  <h5><i class="fas fa-columns"></i> Configuration Comparison:</h5>
+                  <table class="comparison-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>URL Value</th>
+                        <th>Env Variable</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(comp, field) in diagnosticsResult.config_validation.config_comparison" :key="field">
+                        <td>{{ comp.field }}</td>
+                        <td>{{ comp.url_value || '(not set)' }}</td>
+                        <td>{{ comp.env_value || '(not set)' }}</td>
+                        <td>
+                          <span :class="comp.match ? 'success' : 'error'">
+                            <i class="fas" :class="comp.match ? 'fa-check' : 'fa-times'"></i>
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <!-- Show suggested fix if available -->
+                <div v-if="diagnosticsResult.config_validation.suggested_fix" class="suggested-fix">
+                  <h5><i class="fas fa-wrench"></i> Suggested Fix:</h5>
+                  <div class="fix-details">
+                    <p><strong>Action:</strong> {{ diagnosticsResult.config_validation.suggested_fix.action }}</p>
+                    <p><strong>Reason:</strong> {{ diagnosticsResult.config_validation.suggested_fix.reason }}</p>
+                    <div class="fix-command">
+                      <code>{{ diagnosticsResult.config_validation.suggested_fix.value }}</code>
+                      <button @click="copySuggestedFix" class="copy-button" :title="copiedFix ? 'Copied!' : 'Copy to clipboard'">
+                        <i :class="copiedFix ? 'fas fa-check' : 'fas fa-copy'"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             <!-- Recommendations Section -->
             <div v-if="diagnosticsResult.recommendations && diagnosticsResult.recommendations.length > 0" class="result-section recommendations">
               <h4><i class="fas fa-lightbulb"></i> Recommendations</h4>
@@ -789,6 +918,9 @@ const showDiagnosticsModal = ref(false)
 const connectionTestResult = ref(null)
 const copiedDiagnostics = ref(false)
 const diagnosticsResult = ref(null)
+const copiedFix = ref(false)
+const mismatchResolutions = ref({})
+const resolvingMismatch = ref({})
 
 // Toast notifications
 const toasts = ref([])
@@ -953,12 +1085,12 @@ const loadDashboardData = async () => {
       lastUpdate: lastUpdate
     }
     
-    console.log('Cache status from details:', { totalCached, lastUpdate })
+    // console.debug('Cache status from details:', { totalCached, lastUpdate })
     
     // Also try the summary endpoint for additional info
     try {
       const summaryRes = await axios.get(`${API_BASE_URL}/api/cache/status`)
-      console.log('Cache summary response:', summaryRes.data)
+      // console.debug('Cache summary response:', summaryRes.data)
       if (summaryRes.data.total_cached !== undefined) {
         // Use the summary data if it has more info
         cacheStatus.value.cachedClasses = summaryRes.data.total_cached
@@ -968,7 +1100,7 @@ const loadDashboardData = async () => {
       }
     } catch (e) {
       // Summary endpoint might not exist, that's ok
-      console.log('Summary endpoint not available')
+      // console.debug('Summary endpoint not available')
     }
   } catch (error) {
     if (!error.response || error.response.status !== 404) {
@@ -999,6 +1131,18 @@ const loadDashboardData = async () => {
     // First get basic health status
     const healthRes = await axios.get(`${API_BASE_URL}/api/health`)
     const healthData = healthRes.data
+    
+    // Update content database status from health endpoint
+    if (healthData.content_database) {
+      const contentDb = healthData.content_database
+      databaseStatus.value = {
+        ...databaseStatus.value,
+        connected: contentDb.connected || false,
+        connecting: contentDb.pool_active && !contentDb.connected,
+        retryDelay: contentDb.retry_delay || 0,
+        lastAttempt: contentDb.last_attempt ? new Date(contentDb.last_attempt * 1000).toLocaleString() : null
+      }
+    }
     
     // Then try to get detailed metrics if user is admin
     if (userStore.user?.role === 'admin') {
@@ -1718,6 +1862,21 @@ const copyDiagnostics = async () => {
   }
 }
 
+const copySuggestedFix = async () => {
+  if (!diagnosticsResult.value?.config_validation?.suggested_fix?.value) return
+  
+  try {
+    await navigator.clipboard.writeText(diagnosticsResult.value.config_validation.suggested_fix.value)
+    copiedFix.value = true
+    showToast('Copied!', 'Suggested fix copied to clipboard', 'success')
+    setTimeout(() => {
+      copiedFix.value = false
+    }, 2000)
+  } catch (error) {
+    showToast('Copy Failed', 'Unable to copy to clipboard', 'error')
+  }
+}
+
 const parseDiagnostics = (data) => {
   if (typeof data === 'string') {
     try {
@@ -1795,6 +1954,62 @@ const formatTestName = (name) => {
   return name.split('_').map(word => 
     word.charAt(0).toUpperCase() + word.slice(1)
   ).join(' ')
+}
+
+const formatFieldName = (field) => {
+  const fieldNames = {
+    'host': 'Host',
+    'port': 'Port',
+    'database': 'Database Name',
+    'username': 'Username',
+    'password': 'Password',
+    'database_type': 'Database Type',
+    'ssl': 'SSL'
+  }
+  return fieldNames[field] || field.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ')
+}
+
+const resolveMismatch = async (field) => {
+  const selectedValue = mismatchResolutions.value[field]
+  if (!selectedValue) return
+  
+  resolvingMismatch.value[field] = true
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await axios.post(`${API_BASE_URL}/api/admin/database/resolve-mismatch`, {
+      field: field,
+      selected_value: selectedValue
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.success) {
+      showToast('Configuration Updated', `${formatFieldName(field)} has been synchronized across all configurations`, 'success')
+      
+      // Update the diagnostics result with the new validation
+      if (response.data.data.validation_result) {
+        diagnosticsResult.value.config_validation = response.data.data.validation_result
+      }
+      
+      // Clear the resolution selection for this field
+      delete mismatchResolutions.value[field]
+      
+      // Refresh diagnostics after a short delay
+      setTimeout(() => {
+        runDiagnostics()
+      }, 1000)
+    } else {
+      showToast('Resolution Failed', response.data.message || 'Failed to resolve configuration mismatch', 'error')
+    }
+  } catch (error) {
+    console.error('Mismatch resolution error:', error)
+    showToast('Resolution Error', error.response?.data?.message || 'Failed to resolve configuration mismatch', 'error')
+  } finally {
+    resolvingMismatch.value[field] = false
+  }
 }
 
 const runNetworkTest = async () => {
@@ -1994,6 +2209,10 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
 }
 
+.card-icon.database.status-connecting {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+}
+
 .card-header h2 {
   font-size: 1.4rem;
   margin: 0;
@@ -2060,6 +2279,15 @@ onUnmounted(() => {
 .stat-value.info {
   color: #60a5fa;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.stat-value.error {
+  color: #f87171;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.stat-value.small {
+  font-size: 0.9rem;
 }
 
 .card-actions {
@@ -3157,6 +3385,274 @@ onUnmounted(() => {
     transform: translateX(100%);
     opacity: 0;
   }
+}
+
+/* Config Validation Styles */
+.validation-errors, .validation-warnings {
+  margin-top: 15px;
+  padding: 15px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.validation-errors {
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.validation-warnings {
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.validation-errors h5, .validation-warnings h5 {
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.validation-errors h5 {
+  color: #f87171;
+}
+
+.validation-warnings h5 {
+  color: #fbbf24;
+}
+
+.validation-errors ul, .validation-warnings ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.validation-errors li, .validation-warnings li {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  line-height: 1.5;
+}
+
+.validation-errors li:last-child, .validation-warnings li:last-child {
+  border-bottom: none;
+}
+
+.mismatch-item {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.mismatch-header {
+  margin-bottom: 15px;
+}
+
+.mismatch-header strong {
+  color: #f87171;
+  display: block;
+  margin-bottom: 5px;
+  font-size: 1.1rem;
+}
+
+.mismatch-description {
+  color: #9ca3af;
+  font-size: 0.9rem;
+}
+
+.mismatch-resolution {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mismatch-option {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.mismatch-option:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.mismatch-option input[type="radio"] {
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.mismatch-option label {
+  flex: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.option-source {
+  color: #60a5fa;
+  font-weight: 600;
+  min-width: 150px;
+}
+
+.mismatch-option code {
+  font-family: monospace;
+  color: #fde68a;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.resolve-button {
+  margin-top: 10px;
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.resolve-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.resolve-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.validation-errors li.error {
+  color: #fca5a5;
+}
+
+.validation-warnings li.warning {
+  color: #fde68a;
+}
+
+.mismatch-values {
+  display: block;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+.config-comparison {
+  margin-top: 20px;
+}
+
+.config-comparison h5 {
+  margin: 0 0 15px 0;
+  font-size: 1rem;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.comparison-table th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.comparison-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.comparison-table td:last-child {
+  text-align: center;
+}
+
+.suggested-fix {
+  margin-top: 20px;
+  padding: 15px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+}
+
+.suggested-fix h5 {
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fix-details p {
+  margin: 8px 0;
+  color: #e2e8f0;
+}
+
+.fix-details strong {
+  color: #60a5fa;
+}
+
+.fix-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+}
+
+.fix-command code {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #fde68a;
+  word-break: break-all;
+}
+
+.fix-command .copy-button {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.fix-command .copy-button:hover {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 /* Network Test Modal Styles */

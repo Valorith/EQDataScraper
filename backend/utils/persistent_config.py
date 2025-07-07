@@ -84,7 +84,16 @@ class PersistentConfig:
             with open(self.config_file, 'r') as f:
                 config = json.load(f)
                 logger.info(f"Loaded persistent config with {len(config)} keys")
-                return config
+                
+                # Sanitize string values by stripping whitespace
+                sanitized_config = {}
+                for key, value in config.items():
+                    if isinstance(value, str):
+                        sanitized_config[key] = value.strip()
+                    else:
+                        sanitized_config[key] = value
+                        
+                return sanitized_config
         except Exception as e:
             logger.error(f"Error loading persistent config: {e}")
             return {}
@@ -182,15 +191,16 @@ class PersistentConfig:
     def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True, 
                            db_name: str = '', db_password: str = '', db_port: str = '') -> bool:
         """Save database configuration persistently."""
+        # Sanitize all string inputs by stripping whitespace
         config = {
-            'production_database_url': db_url,
-            'database_type': db_type,
+            'production_database_url': db_url.strip() if db_url else '',
+            'database_type': db_type.strip() if db_type else 'mysql',
             'use_production_database': True,
             'database_read_only': True,
             'database_ssl': use_ssl,
-            'database_name': db_name,
-            'database_password': db_password,
-            'database_port': db_port
+            'database_name': db_name.strip() if db_name else '',
+            'database_password': db_password.strip() if db_password else '',
+            'database_port': db_port.strip() if db_port else ''
         }
         
         # Also update environment variables if we're on Railway

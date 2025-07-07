@@ -2939,6 +2939,15 @@ def health_check():
     # This endpoint should not be rate limited
     pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
     
+    # Check content database status
+    content_db_status = {'connected': False}
+    try:
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
+        content_db_status = manager.get_connection_status()
+    except:
+        pass
+    
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -2947,7 +2956,8 @@ def health_check():
         'cached_spell_details': len(spell_details_cache),
         'server_memory_loaded': len(spells_cache) > 0 or pricing_count > 0,
         'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0,
-        'startup_complete': server_startup_progress['startup_complete']
+        'startup_complete': server_startup_progress['startup_complete'],
+        'content_database': content_db_status
     })
 
 @app.route('/api/initialize', methods=['POST'])
@@ -3726,44 +3736,54 @@ def initialize_database_connection(max_retries=3, initial_delay=2):
 
 # Helper function for EQEmu database connection
 def get_eqemu_db_connection():
-    """Get connection to the configured EQEmu database - simplified without pooling for debugging."""
-    # Get current config
-    config = db_config_manager.get_config()
+    """Get connection to the configured EQEmu database with automatic reconnection.
     
-    # Debug logging
-    app.logger.info(f"get_eqemu_db_connection: config keys = {list(config.keys())}")
-    app.logger.info(f"get_eqemu_db_connection: has production_database_url = {'production_database_url' in config}")
+    WARNING: This function returns a raw connection for backward compatibility.
+    Callers MUST close the connection when done to avoid connection leaks!
     
-    # Get database URL from config
-    database_url = config.get('production_database_url', '')
-    if not database_url:
-        app.logger.error(f"No database URL found. Config: {config}")
-        return None, None, "Database not configured"
-    
-    # Import required modules
+    Consider refactoring to use context managers instead.
+    """
+    from utils.content_db_manager import get_content_db_manager
     from utils.database_connectors import get_database_connector
-    from urllib.parse import urlparse
-    
-    # Parse database URL
-    parsed = urlparse(database_url)
-    db_type = config.get('database_type', 'mysql')
-    
-    db_config = {
-        'host': parsed.hostname,
-        'port': int(parsed.port) if parsed.port else 3306,
-        'database': parsed.path[1:] if parsed.path else '',
-        'username': parsed.username,
-        'password': parsed.password,
-        'use_ssl': config.get('database_ssl', True)
-    }
     
     try:
-        # For now, return direct connection instead of pool to debug the issue
+        # Get the content database manager
+        manager = get_content_db_manager()
+        
+        # Get connection status for logging
+        status = manager.get_connection_status()
+        app.logger.debug(f"Content DB status: connected={status['connected']}, "
+                        f"pool_active={status['pool_active']}, "
+                        f"db_type={status['database_type']}")
+        
+        # For backward compatibility, create a direct connection
+        # This avoids the pooling complexity but ensures connections are closed
+        config = db_config_manager.get_config()
+        database_url = config.get('production_database_url', '')
+        
+        if not database_url:
+            return None, None, "Database not configured"
+            
+        # Parse database URL
+        from urllib.parse import urlparse
+        parsed = urlparse(database_url)
+        db_type = config.get('database_type', 'mysql')
+        
+        db_config = {
+            'host': parsed.hostname,
+            'port': int(parsed.port) if parsed.port else 3306,
+            'database': parsed.path[1:] if parsed.path else '',
+            'username': parsed.username,
+            'password': parsed.password,
+            'use_ssl': config.get('database_ssl', True)
+        }
+        
+        # Create direct connection
         conn = get_database_connector(db_type, db_config)
         return conn, db_type, None
+        
     except Exception as e:
-        app.logger.error(f"Database connection error: {e}")
-        app.logger.error(f"Database config: host={db_config.get('host')}, port={db_config.get('port')}, db={db_config.get('database')}, user={db_config.get('username')}")
+        app.logger.error(f"Failed to get database connection: {e}")
         return None, None, str(e)
 
 # Helper function for safe numeric conversions
@@ -4407,6 +4427,15 @@ def cleanup_resources():
     logger.info("Cleaning up resources...")
     close_connection_pool()
     logger.info("Connection pool closed")
+    
+    # Close content database connections
+    try:
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
+        manager.close()
+        logger.info("Content database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing content database: {e}")
 
 if __name__ == '__main__':
     import atexit
@@ -4414,8 +4443,19 @@ if __name__ == '__main__':
     # Register cleanup on exit
     atexit.register(cleanup_resources)
     
-    # Initialize database connection on startup
-    initialize_database_connection()
+    # Initialize database connections on startup
+    initialize_database_connection()  # Auth database
+    
+    # Initialize content database with retry logic
+    try:
+        from utils.content_db_manager import initialize_content_database
+        logger.info("Initializing content database...")
+        if initialize_content_database():
+            logger.info("✅ Content database initialized successfully")
+        else:
+            logger.warning("⚠️ Content database initialization failed - will retry on first request")
+    except Exception as e:
+        logger.error(f"Error initializing content database: {e}")
     
     # Preload spell data before starting server for optimal performance
     # Skip during CI testing to avoid long startup times

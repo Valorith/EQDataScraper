@@ -122,6 +122,17 @@ class DatabaseConnectionPool:
                     except:
                         pass
                         
+    def get_pool_stats(self):
+        """Get statistics about the connection pool."""
+        with self.lock:
+            return {
+                'total_connections': len(self.all_connections),
+                'available_connections': self.pool.qsize(),
+                'in_use_connections': len(self.all_connections) - self.pool.qsize(),
+                'max_connections': self.max_connections,
+                'is_closed': self._closed
+            }
+    
     def close_all(self):
         """Close all connections in the pool."""
         self._closed = True

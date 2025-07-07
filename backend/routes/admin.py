@@ -1684,6 +1684,8 @@ def database_diagnostics():
             },
             'config_checks': {},
             'connection_test': {},
+            'connection_pooling': {},
+            'config_validation': {},
             'persistent_storage': {},
             'runtime_config': {},
             'config_sources': {}
@@ -1798,6 +1800,100 @@ def database_diagnostics():
         except Exception as e:
             diagnostics['connection_test']['success'] = False
             diagnostics['connection_test']['error'] = str(e)
+        
+        # Check configuration validation
+        try:
+            from utils.db_config_validator import validate_database_config, get_validator
+            
+            validation_result = validate_database_config()
+            diagnostics['config_validation'] = {
+                'valid': validation_result['valid'],
+                'errors': validation_result['errors'],
+                'warnings': validation_result['warnings'],
+                'config_comparison': validation_result['config_comparison'],
+                'recommendations': validation_result['recommendations'],
+                'config_sources': validation_result['config_sources']
+            }
+            
+            # If validation failed, try to construct URL from components
+            if not validation_result['valid'] and not os.environ.get('EQEMU_DATABASE_URL'):
+                validator = get_validator()
+                suggested_url = validator.get_connection_string_from_components()
+                if suggested_url:
+                    diagnostics['config_validation']['suggested_fix'] = {
+                        'action': 'Set EQEMU_DATABASE_URL',
+                        'value': suggested_url,
+                        'reason': 'Constructed from individual components'
+                    }
+                    
+        except Exception as e:
+            diagnostics['config_validation'] = {
+                'valid': False,
+                'error': str(e)
+            }
+        
+        # Check connection pooling
+        try:
+            from utils.content_db_manager import get_content_db_manager
+            
+            manager = get_content_db_manager()
+            pool_status = manager.get_connection_status()
+            
+            diagnostics['connection_pooling'] = {
+                'manager_initialized': True,
+                'pool_active': pool_status.get('pool_active', False),
+                'connected': pool_status.get('connected', False),
+                'retry_delay': pool_status.get('retry_delay', 0),
+                'database_type': pool_status.get('database_type', 'unknown')
+            }
+            
+            # Include pool statistics if available
+            if pool_status.get('pool_stats'):
+                stats = pool_status['pool_stats']
+                diagnostics['connection_pooling']['pool_stats'] = {
+                    'total_connections': stats.get('total_connections', 0),
+                    'available_connections': stats.get('available_connections', 0),
+                    'in_use_connections': stats.get('in_use_connections', 0),
+                    'max_connections': stats.get('max_connections', 0),
+                    'pool_closed': stats.get('is_closed', False)
+                }
+                
+                # Test pool health
+                if pool_status.get('pool_active') and not stats.get('is_closed'):
+                    try:
+                        # Test getting a connection from the pool
+                        test_start = time.time()
+                        with manager.get_connection() as pooled_conn:
+                            pool_time = time.time() - test_start
+                            diagnostics['connection_pooling']['pool_test'] = {
+                                'success': True,
+                                'connection_time_ms': round(pool_time * 1000, 2)
+                            }
+                            
+                            # Test query through pooled connection
+                            cursor = pooled_conn.cursor()
+                            cursor.execute("SELECT 1")
+                            cursor.fetchone()
+                            cursor.close()
+                            diagnostics['connection_pooling']['pool_query_test'] = 'success'
+                    except Exception as pe:
+                        diagnostics['connection_pooling']['pool_test'] = {
+                            'success': False,
+                            'error': str(pe)
+                        }
+                else:
+                    diagnostics['connection_pooling']['pool_test'] = {
+                        'success': False,
+                        'error': 'Pool not active or closed'
+                    }
+            else:
+                diagnostics['connection_pooling']['pool_stats'] = 'Not available'
+                
+        except Exception as e:
+            diagnostics['connection_pooling'] = {
+                'manager_initialized': False,
+                'error': str(e)
+            }
         
         # Check persistent storage
         try:
@@ -1979,6 +2075,107 @@ def check_persistence():
         
     except Exception as e:
         return create_error_response(f"Failed to check persistence: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/database/resolve-mismatch', methods=['POST'])
+@require_admin
+def resolve_config_mismatch():
+    """
+    Resolve configuration mismatches by setting the selected value in all locations.
+    
+    Expected JSON payload:
+    {
+        "field": "host",
+        "selected_value": "76.251.85.36"
+    }
+    
+    Returns:
+        JSON response with resolution status
+    """
+    try:
+        import os
+        from utils.persistent_config import get_persistent_config
+        from utils.db_config_validator import get_validator
+        
+        data = request.get_json()
+        if not data or not data.get('field') or 'selected_value' not in data:
+            return create_error_response("Missing field or selected_value", 400)
+        
+        field = data['field']
+        selected_value = data['selected_value']
+        
+        # Map field names to environment variables
+        field_to_env = {
+            'host': 'EQEMU_DATABASE_HOST',
+            'port': 'EQEMU_DATABASE_PORT',
+            'database': 'EQEMU_DATABASE_NAME',
+            'username': 'EQEMU_DATABASE_USER',
+            'password': 'EQEMU_DATABASE_PW',
+            'database_type': 'EQEMU_DATABASE_TYPE',
+            'ssl': 'EQEMU_DATABASE_SSL'
+        }
+        
+        env_var = field_to_env.get(field)
+        if not env_var:
+            return create_error_response(f"Unknown field: {field}", 400)
+        
+        # Update environment variable (for current process)
+        os.environ[env_var] = str(selected_value)
+        
+        # Get current validator and construct new URL
+        validator = get_validator()
+        new_url = validator.get_connection_string_from_components()
+        
+        if new_url:
+            # Update EQEMU_DATABASE_URL
+            os.environ['EQEMU_DATABASE_URL'] = new_url
+            
+            # Update persistent storage
+            persistent_config = get_persistent_config()
+            db_config = persistent_config.get_database_config() or {}
+            db_config['production_database_url'] = new_url
+            
+            # Update individual fields in persistent storage to match
+            if field == 'host':
+                db_config['database_host'] = selected_value
+            elif field == 'port':
+                db_config['database_port'] = int(selected_value) if selected_value else 3306
+            elif field == 'database':
+                db_config['database_name'] = selected_value
+            elif field == 'username':
+                db_config['database_username'] = selected_value
+            elif field == 'password':
+                db_config['database_password'] = selected_value
+            elif field == 'database_type':
+                db_config['database_type'] = selected_value
+            elif field == 'ssl':
+                db_config['database_ssl'] = selected_value.lower() == 'true'
+            
+            # Save to persistent storage
+            persistent_config.save_database_config(db_config)
+            
+            # Force reload of database configuration
+            from flask import current_app
+            if hasattr(current_app, 'db_config_manager'):
+                current_app.db_config_manager.invalidate()
+                logger.info(f"Database configuration updated: {field} = {selected_value}")
+            
+            # Run validation again to confirm resolution
+            new_validation = validator.validate_config()
+            
+            return jsonify(create_success_response({
+                'message': f'Configuration mismatch resolved for {field}',
+                'field': field,
+                'value': selected_value,
+                'new_url': new_url,
+                'validation_result': new_validation
+            }))
+        else:
+            return create_error_response("Unable to construct database URL from components", 500)
+            
+    except Exception as e:
+        logger.error(f"Error resolving mismatch: {str(e)}")
+        return create_error_response(f"Failed to resolve mismatch: {str(e)}", 500)
 
 
 @admin_bp.route('/admin/database/reconnect', methods=['POST'])
