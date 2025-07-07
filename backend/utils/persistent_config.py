@@ -24,7 +24,33 @@ class PersistentConfig:
         # Railway provides /app/data as a persistent volume
         # Fall back to local .data directory for development
         if os.environ.get('RAILWAY_ENVIRONMENT'):
-            self.data_dir = Path('/app/data')
+            # Try multiple possible persistent directories on Railway
+            possible_dirs = [
+                Path('/app/data'),  # Railway persistent volume
+                Path('/data'),      # Alternative persistent volume
+                Path('/persist'),   # Another possible location
+                Path.home() / '.eqdata'  # User home directory fallback
+            ]
+            
+            self.data_dir = None
+            for dir_path in possible_dirs:
+                try:
+                    # Test if we can create the directory
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                    # Test if we can write to it
+                    test_file = dir_path / '.write_test'
+                    test_file.write_text('test')
+                    test_file.unlink()  # Remove test file
+                    self.data_dir = dir_path
+                    logger.info(f"Using persistent directory: {self.data_dir}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Cannot use {dir_path}: {e}")
+            
+            if not self.data_dir:
+                # Ultimate fallback - use environment variable storage
+                logger.warning("No writable persistent directory found, will use environment fallback")
+                self.data_dir = Path('/tmp/.eqdata')  # Temporary fallback
         else:
             # Use a hidden directory in project root for local development
             project_root = Path(__file__).parent.parent.parent
@@ -37,6 +63,12 @@ class PersistentConfig:
             self._available = True
             logger.info(f"Persistent config initialized. Data directory: {self.data_dir}")
             logger.info(f"Config file path: {self.config_file}")
+            
+            # Log directory permissions for debugging
+            import stat
+            st = os.stat(self.data_dir)
+            logger.info(f"Directory permissions: {oct(st.st_mode)}")
+            logger.info(f"Directory writable: {os.access(self.data_dir, os.W_OK)}")
         except Exception as e:
             logger.warning(f"Could not create persistent data directory: {e}")
             self.config_file = None
@@ -94,6 +126,19 @@ class PersistentConfig:
         # Check for database URL in persistent config
         db_url = config.get('production_database_url')
         
+        # If not in file, check environment variable as backup
+        # Use a specific env var for content database to avoid confusion with auth database
+        if not db_url:
+            db_url = os.environ.get('EQEMU_DATABASE_URL')
+            if db_url:
+                logger.info("Loaded database URL from EQEMU_DATABASE_URL environment variable")
+                # Also get other settings from environment
+                db_type = os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')
+                use_ssl = os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true'
+                
+                # Save to persistent storage for next time
+                self.save_database_config(db_url, db_type, use_ssl)
+        
         # Note: We do NOT fall back to DATABASE_URL environment variable
         # as that's reserved for the PostgreSQL auth database
         
@@ -103,10 +148,10 @@ class PersistentConfig:
         # Return combined config
         return {
             'production_database_url': db_url,
-            'database_type': config.get('database_type', 'mysql'),
+            'database_type': config.get('database_type', os.environ.get('EQEMU_DATABASE_TYPE', 'mysql')),
             'use_production_database': config.get('use_production_database', True),
             'database_read_only': config.get('database_read_only', True),
-            'database_ssl': config.get('database_ssl', True)
+            'database_ssl': config.get('database_ssl', os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true')
         }
     
     def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True) -> bool:

@@ -155,11 +155,29 @@
             <span class="stat-label">Database</span>
             <span class="stat-value">{{ databaseStatus.database || 'None' }}</span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">Config Source</span>
+            <span class="stat-value" :class="{
+              'success': storageInfo.config_source === 'persistent_storage',
+              'info': storageInfo.config_source === 'environment_variable',
+              'warning': storageInfo.config_source === 'config_json' || storageInfo.config_source === 'none'
+            }">
+              {{ formatConfigSource(storageInfo.config_source) }}
+            </span>
+          </div>
+          <div v-if="storageInfo.config_source === 'none'" class="stat-row warning-row">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span class="warning-text">Database configuration will be lost on deployment!</span>
+          </div>
         </div>
         <div class="card-actions">
           <button @click="openDatabaseModal" class="action-button primary">
             <i class="fas fa-cog"></i>
             Configure Database
+          </button>
+          <button @click="checkPersistence" class="action-button secondary" :disabled="checkingPersistence">
+            <i class="fas fa-info-circle" :class="{ 'fa-spin': checkingPersistence }"></i>
+            Check Persistence
           </button>
         </div>
       </div>
@@ -422,6 +440,12 @@ const databaseStatus = ref({
   database: null,
   status: 'unknown'
 })
+const storageInfo = ref({
+  config_source: 'unknown',
+  storage_available: false,
+  directory_writable: false,
+  data_directory: null
+})
 const databaseForm = ref({
   db_type: 'mssql',
   host: '',
@@ -434,6 +458,7 @@ const databaseForm = ref({
 const databaseTestResult = ref(null)
 const testingConnection = ref(false)
 const savingConfig = ref(false)
+const checkingPersistence = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -484,6 +509,16 @@ const loadDashboardData = async () => {
         status: dbData.status || 'unknown',
         version: dbData.version || null,
         connection_type: dbData.connection_type || 'unknown'
+      }
+      
+      // Update storage info if available
+      if (dbConfigRes.data.data?.storage_info) {
+        storageInfo.value = {
+          config_source: dbConfigRes.data.data.storage_info.config_source || 'unknown',
+          storage_available: dbConfigRes.data.data.storage_info.storage_available || false,
+          directory_writable: dbConfigRes.data.data.storage_info.directory_writable || false,
+          data_directory: dbConfigRes.data.data.storage_info.data_directory || null
+        }
       }
     } else {
       // No database configured
@@ -744,6 +779,17 @@ const formatTime = (timestamp) => {
   return `${days}d ago`
 }
 
+const formatConfigSource = (source) => {
+  const sourceMap = {
+    'persistent_storage': 'Persistent Storage',
+    'environment_variable': 'Environment Variable',
+    'config_json': 'Config File (Temporary)',
+    'none': 'Not Configured',
+    'unknown': 'Unknown'
+  }
+  return sourceMap[source] || source
+}
+
 const getActivityIcon = (type) => {
   const icons = {
     // User actions
@@ -901,6 +947,52 @@ const testDatabaseConnection = async () => {
     }
   } finally {
     testingConnection.value = false
+  }
+}
+
+const checkPersistence = async () => {
+  checkingPersistence.value = true
+  
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/admin/database/persist-check`, {
+      headers: {
+        Authorization: `Bearer ${userStore.accessToken}`
+      }
+    })
+    
+    if (response.data.success) {
+      const diagnostics = response.data.data
+      
+      // Create a detailed message
+      let message = 'Persistence Status:\n\n'
+      
+      // Environment info
+      message += `Environment: ${diagnostics.environment.RAILWAY_ENVIRONMENT || 'Local'}\n`
+      message += `Config Source: ${storageInfo.value.config_source}\n\n`
+      
+      // Storage info
+      message += 'Storage Locations Tested:\n'
+      diagnostics.tested_directories.forEach(dir => {
+        const status = dir.writable ? '✅ Writable' : dir.exists ? '⚠️ Read-only' : '❌ Not found'
+        message += `${status} ${dir.path}\n`
+      })
+      
+      // Recommendations
+      if (diagnostics.recommendations && diagnostics.recommendations.length > 0) {
+        message += '\nRecommendations:\n'
+        diagnostics.recommendations.forEach(rec => {
+          message += `• ${rec}\n`
+        })
+      }
+      
+      // Show in alert (you might want to use a modal instead)
+      alert(message)
+    }
+  } catch (error) {
+    console.error('Failed to check persistence:', error)
+    alert('Failed to check persistence status. Check console for details.')
+  } finally {
+    checkingPersistence.value = false
   }
 }
 
@@ -1134,6 +1226,20 @@ onUnmounted(() => {
   border-bottom: none;
 }
 
+.stat-row.warning-row {
+  background: rgba(251, 191, 36, 0.1);
+  padding: 12px;
+  margin: 8px -20px -20px;
+  border-radius: 0 0 8px 8px;
+  border: none;
+  gap: 10px;
+}
+
+.warning-text {
+  color: #fbbf24;
+  font-size: 0.9rem;
+}
+
 .stat-label {
   color: #9ca3af;
   font-size: 0.95rem;
@@ -1155,6 +1261,11 @@ onUnmounted(() => {
 
 .stat-value.warning {
   color: #fbbf24;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.stat-value.info {
+  color: #60a5fa;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
