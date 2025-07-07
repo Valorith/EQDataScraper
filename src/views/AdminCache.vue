@@ -125,7 +125,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import { useSpellsStore } from '../stores/spells'
@@ -259,9 +259,12 @@ const refreshClassCache = async (className) => {
   refreshingClass.value = className
   try {
     await axios.post(`${API_BASE_URL}/api/refresh-spell-cache/${className}`)
+    // Wait a moment for the cache to update
+    await new Promise(resolve => setTimeout(resolve, 1000))
     await loadCacheStatus()
   } catch (error) {
     console.error(`Error refreshing ${className} cache:`, error)
+    alert(`Failed to refresh ${className} cache: ` + (error.response?.data?.error || error.message))
   } finally {
     refreshingClass.value = null
   }
@@ -275,9 +278,12 @@ const refreshAllClasses = async () => {
   refreshingAll.value = true
   try {
     await axios.post(`${API_BASE_URL}/api/scrape-all`)
+    // Wait a moment for the scraping to complete
+    await new Promise(resolve => setTimeout(resolve, 2000))
     await loadCacheStatus()
   } catch (error) {
     console.error('Error refreshing all classes:', error)
+    alert('Failed to refresh all classes: ' + (error.response?.data?.error || error.message))
   } finally {
     refreshingAll.value = false
   }
@@ -304,11 +310,13 @@ const clearAllCaches = async () => {
   clearing.value = true
   try {
     await axios.post(`${API_BASE_URL}/api/cache/clear`)
+    // Wait for cache to be cleared
+    await new Promise(resolve => setTimeout(resolve, 500))
     await loadCacheStatus()
     alert('All caches cleared successfully')
   } catch (error) {
     console.error('Error clearing caches:', error)
-    alert('Failed to clear caches')
+    alert('Failed to clear caches: ' + (error.response?.data?.error || error.message))
   } finally {
     clearing.value = false
   }
@@ -416,6 +424,16 @@ const handleImageError = (event) => {
 // Lifecycle
 onMounted(() => {
   loadCacheStatus()
+  // Refresh cache status every 5 seconds for real-time updates
+  statusInterval = setInterval(loadCacheStatus, 5000)
+})
+
+let statusInterval = null
+
+onUnmounted(() => {
+  if (statusInterval) {
+    clearInterval(statusInterval)
+  }
 })
 </script>
 
@@ -924,5 +942,58 @@ onMounted(() => {
   .class-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Notification Toast */
+.notification {
+  position: fixed;
+  top: 100px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(20px);
+  z-index: 1000;
+  max-width: 400px;
+}
+
+.notification.success {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.9) 0%, rgba(16, 185, 129, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.notification.error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.9) 0%, rgba(220, 38, 38, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.notification.warning {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.9) 0%, rgba(245, 158, 11, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.notification i {
+  font-size: 1.25rem;
+}
+
+/* Notification transition */
+.notification-enter-active,
+.notification-leave-active {
+  transition: all 0.3s ease;
+}
+
+.notification-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.notification-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
 }
 </style>

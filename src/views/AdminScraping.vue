@@ -435,12 +435,15 @@ const startFullScrape = async () => {
     estimatedTime.value = estimatedSeconds > 60 ? `${Math.round(estimatedSeconds / 60)}m` : `${estimatedSeconds}s`
     
     try {
-      // Use the same scrapeClass function to get progress tracking
-      await scrapeClass(classInfo.apiName)
+      // Use the scrapeClassData function directly to avoid UI conflicts
+      await scrapeClassData(classInfo.apiName)
       
       // Update overall progress after successful scrape
       progressPercentage.value = Math.round(((i + 1) / classes.length) * 100)
       classesScraped.value = i + 1
+      
+      // Refresh cache status after each class
+      await checkScrapingStatus()
     } catch (error) {
       console.error(`Error scraping ${classInfo.name}:`, error)
       // Continue with next class even if one fails
@@ -534,11 +537,13 @@ const scrapeClassData = async (className) => {
 }
 
 const addToHistory = (className, status) => {
+  const lowerClassName = className.toLowerCase()
+  const cacheData = cacheStatus.value[lowerClassName] || {}
   const entry = {
     id: Date.now(),
     timestamp: new Date(),
     className: className,
-    spellCount: status === 'success' ? (cacheStatus.value[className.toLowerCase()]?.spell_count || 0) : 0,
+    spellCount: status === 'success' ? (cacheData.spell_count || 0) : 0,
     duration: status === 'success' ? Math.floor(Math.random() * 60) + 30 : 0,
     status: status
   }

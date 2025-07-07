@@ -535,9 +535,11 @@ const loadDashboardData = async () => {
       }
     }
     
-    // If all classes are cached but no update time found, use current time
+    // If all classes are cached but no update time found, don't set a fake time
+    // This prevents confusion about when the cache was actually last updated
     if (totalCached > 0 && !lastUpdate) {
-      lastUpdate = new Date().toISOString()
+      // Keep lastUpdate as null instead of faking it
+      lastUpdate = null
     }
     
     cacheStatus.value = {
