@@ -156,6 +156,39 @@ class PersistentConfig:
             
             return db_config
         
+        # Fallback: Try to construct URL from individual components
+        host = os.environ.get('EQEMU_DATABASE_HOST')
+        port = os.environ.get('EQEMU_DATABASE_PORT')
+        name = os.environ.get('EQEMU_DATABASE_NAME')
+        password = os.environ.get('EQEMU_DATABASE_PW')
+        user = os.environ.get('EQEMU_DATABASE_USER', 'alla_view')  # Default to alla_view
+        
+        if host and port and name and password:
+            # Construct the database URL from components
+            constructed_url = f"mysql://{user}:{password}@{host}:{port}/{name}"
+            
+            logger.info(f"Constructed database URL from components: {constructed_url[:50]}...")
+            
+            db_config = {
+                'production_database_url': constructed_url,
+                'database_type': os.environ.get('EQEMU_DATABASE_TYPE', 'mysql'),
+                'use_production_database': True,
+                'database_read_only': True,
+                'database_ssl': os.environ.get('EQEMU_DATABASE_SSL', 'true').lower() == 'true',
+                'database_name': name,
+                'database_password': password,
+                'database_port': port,
+                'config_source': 'environment_variables_constructed'
+            }
+            
+            # Save to persistent storage
+            try:
+                self.save(db_config)
+            except Exception as e:
+                logger.warning(f"Could not save constructed config to persistent storage: {e}")
+            
+            return db_config
+        
         logger.info("No EQEMU_DATABASE_URL in environment, checking persistent storage...")
         
         # Second priority: Check persistent file storage
