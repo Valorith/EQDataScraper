@@ -3598,6 +3598,7 @@ def search_items():
                 items.races,
                 items.slots,
                 items.lore,
+                items.loregroup,
                 items.reqlevel,
                 items.stackable,
                 items.stacksize,
@@ -3633,10 +3634,10 @@ def search_items():
                     'damage': _safe_int(item['damage']),
                     'delay': _safe_int(item['delay']),
                     'magic': bool(item['magic']),
-                    'nodrop': bool(item['nodrop']),
-                    'norent': bool(item['norent']),
+                    'nodrop': not bool(item['nodrop']),  # Inverted: 0=True, 1=False
+                    'norent': not bool(item['norent']),  # Inverted: 0=True, 1=False
                     'lore': item['lore'],
-                    'lore_flag': bool(item['lore']),
+                    'lore_flag': bool(item['loregroup'] != 0),  # 0=not lore, non-zero=lore
                     'classes': _safe_int(item['classes']),
                     'races': _safe_int(item['races']),
                     'slots': _safe_int(item['slots']),
@@ -3671,11 +3672,11 @@ def search_items():
                     'races': _safe_int(item[20]),
                     'slots': _safe_int(item[21]),
                     'lore': item[22],
-                    'lore_flag': bool(item[22]),
-                    'reqlevel': _safe_int(item[23]),
-                    'stackable': bool(item[24]),
-                    'stacksize': _safe_int(item[25]),
-                    'icon': _safe_int(item[26])
+                    'lore_flag': bool(item[23] != 0),  # 0=not lore, non-zero=lore
+                    'reqlevel': _safe_int(item[24]),
+                    'stackable': bool(item[25]),
+                    'stacksize': _safe_int(item[26]),
+                    'icon': _safe_int(item[27])
                 }
             items_list.append(item_dict)
         
@@ -3817,8 +3818,8 @@ def get_item_details(item_id):
                     'damage': item['damage'],
                     'delay': item['delay'],
                     'magic': bool(item['magic']),
-                    'nodrop': bool(item['nodrop']),
-                    'norent': bool(item['norent']),
+                    'nodrop': not bool(item['nodrop']),  # Inverted: 0=True, 1=False
+                    'norent': not bool(item['norent']),  # Inverted: 0=True, 1=False
                     'lore': item['lore'] if item['lore'] else None,
                     'classes': item['classes'],
                     'races': item['races'],

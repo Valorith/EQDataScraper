@@ -358,7 +358,7 @@
           
           <div class="item-properties">
             <span v-if="item.magic" class="property magic">Magic</span>
-            <span v-if="item.lore || item.lore_flag" class="property lore">Lore</span>
+            <span v-if="item.lore_flag" class="property lore">Lore</span>
             <span v-if="item.nodrop" class="property nodrop">No Drop</span>
             <span v-if="item.norent" class="property norent">No Rent</span>
           </div>
@@ -404,7 +404,7 @@
               <span class="item-type">{{ getItemTypeDisplay(item.itemtype) || item.type || 'Unknown' }}</span>
               <div class="item-properties">
                 <span v-if="item.magic" class="property magic">Magic</span>
-                <span v-if="item.lore || item.lore_flag" class="property lore">Lore</span>
+                <span v-if="item.lore_flag" class="property lore">Lore</span>
                 <span v-if="item.nodrop" class="property nodrop">No Drop</span>
                 <span v-if="item.norent" class="property norent">No Rent</span>
                 <span v-if="item.artifact" class="property artifact">Artifact</span>
