@@ -121,11 +121,14 @@ class PersistentConfig:
     
     def get_database_config(self) -> Optional[Dict[str, Any]]:
         """Get database configuration - prioritizes Railway env vars over file storage."""
+        # Log what we're checking
+        logger.info("Getting database configuration...")
+        
         # First priority: Check Railway environment variables
         db_url = os.environ.get('EQEMU_DATABASE_URL')
         
         if db_url:
-            logger.info("Loaded database configuration from Railway environment variables")
+            logger.info("Found EQEMU_DATABASE_URL in environment variables")
             # Get all config from environment variables
             db_config = {
                 'production_database_url': db_url,
@@ -148,18 +151,25 @@ class PersistentConfig:
             
             return db_config
         
+        logger.info("No EQEMU_DATABASE_URL in environment, checking persistent storage...")
+        
         # Second priority: Check persistent file storage
         config = self.load()
+        logger.info(f"Loaded persistent config keys: {list(config.keys())}")
+        
         db_url = config.get('production_database_url')
         
         # Note: We do NOT fall back to DATABASE_URL environment variable
         # as that's reserved for the PostgreSQL auth database
         
         if not db_url:
+            logger.warning("No production_database_url found in persistent config")
             return None
         
+        logger.info(f"Found database URL in persistent storage: {db_url[:30]}...")
+        
         # Return config from file
-        return {
+        db_config = {
             'production_database_url': db_url,
             'database_type': config.get('database_type', 'mysql'),
             'use_production_database': config.get('use_production_database', True),
@@ -170,6 +180,9 @@ class PersistentConfig:
             'database_port': config.get('database_port', ''),
             'config_source': 'persistent_storage'
         }
+        
+        logger.info(f"Returning database config from persistent storage with {len(db_config)} keys")
+        return db_config
     
     def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True, 
                            db_name: str = '', db_password: str = '', db_port: str = '') -> bool:

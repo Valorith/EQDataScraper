@@ -1486,7 +1486,14 @@ def database_diagnostics():
         
         # Check database connection
         try:
-            from app import get_eqemu_db_connection
+            from app import get_eqemu_db_connection, db_config_manager
+            
+            # Force reload config
+            db_config_manager.invalidate()
+            current_config = db_config_manager.get_config()
+            diagnostics['config_checks']['db_config_manager_keys'] = list(current_config.keys())
+            diagnostics['config_checks']['db_config_manager_has_url'] = 'production_database_url' in current_config
+            
             test_conn, db_type, error = get_eqemu_db_connection()
             
             if test_conn:

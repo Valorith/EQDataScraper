@@ -28,6 +28,11 @@ class DatabaseConfigManager:
     def get_config(self):
         """Get current configuration, reloading if file has changed."""
         with self._lock:
+            # If config has never been loaded, load it now
+            if self._config is None:
+                self._load_config()
+                return self._config
+                
             # Check if config file has been modified
             try:
                 stat = os.stat(self.config_path)
@@ -43,18 +48,18 @@ class DatabaseConfigManager:
                     self._load_config()
                     self._last_modified = mtime
                     
-                    # Call reload callbacks only if config was already loaded before
-                    if self._config is not None:
-                        for callback in self._reload_callbacks:
-                            try:
-                                callback()
-                            except Exception as e:
-                                logger.error(f"Error in config reload callback: {e}")
+                    # Call reload callbacks
+                    for callback in self._reload_callbacks:
+                        try:
+                            callback()
+                        except Exception as e:
+                            logger.error(f"Error in config reload callback: {e}")
                             
             except OSError:
-                # File doesn't exist
-                if self._config is None:
-                    self._config = {}
+                # File doesn't exist - try to load from persistent storage anyway
+                if self._config is None or len(self._config) == 0:
+                    logger.info("Config file doesn't exist, loading from persistent storage")
+                    self._load_config()
                     
         return self._config
         
@@ -72,6 +77,15 @@ class DatabaseConfigManager:
                 return
             
             # Fall back to config.json
+            logger.info(f"No persistent config found, trying config.json at: {self.config_path}")
+            
+            # Check if file exists
+            if not os.path.exists(self.config_path):
+                logger.warning(f"config.json not found at {self.config_path}")
+                if self._config is None:
+                    self._config = {}
+                return
+                
             with open(self.config_path, 'r') as f:
                 self._config = json.load(f)
                 logger.info("Database configuration reloaded from config.json")

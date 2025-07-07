@@ -3638,6 +3638,10 @@ from utils.db_connection_pool import close_connection_pool
 config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
 db_config_manager = DatabaseConfigManager(config_path)
 
+# Force initial load to ensure we get persistent config
+db_config_manager.get_config()
+logger.info("Database config manager initialized")
+
 # Add callback to close pool when config changes
 def on_db_config_change():
     """Close connection pool when database config changes."""
@@ -3726,9 +3730,14 @@ def get_eqemu_db_connection():
     # Get current config
     config = db_config_manager.get_config()
     
+    # Debug logging
+    app.logger.info(f"get_eqemu_db_connection: config keys = {list(config.keys())}")
+    app.logger.info(f"get_eqemu_db_connection: has production_database_url = {'production_database_url' in config}")
+    
     # Get database URL from config
     database_url = config.get('production_database_url', '')
     if not database_url:
+        app.logger.error(f"No database URL found. Config: {config}")
         return None, None, "Database not configured"
     
     # Import required modules
