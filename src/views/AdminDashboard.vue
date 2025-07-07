@@ -182,6 +182,10 @@
             <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshingConnection }"></i>
             Refresh
           </button>
+          <button @click="runDiagnostics" class="action-button secondary" :disabled="runningDiagnostics">
+            <i class="fas fa-stethoscope" :class="{ 'fa-spin': runningDiagnostics }"></i>
+            Diagnose
+          </button>
         </div>
       </div>
     </div>
@@ -462,6 +466,7 @@ const databaseTestResult = ref(null)
 const testingConnection = ref(false)
 const savingConfig = ref(false)
 const refreshingConnection = ref(false)
+const runningDiagnostics = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -1108,9 +1113,121 @@ const refreshConnection = async () => {
     }
   } catch (error) {
     console.error('Failed to refresh connection:', error)
-    alert('Failed to refresh database connection. Check console for details.')
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to refresh database connection.'
+    
+    if (error.response) {
+      // Server responded with an error
+      if (error.response.status === 503) {
+        errorMessage = 'Database service unavailable. The backend server may be unable to connect to the database.'
+      } else if (error.response.data?.message) {
+        errorMessage = error.response.data.message
+      } else {
+        errorMessage = `Server error: ${error.response.status}`
+      }
+    } else if (error.request) {
+      // Request was made but no response
+      errorMessage = 'Unable to reach the backend server. Please check your connection.'
+    } else {
+      // Something else happened
+      errorMessage = error.message || 'An unexpected error occurred'
+    }
+    
+    alert(errorMessage + '\n\nCheck the browser console for more details.')
   } finally {
     refreshingConnection.value = false
+  }
+}
+
+const runDiagnostics = async () => {
+  runningDiagnostics.value = true
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await axios.get(`${API_BASE_URL}/api/admin/database/diagnostics`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (response.data.success && response.data.data) {
+      const diag = response.data.data
+      
+      // Build diagnostic report
+      let report = 'Database Diagnostics Report\n' + '='.repeat(40) + '\n\n'
+      
+      // Environment
+      report += 'Environment:\n'
+      for (const [key, value] of Object.entries(diag.environment || {})) {
+        report += `  ${key}: ${value}\n`
+      }
+      
+      // Config checks
+      report += '\nConfiguration:\n'
+      if (diag.config_checks) {
+        report += `  Config found: ${diag.config_checks.persistent_config_found ? 'Yes' : 'No'}\n`
+        if (diag.config_checks.persistent_config_found) {
+          report += `  Source: ${diag.config_checks.config_source}\n`
+          report += `  Host: ${diag.config_checks.host || 'N/A'}\n`
+          report += `  Port: ${diag.config_checks.port || 'N/A'}\n`
+          report += `  Database: ${diag.config_checks.database || 'N/A'}\n`
+          report += `  Username: ${diag.config_checks.username || 'N/A'}\n`
+          report += `  Has password: ${diag.config_checks.has_password ? 'Yes' : 'No'}\n`
+        }
+        if (diag.config_checks.error) {
+          report += `  Error: ${diag.config_checks.error}\n`
+        }
+      }
+      
+      // Connection test
+      report += '\nConnection Test:\n'
+      if (diag.connection_test) {
+        report += `  Success: ${diag.connection_test.success ? 'Yes' : 'No'}\n`
+        if (diag.connection_test.success) {
+          report += `  Database type: ${diag.connection_test.db_type}\n`
+          report += `  Query test: ${diag.connection_test.query_test}\n`
+        } else {
+          report += `  Error: ${diag.connection_test.error || 'Unknown'}\n`
+        }
+      }
+      
+      // Persistent storage
+      report += '\nPersistent Storage:\n'
+      if (diag.persistent_storage) {
+        report += `  Data directory: ${diag.persistent_storage.data_directory || 'N/A'}\n`
+        report += `  Directory exists: ${diag.persistent_storage.directory_exists ? 'Yes' : 'No'}\n`
+        report += `  Directory writable: ${diag.persistent_storage.directory_writable ? 'Yes' : 'No'}\n`
+        report += `  Config file exists: ${diag.persistent_storage.config_file_exists ? 'Yes' : 'No'}\n`
+      }
+      
+      // Recommendations
+      if (diag.recommendations && diag.recommendations.length > 0) {
+        report += '\nRecommendations:\n'
+        for (const rec of diag.recommendations) {
+          report += `  • ${rec}\n`
+        }
+      }
+      
+      // Show report
+      console.log(report)
+      alert(report)
+    } else {
+      alert('Failed to run diagnostics. Check console for details.')
+    }
+  } catch (error) {
+    console.error('Diagnostics error:', error)
+    
+    let errorMessage = 'Failed to run diagnostics: '
+    if (error.response?.data?.message) {
+      errorMessage += error.response.data.message
+    } else if (error.message) {
+      errorMessage += error.message
+    } else {
+      errorMessage += 'Unknown error'
+    }
+    
+    alert(errorMessage)
+  } finally {
+    runningDiagnostics.value = false
   }
 }
 

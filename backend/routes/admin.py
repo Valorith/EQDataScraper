@@ -1436,6 +1436,111 @@ def test_database_connection():
 # - discovered_items: Tracks which items have been discovered by players
 
 
+@admin_bp.route('/admin/database/diagnostics', methods=['GET'])
+@require_admin
+def database_diagnostics():
+    """
+    Run comprehensive database diagnostics to identify connection issues.
+    
+    Returns:
+        JSON response with diagnostic information
+    """
+    try:
+        import os
+        from utils.persistent_config import get_persistent_config
+        from urllib.parse import urlparse
+        
+        diagnostics = {
+            'environment': {
+                'RAILWAY_ENVIRONMENT': os.environ.get('RAILWAY_ENVIRONMENT', 'not set'),
+                'EQEMU_DATABASE_URL': 'set' if os.environ.get('EQEMU_DATABASE_URL') else 'not set',
+                'DATABASE_URL': 'set' if os.environ.get('DATABASE_URL') else 'not set (good - reserved for auth DB)',
+            },
+            'config_checks': {},
+            'connection_test': {},
+            'persistent_storage': {}
+        }
+        
+        # Check persistent config
+        try:
+            persistent_config = get_persistent_config()
+            db_config = persistent_config.get_database_config()
+            
+            if db_config:
+                diagnostics['config_checks']['persistent_config_found'] = True
+                diagnostics['config_checks']['config_source'] = db_config.get('config_source', 'unknown')
+                diagnostics['config_checks']['has_url'] = bool(db_config.get('production_database_url'))
+                
+                # Parse URL for display (hide password)
+                if db_config.get('production_database_url'):
+                    parsed = urlparse(db_config['production_database_url'])
+                    diagnostics['config_checks']['host'] = parsed.hostname
+                    diagnostics['config_checks']['port'] = parsed.port
+                    diagnostics['config_checks']['database'] = parsed.path[1:] if parsed.path else ''
+                    diagnostics['config_checks']['username'] = parsed.username
+                    diagnostics['config_checks']['has_password'] = bool(parsed.password)
+            else:
+                diagnostics['config_checks']['persistent_config_found'] = False
+        except Exception as e:
+            diagnostics['config_checks']['error'] = str(e)
+        
+        # Check database connection
+        try:
+            from app import get_eqemu_db_connection
+            test_conn, db_type, error = get_eqemu_db_connection()
+            
+            if test_conn:
+                diagnostics['connection_test']['success'] = True
+                diagnostics['connection_test']['db_type'] = db_type
+                
+                # Try a simple query
+                try:
+                    cursor = test_conn.cursor()
+                    cursor.execute("SELECT 1")
+                    result = cursor.fetchone()
+                    diagnostics['connection_test']['query_test'] = 'success'
+                    cursor.close()
+                except Exception as qe:
+                    diagnostics['connection_test']['query_test'] = f'failed: {str(qe)}'
+                
+                test_conn.close()
+            else:
+                diagnostics['connection_test']['success'] = False
+                diagnostics['connection_test']['error'] = error or 'Unknown error'
+        except Exception as e:
+            diagnostics['connection_test']['success'] = False
+            diagnostics['connection_test']['error'] = str(e)
+        
+        # Check persistent storage
+        try:
+            diagnostics['persistent_storage'] = {
+                'data_directory': str(persistent_config.data_dir),
+                'directory_exists': persistent_config.data_dir.exists() if persistent_config.data_dir else False,
+                'directory_writable': os.access(persistent_config.data_dir, os.W_OK) if persistent_config.data_dir and persistent_config.data_dir.exists() else False,
+                'config_file': str(persistent_config.config_file) if persistent_config.config_file else None,
+                'config_file_exists': persistent_config.config_file.exists() if persistent_config.config_file else False
+            }
+        except Exception as e:
+            diagnostics['persistent_storage']['error'] = str(e)
+        
+        # Recommendations
+        recommendations = []
+        if not diagnostics['config_checks'].get('persistent_config_found'):
+            recommendations.append("No database configuration found. Please configure through the admin panel.")
+        
+        if not diagnostics['connection_test'].get('success'):
+            recommendations.append("Database connection failed. Check configuration and network connectivity.")
+            if 'SSL' in diagnostics['connection_test'].get('error', ''):
+                recommendations.append("SSL connection error detected. Try disabling SSL in database configuration.")
+        
+        diagnostics['recommendations'] = recommendations
+        
+        return jsonify(create_success_response(diagnostics))
+        
+    except Exception as e:
+        return create_error_response(f"Diagnostics failed: {str(e)}", 500)
+
+
 @admin_bp.route('/admin/database/persist-check', methods=['GET'])
 @require_admin
 def check_persistence():
@@ -1552,30 +1657,42 @@ def reconnect_database():
     try:
         from flask import current_app
         from utils.db_connection_pool import close_connection_pool
+        from utils.persistent_config import get_persistent_config
         
         # Close existing connection pool to force reconnection
         close_connection_pool()
         
-        # Invalidate config cache to reload from env vars
+        # Force reload of database configuration from persistent storage
         if hasattr(current_app, 'db_config_manager'):
             current_app.db_config_manager.invalidate()
             logger.info("Database configuration cache invalidated for reconnection")
         
+        # Also check persistent config for database settings
+        persistent_config = get_persistent_config()
+        db_config = persistent_config.get_database_config()
+        
+        if db_config:
+            logger.info("Found database config in persistent storage, reloading...")
+            # The config manager should pick this up on next access
+        
         # Test new connection
         from app import get_eqemu_db_connection
-        test_conn = get_eqemu_db_connection()
+        test_conn, db_type, error = get_eqemu_db_connection()
         
         if test_conn:
             # Connection successful
             test_conn.close()
             return jsonify(create_success_response({
                 'message': 'Database reconnection successful',
-                'connected': True
+                'connected': True,
+                'db_type': db_type
             }))
         else:
-            return jsonify(create_error_response('Failed to reconnect to database', 500))
+            logger.error(f"Reconnection failed: {error}")
+            return jsonify(create_error_response(f'Failed to reconnect to database: {error}', 500))
             
     except Exception as e:
+        logger.error(f"Reconnection error: {str(e)}")
         return create_error_response(f"Reconnection failed: {str(e)}", 500)
 
 
