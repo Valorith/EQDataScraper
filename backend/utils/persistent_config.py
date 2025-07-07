@@ -124,8 +124,13 @@ class PersistentConfig:
         # Log what we're checking
         logger.info("Getting database configuration...")
         
+        # Debug: Log all environment variables that start with EQEMU_
+        eqemu_env_vars = {k: v for k, v in os.environ.items() if k.startswith('EQEMU_')}
+        logger.info(f"Found EQEMU_ environment variables: {list(eqemu_env_vars.keys())}")
+        
         # First priority: Check Railway environment variables
         db_url = os.environ.get('EQEMU_DATABASE_URL')
+        logger.info(f"EQEMU_DATABASE_URL value: {db_url[:50] if db_url else 'None'}...")
         
         if db_url:
             logger.info("Found EQEMU_DATABASE_URL in environment variables")

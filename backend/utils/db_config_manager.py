@@ -67,14 +67,19 @@ class DatabaseConfigManager:
         """Load configuration from file or persistent storage."""
         try:
             # Try persistent config first (for production)
+            logger.info("db_config_manager: Attempting to load from persistent storage")
             from utils.persistent_config import get_persistent_config
             persistent_config = get_persistent_config()
             db_config = persistent_config.get_database_config()
             
+            logger.info(f"db_config_manager: persistent_config.get_database_config() returned: {type(db_config)}")
             if db_config:
+                logger.info(f"db_config_manager: Got config with keys: {list(db_config.keys())}")
                 self._config = db_config
                 logger.info("Database configuration loaded from persistent storage")
                 return
+            else:
+                logger.warning("db_config_manager: get_database_config() returned None or empty")
             
             # Fall back to config.json
             logger.info(f"No persistent config found, trying config.json at: {self.config_path}")
