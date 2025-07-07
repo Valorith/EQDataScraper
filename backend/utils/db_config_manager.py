@@ -30,7 +30,9 @@ class DatabaseConfigManager:
         with self._lock:
             # If config has never been loaded, load it now
             if self._config is None:
+                logger.info("db_config_manager: Config is None, forcing load")
                 self._load_config()
+                logger.info(f"db_config_manager: After load, config type: {type(self._config)}, keys: {list(self._config.keys()) if self._config else 'None'}")
                 return self._config
                 
             # Check if config file has been modified
@@ -103,3 +105,13 @@ class DatabaseConfigManager:
         """Force config reload on next access."""
         with self._lock:
             self._last_modified = None
+    
+    def force_reload(self):
+        """Force immediate config reload and return the result."""
+        with self._lock:
+            logger.info("db_config_manager: Force reload requested")
+            self._config = None
+            self._last_modified = None
+            self._load_config()
+            logger.info(f"db_config_manager: Force reload complete, config keys: {list(self._config.keys()) if self._config else 'None'}")
+            return self._config

@@ -1538,10 +1538,13 @@ def database_diagnostics():
             from app import get_eqemu_db_connection, db_config_manager
             
             # Force reload config
-            db_config_manager.invalidate()
-            current_config = db_config_manager.get_config()
-            diagnostics['config_checks']['db_config_manager_keys'] = list(current_config.keys())
-            diagnostics['config_checks']['db_config_manager_has_url'] = 'production_database_url' in current_config
+            logger.info("Diagnostics: About to force reload db_config_manager")
+            current_config = db_config_manager.force_reload()
+            logger.info(f"Diagnostics: db_config_manager force reload returned: {type(current_config)}")
+            
+            diagnostics['config_checks']['db_config_manager_keys'] = list(current_config.keys()) if current_config else []
+            diagnostics['config_checks']['db_config_manager_has_url'] = 'production_database_url' in current_config if current_config else False
+            diagnostics['config_checks']['db_config_manager_type'] = str(type(current_config))
             
             test_conn, db_type, error = get_eqemu_db_connection()
             
