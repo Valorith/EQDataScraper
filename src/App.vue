@@ -17,7 +17,7 @@
       </div>
     </div>
     
-    <router-view @toggle-debug-panel="toggleDebugPanel" />
+    <router-view />
     
     <!-- Debug Panel for production debugging -->
     <DebugPanel ref="debugPanel" />
