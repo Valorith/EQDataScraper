@@ -80,9 +80,26 @@ def get_mysql_connection(config):
         logger.error(f"Socket address resolution failed: {type(e).__name__}: {str(e)}")
         logger.error("This indicates a network-level issue preventing connection to the MySQL server")
     
+    # Force string conversion for host to avoid any type issues
+    host = str(config['host']).strip()
+    port = int(config['port'])
+    
+    # Debug: Check for any hidden characters
+    logger.info(f"MySQL connection params - host type: {type(host)}, host value: '{host}'")
+    logger.info(f"MySQL connection params - host length: {len(host)}, repr: {repr(host)}")
+    logger.info(f"MySQL connection params - port type: {type(port)}, port value: {port}")
+    
+    # Additional check - see if host has any non-printable characters
+    import re
+    if re.search(r'[^\x20-\x7E]', host):
+        logger.warning(f"Host contains non-printable characters!")
+        # Clean it
+        host = re.sub(r'[^\x20-\x7E]', '', host)
+        logger.info(f"Cleaned host: '{host}'")
+    
     conn_params = {
-        'host': config['host'],
-        'port': int(config['port']),  # Ensure port is an integer
+        'host': host,
+        'port': port,
         'database': config['database'],
         'user': config['username'],
         'password': config['password'],
@@ -97,13 +114,32 @@ def get_mysql_connection(config):
         logger.warning("SSL requested but temporarily disabled for debugging")
         # conn_params['ssl'] = {}  # Commenting out SSL for now
     
+    # Test direct socket connection first
+    try:
+        import socket
+        logger.info("Testing direct socket connection before PyMySQL...")
+        test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_sock.settimeout(5)
+        test_result = test_sock.connect_ex((host, port))
+        test_sock.close()
+        if test_result == 0:
+            logger.info(f"Direct socket connection successful to {host}:{port}")
+        else:
+            logger.error(f"Direct socket connection failed with code {test_result}")
+    except Exception as e:
+        logger.error(f"Socket test failed: {type(e).__name__}: {str(e)}")
+    
     try:
         logger.info("Attempting MySQL connection...")
+        logger.info(f"PyMySQL version: {pymysql.__version__}")
         conn = pymysql.connect(**conn_params)
         logger.info("MySQL connection successful!")
         return conn
     except Exception as e:
         logger.error(f"MySQL connection failed: {type(e).__name__}: {str(e)}")
+        # Log the exact error for debugging
+        if hasattr(e, 'args'):
+            logger.error(f"Error args: {e.args}")
         raise
 
 
