@@ -980,19 +980,43 @@ const updateDefaultPort = () => {
   }
 }
 
-const openDatabaseModal = () => {
-  // Populate form with current configuration if available
-  if (databaseStatus.value.connected && databaseStatus.value.db_type) {
-    databaseForm.value = {
-      db_type: databaseStatus.value.db_type || 'mssql',
-      host: databaseStatus.value.host || '',
-      port: databaseStatus.value.port || (databaseStatus.value.db_type === 'mysql' ? 3306 : databaseStatus.value.db_type === 'mssql' ? 1433 : 5432),
-      database: databaseStatus.value.database || '',
-      username: databaseStatus.value.username || '',
-      password: '', // Password is not returned for security
-      use_ssl: databaseStatus.value.use_ssl !== undefined ? databaseStatus.value.use_ssl : true
+const openDatabaseModal = async () => {
+  // Try to load stored configuration even if database is disconnected
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const configRes = await axios.get(`${API_BASE_URL}/api/admin/database/stored-config`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    
+    if (configRes.data.success && configRes.data.data) {
+      const config = configRes.data.data
+      databaseForm.value = {
+        db_type: config.database_type || 'mysql',
+        host: config.host || '',
+        port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
+        database: config.database_name || '',
+        username: config.username || '',
+        password: '', // Password is not returned for security
+        use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
+      }
+    } else {
+      // Fallback to current status if stored config not available
+      if (databaseStatus.value.db_type) {
+        databaseForm.value = {
+          db_type: databaseStatus.value.db_type || 'mysql',
+          host: databaseStatus.value.host || '',
+          port: databaseStatus.value.port || (databaseStatus.value.db_type === 'mysql' ? 3306 : databaseStatus.value.db_type === 'mssql' ? 1433 : 5432),
+          database: databaseStatus.value.database || '',
+          username: databaseStatus.value.username || '',
+          password: '', // Password is not returned for security
+          use_ssl: databaseStatus.value.use_ssl !== undefined ? databaseStatus.value.use_ssl : true
+        }
+      }
     }
+  } catch (error) {
+    console.log('Could not load stored configuration, using defaults')
   }
+  
   showDatabaseModal.value = true
 }
 

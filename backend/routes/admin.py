@@ -1436,6 +1436,55 @@ def test_database_connection():
 # - discovered_items: Tracks which items have been discovered by players
 
 
+@admin_bp.route('/admin/database/stored-config', methods=['GET'])
+@require_admin
+def get_stored_database_config():
+    """
+    Get the stored database configuration (for populating the config modal).
+    This returns the configuration even if the database is disconnected.
+    
+    Returns:
+        JSON response with stored configuration data
+    """
+    try:
+        from utils.persistent_config import get_persistent_config
+        from urllib.parse import urlparse
+        
+        # Get stored configuration from persistent storage
+        persistent_config = get_persistent_config()
+        db_config = persistent_config.get_database_config()
+        
+        if not db_config:
+            return create_error_response("No database configuration found", 404)
+        
+        # Parse the database URL to extract components
+        db_url = db_config.get('production_database_url')
+        if not db_url:
+            return create_error_response("No database URL found in configuration", 404)
+        
+        try:
+            parsed = urlparse(db_url)
+            config_data = {
+                'database_type': db_config.get('database_type', 'mysql'),
+                'host': parsed.hostname,
+                'port': parsed.port,
+                'database_name': parsed.path[1:] if parsed.path else '',
+                'username': parsed.username,
+                'database_ssl': db_config.get('database_ssl', True),
+                'config_source': db_config.get('config_source', 'unknown')
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': config_data
+            })
+        except Exception as e:
+            return create_error_response(f"Error parsing database configuration: {str(e)}", 500)
+            
+    except Exception as e:
+        return create_error_response(f"Error loading stored database configuration: {str(e)}", 500)
+
+
 @admin_bp.route('/admin/database/diagnostics', methods=['GET'])
 @require_admin
 def database_diagnostics():
