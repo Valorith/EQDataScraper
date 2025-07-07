@@ -87,10 +87,13 @@ def validate_json_filters(filters_json, max_filters=10):
         max_filters: Maximum number of filters allowed
         
     Returns:
-        List of validated filter dictionaries
+        Dictionary with keys:
+            - is_valid (bool): Whether validation succeeded
+            - filters (list): List of validated filter dictionaries (if valid)
+            - error (str): Error message (if invalid)
     """
     if not filters_json:
-        return []
+        return {"is_valid": True, "filters": []}
     
     try:
         import json
@@ -98,40 +101,108 @@ def validate_json_filters(filters_json, max_filters=10):
         
         # Ensure it's a list
         if not isinstance(filters, list):
-            return []
+            return {
+                "is_valid": False,
+                "error": "Filters must be a JSON array"
+            }
         
-        # Limit number of filters
-        filters = filters[:max_filters]
+        # Check max filters limit
+        if len(filters) > max_filters:
+            return {
+                "is_valid": False,
+                "error": f"Maximum {max_filters} filters allowed"
+            }
+        
+        # Define field categories for validation
+        text_fields = {'loretext'}
+        numeric_fields = {'price', 'weight', 'size', 'damage', 'delay', 'ac', 'hp', 'mana', 
+                         'str', 'sta', 'agi', 'dex', 'wis', 'int', 'cha', 
+                         'mr', 'fr', 'cr', 'dr', 'pr', 'reqlevel', 'reclevel'}
+        boolean_fields = {'magic', 'lore', 'lore_flag', 'nodrop', 'norent', 'artifact'}
+        effect_fields = {'clickeffect', 'proceffect', 'worneffect', 'focuseffect'}
+        
+        # All allowed fields
+        allowed_fields = text_fields | numeric_fields | boolean_fields | effect_fields | {'slots'}
+        
+        # Operators by field type
+        text_operators = {'contains', 'equals', 'not equals', 'starts with', 'ends with'}
+        numeric_operators = {'equals', 'not equals', 'greater than', 'less than', 'between'}
+        boolean_operators = {'is'}
+        effect_operators = {'exists'}
+        slot_operators = {'includes'}
         
         # Validate each filter
         validated_filters = []
-        allowed_fields = {
-            'lore', 'price', 'weight', 'size', 'damage', 'delay',
-            'ac', 'hp', 'mana', 'str', 'sta', 'agi', 'dex', 'wis',
-            'int', 'cha', 'mr', 'fr', 'cr', 'dr', 'pr', 'magic',
-            'lore_flag', 'nodrop', 'norent', 'artifact', 'reqlevel',
-            'reclevel', 'slots', 'clickeffect', 'proceffect',
-            'worneffect', 'focuseffect'
-        }
         
-        allowed_operators = {
-            'equals', 'not equals', 'contains', 'starts with',
-            'ends with', 'greater than', 'less than', 'between',
-            'exists', 'is', 'includes'
-        }
-        
-        for filter_item in filters:
+        for i, filter_item in enumerate(filters):
             if not isinstance(filter_item, dict):
-                continue
+                return {
+                    "is_valid": False,
+                    "error": f"Filter at index {i} must be an object"
+                }
                 
             field = filter_item.get('field', '')
             operator = filter_item.get('operator', '')
             
-            # Validate field and operator
-            if field not in allowed_fields or operator not in allowed_operators:
-                continue
+            # Check for missing required fields
+            if not field or not operator:
+                return {
+                    "is_valid": False,
+                    "error": f"Missing required filter fields at index {i}"
+                }
             
-            # Sanitize values
+            # Validate field
+            if field not in allowed_fields:
+                return {
+                    "is_valid": False,
+                    "error": f"Invalid field '{field}' at index {i}"
+                }
+            
+            # Validate operator based on field type
+            valid_operator = False
+            if field in text_fields and operator in text_operators:
+                valid_operator = True
+            elif field in numeric_fields and operator in numeric_operators:
+                valid_operator = True
+            elif field in boolean_fields and operator in boolean_operators:
+                valid_operator = True
+            elif field in effect_fields and operator in effect_operators:
+                valid_operator = True
+            elif field == 'slots' and operator in slot_operators:
+                valid_operator = True
+                
+            if not valid_operator:
+                return {
+                    "is_valid": False,
+                    "error": f"Invalid operator '{operator}' for field '{field}'"
+                }
+            
+            # Check for required value
+            if operator != 'exists' and 'value' not in filter_item:
+                return {
+                    "is_valid": False,
+                    "error": f"Missing required filter fields at index {i}"
+                }
+            
+            # Special validation for 'between' operator
+            if operator == 'between':
+                value = filter_item.get('value')
+                if not isinstance(value, list) or len(value) != 2:
+                    return {
+                        "is_valid": False,
+                        "error": f"Between operator requires 2 numeric values"
+                    }
+                # Check if both values are numeric
+                try:
+                    float(value[0])
+                    float(value[1])
+                except (TypeError, ValueError):
+                    return {
+                        "is_valid": False,
+                        "error": f"Between operator requires 2 numeric values"
+                    }
+            
+            # Build validated filter
             validated_filter = {
                 'field': field,
                 'operator': operator
@@ -139,31 +210,50 @@ def validate_json_filters(filters_json, max_filters=10):
             
             # Handle different value types
             if 'value' in filter_item:
-                if isinstance(filter_item['value'], (int, float)):
-                    validated_filter['value'] = filter_item['value']
-                elif isinstance(filter_item['value'], bool):
-                    validated_filter['value'] = filter_item['value']
+                value = filter_item['value']
+                
+                # For between operator, keep as list
+                if operator == 'between':
+                    validated_filter['value'] = value
+                elif field in numeric_fields and operator in numeric_operators:
+                    # Numeric fields must have numeric values
+                    if not isinstance(value, (int, float)):
+                        try:
+                            # Try to convert string numbers
+                            validated_filter['value'] = float(value)
+                        except (TypeError, ValueError):
+                            return {
+                                "is_valid": False,
+                                "error": f"Field '{field}' must be numeric"
+                            }
+                    else:
+                        validated_filter['value'] = value
+                elif isinstance(value, (int, float, bool)):
+                    validated_filter['value'] = value
                 else:
                     # Sanitize string values
                     validated_filter['value'] = sanitize_search_input(
-                        str(filter_item['value']), max_length=50
+                        str(value), max_length=50
                     )
             
-            # Handle 'between' operator second value
+            # Handle 'value2' for backward compatibility
             if operator == 'between' and 'value2' in filter_item:
-                if isinstance(filter_item['value2'], (int, float)):
-                    validated_filter['value2'] = filter_item['value2']
-                else:
-                    validated_filter['value2'] = validate_numeric_input(
-                        filter_item['value2']
-                    )
+                validated_filter['value2'] = filter_item['value2']
             
             validated_filters.append(validated_filter)
         
-        return validated_filters
+        return {"is_valid": True, "filters": validated_filters}
         
-    except Exception:
-        return []
+    except json.JSONDecodeError as e:
+        return {
+            "is_valid": False,
+            "error": f"Invalid JSON: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "is_valid": False,
+            "error": f"Validation error: {str(e)}"
+        }
 
 def rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300):
     """
@@ -269,6 +359,11 @@ def validate_item_search_params(params):
     
     # Validate JSON filters
     if 'filters' in params:
-        validated['filters'] = validate_json_filters(params.get('filters'))
+        filter_result = validate_json_filters(params.get('filters'))
+        if filter_result['is_valid']:
+            validated['filters'] = filter_result['filters']
+        else:
+            # Include empty filters list if validation fails
+            validated['filters'] = []
     
     return validated
