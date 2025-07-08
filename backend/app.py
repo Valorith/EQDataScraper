@@ -4444,25 +4444,42 @@ if __name__ == '__main__':
     atexit.register(cleanup_resources)
     
     # Initialize database connections on startup
-    initialize_database_connection()  # Auth database
-    
-    # Initialize content database with retry logic
-    try:
-        from utils.content_db_manager import initialize_content_database
-        logger.info("Initializing content database...")
-        if initialize_content_database():
-            logger.info("✅ Content database initialized successfully")
+    # Skip heavy database initialization in dev mode or testing for faster startup
+    if os.environ.get('ENABLE_DEV_AUTH') == 'true' or os.environ.get('TESTING') == '1':
+        if os.environ.get('TESTING') == '1':
+            logger.info("⚡ Testing mode: Skipping database initialization for fast startup")
         else:
-            logger.warning("⚠️ Content database initialization failed - will retry on first request")
-    except Exception as e:
-        logger.error(f"Error initializing content database: {e}")
+            logger.info("⚡ Dev mode: Skipping database initialization for fast startup")
+        logger.info("⚡ Databases will be initialized on first request")
+    else:
+        initialize_database_connection()  # Auth database
+        
+        # Initialize content database with retry logic
+        try:
+            from utils.content_db_manager import initialize_content_database
+            logger.info("Initializing content database...")
+            if initialize_content_database():
+                logger.info("✅ Content database initialized successfully")
+            else:
+                logger.warning("⚠️ Content database initialization failed - will retry on first request")
+        except Exception as e:
+            logger.error(f"Error initializing content database: {e}")
     
     # Preload spell data before starting server for optimal performance
-    # Skip during CI testing to avoid long startup times
-    if not os.environ.get('SKIP_STARTUP_CACHE_REFRESH'):
+    # Skip during CI testing or dev mode to avoid long startup times
+    skip_preload = (os.environ.get('SKIP_STARTUP_CACHE_REFRESH') or 
+                   os.environ.get('ENABLE_DEV_AUTH') == 'true' or
+                   os.environ.get('TESTING') == '1')
+    
+    if not skip_preload:
         preload_spell_data_on_startup()
     else:
-        logger.info("⚠️ Skipping startup cache refresh (SKIP_STARTUP_CACHE_REFRESH=1)")
+        if os.environ.get('TESTING') == '1':
+            logger.info("⚡ Skipping startup cache refresh for testing mode (fast startup)")
+        elif os.environ.get('ENABLE_DEV_AUTH') == 'true':
+            logger.info("⚡ Skipping startup cache refresh for dev mode (fast startup)")
+        else:
+            logger.info("⚠️ Skipping startup cache refresh (SKIP_STARTUP_CACHE_REFRESH=1)")
     
     # Mark server startup as complete
     server_startup_progress['is_starting'] = False
