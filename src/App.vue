@@ -6,7 +6,7 @@
     <!-- User Authentication (top-right corner) -->
     <div class="auth-section">
       <UserMenu v-if="userStore.isAuthenticated" />
-      <GoogleAuthButton v-else />
+      <GoogleAuthButton v-else @trigger-dev-login="handleTriggerDevLogin" />
     </div>
     
     <!-- Cache pre-hydration indicator -->
@@ -19,11 +19,9 @@
     
     <router-view />
     
-    <!-- Debug Panel for production debugging -->
-    <DebugPanel ref="debugPanel" />
     
-    <!-- Dev Login Panel (only shows in development with flag) -->
-    <DevLogin v-if="!isProduction" ref="devLogin" />
+    <!-- Dev Login Panel (only in development mode) -->
+    <DevLogin v-show="showDevLogin" ref="devLogin" :debug-panel-visible="false" />
     
     <!-- Toast Notification -->
     <ToastNotification 
@@ -34,46 +32,24 @@
       :type="currentToast.type"
       :duration="currentToast.duration"
     />
-    
-    <!-- Debug Panel Toggle Button -->
-    <button 
-      v-if="!isProduction || debugPanelEnabled" 
-      @click="toggleDebugPanel" 
-      class="debug-toggle-btn"
-      :class="{ 'active': debugPanelVisible }"
-      title="Toggle Debug Panel"
-    >
-      🔧
-    </button>
-    
-    <!-- Dev Login Toggle Button (for simulating login) -->
-    <button 
-      v-if="!isProduction" 
-      @click="toggleDevLogin" 
-      class="dev-login-toggle-btn"
-      title="Toggle Dev Login Panel"
-    >
-      👤
-    </button>
   </div>
 </template>
 
 <script>
 import { useSpellsStore } from './stores/spells'
 import { useUserStore } from './stores/userStore'
-import DebugPanel from './components/DebugPanel.vue'
 import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
 import ToastNotification from './components/ToastNotification.vue'
 import { toastService } from './services/toastService'
-import { ref, watch } from 'vue'
+import { ref, watch, watchEffect, toRef, computed } from 'vue'
+import { useDevMode } from './composables/useDevMode'
 
 export default {
   name: 'App',
   components: {
-    DebugPanel,
     DevLogin,
     AppLogo,
     GoogleAuthButton,
@@ -86,6 +62,11 @@ export default {
     const isProduction = import.meta.env.PROD
     const currentToast = ref(null)
     const toast = ref(null)
+    const devMode = useDevMode()
+    const devLogin = ref(null)
+    
+    // Use the ref directly from the composable
+    const { isDevAuthEnabled, checkDevAuthStatus } = devMode
     
     // Watch for toast changes
     watch(() => toastService.getCurrent(), (newToast) => {
@@ -102,39 +83,73 @@ export default {
       }
     }, { immediate: true })
     
-    return { spellsStore, userStore, isProduction, currentToast, toast }
-  },
-  computed: {
-    debugPanelEnabled() {
-      // Check if debug panel is enabled via localStorage (for production)
-      return localStorage.getItem('debug-panel') === 'true'
-    },
-    debugPanelVisible() {
-      // Check if debug panel is currently visible
-      return this.$refs.debugPanel?.showDebugPanel || false
-    },
-    isAdminRoute() {
-      // Check if current route is an admin route
-      return this.$route?.path?.startsWith('/admin')
+    
+    const showDevLogin = computed(() => {
+      // Check custom app mode from run.py
+      const appMode = import.meta.env.VITE_APP_MODE
+      
+      // Only show dev login in development mode
+      if (appMode !== 'development') {
+        return false
+      }
+      
+      // Only show when backend dev auth is explicitly enabled via run.py start dev
+      const backendEnabled = isDevAuthEnabled.value
+      const result = backendEnabled
+      console.log(`🔧 Dev Login Panel: ${result ? 'VISIBLE' : 'HIDDEN'} (App Mode: ${appMode}, Backend Auth: ${backendEnabled})`)
+      return result
+    })
+    
+    const handleTriggerDevLogin = () => {
+      console.log('🔧 Opening dev login panel...')
+      if (devLogin.value && devLogin.value.toggleMinimize) {
+        devLogin.value.toggleMinimize()
+        console.log('✅ Dev login panel opened successfully')
+      } else {
+        console.error('❌ Failed to open dev login panel - component not found')
+      }
+    }
+
+    return { 
+      spellsStore, 
+      userStore, 
+      isProduction, 
+      currentToast, 
+      toast, 
+      isDevAuthEnabled, 
+      checkDevAuthStatus,
+      showDevLogin,
+      devLogin,
+      handleTriggerDevLogin
     }
   },
   methods: {
-    toggleDebugPanel() {
-      if (this.$refs.debugPanel) {
-        this.$refs.debugPanel.toggleDebugPanel()
-      }
-    },
-    toggleDevLogin() {
-      if (this.$refs.devLogin && typeof this.$refs.devLogin.toggleMinimize === 'function') {
-        this.$refs.devLogin.toggleMinimize()
-      } else {
-        console.debug('DevLogin component not available or toggleMinimize method not found')
-      }
-    }
   },
   async mounted() {
     // Import clearAuth utility for debugging
     import('@/utils/clearAuth.js')
+    
+    // Log current environment status
+    console.log('🏁 App starting...')
+    console.log(`🏁 Production build: ${this.isProduction}`)
+    console.log(`🏁 Vite mode: ${import.meta.env.MODE}`)
+    console.log(`🏁 Should check dev auth: ${!this.isProduction}`)
+    
+    // Always check dev auth status (backend controls if it's enabled)
+    // Try immediate check first
+    await this.checkDevAuthStatus()
+    
+    // Log final dev auth state
+    console.log(`🏁 Final dev auth enabled:`, this.isDevAuthEnabled)
+    
+    // If failed, retry after a delay for backend startup
+    if (!this.isDevAuthEnabled && !this.isProduction) {
+      console.debug('🔧 Dev auth check failed, retrying in 3 seconds...')
+      setTimeout(async () => {
+        await this.checkDevAuthStatus(true) // Force re-check
+        console.log(`🏁 Retry result - dev auth enabled:`, this.isDevAuthEnabled)
+      }, 3000)
+    }
     
     // Initialize authentication system
     try {
@@ -228,77 +243,4 @@ export default {
   }
 }
 
-/* Debug Panel Toggle Button */
-.debug-toggle-btn {
-  position: fixed;
-  bottom: 20px;
-  right: 80px; /* Position next to cache indicator */
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(145deg, rgba(147, 112, 219, 0.2), rgba(147, 112, 219, 0.1));
-  backdrop-filter: blur(15px);
-  border: 2px solid rgba(147, 112, 219, 0.3);
-  border-radius: 12px;
-  color: white;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  z-index: 9998; /* Below cache indicator */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.debug-toggle-btn:hover {
-  background: linear-gradient(145deg, rgba(147, 112, 219, 0.4), rgba(147, 112, 219, 0.2));
-  border-color: rgba(147, 112, 219, 0.6);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(147, 112, 219, 0.4);
-}
-
-.debug-toggle-btn.active {
-  background: linear-gradient(145deg, rgba(147, 112, 219, 0.6), rgba(147, 112, 219, 0.4));
-  border-color: rgba(147, 112, 219, 0.8);
-  box-shadow: 0 0 20px rgba(147, 112, 219, 0.6);
-  animation: debugPulse 2s infinite;
-}
-
-@keyframes debugPulse {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(147, 112, 219, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(147, 112, 219, 0.8), 0 0 40px rgba(147, 112, 219, 0.4);
-  }
-}
-
-/* Dev Login Toggle Button */
-.dev-login-toggle-btn {
-  position: fixed;
-  bottom: 20px;
-  right: 20px; /* Far right corner */
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(145deg, rgba(72, 187, 120, 0.2), rgba(72, 187, 120, 0.1));
-  backdrop-filter: blur(15px);
-  border: 2px solid rgba(72, 187, 120, 0.3);
-  border-radius: 12px;
-  color: white;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  z-index: 9997; /* Below debug toggle */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dev-login-toggle-btn:hover {
-  background: linear-gradient(145deg, rgba(72, 187, 120, 0.4), rgba(72, 187, 120, 0.2));
-  border-color: rgba(72, 187, 120, 0.6);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(72, 187, 120, 0.4);
-}
 </style> 
