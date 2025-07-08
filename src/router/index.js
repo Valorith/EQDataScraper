@@ -1,8 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainPage from '../views/MainPage.vue'
 import Home from '../views/Home.vue'
-import Spells from '../views/Spells.vue'
-import ClassSpells from '../views/ClassSpells.vue'
 import Items from '../views/Items.vue'
 
 // OAuth authentication components (lazy loaded)
@@ -13,8 +11,6 @@ const Profile = () => import('../views/Profile.vue')
 import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminDashboardTest from '../views/AdminDashboardTest.vue'
 import AdminUsers from '../views/AdminUsers.vue'
-import AdminCache from '../views/AdminCache.vue'
-import AdminScraping from '../views/AdminScraping.vue'
 import AdminSystem from '../views/AdminSystem.vue'
 import AdminLogs from '../views/AdminLogs.vue'
 
@@ -28,17 +24,6 @@ const routes = [
     path: '/home',
     name: 'Home',
     component: Home
-  },
-  {
-    path: '/spells',
-    name: 'Spells',
-    component: Spells
-  },
-  {
-    path: '/class/:className',
-    name: 'ClassSpells',
-    component: ClassSpells,
-    props: true
   },
   {
     path: '/items',
@@ -75,18 +60,6 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
-    path: '/admin/cache',
-    name: 'AdminCache',
-    component: AdminCache,
-    meta: { requiresAuth: true, requiresAdmin: true }
-  },
-  {
-    path: '/admin/scraping',
-    name: 'AdminScraping',
-    component: AdminScraping,
-    meta: { requiresAuth: true, requiresAdmin: true }
-  },
-  {
     path: '/admin/system',
     name: 'AdminSystem',
     component: AdminSystem,
@@ -107,7 +80,9 @@ const router = createRouter({
 
 // Navigation guards for authentication
 router.beforeEach(async (to, from, next) => {
-  console.log('Navigating to:', to.path, to.name)
+  if (import.meta.env.MODE === 'development') {
+    console.log('Navigating to:', to.path, to.name)
+  }
   
   // Allow access to main page and auth callback without login
   const publicRoutes = ['MainPage', 'AuthCallback']
@@ -124,8 +99,10 @@ router.beforeEach(async (to, from, next) => {
     const { toastService } = await import('../services/toastService')
     const userStore = useUserStore()
     
-    console.log('Auth check - isAuthenticated:', userStore.isAuthenticated)
-    console.log('Auth check - user role:', userStore.user?.role)
+    if (import.meta.env.MODE === 'development') {
+      console.log('Auth check - isAuthenticated:', userStore.isAuthenticated)
+      console.log('Auth check - user role:', userStore.user?.role)
+    }
     
     if (!userStore.isAuthenticated) {
       // Show toast message
@@ -137,7 +114,9 @@ router.beforeEach(async (to, from, next) => {
     
     // Check if route specifically requires admin
     if (to.matched.some(record => record.meta.requiresAdmin)) {
-      console.log('Route requires admin. User is admin:', userStore.user?.role === 'admin')
+      if (import.meta.env.MODE === 'development') {
+        console.log('Route requires admin. User is admin:', userStore.user?.role === 'admin')
+      }
       if (userStore.user?.role !== 'admin') {
         toastService.error('Admin access required', 3000)
         next('/')
@@ -145,7 +124,9 @@ router.beforeEach(async (to, from, next) => {
       }
     }
     
-    console.log('Navigation approved')
+    if (import.meta.env.MODE === 'development') {
+      console.log('Navigation approved')
+    }
     next()
   } catch (err) {
     console.error('Error in route guard:', err)
