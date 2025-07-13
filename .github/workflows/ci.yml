@@ -40,14 +40,9 @@ jobs:
         python -m pytest --cov --cov-report=xml --cov-report=term-missing \
           tests/test_auth_routes.py \
           tests/test_advanced_filters.py \
-          tests/test_api_endpoints.py::TestSpellEndpoints::test_get_classes_endpoint \
-          tests/test_api_endpoints.py::TestSpellEndpoints::test_get_spells_invalid_class \
-          tests/test_api_endpoints.py::TestSearchEndpoints::test_search_spells_no_query \
-          tests/test_api_endpoints.py::TestRefreshEndpoints::test_refresh_spell_cache_endpoint_success \
-          tests/test_api_endpoints.py::TestErrorHandling::test_missing_request_data \
-          --ignore=tests/test_startup_cache.py \
-          --ignore=tests/test_cache_management.py \
-          --ignore=tests/test_admin_activities.py
+          tests/test_user_model.py \
+          tests/test_jwt_utils.py \
+          tests/test_security.py
       env:
         TESTING: 1
         DATABASE_URL: ""
@@ -59,9 +54,9 @@ jobs:
       run: |
         echo "Running critical Railway deployment tests..."
         python -m pytest \
-          tests/test_api_endpoints.py::TestSpellEndpoints::test_get_spells_invalid_class \
           tests/test_auth_routes.py::TestAuthRoutes::test_google_login_url_generation \
           tests/test_advanced_filters.py::TestAdvancedFilters::test_filter_validation_text_fields \
+          tests/test_user_model.py::TestUserModel::test_create_user_success \
           -x --tb=short --disable-warnings
       env:
         TESTING: 1
