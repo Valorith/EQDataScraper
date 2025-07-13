@@ -25,8 +25,25 @@ try:
 except ImportError:
     print("⚠️ python-dotenv not available, using system environment variables only")
 
-# Import scrape_spells from the same directory
-from scrape_spells import CLASSES
+# CLASSES constant moved here since spell system is disabled
+CLASSES = {
+    'Warrior': 1,
+    'Cleric': 2,
+    'Paladin': 3,
+    'Ranger': 4,
+    'ShadowKnight': 5,
+    'Druid': 6,
+    'Monk': 7,
+    'Bard': 8,
+    'Rogue': 9,
+    'Shaman': 10,
+    'Necromancer': 11,
+    'Wizard': 12,
+    'Magician': 13,
+    'Enchanter': 14,
+    'Beastlord': 15,
+    'Berserker': 16,
+}
 from utils.security import sanitize_search_input, validate_item_search_params, rate_limit_by_ip
 
 # Import activity logger if user accounts are enabled
@@ -454,25 +471,7 @@ def init_database_cache():
             conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
         
-        # Create cache tables
-        if DB_TYPE == 'mysql':
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS spell_cache (
-                    class_name VARCHAR(50) PRIMARY KEY,
-                    data JSON NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )
-            """)
-        else:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS spell_cache (
-                    class_name VARCHAR(50) PRIMARY KEY,
-                    data JSONB NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+        # SPELL CACHE TABLES REMOVED - spell system disabled
         
         # Create activity_logs table if user accounts are enabled
         if ENABLE_USER_ACCOUNTS:
@@ -495,35 +494,7 @@ def init_database_cache():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_action ON activity_logs(action)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at DESC)")
         
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pricing_cache (
-                spell_id VARCHAR(50) PRIMARY KEY,
-                data JSONB NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS spell_details_cache (
-                spell_id VARCHAR(50) PRIMARY KEY,
-                data JSONB NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pricing_fetch_attempts (
-                spell_id VARCHAR(50) PRIMARY KEY,
-                attempt_count INTEGER DEFAULT 1,
-                last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                success BOOLEAN DEFAULT FALSE,
-                error_message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # SPELL CACHE TABLES REMOVED - spell system disabled
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS cache_metadata (
@@ -581,51 +552,9 @@ CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
-# Global cache variables - initialize at module level
-spells_cache = {}
-spell_details_cache = {}
-cache_timestamp = {}
-last_scrape_time = {}
-pricing_cache_timestamp = {}
-pricing_lookup = {}
-pricing_cache_loaded = False
+# SPELL SYSTEM DISABLED - All spell caching removed
 
-def load_all_pricing_to_memory():
-    """Load all pricing data from database to memory cache (one-time operation)"""
-    global pricing_lookup, pricing_cache_loaded
-    
-    if pricing_cache_loaded:
-        return
-    
-    # Skip if not using database cache
-    if not USE_DATABASE_CACHE:
-        return
-    
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # Load ALL pricing data in one query to minimize DB hits
-        cursor.execute("""
-            SELECT spell_id, data->'pricing' as pricing 
-            FROM spell_details_cache 
-            WHERE data->'pricing' IS NOT NULL
-        """)
-        
-        pricing_lookup = {}
-        for row in cursor.fetchall():
-            spell_id, pricing = row
-            if pricing:
-                pricing_lookup[spell_id] = pricing
-        
-        cursor.close()
-        conn.close()
-        
-        pricing_cache_loaded = True
-        logger.info(f"Loaded {len(pricing_lookup)} pricing entries to memory cache")
-        
-    except Exception as e:
-        logger.warning(f"Error loading pricing to memory: {e}")
+# Spell cache functions removed - system disabled
 
 def record_pricing_fetch_attempt(spell_id, success=False, error_message=None):
     """Record a pricing fetch attempt in the database"""
@@ -742,14 +671,9 @@ def rebuild_pricing_lookup():
     logger.info(f"Rebuilt pricing lookup index with {len(pricing_lookup)} entries ({success_count} successful, {failed_count} failed)")
 
 def load_cache_from_storage():
-    """Load cached data from database or files"""
-    if USE_DATABASE_CACHE:
-        load_cache_from_database()
-    else:
-        load_cache_from_files()
-    
-    # Rebuild pricing lookup after loading cache
-    rebuild_pricing_lookup()
+    """DISABLED - spell system disabled"""
+    logger.info("Cache loading disabled - spell system disabled")
+    pass
 
 def load_cache_from_database():
     """Load cached data from PostgreSQL database"""
@@ -905,11 +829,9 @@ def clear_refresh_progress(class_name):
         del refresh_progress[class_name]
 
 def save_cache_to_storage():
-    """Save cached data to database or files"""
-    if USE_DATABASE_CACHE:
-        save_cache_to_database()
-    else:
-        save_cache_to_files()
+    """DISABLED - spell system disabled"""
+    logger.info("Cache saving disabled - spell system disabled")
+    pass
 
 def save_single_class_to_storage(class_name):
     """Save a single class to storage - much faster than saving everything"""
@@ -1074,58 +996,19 @@ def save_cache_to_files():
 
 
 def is_cache_expired(class_name):
-    """Check if spell cache entry is expired (24 hours)"""
-    # Use lowercase class name for cache lookups since cache keys are stored in lowercase
-    cache_key = class_name.lower()
-    if cache_key not in cache_timestamp:
-        return True
-    
-    cache_time = datetime.fromisoformat(cache_timestamp[cache_key])
-    expiry_time = cache_time + timedelta(hours=CACHE_EXPIRY_HOURS)
-    return datetime.now() > expiry_time
+    """DISABLED - spell system disabled"""
+    return True
 
 def is_pricing_cache_expired(spell_id):
-    """Check if pricing cache entry is expired (1 week)"""
-    spell_id = str(spell_id)
-    if spell_id not in pricing_cache_timestamp:
-        return True
-    
-    cache_time = datetime.fromisoformat(pricing_cache_timestamp[spell_id])
+    """DISABLED - spell system disabled"""
+    return True
     expiry_time = cache_time + timedelta(hours=PRICING_CACHE_EXPIRY_HOURS)
     return datetime.now() > expiry_time
 
 def clear_expired_cache():
-    """Remove expired cache entries for both spells and pricing"""
-    expired_classes = []
-    expired_pricing = []
-    
-    # Check spell cache expiry (24 hours)
-    for class_name in list(cache_timestamp.keys()):
-        if is_cache_expired(class_name):
-            expired_classes.append(class_name)
-    
-    # Check pricing cache expiry (1 week)
-    for spell_id in list(pricing_cache_timestamp.keys()):
-        if is_pricing_cache_expired(spell_id):
-            expired_pricing.append(spell_id)
-    
-    # Clear expired spell cache entries
-    for class_name in expired_classes:
-        spells_cache.pop(class_name, None)
-        cache_timestamp.pop(class_name, None)
-        logger.info(f"Cleared expired spell cache for {class_name}")
-    
-    # Clear expired pricing cache entries
-    for spell_id in expired_pricing:
-        # Remove pricing from spell_details_cache but preserve other details
-        if spell_id in spell_details_cache:
-            spell_details_cache[spell_id].pop('pricing', None)
-            # Remove entire entry if it only contained pricing
-            if not spell_details_cache[spell_id]:
-                spell_details_cache.pop(spell_id, None)
-        pricing_lookup.pop(spell_id, None)
-        pricing_cache_timestamp.pop(spell_id, None)
-        logger.info(f"Cleared expired pricing cache for spell {spell_id}")
+    """DISABLED - spell system disabled"""
+    logger.info("Cache clearing disabled - spell system disabled")
+    pass
     
     # Save changes to storage if any entries were cleared
     if expired_classes or expired_pricing:
@@ -1181,61 +1064,12 @@ def get_cache_status():
 
 @app.route('/api/cache-expiry-status/<class_name>', methods=['GET'])
 def get_cache_expiry_status(class_name):
-    """Get cache expiry status for a specific class"""
-    # Normalize class name - handle special cases (same logic as /api/spells endpoint)
-    class_name_lower = class_name.lower()
-    
-    # Map common variations to correct case
-    class_name_map = {cls.lower(): cls for cls in CLASSES.keys()}
-    
-    if class_name_lower in class_name_map:
-        normalized_class_name = class_name_map[class_name_lower]
-    else:
-        # Fallback to title case for unknown names
-        normalized_class_name = class_name.title()
-    
-    if normalized_class_name not in CLASSES:
-        return jsonify({'error': 'Invalid class name'}), 400
-    
-    class_name = class_name_lower  # Use lowercase for cache lookups
-    
-    # Check spell cache status
-    spell_cached = class_name in spells_cache
-    spell_expired = is_cache_expired(class_name) if spell_cached else True
-    spell_timestamp = cache_timestamp.get(class_name)
-    
-    # Count pricing entries for this class from spell_details_cache
-    class_spells = spells_cache.get(class_name, [])
-    pricing_count = 0
-    pricing_expired_count = 0
-    most_recent_pricing_timestamp = None
-    
-    for spell in class_spells:
-        spell_id = spell.get('id')
-        if spell_id and spell_id in spell_details_cache:
-            pricing_count += 1
-            pricing_timestamp = pricing_cache_timestamp.get(spell_id)
-            if pricing_timestamp:
-                if most_recent_pricing_timestamp is None or pricing_timestamp > most_recent_pricing_timestamp:
-                    most_recent_pricing_timestamp = pricing_timestamp
-                # Check if pricing is expired (24 hour expiry)
-                if datetime.now().timestamp() - pricing_timestamp > 24 * 3600:
-                    pricing_expired_count += 1
-    
+    """Get cache expiry status for a specific class - DISABLED"""
     return jsonify({
-        'class_name': normalized_class_name,
-        'spell_cache': {
-            'cached': spell_cached,
-            'expired': spell_expired,
-            'timestamp': spell_timestamp,
-            'spell_count': len(class_spells)
-        },
-        'pricing_cache': {
-            'count': pricing_count,
-            'expired_count': pricing_expired_count,
-            'most_recent_timestamp': most_recent_pricing_timestamp
-        }
-    })
+        'error': 'Spell system disabled',
+        'message': 'The spell system is being redesigned and is currently unavailable.',
+        'status': 'disabled'
+    }), 503
 
 @app.route('/api/refresh-progress/<class_name>', methods=['GET'])
 def get_refresh_progress(class_name):
@@ -2028,10 +1862,7 @@ def startup_status():
 def health_check():
     """Health check endpoint with server memory status"""
     # This endpoint should not be rate limited
-    # Safe access to global cache variables
-    spells_count = len(spells_cache) if 'spells_cache' in globals() else 0
-    pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
-    details_count = len(spell_details_cache) if 'spell_details_cache' in globals() else 0
+    # Spell system disabled
     
     # Check content database status
     content_db_status = {'connected': False}
@@ -2045,13 +1876,14 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'cached_classes': spells_count,
-        'cached_pricing': pricing_count,  # Now shows actual pricing count
-        'cached_spell_details': details_count,
-        'server_memory_loaded': spells_count > 0 or pricing_count > 0,
-        'ready_for_instant_responses': spells_count > 0 and pricing_count > 0,
+        'cached_classes': 0,
+        'cached_pricing': 0,
+        'cached_spell_details': 0,
+        'server_memory_loaded': False,
+        'ready_for_instant_responses': False,
         'startup_complete': server_startup_progress['startup_complete'],
-        'content_database': content_db_status
+        'content_database': content_db_status,
+        'spell_system_status': 'disabled'
     })
 
 @app.route('/api/health/database', methods=['GET'])
@@ -2176,34 +2008,18 @@ def cleanup_connections():
 
 @app.route('/api/initialize', methods=['POST'])
 def initialize_cache():
-    """Initialize cache after server startup - for production environments"""
+    """Initialize cache after server startup - DISABLED"""
     global server_startup_progress
     
-    # Check if already initialized
-    if server_startup_progress['startup_complete']:
-        return jsonify({
-            'message': 'Cache already initialized',
-            'cached_classes': len(spells_cache),
-            'cached_spell_details': len(spell_details_cache)
-        })
+    # Mark startup as complete
+    server_startup_progress['startup_complete'] = True
     
-    try:
-        # Load cache from storage
-        logger.info("Initializing cache via API endpoint...")
-        load_cache_from_storage()
-        
-        # Mark startup as complete
-        server_startup_progress['startup_complete'] = True
-        
-        return jsonify({
-            'message': 'Cache initialized successfully',
-            'cached_classes': len(spells_cache),
-            'cached_spell_details': len(spell_details_cache),
-            'storage_type': 'database' if USE_DATABASE_CACHE else 'files'
-        })
-    except Exception as e:
-        logger.error(f"Error initializing cache: {e}")
-        return jsonify({'error': f'Failed to initialize cache: {str(e)}'}), 500
+    return jsonify({
+        'message': 'Cache initialization disabled - spell system disabled',
+        'cached_classes': 0,
+        'cached_spell_details': 0,
+        'storage_type': 'disabled'
+    })
 
 @app.route('/api/cache/save', methods=['POST'])
 def save_cache():
@@ -2322,9 +2138,9 @@ def preload_spell_data_on_startup():
         # (init_cache_storage already called earlier)
         time.sleep(0.5)  # Brief pause for UI feedback
         
-        # Step 2: Load existing cache from storage (files or database)
-        update_startup_progress("Loading existing cache from storage...", 2)
-        load_cache_from_storage()
+        # Step 2: Skip cache loading - spell system disabled
+        update_startup_progress("Cache loading skipped - spell system disabled", 2)
+        logger.info("🚫 Skipping cache loading - spell system disabled")
         time.sleep(0.5)  # Brief pause for UI feedback
         
         # Step 3: Skip spell cache refresh - system disabled
@@ -2333,34 +2149,27 @@ def preload_spell_data_on_startup():
         
         time.sleep(0.5)  # Brief pause for UI feedback
         
-        # Step 4: Load all pricing data into memory for instant lookups
-        update_startup_progress("Loading pricing data into memory...", 4)
-        load_all_pricing_to_memory()
+        # Step 4: Skip pricing data loading - system disabled
+        update_startup_progress("Pricing data loading skipped - system disabled", 4)
+        logger.info("🚫 Skipping pricing data loading - spell system disabled")
         time.sleep(0.5)  # Brief pause for UI feedback
         
         # Step 5: Finalize and report
         update_startup_progress("Finalizing server startup...", 5)
         
-        # Report what was loaded
-        spell_classes_count = len(spells_cache)
-        pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
-        spell_details_count = len(spell_details_cache)
-        
         # Mark startup as complete
         startup_time = round(time.time() - startup_start_time, 2)
         server_startup_progress.update({
             'is_starting': False,
-            'current_step': 'Server ready for instant responses!',
+            'current_step': 'Server ready! (Spell system disabled)',
             'progress_percent': 100,
             'startup_complete': True,
             'startup_time': startup_time
         })
         
-        logger.info(f"✅ Server memory preloading complete in {startup_time}s!")
-        logger.info(f"   📊 Spell classes cached: {spell_classes_count}")
-        logger.info(f"   💎 Pricing entries cached: {pricing_count}")
-        logger.info(f"   📋 Spell details cached: {spell_details_count}")
-        logger.info(f"🎯 Server ready for instant spell data responses!")
+        logger.info(f"✅ Server startup complete in {startup_time}s!")
+        logger.info(f"🚫 Spell system disabled - no spell caching performed")
+        logger.info(f"🎯 Server ready for items system and admin functionality!")
         
         return True
         
