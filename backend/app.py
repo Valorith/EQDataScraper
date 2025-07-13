@@ -6,9 +6,10 @@ import json
 from datetime import datetime, timedelta
 import logging
 import time
-import psycopg2
 from urllib.parse import urlparse
 import warnings
+
+import psycopg2
 
 # Suppress urllib3 OpenSSL warnings that spam the logs - MUST be done early
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1.1.1+')
@@ -110,10 +111,10 @@ if ENABLE_USER_ACCOUNTS:
         
         # Initialize rate limiter
         limiter = Limiter(
-            app,
             key_func=get_remote_address,
             default_limits=["200 per day", "50 per hour"]
         )
+        limiter.init_app(app)
         
         # Apply rate limits to OAuth endpoints
         limiter.limit("10 per minute")(auth_bp)
@@ -1892,7 +1893,7 @@ def search_spells():
         'status': 'disabled'
     }), 503
 
-# Global session for connection pooling
+# Global session for connection pooling with proper timeouts
 import requests
 session = requests.Session()
 session.headers.update({
@@ -1901,6 +1902,21 @@ session.headers.update({
     'Accept-Language': 'en-US,en;q=0.5',
     'Connection': 'keep-alive'
 })
+
+# Configure session timeouts to prevent hanging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Set up retry strategy
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504]
+)
+
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
 
 # Pricing cache is already declared at the top with other global storage variables
 
@@ -2037,6 +2053,98 @@ def health_check():
         'startup_complete': server_startup_progress['startup_complete'],
         'content_database': content_db_status
     })
+
+@app.route('/api/health/database', methods=['GET'])
+@exempt_when_limiting
+def database_health_check():
+    """Health check specifically for database connections to diagnose hanging issues."""
+    health_status = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'connection_tests': {}
+    }
+    
+    overall_healthy = True
+    
+    # Test content database connection
+    try:
+        start_time = time.time()
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
+        
+        # Get connection status
+        connection_status = manager.get_connection_status()
+        connection_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        health_status['connection_tests']['content_db'] = {
+            'status': 'healthy' if connection_status['connected'] else 'unhealthy',
+            'response_time_ms': connection_time,
+            'details': connection_status
+        }
+        
+        if not connection_status['connected']:
+            overall_healthy = False
+            
+    except Exception as e:
+        health_status['connection_tests']['content_db'] = {
+            'status': 'error',
+            'error': str(e),
+            'response_time_ms': (time.time() - start_time) * 1000
+        }
+        overall_healthy = False
+    
+    # Test auth database connection if enabled
+    if ENABLE_USER_ACCOUNTS and DB_CONFIG:
+        try:
+            start_time = time.time()
+            conn = psycopg2.connect(**DB_CONFIG)
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            connection_time = (time.time() - start_time) * 1000
+            health_status['connection_tests']['auth_db'] = {
+                'status': 'healthy',
+                'response_time_ms': connection_time,
+                'database_type': 'postgresql'
+            }
+            
+        except Exception as e:
+            health_status['connection_tests']['auth_db'] = {
+                'status': 'error',
+                'error': str(e),
+                'response_time_ms': (time.time() - start_time) * 1000
+            }
+            overall_healthy = False
+    
+    # Test HTTP session health
+    try:
+        start_time = time.time()
+        # Test with a quick HEAD request to a reliable endpoint
+        response = session.head('https://httpbin.org/status/200', timeout=5)
+        response_time = (time.time() - start_time) * 1000
+        
+        health_status['connection_tests']['http_session'] = {
+            'status': 'healthy' if response.status_code == 200 else 'unhealthy',
+            'response_time_ms': response_time,
+            'status_code': response.status_code
+        }
+        
+    except Exception as e:
+        health_status['connection_tests']['http_session'] = {
+            'status': 'error',
+            'error': str(e),
+            'response_time_ms': (time.time() - start_time) * 1000
+        }
+        overall_healthy = False
+    
+    # Set overall status
+    health_status['status'] = 'healthy' if overall_healthy else 'unhealthy'
+    health_status['overall_healthy'] = overall_healthy
+    
+    return jsonify(health_status), 200 if overall_healthy else 503
 
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_connections():
@@ -2430,13 +2538,18 @@ def get_eqemu_db_connection():
         # Add connection timeout settings to prevent hanging
         if db_type == 'mysql':
             db_config.update({
-                'connect_timeout': 10,  # 10 second connection timeout
-                'read_timeout': 30,     # 30 second read timeout  
-                'write_timeout': 30     # 30 second write timeout
+                'connect_timeout': 5,   # 5 second connection timeout (reduced from 10)
+                'read_timeout': 15,     # 15 second read timeout (reduced from 30)
+                'write_timeout': 15,    # 15 second write timeout (reduced from 30)
+                'autocommit': True      # Enable autocommit to avoid transaction hangs
             })
         elif db_type == 'postgresql':
             db_config.update({
-                'connect_timeout': 10   # 10 second connection timeout
+                'connect_timeout': 5    # 5 second connection timeout (reduced from 10)
+            })
+        elif db_type == 'mssql':
+            db_config.update({
+                'timeout': 5            # 5 second timeout for MSSQL
             })
         
         # Create direct connection with timeout
@@ -2698,7 +2811,16 @@ def search_items():
         """
         # Add limit and offset to params
         items_params = query_params + [limit, offset]
-        cursor.execute(items_query, items_params)
+        
+        # Execute with timeout protection
+        try:
+            cursor.execute(items_query, items_params)
+        except Exception as e:
+            app.logger.error(f"Database query failed: {e}")
+            app.logger.error(f"Query: {items_query}")
+            app.logger.error(f"Params: {items_params}")
+            raise Exception("Database query failed - connection may have timed out")
+            
         items = cursor.fetchall()
         
         # Convert to response format
@@ -3107,10 +3229,23 @@ def get_item_types():
 
 
 def cleanup_resources():
-    """Clean up resources on shutdown."""
+    """Clean up resources on shutdown to prevent hanging."""
     logger.info("Cleaning up resources...")
-    close_connection_pool()
-    logger.info("Connection pool closed")
+    
+    # Clean up HTTP session first
+    try:
+        if session:
+            session.close()
+            logger.info("HTTP session closed")
+    except Exception as e:
+        logger.error(f"Error closing HTTP session: {e}")
+    
+    # Close database connection pool
+    try:
+        close_connection_pool()
+        logger.info("Connection pool closed")
+    except Exception as e:
+        logger.error(f"Error closing connection pool: {e}")
     
     # Close content database connections
     try:
@@ -3120,6 +3255,11 @@ def cleanup_resources():
         logger.info("Content database connections closed")
     except Exception as e:
         logger.error(f"Error closing content database: {e}")
+    
+    # Force garbage collection to clean up any remaining resources
+    import gc
+    gc.collect()
+    logger.info("Garbage collection completed")
 
 if __name__ == '__main__':
     import atexit

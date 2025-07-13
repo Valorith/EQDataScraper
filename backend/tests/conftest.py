@@ -14,7 +14,12 @@ os.environ['OAUTH_REDIRECT_URI'] = 'http://localhost:3000/auth/callback'
 os.environ['DATABASE_URL'] = 'postgresql://test:test@localhost:5432/test'
 
 import pytest
-import psycopg2
+try:
+    import psycopg2
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    psycopg2 = None
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
 import json
