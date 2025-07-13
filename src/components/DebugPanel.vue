@@ -97,7 +97,7 @@
 </template>
 
 <script>
-import { useSpellsStore } from '../stores/spells'
+// Spell store removed
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
@@ -115,8 +115,8 @@ export default {
     }
   },
   setup() {
-    const spellsStore = useSpellsStore()
-    return { spellsStore }
+    // Spell store removed
+    return {}
   },
   computed: {
     isProd() {

@@ -46,8 +46,6 @@ jobs:
       env:
         TESTING: 1
         DATABASE_URL: ""
-        CACHE_EXPIRY_HOURS: 1
-        PRICING_CACHE_EXPIRY_HOURS: 1
     
     - name: Run Railway deployment tests
       working-directory: ./backend
@@ -61,8 +59,6 @@ jobs:
       env:
         TESTING: 1
         DATABASE_URL: ""
-        CACHE_EXPIRY_HOURS: 1
-        PRICING_CACHE_EXPIRY_HOURS: 1
     
     - name: Test critical non-spell functionality
       working-directory: ./backend

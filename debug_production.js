@@ -414,37 +414,17 @@ class ProductionDebugger {
       });
       logSuccess('Cache status check passed');
       
-      // 3. Try to fetch spells for a test class
-      const testClasses = ['warrior', 'cleric', 'wizard'];
-      let successfulSpellFetch = false;
+      // 3. Spell system removed - skip spell tests
+      logInfo('Spell system has been removed - skipping spell endpoint tests');
       
-      for (const className of testClasses) {
-        try {
-          const spellResponse = await axios.get(`${CONFIG.BACKEND_PROD}/api/spells/${className}`, {
-            timeout: 15000
-          });
-          
-          if (spellResponse.data && spellResponse.data.spells) {
-            logSuccess(`Successfully fetched ${className} spells (${spellResponse.data.spells.length} spells)`);
-            successfulSpellFetch = true;
-            break;
-          }
-        } catch (error) {
-          logWarning(`Failed to fetch ${className} spells: ${error.message}`);
-        }
-      }
-      
-      if (!successfulSpellFetch) {
-        logError('No classes had available spell data');
-        this.issues.push('Backend has no cached spell data available');
-      }
-      
-      // 4. Test search functionality
+      // 4. Test search functionality removed - spell search disabled
+      logInfo('Spell search functionality has been removed');
       try {
-        const searchResponse = await axios.get(`${CONFIG.BACKEND_PROD}/api/search-spells?q=heal`, {
+        // Test items endpoint instead
+        const itemResponse = await axios.get(`${CONFIG.BACKEND_PROD}/api/items/search?q=sword`, {
           timeout: 10000
         });
-        logSuccess(`Search functionality works (${searchResponse.data.results?.length || 0} results)`);
+        logSuccess(`Item search functionality works (${itemResponse.data.items?.length || 0} results)`);
       } catch (error) {
         logError(`Search functionality failed: ${error.message}`);
         this.issues.push(`Search API not working: ${error.message}`);

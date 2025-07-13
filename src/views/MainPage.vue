@@ -185,16 +185,7 @@ export default {
   },
   data() {
     return {
-      searchEnabled: false, // Temporarily disabled
-      searchQuery: '',
-      searchResults: [],
-      showDropdown: false,
-      selectedIndex: -1,
-      searchLoading: false,
-      searchTimeout: null,
-      currentPage: 0,
-      resultsPerPage: 10,
-      showRightArrowGlow: false
+      // Search functionality completely removed
     }
   },
   computed: {
@@ -207,28 +198,6 @@ export default {
       const result = !isProduction && devAuthEnabled
       console.debug('🎯 isDev computed - prod:', isProduction, 'auth:', devAuthEnabled, 'result:', result)
       return result
-    },
-    
-    totalPages() {
-      return Math.ceil(this.searchResults.length / this.resultsPerPage)
-    },
-    
-    paginatedResults() {
-      const start = this.currentPage * this.resultsPerPage
-      const end = start + this.resultsPerPage
-      return this.searchResults.slice(start, end)
-    },
-    
-    showPagination() {
-      return this.searchResults.length > this.resultsPerPage
-    },
-    
-    canGoToPreviousPage() {
-      return this.currentPage > 0
-    },
-    
-    canGoToNextPage() {
-      return this.currentPage < this.totalPages - 1
     }
   },
   watch: {
@@ -237,8 +206,6 @@ export default {
     }
   },
   async mounted() {
-    document.addEventListener('click', this.handleOutsideClick)
-    
     // Log MainPage environment status
     console.log('🎯 MainPage starting...')
     console.log(`🎯 Production build: ${import.meta.env.PROD}`)
@@ -248,239 +215,7 @@ export default {
     // App.vue will handle the checking
     console.log(`🎯 MainPage dev auth enabled (from shared state): ${this.isDevAuthEnabled}`)
   },
-  beforeUnmount() {
-    document.removeEventListener('click', this.handleOutsideClick)
-    if (this.searchTimeout) {
-      clearTimeout(this.searchTimeout)
-    }
-  },
   methods: {
-    handleSearchInput() {
-      if (this.searchQuery.trim().startsWith('/')) {
-        this.searchResults = []
-        this.showDropdown = false
-        this.currentPage = 0
-        this.searchLoading = false
-        return
-      }
-      
-      if (this.searchTimeout) {
-        clearTimeout(this.searchTimeout)
-      }
-      
-      this.searchTimeout = setTimeout(() => {
-        this.performSearch()
-      }, 300)
-    },
-    
-    async performSearch() {
-      if (!this.searchQuery || this.searchQuery.length < 2) {
-        this.searchResults = []
-        this.showDropdown = false
-        this.currentPage = 0
-        return
-      }
-      
-      if (this.searchQuery.trim().startsWith('/')) {
-        this.searchResults = []
-        this.showDropdown = false
-        this.currentPage = 0
-        return
-      }
-      
-      this.searchLoading = true
-      
-      try {
-        // Spell search temporarily disabled for redesign
-        console.warn('Spell search disabled - spell system temporarily disabled')
-        this.searchResults = [{
-          name: 'Spell search temporarily disabled',
-          class: 'system',
-          level: 0,
-          id: 'disabled',
-          description: 'The spell search system is temporarily disabled while we redesign the spell database. Please check back later.'
-        }]
-        this.showDropdown = true
-        this.selectedIndex = -1
-        this.currentPage = 0
-      } catch (error) {
-        console.error('Search error:', error)
-        this.searchResults = []
-        this.currentPage = 0
-      } finally {
-        this.searchLoading = false
-      }
-    },
-    
-    selectSpell(spell) {
-      if (spell.class_names && spell.class_names.length > 0) {
-        const firstClass = spell.class_names[0].toLowerCase()
-        this.$router.push({ 
-          name: 'ClassSpells', 
-          params: { className: firstClass },
-          hash: `#spell-${spell.spell_id}`,
-          query: { openModal: 'true' }
-        })
-      }
-      this.clearSearch()
-    },
-    
-    clearSearch() {
-      this.searchQuery = ''
-      this.searchResults = []
-      this.showDropdown = false
-      this.selectedIndex = -1
-      this.currentPage = 0
-    },
-    
-    handleKeyDown(event) {
-      if (!this.showDropdown || this.searchResults.length === 0) {
-        if (event.key === 'Enter' && this.searchQuery.trim().startsWith('/')) {
-          event.preventDefault()
-          
-          // Block slash commands on Railway production server
-          const isRailwayProduction = import.meta.env.VITE_RAILWAY_ENVIRONMENT === 'production'
-          if (isRailwayProduction) {
-            console.log('🚂 Slash commands disabled on Railway production server')
-            this.clearSearch()
-            return
-          }
-          
-          const command = this.searchQuery.trim()
-          
-          if (command === '/reload') {
-            this.reloadDevMode()
-          }
-          
-          this.clearSearch()
-          return
-        }
-        return
-      }
-      
-      const maxIndex = Math.min(this.paginatedResults.length - 1, 9)
-      
-      switch (event.key) {
-        case 'ArrowDown':
-          event.preventDefault()
-          if (this.selectedIndex < maxIndex) {
-            this.selectedIndex++
-          } else if (this.canGoToNextPage) {
-            this.goToNextPage()
-            this.selectedIndex = 0
-          } else {
-            this.selectedIndex = 0
-          }
-          break
-        case 'ArrowUp':
-          event.preventDefault()
-          if (this.selectedIndex > 0) {
-            this.selectedIndex--
-          } else if (this.canGoToPreviousPage) {
-            this.goToPreviousPage()
-            this.selectedIndex = Math.min(this.paginatedResults.length - 1, 9)
-          } else {
-            this.selectedIndex = maxIndex
-          }
-          break
-        case 'Tab':
-          event.preventDefault()
-          if (event.shiftKey) {
-            if (this.selectedIndex > 0) {
-              this.selectedIndex--
-            } else if (this.canGoToPreviousPage) {
-              this.goToPreviousPage()
-              this.selectedIndex = Math.min(this.paginatedResults.length - 1, 9)
-            } else {
-              this.selectedIndex = maxIndex
-            }
-          } else {
-            if (this.selectedIndex < maxIndex) {
-              this.selectedIndex++
-            } else if (this.canGoToNextPage) {
-              this.goToNextPage()
-              this.selectedIndex = 0
-            } else {
-              this.selectedIndex = 0
-            }
-          }
-          break
-        case 'Enter':
-          event.preventDefault()
-          
-          if (this.searchQuery.trim().startsWith('/')) {
-            // Block slash commands on Railway production server
-            const isRailwayProduction = import.meta.env.VITE_RAILWAY_ENVIRONMENT === 'production'
-            if (isRailwayProduction) {
-              console.log('🚂 Slash commands disabled on Railway production server')
-              this.clearSearch()
-              return
-            }
-            
-            const command = this.searchQuery.trim()
-            
-            if (command === '/reload') {
-              this.reloadDevMode()
-            } else if (command === '/clear') {
-              this.clearDevModeCache()
-            }
-            
-            this.clearSearch()
-            return
-          }
-          
-          if (this.selectedIndex >= 0 && this.selectedIndex <= maxIndex) {
-            this.selectSpell(this.paginatedResults[this.selectedIndex])
-          }
-          break
-        case 'ArrowLeft':
-          event.preventDefault()
-          this.goToPreviousPage()
-          break
-        case 'ArrowRight':
-          event.preventDefault()
-          this.goToNextPage()
-          break
-        case 'Escape':
-          this.showDropdown = false
-          this.selectedIndex = -1
-          this.$refs.searchInput.blur()
-          break
-      }
-    },
-    
-    handleOutsideClick(event) {
-      const searchContainer = this.$el.querySelector('.global-search-container')
-      if (searchContainer && !searchContainer.contains(event.target)) {
-        this.showDropdown = false
-      }
-    },
-    
-    highlightMatch(text) {
-      if (!this.searchQuery) return text
-      const regex = new RegExp(`(${this.searchQuery})`, 'gi')
-      return text.replace(regex, '<mark>$1</mark>')
-    },
-    
-    handleIconError(event) {
-      event.target.style.display = 'none'
-    },
-    
-    goToPreviousPage() {
-      if (this.canGoToPreviousPage) {
-        this.currentPage--
-        this.selectedIndex = -1
-      }
-    },
-    
-    goToNextPage() {
-      if (this.canGoToNextPage) {
-        this.currentPage++
-        this.selectedIndex = -1
-      }
-    },
-    
-
     async reloadDevMode() {
       console.log('')
       console.log('🔄 /reload command executed: Re-checking dev mode status...')
