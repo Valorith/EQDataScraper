@@ -125,8 +125,8 @@ class ContentDatabaseManager:
             
             self._pool = DatabaseConnectionPool(
                 create_connection_func=create_connection,
-                max_connections=5,
-                timeout=30
+                max_connections=3,  # Reduced from 5 to prevent hanging
+                timeout=5           # Reduced from 30 to prevent hanging
             )
             
             # Test the connection
