@@ -25,30 +25,11 @@ try:
 except ImportError:
     print("⚠️ python-dotenv not available, using system environment variables only")
 
-# CLASSES constant moved here since spell system is disabled
-CLASSES = {
-    'Warrior': 1,
-    'Cleric': 2,
-    'Paladin': 3,
-    'Ranger': 4,
-    'ShadowKnight': 5,
-    'Druid': 6,
-    'Monk': 7,
-    'Bard': 8,
-    'Rogue': 9,
-    'Shaman': 10,
-    'Necromancer': 11,
-    'Wizard': 12,
-    'Magician': 13,
-    'Enchanter': 14,
-    'Beastlord': 15,
-    'Berserker': 16,
-}
 from utils.security import sanitize_search_input, validate_item_search_params, rate_limit_by_ip
 
 # Import activity logger if user accounts are enabled
 if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
-    from utils.activity_logger import log_scrape_activity, log_cache_activity, log_api_activity
+    from utils.activity_logger import log_api_activity
 
 app = Flask(__name__)
 
@@ -445,6 +426,11 @@ else:
     logger.info("Using file system for cache storage")
     # Fallback to file cache for local development
     CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
+    
+    # Cache file paths (disabled but defined to prevent NameError)
+    SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
+    SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
+    METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
 
 # Initialize cache storage
 def init_cache_storage():
@@ -548,82 +534,123 @@ scraping_status = {
     'last_update': None
 }
 
-CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
-PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
-MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
+# All spell system configuration and cache variables removed
 
-# SPELL SYSTEM DISABLED - All spell caching removed
+# Spell system completely removed
 
-# Spell cache functions removed - system disabled
-
-def record_pricing_fetch_attempt(spell_id, success=False, error_message=None):
-    """Record a pricing fetch attempt in the database"""
-    if not USE_DATABASE_CACHE:
-        return
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint with server memory status"""
+    # This endpoint should not be rate limited
     
+    # Check content database status
+    content_db_status = {'connected': False}
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
+        content_db_status = manager.get_connection_status()
+    except:
+        pass
+    
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'startup_complete': server_startup_progress['startup_complete'],
+        'content_database': content_db_status
+    })
+
+@app.route('/api/health/database', methods=['GET'])
+@exempt_when_limiting
+def database_health_check():
+    """Health check specifically for database connections to diagnose hanging issues."""
+    health_status = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'checks': {}
+    }
+    
+    overall_healthy = True
+    
+    # Test content database connection
+    try:
+        start_time = time.time()
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
         
-        cursor.execute("""
-            INSERT INTO pricing_fetch_attempts (spell_id, success, error_message, last_attempt)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (spell_id) DO UPDATE SET
-                attempt_count = pricing_fetch_attempts.attempt_count + 1,
-                last_attempt = CURRENT_TIMESTAMP,
-                success = EXCLUDED.success,
-                error_message = EXCLUDED.error_message,
-                updated_at = CURRENT_TIMESTAMP
-        """, (spell_id, success, error_message))
+        # Get detailed connection status
+        connection_status = manager.get_connection_status()
+        response_time = time.time() - start_time
         
-        conn.commit()
-        cursor.close()
-        conn.close()
+        health_status['checks']['content_database'] = {
+            'status': 'healthy' if connection_status.get('connected') else 'unhealthy',
+            'response_time_ms': round(response_time * 1000, 2),
+            'details': connection_status
+        }
         
+        if not connection_status.get('connected'):
+            overall_healthy = False
+            
     except Exception as e:
-        logger.warning(f"Error recording pricing fetch attempt for {spell_id}: {e}")
-
-def get_unfetched_spells(spell_ids):
-    """Get spells that have never had pricing fetch attempted"""
-    if not USE_DATABASE_CACHE or not spell_ids:
-        return spell_ids  # Return all if no DB or no spells
+        health_status['checks']['content_database'] = {
+            'status': 'error',
+            'error': str(e),
+            'response_time_ms': round((time.time() - start_time) * 1000, 2)
+        }
+        overall_healthy = False
     
+    # Set overall status
+    health_status['status'] = 'healthy' if overall_healthy else 'unhealthy'
+    health_status['overall_healthy'] = overall_healthy
+    
+    return jsonify(health_status), 200 if overall_healthy else 503
+
+@app.route('/api/cleanup', methods=['POST'])
+def cleanup_connections():
+    """Force cleanup of database connections and resources to prevent hanging."""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
+        # Force cleanup of content database manager
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
+        if hasattr(manager, 'cleanup'):
+            manager.cleanup()
         
-        # Find spells that have never been attempted
-        cursor.execute("""
-            SELECT unnest(%s::varchar[]) as spell_id
-            EXCEPT
-            SELECT spell_id FROM pricing_fetch_attempts
-        """, (spell_ids,))
+        # Clear any cached connections
+        import gc
+        gc.collect()
         
-        unfetched_spells = [row[0] for row in cursor.fetchall()]
-        
-        cursor.close()
-        conn.close()
-        
-        return unfetched_spells
-        
+        app.logger.info("Connection cleanup completed successfully")
+        return jsonify({
+            'status': 'success',
+            'message': 'Connection cleanup completed',
+            'timestamp': datetime.now().isoformat()
+        })
     except Exception as e:
-        logger.warning(f"Error checking unfetched spells: {e}")
-        return spell_ids  # Return all on error
+        app.logger.error(f"Cleanup failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Cleanup failed: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
-def get_failed_pricing_spells(spell_ids):
-    """Get spells that have been attempted but failed to get pricing"""
-    if not USE_DATABASE_CACHE or not spell_ids:
-        return []
+@app.route('/api/items/search', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Liberal limits for normal users
+def search_items():
+    """
+    Search discovered items in the EQEmu database.
+    Only returns items that exist in both items and discovered_items tables.
+    """
+    app.logger.info("=== ITEM SEARCH START ===")
+    conn = None
+    cursor = None
     
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # Find spells that were attempted but failed
-        cursor.execute("""
-            SELECT spell_id FROM pricing_fetch_attempts 
-            WHERE spell_id = ANY(%s) AND success = FALSE
-        """, (spell_ids,))
+        # Get database connection using the helper function
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
         
         failed_spells = [row[0] for row in cursor.fetchall()]
         
@@ -834,16 +861,14 @@ def save_cache_to_storage():
     pass
 
 def save_single_class_to_storage(class_name):
-    """Save a single class to storage - much faster than saving everything"""
-    if USE_DATABASE_CACHE:
-        save_single_class_to_database(class_name)
-    else:
-        # For file storage, we still need to save everything
-        save_cache_to_files()
+    """DISABLED - spell system disabled"""
+    logger.info("Single class cache saving disabled - spell system disabled")
+    pass
 
 def save_cache_to_database():
-    """Save cached data to PostgreSQL database"""
-    logger.info(f"=== SAVING CACHE TO DATABASE ===")
+    """DISABLED - spell system disabled"""
+    logger.info("Database cache saving disabled - spell system disabled")
+    pass
     
     try:
         conn = psycopg2.connect(**DB_CONFIG)
@@ -942,8 +967,9 @@ def save_single_class_to_database(class_name):
         raise
 
 def save_cache_to_files():
-    """Save cached data to JSON files (fallback for local development)"""
-    logger.info(f"=== SAVING CACHE TO FILES ===")
+    """DISABLED - spell system disabled"""
+    logger.info("File cache saving disabled - spell system disabled")
+    pass
     logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
     logger.info(f"Cache directory writable: {os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else 'Directory does not exist'}")
     
@@ -1858,153 +1884,6 @@ def startup_status():
             'startup_complete': server_startup_progress['startup_complete']
         })
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint with server memory status"""
-    # This endpoint should not be rate limited
-    # Spell system disabled
-    
-    # Check content database status
-    content_db_status = {'connected': False}
-    try:
-        from utils.content_db_manager import get_content_db_manager
-        manager = get_content_db_manager()
-        content_db_status = manager.get_connection_status()
-    except:
-        pass
-    
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'cached_classes': 0,
-        'cached_pricing': 0,
-        'cached_spell_details': 0,
-        'server_memory_loaded': False,
-        'ready_for_instant_responses': False,
-        'startup_complete': server_startup_progress['startup_complete'],
-        'content_database': content_db_status,
-        'spell_system_status': 'disabled'
-    })
-
-@app.route('/api/health/database', methods=['GET'])
-@exempt_when_limiting
-def database_health_check():
-    """Health check specifically for database connections to diagnose hanging issues."""
-    health_status = {
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'connection_tests': {}
-    }
-    
-    overall_healthy = True
-    
-    # Test content database connection
-    try:
-        start_time = time.time()
-        from utils.content_db_manager import get_content_db_manager
-        manager = get_content_db_manager()
-        
-        # Get connection status
-        connection_status = manager.get_connection_status()
-        connection_time = (time.time() - start_time) * 1000  # Convert to ms
-        
-        health_status['connection_tests']['content_db'] = {
-            'status': 'healthy' if connection_status['connected'] else 'unhealthy',
-            'response_time_ms': connection_time,
-            'details': connection_status
-        }
-        
-        if not connection_status['connected']:
-            overall_healthy = False
-            
-    except Exception as e:
-        health_status['connection_tests']['content_db'] = {
-            'status': 'error',
-            'error': str(e),
-            'response_time_ms': (time.time() - start_time) * 1000
-        }
-        overall_healthy = False
-    
-    # Test auth database connection if enabled
-    if ENABLE_USER_ACCOUNTS and DB_CONFIG:
-        try:
-            start_time = time.time()
-            conn = psycopg2.connect(**DB_CONFIG)
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
-            cursor.close()
-            conn.close()
-            
-            connection_time = (time.time() - start_time) * 1000
-            health_status['connection_tests']['auth_db'] = {
-                'status': 'healthy',
-                'response_time_ms': connection_time,
-                'database_type': 'postgresql'
-            }
-            
-        except Exception as e:
-            health_status['connection_tests']['auth_db'] = {
-                'status': 'error',
-                'error': str(e),
-                'response_time_ms': (time.time() - start_time) * 1000
-            }
-            overall_healthy = False
-    
-    # Test HTTP session health
-    try:
-        start_time = time.time()
-        # Test with a quick HEAD request to a reliable endpoint
-        response = session.head('https://httpbin.org/status/200', timeout=5)
-        response_time = (time.time() - start_time) * 1000
-        
-        health_status['connection_tests']['http_session'] = {
-            'status': 'healthy' if response.status_code == 200 else 'unhealthy',
-            'response_time_ms': response_time,
-            'status_code': response.status_code
-        }
-        
-    except Exception as e:
-        health_status['connection_tests']['http_session'] = {
-            'status': 'error',
-            'error': str(e),
-            'response_time_ms': (time.time() - start_time) * 1000
-        }
-        overall_healthy = False
-    
-    # Set overall status
-    health_status['status'] = 'healthy' if overall_healthy else 'unhealthy'
-    health_status['overall_healthy'] = overall_healthy
-    
-    return jsonify(health_status), 200 if overall_healthy else 503
-
-@app.route('/api/cleanup', methods=['POST'])
-def cleanup_connections():
-    """Force cleanup of database connections and resources to prevent hanging."""
-    try:
-        # Force cleanup of content database manager
-        from utils.content_db_manager import get_content_db_manager
-        manager = get_content_db_manager()
-        if hasattr(manager, 'cleanup'):
-            manager.cleanup()
-        
-        # Clear any cached connections
-        import gc
-        gc.collect()
-        
-        app.logger.info("Connection cleanup completed successfully")
-        return jsonify({
-            'status': 'success',
-            'message': 'Connection cleanup completed',
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        app.logger.error(f"Cleanup failed: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
 
 @app.route('/api/initialize', methods=['POST'])
 def initialize_cache():
@@ -2412,10 +2291,10 @@ def _safe_int(value):
         return None
 
 # Item search endpoints (EQEmu schema with discovered items join)
-@app.route('/api/items/search', methods=['GET'])
+@app.route('/api/items/search-duplicate', methods=['GET'])  # TEMPORARY: renamed to avoid collision
 @exempt_when_limiting
 @rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Liberal limits for normal users
-def search_items():
+def search_items_duplicate():
     """
     Search discovered items in the EQEmu database.
     Only returns items that exist in both items and discovered_items tables.
