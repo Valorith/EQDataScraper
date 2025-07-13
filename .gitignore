@@ -54,6 +54,9 @@ backend/.env.*
 # Cache directory - contains persistent spell and pricing data
 cache/
 
+# Runtime data files - auto-generated metrics and timeline data
+backend/data/timeline_data.json
+
 # Build artifacts (generated during deployment)
 dist/
 
