@@ -34,7 +34,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 export default {
   name: 'GoogleAuthButton',
-  setup() {
+  emits: ['trigger-dev-login'],
+  setup(props, { emit }) {
     const userStore = useUserStore()
     const localLoading = ref(false)
     const loadingTimeout = ref(null)
@@ -46,6 +47,48 @@ export default {
       // Prevent multiple clicks
       if (localLoading.value || userStore.isLoading) {
         return
+      }
+      
+      // Check custom app mode from run.py (development vs production)
+      const appMode = import.meta.env.VITE_APP_MODE || 'undefined'
+      console.log('🔐 GoogleAuthButton: Sign in initiated')
+      console.log(`🔧 App Mode: ${appMode} (set by run.py ${appMode === 'development' ? 'start dev' : 'start'})`)
+      
+      if (appMode === 'development') {
+        console.log('🛠️  Development mode detected - checking if dev auth bypass is enabled...')
+        
+        // Do a fresh check for dev mode (avoid relying on cached state)
+        try {
+          // Import axios and API config here to avoid circular dependencies
+          const axios = (await import('axios')).default
+          const { API_BASE_URL } = await import('@/config/api')
+          
+          console.log(`🌐 Checking dev auth status at: ${API_BASE_URL}/api/auth/dev-status`)
+          
+          const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
+            timeout: 3000
+          })
+          
+          const devModeEnabled = response.data.dev_auth_enabled || false
+          console.log(`✅ Dev auth status response: ${devModeEnabled}`)
+          
+          // If dev mode is enabled, trigger dev login panel
+          if (devModeEnabled) {
+            console.log('🔧 Dev auth bypass enabled → Opening dev login panel')
+            emit('trigger-dev-login')
+            return
+          } else {
+            console.log('🏭 Dev auth bypass disabled → Proceeding with Google OAuth')
+          }
+        } catch (error) {
+          console.warn('⚠️  Dev auth check failed → Falling back to Google OAuth')
+          console.warn(`   Error: ${error.message}`)
+          console.warn('   This is normal if backend is not running or dev auth is disabled')
+          // If dev check fails, proceed with normal Google OAuth
+        }
+      } else {
+        console.log('🏭 Production mode detected → Proceeding directly with Google OAuth')
+        console.log('   (Dev auth checks are disabled in production mode)')
       }
       
       localLoading.value = true

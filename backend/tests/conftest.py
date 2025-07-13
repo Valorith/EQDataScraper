@@ -21,9 +21,67 @@ import json
 import tempfile
 from urllib.parse import urlparse
 
+# Skip spell system tests since the spell system is disabled
+pytestmark = pytest.mark.filterwarnings("ignore:.*spell.*:pytest.PytestUnraisableExceptionWarning")
+
 # Test configuration
 TEST_JWT_SECRET = "test_jwt_secret_key_for_testing_only"
 TEST_ENCRYPTION_KEY = "test_encryption_key_for_testing_only"
+
+# Simple spell fixtures for disabled spell system tests
+@pytest.fixture
+def sample_spell_data():
+    """Mock spell data - spell system is disabled so this returns minimal data."""
+    return [
+        {
+            'name': 'Test Spell',
+            'level': 1,
+            'mana': 10,
+            'skill': 'Test',
+            'target_type': 'Single',
+            'spell_id': '123',
+            'effects': ['Test effect'],
+            'icon': 'test.gif'
+        }
+    ]
+
+@pytest.fixture
+def sample_spell_details():
+    """Mock spell details - spell system is disabled so this returns minimal data."""
+    return {
+        '202': {
+            'cast_time': '2.0 sec',
+            'duration': 'Instant',
+            'effects': ['Test effect'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 4,
+                'bronze': 0,
+                'unknown': False
+            },
+            'range': '100',
+            'resist': 'Magic',
+            'skill': 'Test',
+            'target_type': 'Single'
+        },
+        '203': {
+            'cast_time': '1.5 sec',
+            'duration': 'Instant',
+            'effects': ['Test effect 2'],
+            'pricing': {
+                'platinum': 0,
+                'gold': 0,
+                'silver': 4,
+                'bronze': 0,
+                'unknown': False
+            },
+            'range': '200',
+            'resist': 'Fire',
+            'skill': 'Test',
+            'target_type': 'Area'
+        }
+    }
 
 @pytest.fixture
 def mock_db_config():
@@ -346,115 +404,4 @@ def generate_test_session(**overrides):
     base_data.update(overrides)
     return base_data
 
-@pytest.fixture
-def sample_spell_data():
-    """Sample spell data for testing."""
-    return [
-        {
-            'name': 'Complete Heal',
-            'level': 39,
-            'mana': 400,
-            'skill': 'Alteration',
-            'target_type': 'Single',
-            'spell_id': '13',
-            'effects': '1: Increase Current HP by 7500',
-            'icon': 'spell_icon_13.png'
-        },
-        {
-            'name': 'Greater Heal',
-            'level': 29,
-            'mana': 150,
-            'skill': 'Alteration', 
-            'target_type': 'Single',
-            'spell_id': '12',
-            'effects': '1: Increase Current HP by 280 to 350',
-            'icon': 'spell_icon_12.png'
-        }
-    ]
-
-@pytest.fixture
-def sample_spell_details():
-    """Sample spell details data for testing."""
-    return {
-        '202': {
-            'cast_time': '2.0 sec',
-            'duration': '0 sec',
-            'effects': ['1: Increase Current HP by 100'],
-            'pricing': {
-                'platinum': 0,
-                'gold': 0,
-                'silver': 4,
-                'bronze': 0,
-                'unknown': False
-            },
-            'range': '100',
-            'resist': 'Magic',
-            'skill': 'Alteration',
-            'target_type': 'Single'
-        },
-        '203': {
-            'cast_time': '3.0 sec',
-            'duration': '0 sec',
-            'effects': ['1: Increase Current Mana by 50'],
-            'pricing': {
-                'platinum': 0,
-                'gold': 0,
-                'silver': 4,
-                'bronze': 0,
-                'unknown': False
-            },
-            'range': '100',
-            'resist': 'Magic',
-            'skill': 'Alteration',
-            'target_type': 'Single'
-        }
-    }
-
-@pytest.fixture
-def temp_cache_dir(tmp_path):
-    """Create a temporary cache directory for testing."""
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir(exist_ok=True)
-    
-    # Import app and ensure file cache variables are defined
-    import app
-    
-    # Define cache file paths if they don't exist (happens when USE_DATABASE_CACHE=True)
-    if not hasattr(app, 'SPELLS_CACHE_FILE'):
-        app.CACHE_DIR = str(cache_dir)
-        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
-        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
-        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
-        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
-        files_created = True
-    else:
-        # Save original values
-        original_files = {
-            'CACHE_DIR': app.CACHE_DIR,
-            'SPELLS_CACHE_FILE': app.SPELLS_CACHE_FILE,
-            'PRICING_CACHE_FILE': app.PRICING_CACHE_FILE,
-            'SPELL_DETAILS_CACHE_FILE': app.SPELL_DETAILS_CACHE_FILE,
-            'METADATA_CACHE_FILE': app.METADATA_CACHE_FILE
-        }
-        
-        # Set temporary cache files
-        app.CACHE_DIR = str(cache_dir)
-        app.SPELLS_CACHE_FILE = str(cache_dir / 'spells_cache.json')
-        app.PRICING_CACHE_FILE = str(cache_dir / 'pricing_cache.json')
-        app.SPELL_DETAILS_CACHE_FILE = str(cache_dir / 'spell_details_cache.json')
-        app.METADATA_CACHE_FILE = str(cache_dir / 'cache_metadata.json')
-        files_created = False
-    
-    yield str(cache_dir)
-    
-    # Cleanup
-    if not files_created:
-        # Restore original values
-        for attr, value in original_files.items():
-            setattr(app, attr, value)
-    else:
-        # Remove attributes we created
-        for attr in ['CACHE_DIR', 'SPELLS_CACHE_FILE', 'PRICING_CACHE_FILE', 
-                     'SPELL_DETAILS_CACHE_FILE', 'METADATA_CACHE_FILE']:
-            if hasattr(app, attr):
-                delattr(app, attr)
+# Spell system fixtures removed - spell system disabled

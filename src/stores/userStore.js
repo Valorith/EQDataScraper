@@ -139,35 +139,129 @@ export const useUserStore = defineStore('user', {
           return
         }
         
+        // Check for dev login state preservation during hot reload
+        const devLoginState = sessionStorage.getItem('dev_login_state')
+        if (devLoginState && import.meta.env.MODE === 'development') {
+          try {
+            const parsedState = JSON.parse(devLoginState)
+            const stateAge = Date.now() - (parsedState.timestamp || 0)
+            const maxAge = 60 * 60 * 1000 // 1 hour max age
+            
+            if (parsedState.isAuthenticated && parsedState.user && stateAge < maxAge) {
+              console.log('🔥 Hot reload: Restoring dev login state')
+              this.accessToken = parsedState.accessToken
+              this.refreshToken = parsedState.refreshToken
+              this.user = parsedState.user
+              this.preferences = parsedState.preferences || this.preferences
+              this.isAuthenticated = true
+              this.isLoading = false
+              
+              // Validate the token
+              try {
+                const isValid = await this.verifyToken()
+                if (isValid) {
+                  console.log('✅ Dev login token validation successful')
+                  clearTimeout(initTimeout)
+                  return
+                } else {
+                  console.log('❌ Dev login token validation failed, attempting refresh')
+                  // Try to refresh the token if we have a refresh token
+                  if (this.refreshToken) {
+                    try {
+                      await this.refreshAccessToken()
+                      console.log('✅ Token refreshed successfully after hot reload')
+                      clearTimeout(initTimeout)
+                      return
+                    } catch (refreshError) {
+                      console.log('❌ Token refresh failed, clearing auth state')
+                    }
+                  }
+                  sessionStorage.removeItem('dev_login_state')
+                  this.clearAuth()
+                }
+              } catch (validationError) {
+                console.log('❌ Dev login token validation error, clearing auth state')
+                sessionStorage.removeItem('dev_login_state')
+                this.clearAuth()
+              }
+            } else {
+              console.log('🔥 Dev login state expired or invalid, clearing')
+              sessionStorage.removeItem('dev_login_state')
+            }
+          } catch (error) {
+            console.log('Could not parse dev login state')
+            sessionStorage.removeItem('dev_login_state')
+          }
+        }
+        
+        // Wait a bit for Pinia persistence to restore tokens from localStorage
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Check for tokens in both store and localStorage (fallback)
+        let accessToken = this.accessToken
+        let refreshToken = this.refreshToken
+        
+        // If tokens aren't in store yet, try to get them from localStorage
+        if (!accessToken || !refreshToken) {
+          try {
+            const storedData = JSON.parse(localStorage.getItem('userStore') || '{}')
+            accessToken = accessToken || storedData.accessToken
+            refreshToken = refreshToken || storedData.refreshToken
+          } catch (error) {
+            console.log('Could not parse stored auth data')
+          }
+        }
+        
         // Skip setting loading if no tokens exist (user is not logged in)
-        if (!this.accessToken) {
+        if (!accessToken && !refreshToken) {
           // Don't log this in production to reduce console noise
           if (import.meta.env.MODE === 'development') {
-            console.debug('No access token found, user is not logged in')
+            console.debug('No tokens found, user is not logged in')
           }
           this.isLoading = false
           clearTimeout(initTimeout)
           return
         }
         
+        // If we only have a refresh token but no access token, skip verification and go straight to refresh
+        if (!accessToken && refreshToken) {
+          console.log('No access token but refresh token exists, attempting refresh')
+          this.isLoading = true
+          try {
+            await this.refreshAccessToken()
+            console.log('Successfully refreshed token')
+          } catch (refreshError) {
+            console.log('Token refresh failed during initialization, clearing auth')
+            this.clearAuth()
+          }
+          clearTimeout(initTimeout)
+          this.isLoading = false
+          return
+        }
+        
         this.isLoading = true
         this.loginError = null
 
-        // Verify token is still valid with timeout
+        // Verify token is still valid with timeout (only if we have an access token)
         const verifyPromise = this.verifyToken()
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Token verification timeout')), 4000)
+          setTimeout(() => reject(new Error('Token verification timeout')), 10000)
         )
         
         try {
           const isValid = await Promise.race([verifyPromise, timeoutPromise])
           
-          if (!isValid && this.refreshToken) {
+          if (!isValid && refreshToken) {
             // Try to refresh the token
             try {
               await this.refreshAccessToken()
             } catch (refreshError) {
-              console.log('Token refresh failed, clearing auth')
+              // Only log non-401 errors (401 is expected for expired refresh tokens)
+              if (!refreshError.response || refreshError.response.status !== 401) {
+                console.log('Token refresh failed:', refreshError.message)
+              } else {
+                console.log('Refresh token expired, clearing auth')
+              }
               this.clearAuth()
             }
           } else if (!isValid) {
@@ -177,12 +271,21 @@ export const useUserStore = defineStore('user', {
           }
         } catch (timeoutError) {
           if (timeoutError.message === 'Token verification timeout') {
-            console.warn('Token verification timed out, clearing auth')
-            this.clearAuth()
+            console.warn('Token verification timed out - keeping existing auth state for dev mode')
+            // In development, don't clear auth state on timeout to allow dev login to work
+            if (import.meta.env.MODE === 'production') {
+              this.clearAuth()
+            } else {
+              console.log('Development mode: Preserving auth state despite timeout')
+            }
           } else {
             // It's a network timeout from axios, handle gracefully
-            console.warn('Network timeout during token verification, assuming token is invalid')
-            this.clearAuth()
+            console.warn('Network timeout during token verification - preserving auth state in dev mode')
+            if (import.meta.env.MODE === 'production') {
+              this.clearAuth()
+            } else {
+              console.log('Development mode: Preserving auth state despite network timeout')
+            }
           }
         }
       } catch (error) {
@@ -265,6 +368,9 @@ export const useUserStore = defineStore('user', {
           // Clear OAuth state
           this.oauthState = null
           
+          // Save dev login state for hot reload persistence
+          this.saveDevLoginState()
+          
           console.log('✅ Login successful:', user.email)
           return true
         } else {
@@ -284,15 +390,36 @@ export const useUserStore = defineStore('user', {
      * Refresh access token using refresh token
      */
     async refreshAccessToken() {
-      if (!this.refreshToken) {
+      let refreshToken = this.refreshToken
+      
+      // If refresh token isn't in store yet, try to get it from localStorage
+      if (!refreshToken) {
+        try {
+          const storedData = JSON.parse(localStorage.getItem('userStore') || '{}')
+          refreshToken = storedData.refreshToken
+        } catch (error) {
+          console.log('Could not parse stored refresh token')
+        }
+      }
+      
+      if (!refreshToken) {
+        console.log('No refresh token available')
+        this.clearAuth()
         throw new Error('No refresh token available')
+      }
+      
+      // Basic validation - refresh token should be a non-empty string
+      if (typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+        console.log('Invalid refresh token format')
+        this.clearAuth()
+        throw new Error('Invalid refresh token format')
       }
 
       try {
         const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
-          refresh_token: this.refreshToken
+          refresh_token: refreshToken
         }, {
-          timeout: 5000 // 5 second timeout
+          timeout: 10000 // 10 second timeout for development
         })
 
         if (response.data.success) {
@@ -300,6 +427,10 @@ export const useUserStore = defineStore('user', {
           this.accessToken = access_token
           this.user = user
           this.isAuthenticated = true
+          
+          // Save dev login state for hot reload persistence
+          this.saveDevLoginState()
+          
           return true
         } else {
           throw new Error('Token refresh failed')
@@ -308,6 +439,8 @@ export const useUserStore = defineStore('user', {
         // Don't log 401 errors during refresh - they're expected when refresh token is expired
         if (!error.response || error.response.status !== 401) {
           console.error('Token refresh failed:', error)
+        } else {
+          console.log('Refresh token expired or invalid')
         }
         this.clearAuth()
         throw error
@@ -325,7 +458,7 @@ export const useUserStore = defineStore('user', {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           },
-          timeout: 5000 // 5 second timeout
+          timeout: 10000 // 10 second timeout for development
         })
 
         if (response.data.success && response.data.data.authenticated) {
@@ -478,8 +611,39 @@ export const useUserStore = defineStore('user', {
         theme_preference: 'auto',
         results_per_page: 20
       }
+      
       // Clean up any OAuth redirect flags
       sessionStorage.removeItem('oauth_redirect_in_progress')
+      
+      // Clear dev login state from sessionStorage
+      sessionStorage.removeItem('dev_login_state')
+      
+      // Clear localStorage to prevent stale tokens
+      try {
+        localStorage.removeItem('userStore')
+      } catch (error) {
+        console.warn('Could not clear localStorage:', error)
+      }
+      
+      console.log('Authentication state cleared')
+    },
+
+    /**
+     * Save dev login state to sessionStorage for hot reload persistence
+     */
+    saveDevLoginState() {
+      if (import.meta.env.MODE === 'development' && this.isAuthenticated) {
+        const devState = {
+          accessToken: this.accessToken,
+          refreshToken: this.refreshToken,
+          user: this.user,
+          preferences: this.preferences,
+          isAuthenticated: this.isAuthenticated,
+          timestamp: Date.now()
+        }
+        sessionStorage.setItem('dev_login_state', JSON.stringify(devState))
+        console.log('🔥 Dev login state saved for hot reload persistence')
+      }
     },
 
     /**

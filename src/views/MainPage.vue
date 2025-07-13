@@ -110,18 +110,16 @@
     
     <!-- Navigation Menu -->
     <div class="navigation-grid">
-      <router-link 
-        to="/spells"
-        class="nav-card spells-nav"
-      >
+      <div class="nav-card spells-nav disabled-card">
         <div class="nav-icon">
           <div class="nav-icon-symbol">✨</div>
         </div>
         <div class="nav-content">
           <h3 class="nav-title">Spells</h3>
           <p class="nav-description">Browse spells by class, view detailed information, and manage your spell collection</p>
+          <div class="coming-soon-badge">System Redesign in Progress</div>
         </div>
-      </router-link>
+      </div>
       
       <router-link 
         to="/items"
@@ -176,9 +174,14 @@
 <script>
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
+import { useDevMode } from '../composables/useDevMode'
 
 export default {
   name: 'MainPage',
+  setup() {
+    const { isDevAuthEnabled, checkDevAuthStatus } = useDevMode()
+    return { isDevAuthEnabled, checkDevAuthStatus }
+  },
   data() {
     return {
       searchQuery: '',
@@ -189,14 +192,19 @@ export default {
       searchTimeout: null,
       currentPage: 0,
       resultsPerPage: 10,
-      showRightArrowGlow: false,
-      isDevAuthEnabled: false
+      showRightArrowGlow: false
     }
   },
   computed: {
     isDev() {
-      // Show DEV badge only when dev auth is actually enabled (run.py start dev)
-      return this.isDevAuthEnabled
+      // Show DEV badge only when backend dev auth is explicitly enabled
+      // NEVER show in production builds
+      const isProduction = import.meta.env.PROD
+      const devAuthEnabled = this.isDevAuthEnabled
+      
+      const result = !isProduction && devAuthEnabled
+      console.debug('🎯 isDev computed - prod:', isProduction, 'auth:', devAuthEnabled, 'result:', result)
+      return result
     },
     
     totalPages() {
@@ -221,18 +229,22 @@ export default {
       return this.currentPage < this.totalPages - 1
     }
   },
+  watch: {
+    isDevAuthEnabled(newVal) {
+      console.debug('🎯 MainPage isDevAuthEnabled changed:', newVal)
+    }
+  },
   async mounted() {
     document.addEventListener('click', this.handleOutsideClick)
     
-    // Skip dev auth check if we know backend isn't available
-    // This prevents unnecessary network errors in the console
-    if (import.meta.env.MODE === 'development' && !import.meta.env.VITE_SKIP_BACKEND_CHECK) {
-      // Only check if we haven't already determined backend is unavailable
-      const backendAvailable = sessionStorage.getItem('backend_available')
-      if (backendAvailable !== 'false') {
-        this.checkDevAuthStatus()
-      }
-    }
+    // Log MainPage environment status
+    console.log('🎯 MainPage starting...')
+    console.log(`🎯 Production build: ${import.meta.env.PROD}`)
+    console.log(`🎯 Vite mode: ${import.meta.env.MODE}`)
+    
+    // Dev auth status is now managed by shared composable
+    // App.vue will handle the checking
+    console.log(`🎯 MainPage dev auth enabled (from shared state): ${this.isDevAuthEnabled}`)
   },
   beforeUnmount() {
     document.removeEventListener('click', this.handleOutsideClick)
@@ -277,20 +289,18 @@ export default {
       this.searchLoading = true
       
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/search-spells?q=${encodeURIComponent(this.searchQuery)}`)
-        this.searchResults = response.data.results || []
+        // Spell search temporarily disabled for redesign
+        console.warn('Spell search disabled - spell system temporarily disabled')
+        this.searchResults = [{
+          name: 'Spell search temporarily disabled',
+          class: 'system',
+          level: 0,
+          id: 'disabled',
+          description: 'The spell search system is temporarily disabled while we redesign the spell database. Please check back later.'
+        }]
         this.showDropdown = true
         this.selectedIndex = -1
         this.currentPage = 0
-        
-        if (this.searchResults.length > this.resultsPerPage) {
-          this.$nextTick(() => {
-            this.showRightArrowGlow = true
-            setTimeout(() => {
-              this.showRightArrowGlow = false
-            }, 2000)
-          })
-        }
       } catch (error) {
         console.error('Search error:', error)
         this.searchResults = []
@@ -326,10 +336,18 @@ export default {
         if (event.key === 'Enter' && this.searchQuery.trim().startsWith('/')) {
           event.preventDefault()
           
+          // Block slash commands on Railway production server
+          const isRailwayProduction = import.meta.env.VITE_RAILWAY_ENVIRONMENT === 'production'
+          if (isRailwayProduction) {
+            console.log('🚂 Slash commands disabled on Railway production server')
+            this.clearSearch()
+            return
+          }
+          
           const command = this.searchQuery.trim()
           
-          if (command === '/debug') {
-            this.toggleDebugPanel()
+          if (command === '/reload') {
+            this.reloadDevMode()
           }
           
           this.clearSearch()
@@ -389,10 +407,20 @@ export default {
           event.preventDefault()
           
           if (this.searchQuery.trim().startsWith('/')) {
+            // Block slash commands on Railway production server
+            const isRailwayProduction = import.meta.env.VITE_RAILWAY_ENVIRONMENT === 'production'
+            if (isRailwayProduction) {
+              console.log('🚂 Slash commands disabled on Railway production server')
+              this.clearSearch()
+              return
+            }
+            
             const command = this.searchQuery.trim()
             
-            if (command === '/debug') {
-              this.toggleDebugPanel()
+            if (command === '/reload') {
+              this.reloadDevMode()
+            } else if (command === '/clear') {
+              this.clearDevModeCache()
             }
             
             this.clearSearch()
@@ -450,24 +478,71 @@ export default {
       }
     },
     
-    async checkDevAuthStatus() {
+
+    async reloadDevMode() {
+      console.log('')
+      console.log('🔄 /reload command executed: Re-checking dev mode status...')
+      
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
-          timeout: 1000 // Quick timeout to avoid hanging
-        })
-        this.isDevAuthEnabled = response.data.dev_auth_enabled || false
-      } catch (err) {
-        // Dev auth not available - this is expected in most cases
-        // Don't log errors unless it's something unexpected
-        if (err.code !== 'ECONNREFUSED' && err.code !== 'ERR_NETWORK' && err.response?.status !== 404) {
-          console.debug('Dev auth check failed:', err.message)
+        // Force a fresh check of dev auth status
+        await this.checkDevAuthStatus(true)
+        
+        // Log the current state for debugging
+        console.log('')
+        console.log('🔄 Dev mode status after reload:')
+        console.log(`   🏗️  Production build: ${import.meta.env.PROD}`)
+        console.log(`   ⚙️  Vite mode: ${import.meta.env.MODE}`)
+        console.log(`   🎯 App mode: ${import.meta.env.VITE_APP_MODE || 'undefined'}`)
+        console.log(`   🔐 Backend dev auth enabled: ${this.isDevAuthEnabled}`)
+        console.log(`   🎭 isDev computed result: ${this.isDev}`)
+        
+        // Show a visual indication of the reload
+        if (this.isDevAuthEnabled && !import.meta.env.PROD) {
+          console.log('')
+          console.log('✅ Dev mode is ACTIVE! DEV badge should be visible.')
+        } else if (import.meta.env.PROD) {
+          console.log('')
+          console.log('🏭 Production build - dev mode disabled regardless of backend.')
+        } else {
+          console.log('')
+          console.log('🔒 Dev mode is INACTIVE. Backend dev auth not enabled.')
         }
-        this.isDevAuthEnabled = false
+        
+        console.log('')
+        console.log('💡 Tip: Dev mode components will reactively update based on the new status.')
+        
+      } catch (error) {
+        console.error('')
+        console.error('❌ Error reloading dev mode:', error)
+        console.error('')
       }
     },
 
-    toggleDebugPanel() {
-      this.$emit('toggle-debug-panel')
+    clearDevModeCache() {
+      console.log('')
+      console.log('🗑️ /clear command executed: Clearing dev mode cache...')
+      
+      try {
+        // Clear sessionStorage dev mode cache
+        sessionStorage.removeItem('dev_auth_enabled')
+        sessionStorage.removeItem('dev_auth_check_complete')
+        
+        console.log('✅ Dev mode cache cleared from sessionStorage')
+        
+        // Force a fresh check of dev auth status after clearing cache
+        this.checkDevAuthStatus(true).then(() => {
+          console.log('')
+          console.log('🔄 Fresh dev mode check completed after cache clear')
+          console.log(`   🔐 Backend dev auth enabled: ${this.isDevAuthEnabled}`)
+          console.log(`   🎭 isDev computed result: ${this.isDev}`)
+          console.log('')
+        })
+        
+      } catch (error) {
+        console.error('')
+        console.error('❌ Error clearing dev mode cache:', error)
+        console.error('')
+      }
     }
   }
 }
@@ -1460,5 +1535,31 @@ export default {
   .nav-icon { width: 60px; height: 60px; font-size: 1.8em; }
   .nav-title { font-size: 1.6em; }
   .nav-description { font-size: 0.95em; }
+}
+/* Disabled card styles */
+.disabled-card {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  position: relative;
+}
+
+.disabled-card:hover {
+  transform: none !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+}
+
+.coming-soon-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 165, 0, 0.9);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  backdrop-filter: blur(10px);
 }
 </style>

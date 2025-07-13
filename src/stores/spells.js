@@ -3,7 +3,7 @@ import axios from 'axios'
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '@/config/api'
 
 // Global debugging for network requests
-const DEBUG_NETWORK = import.meta.env.PROD || localStorage.getItem('debug-network') === 'true'
+const DEBUG_NETWORK = import.meta.env.MODE === 'development' && localStorage.getItem('debug-network') === 'true'
 
 // Network request logger
 function logNetworkRequest(method, url, data = null) {
@@ -146,18 +146,10 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
-    // Simple method to check cache status without pre-hydration
+    // Spell system disabled - cache status check disabled
     async checkCacheStatus() {
-      try {
-        const response = await axios.get(buildApiUrl(API_ENDPOINTS.CACHE_STATUS), {
-          timeout: 5000,
-          headers: { 'Accept': 'application/json' }
-        })
-        return response.data
-      } catch (error) {
-        console.warn('Failed to check cache status:', error.message)
-        return {}
-      }
+      console.warn('Cache status check disabled - spell system temporarily disabled')
+      return { disabled: true, message: 'Spell system temporarily disabled for redesign' }
     },
 
     // Force refresh: clear memory and update cache DB
@@ -185,42 +177,11 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
+    // Spell system disabled - fetch functionality disabled
     async fetchSpellsForClass(className, forceRefresh = false) {
-      // Normalize the className to lowercase for consistent caching
-      const normalizedClassName = className.toLowerCase()
-      const requestKey = `${normalizedClassName}-${forceRefresh}`
-      
-      // Return existing promise if request is already in flight
-      if (this.activeRequests.has(requestKey)) {
-        console.log(`Returning existing request for ${requestKey}`)
-        return this.activeRequests.get(requestKey)
-      }
-      
-      // Check for cached data first (skip if forcing refresh)
-      if (!forceRefresh && this.spellsData[normalizedClassName] && this.spellsData[normalizedClassName].length > 0) {
-        // Check if this is placeholder data from server optimization
-        if (this.spellsData[normalizedClassName][0]._placeholder && this.spellsData[normalizedClassName][0]._serverReady) {
-          console.log(`⚡ Server has ${normalizedClassName} preloaded - fetching real data instantly`)
-          // Continue to fetch real data from server memory (should be instant)
-        } else {
-          console.log(`⚡ Instant memory cache hit for ${normalizedClassName}: ${this.spellsData[normalizedClassName].length} spells`)
-          return this.spellsData[normalizedClassName]
-        }
-      }
-
-      this.loading = true
-      this.error = null
-      
-      // Create and cache the request promise
-      const requestPromise = this._fetchSpellsInternal(normalizedClassName, forceRefresh)
-      this.activeRequests.set(requestKey, requestPromise)
-      
-      try {
-        const result = await requestPromise
-        return result
-      } finally {
-        this.activeRequests.delete(requestKey)
-      }
+      console.warn('Spell fetching disabled - spell system temporarily disabled')
+      this.error = 'Spell system temporarily disabled for redesign'
+      throw new Error('Spell system temporarily disabled for redesign')
     },
 
     async _fetchSpellsInternal(normalizedClassName, forceRefresh) {
@@ -317,36 +278,18 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
+    // DISABLED: Spell system temporarily disabled for redesign
     async scrapeAllClasses() {
-      this.loading = true
-      this.error = null
-
-      try {
-        const response = await axios.post(`${API_BASE_URL}/api/scrape-all`)
-        return response.data
-      } catch (error) {
-        this.error = error.message
-        console.error('Error scraping all classes:', error)
-        throw error
-      } finally {
-        this.loading = false
-      }
+      console.warn('Scraping disabled - spell system temporarily disabled')
+      this.error = 'Spell system temporarily disabled for redesign'
+      throw new Error('Spell system temporarily disabled for redesign')
     },
 
+    // DISABLED: Spell system temporarily disabled for redesign
     async scrapeSpecificClass(className) {
-      this.loading = true
-      this.error = null
-
-      try {
-        const response = await axios.post(`${API_BASE_URL}/api/refresh-spell-cache/${className}`)
-        return response.data
-      } catch (error) {
-        this.error = error.message
-        console.error('Error scraping specific class:', error)
-        throw error
-      } finally {
-        this.loading = false
-      }
+      console.warn('Scraping disabled - spell system temporarily disabled')
+      this.error = 'Spell system temporarily disabled for redesign'
+      throw new Error('Spell system temporarily disabled for redesign')
     }
   }
 }) 

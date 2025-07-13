@@ -954,7 +954,7 @@ class AppRunner:
             self.print_status(f"⚠ Could not verify frontend connectivity: {e}", "warning")
     
     def save_pids(self):
-        """Save process IDs to file"""
+        """Save process IDs and runtime info to file"""
         pids = {}
         for name, proc in self.processes.items():
             if proc and proc.poll() is None:  # Only save if process is still running
@@ -962,8 +962,14 @@ class AppRunner:
         
         if pids:  # Only write file if we have running processes
             try:
+                # Save PIDs and runtime info
+                runtime_info = {
+                    'pids': pids,
+                    'dev_mode': os.environ.get('ENABLE_DEV_AUTH') == 'true',
+                    'started_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                }
                 with open(self.pids_file, 'w') as f:
-                    json.dump(pids, f)
+                    json.dump(runtime_info, f)
                 self.print_status(f"Saved PIDs: {pids}", "info")
             except Exception as e:
                 self.print_status(f"Failed to save PIDs: {e}", "warning")
@@ -977,10 +983,38 @@ class AppRunner:
         if self.pids_file.exists():
             try:
                 with open(self.pids_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Handle both old format (direct PIDs) and new format (with metadata)
+                    if isinstance(data, dict):
+                        if 'pids' in data:
+                            # New format with metadata
+                            return data['pids']
+                        else:
+                            # Old format - just PIDs
+                            return data
             except (json.JSONDecodeError, FileNotFoundError):
                 pass
         return {}
+    
+    def load_runtime_info(self) -> dict:
+        """Load full runtime info including dev mode status"""
+        if self.pids_file.exists():
+            try:
+                with open(self.pids_file, 'r') as f:
+                    data = json.load(f)
+                    # Handle both old format (direct PIDs) and new format (with metadata)
+                    if isinstance(data, dict) and 'pids' in data:
+                        return data
+                    else:
+                        # Old format - return default metadata
+                        return {
+                            'pids': data if isinstance(data, dict) else {},
+                            'dev_mode': False,
+                            'started_at': 'Unknown'
+                        }
+            except (json.JSONDecodeError, FileNotFoundError):
+                pass
+        return {'pids': {}, 'dev_mode': False, 'started_at': None}
         
     def is_process_running(self, pid: int) -> bool:
         """Check if a process is still running"""
@@ -1318,6 +1352,17 @@ class AppRunner:
         """Start both frontend and backend services"""
         self.print_header("Starting EQDataScraper Application")
         
+        # Display mode information prominently
+        is_dev_mode = os.environ.get('ENABLE_DEV_AUTH') == 'true'
+        if is_dev_mode:
+            self.print_status("🔧 MODE: DEVELOPMENT (dev auth bypass enabled)", "warning")
+            self.print_status("⚠️  Development tools and auth bypass are active", "warning")
+        else:
+            self.print_status("🏭 MODE: PRODUCTION", "success")
+            self.print_status("ℹ  Use 'run.py start dev' for development mode", "info")
+        
+        print()  # Add spacing after mode announcement
+        
         # Clean up any existing services first
         self.print_status("Checking for existing services...", "step")
         existing_services = self._cleanup_existing_services()
@@ -1553,7 +1598,10 @@ class AppRunner:
         """Check status of services"""
         self.print_header("EQDataScraper Service Status")
         
-        pids = self.load_pids()
+        runtime_info = self.load_runtime_info()
+        pids = runtime_info['pids']
+        is_dev_mode = runtime_info.get('dev_mode', False)
+        started_at = runtime_info.get('started_at', 'Unknown')
         
         if not pids:
             self.print_status("No services are currently tracked", "info", 1)
@@ -1561,6 +1609,16 @@ class AppRunner:
             self._check_untracked_services()
             return
             
+        # Show mode information
+        if is_dev_mode:
+            self.print_status("🔧 Mode: DEVELOPMENT (dev auth enabled)", "warning", 1)
+        else:
+            self.print_status("🏭 Mode: PRODUCTION", "success", 1)
+        
+        if started_at and started_at != 'Unknown':
+            self.print_status(f"📅 Started: {started_at}", "info", 1)
+        print()
+        
         services_running = False
         for name, pid in pids.items():
             if self.is_process_running(pid):
@@ -1967,10 +2025,30 @@ For help with common issues, see the README.md file.
     if args.command == "start":
         # Check if dev mode is requested
         if args.mode == "dev":
+            # CRITICAL: Block dev mode in production environments
+            production_indicators = [
+                'RAILWAY_ENVIRONMENT', 'HEROKU', 'AWS_EXECUTION_ENV', 'VERCEL', 
+                'NETLIFY', 'DOCKER', 'KUBERNETES_SERVICE_HOST'
+            ]
+            
+            if any(os.environ.get(indicator) for indicator in production_indicators):
+                runner.print_status("🚨 SECURITY ERROR: Dev mode is not allowed in production environments!", "error")
+                runner.print_status("⛔ Refusing to start dev mode for security reasons.", "error")
+                return
+            
+            if os.environ.get('FLASK_ENV') == 'production':
+                runner.print_status("🚨 SECURITY ERROR: Dev mode is not allowed when FLASK_ENV=production!", "error")
+                runner.print_status("⛔ Refusing to start dev mode for security reasons.", "error")
+                return
+            
             os.environ['ENABLE_DEV_AUTH'] = 'true'
-            runner.print_status("🔧 Starting in development mode with auth bypass enabled", "warning")
-            runner.print_status("⚠️  This mode should NEVER be used in production!", "warning")
-            print()  # Add spacing
+            os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Also enable user accounts for dev auth to work
+            os.environ['VITE_APP_MODE'] = 'development'  # Set custom dev mode flag for frontend
+            runner.print_status("🔒 Production environment checks passed - dev mode allowed", "info")
+        # Set production mode flag if dev mode is not enabled
+        if not os.environ.get('ENABLE_DEV_AUTH') == 'true':
+            os.environ['VITE_APP_MODE'] = 'production'  # Set custom production mode flag for frontend
+        
         runner.start_services()
         # If -m/--with-monitor flag is set, start monitor after services
         if args.with_monitor is not None:

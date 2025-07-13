@@ -22,8 +22,8 @@ export function configureAxios() {
           lastRateLimitWarning = now
         }
         
-        // Don't log error for health checks and cache status
-        if (url.includes('/api/health') || url.includes('/api/cache')) {
+        // Don't log error for health checks
+        if (url.includes('/api/health')) {
           return Promise.reject(error)
         }
       }

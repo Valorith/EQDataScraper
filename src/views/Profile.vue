@@ -262,14 +262,16 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
-import { useSpellsStore } from '@/stores/spells'
+// DISABLED: Spell system temporarily disabled for redesign
+// import { useSpellsStore } from '@/stores/spells'
 
 export default {
   name: 'Profile',
   setup() {
     const router = useRouter()
     const userStore = useUserStore()
-    const spellsStore = useSpellsStore()
+    // DISABLED: Spell system temporarily disabled for redesign
+    // const spellsStore = useSpellsStore()
 
     const isLoading = ref(false)
     const successMessage = ref('')
@@ -287,7 +289,25 @@ export default {
     const user = computed(() => userStore.user)
     const fullName = computed(() => userStore.fullName)
     const displayName = computed(() => userStore.displayName)
-    const classList = computed(() => spellsStore.classes)
+    // DISABLED: Spell system temporarily disabled - using fallback class list
+    const classList = computed(() => [
+      { name: 'Warrior', id: 1, color: '#8e2d2d' },
+      { name: 'Cleric', id: 2, color: '#ccccff' },
+      { name: 'Paladin', id: 3, color: '#ffd700' },
+      { name: 'Ranger', id: 4, color: '#228b22' },
+      { name: 'ShadowKnight', id: 5, color: '#551a8b' },
+      { name: 'Druid', id: 6, color: '#a0522d' },
+      { name: 'Monk', id: 7, color: '#556b2f' },
+      { name: 'Bard', id: 8, color: '#ff69b4' },
+      { name: 'Rogue', id: 9, color: '#708090' },
+      { name: 'Shaman', id: 10, color: '#20b2aa' },
+      { name: 'Necromancer', id: 11, color: '#4b0082' },
+      { name: 'Wizard', id: 12, color: '#1e90ff' },
+      { name: 'Magician', id: 13, color: '#ff8c00' },
+      { name: 'Enchanter', id: 14, color: '#9370db' },
+      { name: 'Beastlord', id: 15, color: '#a52a2a' },
+      { name: 'Berserker', id: 16, color: '#b22222' }
+    ])
 
     const userInitials = computed(() => {
       if (userStore.fullName) {
@@ -406,9 +426,10 @@ export default {
       router.push('/')
     }
 
+    // DISABLED: Spell system temporarily disabled - using fallback class data
     const getClassColor = (className) => {
       if (!className) return '#667eea'
-      const classObj = spellsStore.getClassByName(className)
+      const classObj = classList.value.find(cls => cls.name.toLowerCase() === className.toLowerCase())
       return classObj?.color || '#667eea'
     }
 
@@ -429,9 +450,10 @@ export default {
       }
     }
 
+    // DISABLED: Spell system temporarily disabled - using fallback class data
     const getClassDisplayName = (className) => {
       if (!className) return ''
-      const classObj = spellsStore.getClassByName(className)
+      const classObj = classList.value.find(cls => cls.name.toLowerCase() === className.toLowerCase())
       return classObj?.name || className.charAt(0).toUpperCase() + className.slice(1)
     }
 
@@ -500,8 +522,8 @@ export default {
       getClassInitial,
       getClassDisplayName,
       handleImageError,
-      userStore,
-      spellsStore
+      userStore
+      // DISABLED: spellsStore removed - spell system temporarily disabled
     }
   }
 }

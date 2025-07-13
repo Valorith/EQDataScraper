@@ -6,22 +6,41 @@
           <i class="fas fa-arrow-left"></i>
           Back to Dashboard
         </router-link>
-        <h1>System Logs</h1>
-        <p class="subtitle">View and filter system logs and activity</p>
+        <h1>Activity Logs</h1>
+        <p class="subtitle">View and filter user activities and system events</p>
       </div>
     </div>
 
-    <!-- Log Filters -->
+    <!-- Activity Filters -->
     <div class="filters-section">
       <div class="filters-row">
         <div class="filter-group">
-          <label>Log Level</label>
-          <select v-model="filters.level" class="filter-select">
-            <option value="">All Levels</option>
-            <option value="error">Error</option>
-            <option value="warning">Warning</option>
-            <option value="info">Info</option>
-            <option value="debug">Debug</option>
+          <label>Action Type</label>
+          <select v-model="filters.action" class="filter-select">
+            <option value="">All Actions</option>
+            <option value="login">Login</option>
+            <option value="logout">Logout</option>
+            <option value="spell_search">Spell Search</option>
+            <option value="spell_view">Spell View</option>
+            <option value="cache_refresh">Cache Refresh</option>
+            <option value="cache_clear">Cache Clear</option>
+            <option value="scrape_start">Scrape Start</option>
+            <option value="scrape_complete">Scrape Complete</option>
+            <option value="admin_action">Admin Action</option>
+            <option value="system_error">System Error</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Resource Type</label>
+          <select v-model="filters.resource_type" class="filter-select">
+            <option value="">All Resources</option>
+            <option value="user">User</option>
+            <option value="session">Session</option>
+            <option value="spell">Spell</option>
+            <option value="class">Class</option>
+            <option value="cache">Cache</option>
+            <option value="system">System</option>
           </select>
         </div>
         
@@ -40,12 +59,12 @@
           <input 
             v-model="filters.search" 
             type="text" 
-            placeholder="Search logs..."
+            placeholder="Search activities..."
             class="filter-input"
           >
         </div>
         
-        <button @click="refreshLogs" class="refresh-btn">
+        <button @click="refreshActivities" class="refresh-btn">
           <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
           Refresh
         </button>

@@ -1,8 +1,16 @@
 <template>
-  
-  <div v-if="showDevLogin && !isMinimized" class="dev-login-container">
-    <!-- Only show expanded state - no minimized icon -->
-    <div class="expanded-panel">
+  <div class="dev-login-container" :class="{ minimized: isMinimized }">
+    <!-- Minimized state - clickable icon -->
+    <div v-if="isMinimized" class="minimized-icon" @click="toggleMinimize" title="Open Dev Login">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 17L15 12L10 7V17Z" fill="currentColor"/>
+        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <div class="dev-badge">DEV</div>
+    </div>
+    
+    <!-- Expanded state -->
+    <div v-else class="expanded-panel">
       <div class="dev-warning">
         <span class="warning-icon">⚠️</span>
         <span>Development Mode - Auth Bypass Active</span>
@@ -55,80 +63,126 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watchEffect } from 'vue'
 import { useUserStore } from '@/stores/userStore'
 import { useRouter } from 'vue-router'
+import { useDevMode } from '@/composables/useDevMode'
 import axios from 'axios'
 import { API_BASE_URL } from '@/config/api'
 
 export default {
   name: 'DevLogin',
-  setup() {
+  props: {},
+  setup(props) {
     const userStore = useUserStore()
     const router = useRouter()
     
+    // Use shared dev mode state
+    const { isDevAuthEnabled } = useDevMode()
+    
     const isProduction = import.meta.env.PROD
-    const isDevAuthEnabled = ref(false)
     const isMinimized = ref(true) // Start minimized
-    const showDevLogin = ref(false) // Control visibility
     const showCustomForm = ref(false)
     const customEmail = ref('')
     const customIsAdmin = ref(false)
     const error = ref(null)
     
-    // Check if dev auth is enabled
-    const checkDevAuth = async () => {
-      // Skip check entirely in production
-      if (isProduction) {
-        console.debug('DevLogin: Disabled in production')
-        isDevAuthEnabled.value = false
-        showDevLogin.value = false
-        return
+    // Watch for authentication state changes and save dev login state
+    watchEffect(() => {
+      if (userStore.isAuthenticated) {
+        userStore.saveDevLoginState()
+      }
+    })
+    
+    // Computed property to determine if we should show the dev login
+    const showDevLogin = computed(() => {
+      // Check custom app mode from run.py
+      const appMode = import.meta.env.VITE_APP_MODE
+      if (appMode !== 'development') return false
+      
+      // Show dev login if dev auth is enabled (useDevMode handles all fallback logic)
+      return isDevAuthEnabled.value
+    })
+    
+    // Watch for changes in dev auth status for debugging
+    watchEffect(() => {
+      console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value, 'Show:', showDevLogin.value)
+    })
+    
+    const performOfflineLogin = (email, isAdmin = false) => {
+      console.log(`🔧 Dev Login: Using offline fallback login for ${email} (admin: ${isAdmin})`)
+      
+      // Create mock authentication state
+      const mockUser = {
+        id: isAdmin ? 1 : 2,
+        email: email,
+        first_name: isAdmin ? 'Admin' : 'Test',
+        last_name: 'User',
+        role: isAdmin ? 'admin' : 'user',
+        display_name: null,
+        anonymous_mode: false,
+        avatar_class: null,
+        avatar_url: `https://ui-avatars.com/api/?name=${isAdmin ? 'Admin' : 'Test'}+User&background=667eea&color=fff`,
+        is_active: true,
+        google_id: `offline_${isAdmin ? 'admin' : 'user'}`
       }
       
-      // Set initial state to prevent reactivity issues
-      isDevAuthEnabled.value = false
-      showDevLogin.value = false
+      // Create mock tokens
+      const mockAccessToken = `offline_access_token_${Date.now()}`
+      const mockRefreshToken = `offline_refresh_token_${Date.now()}`
       
-      try {
-        console.debug('DevLogin: Checking dev auth status...')
-        const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
-          timeout: 2000 // Quick timeout for dev check
-        })
-        
-        // Use nextTick to update reactive values
-        import('vue').then(({ nextTick }) => {
-          nextTick(() => {
-            isDevAuthEnabled.value = response.data.dev_auth_enabled || false
-            console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value)
-            showDevLogin.value = isDevAuthEnabled.value // Only show if enabled
-          })
-        })
-      } catch (err) {
-        // Dev auth not available - this is expected if ENABLE_DEV_AUTH is not set
-        if (err.response?.status === 404) {
-          // Don't log 404s as they're expected when dev auth is disabled
-          console.debug('DevLogin: Auth endpoint not available (404)')
-        } else if (err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK') {
-          // Network errors are also expected in some environments
-          console.debug('DevLogin: Auth check timed out or network error')
-        } else {
-          console.debug('DevLogin: Auth check failed:', err.message)
-        }
-        // Values already set to false initially
+      // Store auth data
+      userStore.accessToken = mockAccessToken
+      userStore.refreshToken = mockRefreshToken
+      userStore.user = mockUser
+      userStore.preferences = {
+        default_class: null,
+        theme_preference: 'auto',
+        results_per_page: 20
       }
+      userStore.isAuthenticated = true
+      
+      // Save dev login state for hot reload persistence
+      userStore.saveDevLoginState()
+      
+      // Hide the dev login panel after successful login
+      isMinimized.value = true
+      showCustomForm.value = false
+      
+      console.log('🔧 Dev Login: Offline authentication complete, redirecting to home')
+      
+      // Redirect to home
+      router.push('/')
+      
+      // Clear any previous errors
+      error.value = null
     }
     
     const performDevLogin = async (email, isAdmin = false) => {
       error.value = null
+      console.log(`🔧 Dev Login: Attempting login for ${email} (admin: ${isAdmin})`)
+      console.log(`🔧 Dev Login: Using API URL: ${API_BASE_URL}/api/auth/dev-login`)
+      
+      // If this is a retry after an error and we're in dev mode, use offline login
+      if (error.value && error.value.includes('Click again to use offline dev login')) {
+        performOfflineLogin(email, isAdmin)
+        return
+      }
+      
       try {
         const response = await axios.post(`${API_BASE_URL}/api/auth/dev-login`, {
           email,
           is_admin: isAdmin
+        }, {
+          timeout: 10000 // Reduced timeout to 10 seconds for faster fallback
         })
+        
+        console.log('🔧 Dev Login: Response received', response.data)
         
         if (response.data.success) {
           const { access_token, refresh_token, user, preferences } = response.data.data
+          
+          console.log('🔧 Dev Login: Login successful, storing auth data')
           
           // Store auth data
           userStore.accessToken = access_token
@@ -143,15 +197,59 @@ export default {
           userStore.preferences = preferences || userStore.preferences
           userStore.isAuthenticated = true
           
+          // Save dev login state for hot reload persistence
+          userStore.saveDevLoginState()
+          
           // Hide the dev login panel after successful login
           isMinimized.value = true
           showCustomForm.value = false
           
+          console.log('🔧 Dev Login: Authentication complete, redirecting to home')
+          
           // Redirect to home
           router.push('/')
+        } else {
+          console.error('🔧 Dev Login: Backend returned success=false')
+          error.value = response.data.message || 'Dev login failed'
         }
       } catch (err) {
-        error.value = err.response?.data?.error || 'Dev login failed'
+        console.error('🔧 Dev Login: Error occurred', err)
+        
+        // Auto-fallback to offline login for common backend issues
+        const shouldAutoFallback = import.meta.env.MODE === 'development' && (
+          err.code === 'ECONNABORTED' || 
+          err.message.includes('timeout') ||
+          err.code === 'ECONNREFUSED' ||
+          err.response?.status === 500 ||
+          err.response?.status === 404
+        )
+        
+        if (shouldAutoFallback) {
+          console.log('🔧 Dev Login: Backend unavailable, auto-falling back to offline login')
+          performOfflineLogin(email, isAdmin)
+          return
+        }
+        
+        // Set error messages for other failures
+        if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          error.value = 'Dev login timed out - using offline fallback'
+        } else if (err.response?.status === 404) {
+          error.value = 'Dev login endpoint not found - using offline fallback'
+        } else if (err.response?.status === 500) {
+          error.value = 'Backend error during dev login - using offline fallback'
+        } else if (err.code === 'ECONNREFUSED') {
+          error.value = 'Cannot connect to backend - using offline fallback'
+        } else {
+          error.value = err.response?.data?.error || err.message || 'Dev login failed'
+        }
+        
+        // If we didn't auto-fallback, still offer manual fallback
+        if (!shouldAutoFallback && import.meta.env.MODE === 'development') {
+          console.log('🔧 Dev Login: Offering manual offline fallback login')
+          setTimeout(() => {
+            error.value += ' - Click again to use offline dev login'
+          }, 1000)
+        }
       }
     }
     
@@ -173,55 +271,20 @@ export default {
     }
     
     const toggleMinimize = () => {
-      // Don't do anything in production
-      if (isProduction) {
-        console.debug('DevLogin: Toggle ignored in production')
+      // Don't do anything in production or if not in dev mode
+      if (isProduction || !showDevLogin.value) {
+        console.debug('DevLogin: Toggle ignored - not in dev mode')
         return
       }
       
-      // If not showing, show it first (only if dev auth is enabled)
-      if (!showDevLogin.value && isDevAuthEnabled.value) {
-        showDevLogin.value = true
-        isMinimized.value = false
-      } else if (showDevLogin.value) {
-        isMinimized.value = !isMinimized.value
-        // Reset custom form when minimizing
-        if (isMinimized.value) {
-          showCustomForm.value = false
-          error.value = null
-        }
+      isMinimized.value = !isMinimized.value
+      // Reset custom form when minimizing
+      if (isMinimized.value) {
+        showCustomForm.value = false
+        error.value = null
       }
     }
     
-    onMounted(() => {
-      // Early exit for production
-      if (isProduction) {
-        console.debug('DevLogin: Disabled in production')
-        showDevLogin.value = false
-        return
-      }
-      
-      console.debug('DevLogin: Component mounted')
-      console.debug('DevLogin: Environment mode:', import.meta.env.MODE)
-      console.debug('DevLogin: API Base URL:', API_BASE_URL)
-      
-      // Skip dev auth check if backend is unavailable
-      const backendAvailable = sessionStorage.getItem('backend_available')
-      if (backendAvailable === 'false') {
-        console.debug('DevLogin: Skipping auth check - backend unavailable')
-        isDevAuthEnabled.value = false
-        showDevLogin.value = false
-        return
-      }
-      
-      // Use nextTick to avoid reactivity issues
-      import('vue').then(({ nextTick }) => {
-        nextTick(() => {
-          // Check dev auth only in development
-          checkDevAuth()
-        })
-      })
-    })
     
     return {
       isProduction,
@@ -245,12 +308,20 @@ export default {
 <style scoped>
 .dev-login-container {
   position: fixed;
-  bottom: 80px; /* Moved up to avoid overlap with cache indicator */
-  right: 20px;
+  bottom: 80px !important; /* Position at same level as debug panel when expanded */
+  right: 20px !important; /* Default right position */
   z-index: 10000; /* Higher than cache indicator */
   max-width: 300px;
-  transition: bottom 0.3s ease;
+  transition: all 0.3s ease;
 }
+
+/* When minimized, position at button level next to debug toggle */
+.dev-login-container.minimized {
+  bottom: 20px !important; /* Same level as debug toggle button */
+  right: 20px !important; /* Position at right edge, to the right of debug toggle button */
+}
+
+
 
 .dev-login-container:not(.minimized) {
   width: 300px;
@@ -266,7 +337,6 @@ export default {
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -453,5 +523,19 @@ export default {
   .dev-login-container[data-env="production"] {
     display: none !important;
   }
+}
+
+/* Mobile responsive positioning */
+@media (max-width: 768px) {
+  .dev-login-container {
+    bottom: 70px; /* Adjust for mobile when expanded */
+    right: 10px;
+  }
+  
+  .dev-login-container.minimized {
+    bottom: 10px; /* Adjust for mobile when minimized */
+    right: 10px;
+  }
+  
 }
 </style>

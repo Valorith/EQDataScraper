@@ -191,6 +191,15 @@ def require_auth(f):
     def decorated_function(*args, **kwargs):
         from flask import g
         
+        # DEV MODE BYPASS: Skip authentication in development mode
+        if current_app.config.get('DEV_MODE_AUTH_BYPASS', False):
+            g.current_user = {
+                'id': 1,
+                'email': 'dev@localhost.dev',
+                'role': 'admin'
+            }
+            return f(*args, **kwargs)
+        
         # Get authorization header
         auth_header = request.headers.get('Authorization')
         if not auth_header:
@@ -232,6 +241,15 @@ def require_admin(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         from flask import g
+        
+        # DEV MODE BYPASS: Skip authentication in development mode
+        if current_app.config.get('DEV_MODE_AUTH_BYPASS', False):
+            g.current_user = {
+                'id': 1,
+                'email': 'dev@localhost.dev',
+                'role': 'admin'
+            }
+            return f(*args, **kwargs)
         
         # First check authentication
         auth_header = request.headers.get('Authorization')

@@ -13,9 +13,100 @@ import os
 import psutil
 import time
 from collections import defaultdict, deque
+import json
+import threading
+import atexit
+from utils.query_tracking_persistence import QueryTrackingPersistence
 
 admin_bp = Blueprint('admin', __name__)
 logger = logging.getLogger(__name__)
+
+# Initialize query tracking persistence
+query_persistence = QueryTrackingPersistence()
+
+# Timeline data persistence
+TIMELINE_DATA_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'timeline_data.json')
+
+def save_timeline_data(timeline_data):
+    """Save timeline data to disk."""
+    try:
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(TIMELINE_DATA_FILE), exist_ok=True)
+        
+        # Convert deque to list and filter out entries older than 7 days
+        now = datetime.now()
+        seven_days_ago = now - timedelta(days=7)
+        
+        timeline_list = []
+        for entry in timeline_data:
+            entry_time = datetime.fromisoformat(entry['timestamp'])
+            if entry_time > seven_days_ago:
+                # Convert defaultdict to regular dict for JSON serialization
+                entry_copy = entry.copy()
+                entry_copy['tables'] = dict(entry_copy['tables'])
+                timeline_list.append(entry_copy)
+        
+        # Save to file
+        with open(TIMELINE_DATA_FILE, 'w') as f:
+            json.dump(timeline_list, f, indent=2)
+            
+        logger.info(f"Timeline data saved to {TIMELINE_DATA_FILE} ({len(timeline_list)} entries)")
+        
+    except Exception as e:
+        logger.error(f"Failed to save timeline data: {e}")
+
+def load_timeline_data():
+    """Load timeline data from disk."""
+    try:
+        if not os.path.exists(TIMELINE_DATA_FILE):
+            logger.info("No timeline data file found, starting with empty timeline")
+            return deque(maxlen=168)
+        
+        with open(TIMELINE_DATA_FILE, 'r') as f:
+            timeline_list = json.load(f)
+        
+        # Filter out entries older than 7 days
+        now = datetime.now()
+        seven_days_ago = now - timedelta(days=7)
+        
+        timeline_deque = deque(maxlen=168)
+        for entry in timeline_list:
+            entry_time = datetime.fromisoformat(entry['timestamp'])
+            if entry_time > seven_days_ago:
+                # Convert tables back to defaultdict
+                entry['tables'] = defaultdict(int, entry['tables'])
+                timeline_deque.append(entry)
+        
+        logger.info(f"Timeline data loaded from {TIMELINE_DATA_FILE} ({len(timeline_deque)} entries)")
+        return timeline_deque
+        
+    except Exception as e:
+        logger.error(f"Failed to load timeline data: {e}")
+        return deque(maxlen=168)
+
+def periodic_save_timeline():
+    """Periodically save timeline data to disk with enhanced error handling - DISABLED."""
+    logger.info("⚠️ Periodic timeline save DISABLED to debug hanging issue")
+    # TEMPORARILY DISABLED: Background thread with while True loop may be causing hanging
+    
+    # def save_worker():
+    #     while True:
+    #         try:
+    #             time.sleep(3600)  # Save every hour
+    #             db_stats = system_metrics['database_stats']
+    #             save_timeline_data(db_stats['timeline'])
+    #             logger.info("Periodic timeline data save completed successfully")
+    #         except Exception as e:
+    #             logger.error(f"Periodic timeline save failed: {e}")
+    #             # Continue running even if save fails
+    # 
+    # try:
+    #     # Start the periodic save thread with enhanced error handling
+    #     save_thread = threading.Thread(target=save_worker, daemon=True)
+    #     save_thread.start()
+    #     logger.info("Periodic timeline data save thread started successfully")
+    # except Exception as e:
+    #     logger.error(f"Failed to start periodic save thread: {e}")
 
 def get_db_connection():
     """Get database connection - will be injected by main app."""
@@ -456,205 +547,23 @@ def admin_cleanup():
 
 
 @admin_bp.route('/admin/activities', methods=['GET'])
-@require_admin
 def get_recent_activities():
-    """
-    Get recent system activities.
-    
-    Query parameters:
-        limit: Number of activities to return (default: 50, max: 100)
-        offset: Offset for pagination (default: 0)
-        action: Filter by specific action type
-        user_id: Filter by specific user ID
-        start_date: Filter activities after this date (ISO format)
-        end_date: Filter activities before this date (ISO format)
-    
-    Returns:
-        JSON response with recent activities
-    """
-    try:
-        # Get query parameters
-        limit = request.args.get('limit', 50, type=int)
-        offset = request.args.get('offset', 0, type=int)
-        action = request.args.get('action')
-        user_id = request.args.get('user_id', type=int)
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
-        
-        # Validate parameters
-        if limit < 1 or limit > 100:
-            limit = 50
-        if offset < 0:
-            offset = 0
-        
-        # Parse dates if provided
-        start_date = None
-        end_date = None
-        if start_date_str:
-            try:
-                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
-            except:
-                return create_error_response("Invalid start_date format", 400)
-        
-        if end_date_str:
-            try:
-                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-            except:
-                return create_error_response("Invalid end_date format", 400)
-        
-        # Get database connection
-        conn = get_db_connection()
-        if not conn:
-            # Return mock activities for development when no database is available
-            from datetime import datetime, timedelta
-            
-            mock_activities = [
+    """Get recent system activities - SIMPLIFIED FOR DEBUGGING"""
+    return jsonify({
+        'success': True,
+        'data': {
+            'activities': [
                 {
                     'id': 1,
-                    'action': 'login',
-                    'user_id': 1,
-                    'user_display': 'Development User',
-                    'resource_type': 'session',
-                    'resource_id': 'dev-session-1',
-                    'details': {'method': 'google_oauth'},
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser',
-                    'created_at': (datetime.now() - timedelta(minutes=5)).isoformat(),
-                    'description': 'Development User logged in'
-                },
-                {
-                    'id': 2,
-                    'action': 'spell_search',
-                    'user_id': 1,
-                    'user_display': 'Development User',
-                    'resource_type': 'spell',
-                    'resource_id': 'heal',
-                    'details': {'query': 'heal', 'results_count': 45},
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser',
-                    'created_at': (datetime.now() - timedelta(minutes=10)).isoformat(),
-                    'description': 'Development User searched for spells: "heal"'
-                },
-                {
-                    'id': 3,
-                    'action': 'cache_refresh',
-                    'user_id': None,
-                    'user_display': 'System',
-                    'resource_type': 'cache',
-                    'resource_id': 'all_classes',
-                    'details': {'refreshed_classes': 16},
-                    'ip_address': None,
-                    'user_agent': None,
-                    'created_at': (datetime.now() - timedelta(hours=1)).isoformat(),
-                    'description': 'System refreshed cache for all classes'
-                },
-                {
-                    'id': 4,
-                    'action': 'scrape_complete',
-                    'user_id': 1,
-                    'user_display': 'Development User',
-                    'resource_type': 'class',
-                    'resource_id': 'paladin',
-                    'details': {'spell_count': 142, 'duration_seconds': 8.3},
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser',
-                    'created_at': (datetime.now() - timedelta(hours=2)).isoformat(),
-                    'description': 'Development User completed scraping for Paladin (142 spells)'
-                },
-                {
-                    'id': 5,
-                    'action': 'spell_view',
-                    'user_id': 1,
-                    'user_display': 'Development User',
-                    'resource_type': 'spell',
-                    'resource_id': '1234',
-                    'details': {'spell_name': 'Complete Heal', 'class': 'cleric'},
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser',
-                    'created_at': (datetime.now() - timedelta(hours=3)).isoformat(),
-                    'description': 'Development User viewed spell details: Complete Heal'
+                    'action': 'test',
+                    'user_display': 'Test User',
+                    'description': 'Test activity for debugging',
+                    'created_at': '2025-07-08T21:00:00Z'
                 }
-            ]
-            
-            return jsonify(create_success_response({
-                'activities': mock_activities[:limit],  # Respect the limit parameter
-                'total_count': len(mock_activities)
-            }))
-        
-        try:
-            # Initialize activity log model
-            activity_log = ActivityLog(conn)
-            
-            # Get activities
-            activities = activity_log.get_recent_activities(
-                limit=limit,
-                offset=offset,
-                user_id=user_id,
-                action=action,
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            # Get total count for pagination
-            total_count = activity_log.get_activity_count(
-                user_id=user_id,
-                action=action,
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            
-            # Format activities for response
-            formatted_activities = []
-            for activity in activities:
-                formatted_activity = {
-                    'id': activity['id'],
-                    'action': activity['action'],
-                    'user_id': activity['user_id'],
-                    'user_display': activity.get('user_display', 'System'),
-                    'resource_type': activity['resource_type'],
-                    'resource_id': activity['resource_id'],
-                    'details': activity['details'],
-                    'ip_address': str(activity['ip_address']) if activity['ip_address'] else None,
-                    'user_agent': activity['user_agent'],
-                    'created_at': activity['created_at'].isoformat() if activity['created_at'] else None
-                }
-                
-                # Create human-readable description
-                if activity['action'] == ActivityLog.ACTION_LOGIN:
-                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} logged in"
-                elif activity['action'] == ActivityLog.ACTION_LOGOUT:
-                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} logged out"
-                elif activity['action'] == ActivityLog.ACTION_CACHE_REFRESH:
-                    formatted_activity['description'] = f"{activity.get('user_display', 'System')} refreshed cache"
-                elif activity['action'] == ActivityLog.ACTION_SCRAPE_START:
-                    class_name = activity['details'].get('class_name', 'Unknown') if activity['details'] else 'Unknown'
-                    formatted_activity['description'] = f"Started scraping {class_name} spells"
-                elif activity['action'] == ActivityLog.ACTION_SCRAPE_COMPLETE:
-                    class_name = activity['details'].get('class_name', 'Unknown') if activity['details'] else 'Unknown'
-                    count = activity['details'].get('spell_count', 0) if activity['details'] else 0
-                    formatted_activity['description'] = f"Completed scraping {count} {class_name} spells"
-                elif activity['action'] == ActivityLog.ACTION_USER_CREATE:
-                    formatted_activity['description'] = f"New user {activity.get('user_display', 'Unknown')} created"
-                elif activity['action'] == ActivityLog.ACTION_USER_UPDATE:
-                    formatted_activity['description'] = f"{activity.get('user_display', 'User')} updated profile"
-                else:
-                    formatted_activity['description'] = f"{activity['action']} by {activity.get('user_display', 'System')}"
-                
-                formatted_activities.append(formatted_activity)
-            
-            return jsonify(create_success_response({
-                'activities': formatted_activities,
-                'total_count': total_count,
-                'limit': limit,
-                'offset': offset
-            }))
-            
-        except Exception as e:
-            return create_error_response(f"Database error: {str(e)}", 500)
-            
-    except Exception as e:
-        return create_error_response(f"Failed to get activities: {str(e)}", 500)
+            ],
+            'total_count': 1
+        }
+    })
 
 
 @admin_bp.route('/admin/activities', methods=['POST'])
@@ -828,40 +737,18 @@ def cleanup_old_activities():
 @admin_bp.route('/api/cache/refresh', methods=['POST'])
 @require_admin 
 def refresh_all_caches():
-    """
-    Refresh all caches (admin only).
-    
-    Returns:
-        JSON response confirming cache refresh
-    """
+    """Refresh all caches (admin only)"""
     try:
-        # Import cache functions from main app
-        from app import save_cache_to_disk
-        
-        # Get database connection
-        conn = get_db_connection()
-        if conn:
-            # Log cache refresh activity
-            activity_log = ActivityLog(conn)
-            activity_log.log_activity(
-                action=ActivityLog.ACTION_CACHE_REFRESH,
-                user_id=g.current_user['id'],
-                resource_type=ActivityLog.RESOURCE_CACHE,
-                resource_id='all',
-                details={'action': 'manual_refresh', 'initiated_by': 'admin'},
-                ip_address=request.remote_addr,
-                user_agent=request.headers.get('User-Agent')
-            )
-        
-        # Save current cache state to disk
-        save_cache_to_disk()
-        
-        return jsonify(create_success_response({
-            'message': 'All caches refreshed successfully'
-        }))
-        
+        from app import refresh_all_caches
+        result = refresh_all_caches()
+        return jsonify({
+            'success': True,
+            'message': 'All caches refreshed successfully',
+            'result': result
+        })
     except Exception as e:
-        return create_error_response(f"Failed to refresh caches: {str(e)}", 500)
+        logger.error(f"Error refreshing caches: {e}")
+        return create_error_response(f'Failed to refresh caches: {str(e)}', 500)
 
 
 @admin_bp.route('/admin/database/config', methods=['GET'])
@@ -878,19 +765,33 @@ def get_database_config():
         import os
         from utils.persistent_config import get_persistent_config
         
-        # Get diagnostic info about persistent storage
-        persistent_config = get_persistent_config()
-        storage_info = {
-            'data_directory': str(persistent_config.data_dir),
-            'config_file': str(persistent_config.config_file) if persistent_config.config_file else None,
-            'storage_available': persistent_config._available,
-            'directory_exists': persistent_config.data_dir.exists() if persistent_config.data_dir else False,
-            'directory_writable': os.access(persistent_config.data_dir, os.W_OK) if persistent_config.data_dir and persistent_config.data_dir.exists() else False,
-            'config_file_exists': persistent_config.config_file.exists() if persistent_config.config_file else False
-        }
+        # Get diagnostic info about persistent storage with error handling
+        try:
+            persistent_config = get_persistent_config()
+            storage_info = {
+                'data_directory': str(persistent_config.data_dir) if persistent_config.data_dir else 'Not available',
+                'config_file': str(persistent_config.config_file) if persistent_config.config_file else None,
+                'storage_available': getattr(persistent_config, '_available', False),
+                'directory_exists': persistent_config.data_dir.exists() if persistent_config.data_dir else False,
+                'directory_writable': os.access(persistent_config.data_dir, os.W_OK) if persistent_config.data_dir and persistent_config.data_dir.exists() else False,
+                'config_file_exists': persistent_config.config_file.exists() if persistent_config.config_file else False
+            }
+        except Exception as storage_error:
+            logger.warning(f"Persistent storage diagnostic failed: {storage_error}")
+            storage_info = {
+                'storage_available': False,
+                'error': str(storage_error)
+            }
+            persistent_config = None
         
-        # Try persistent config first (for production)
-        db_config = persistent_config.get_database_config()
+        # Try persistent config first (for production) with error handling
+        db_config = None
+        if persistent_config:
+            try:
+                db_config = persistent_config.get_database_config()
+            except Exception as config_error:
+                logger.warning(f"Failed to get database config from persistent storage: {config_error}")
+                db_config = None
         
         if db_config:
             current_db_url = db_config['production_database_url']
@@ -1029,6 +930,9 @@ def get_database_config():
         }))
         
     except Exception as e:
+        logger.error(f"Database config endpoint error: {str(e)}")
+        import traceback
+        logger.error(f"Database config traceback: {traceback.format_exc()}")
         return create_error_response(f"Failed to get database config: {str(e)}", 500)
 
 
@@ -2098,11 +2002,15 @@ def resolve_config_mismatch():
         from utils.db_config_validator import get_validator
         
         data = request.get_json()
+        logger.info(f"Resolve mismatch request: {data}")
+        
         if not data or not data.get('field') or 'selected_value' not in data:
             return create_error_response("Missing field or selected_value", 400)
         
         field = data['field']
         selected_value = data['selected_value']
+        
+        logger.info(f"Resolving mismatch for field '{field}' with value '{selected_value}'")
         
         # Map field names to environment variables
         field_to_env = {
@@ -2120,49 +2028,91 @@ def resolve_config_mismatch():
             return create_error_response(f"Unknown field: {field}", 400)
         
         # Update environment variable (for current process)
-        os.environ[env_var] = str(selected_value)
+        # For empty string values, we need to handle them specially
+        if selected_value == '':
+            # Don't set empty values for required fields
+            if field in ['host', 'database', 'username']:
+                logger.warning(f"Cannot set {field} to empty value - it's a required field")
+                return create_error_response(f"Cannot set {field} to empty - it's a required field for database connection", 400)
+            os.environ[env_var] = ''
+        else:
+            os.environ[env_var] = str(selected_value)
         
         # Get current validator and construct new URL
         validator = get_validator()
+        
+        # Log current environment state for debugging
+        logger.info(f"Current environment state before URL construction:")
+        logger.info(f"  EQEMU_DATABASE_HOST: {os.environ.get('EQEMU_DATABASE_HOST', 'NOT SET')}")
+        logger.info(f"  EQEMU_DATABASE_PORT: {os.environ.get('EQEMU_DATABASE_PORT', 'NOT SET')}")
+        logger.info(f"  EQEMU_DATABASE_NAME: {os.environ.get('EQEMU_DATABASE_NAME', 'NOT SET')}")
+        logger.info(f"  EQEMU_DATABASE_USER: {os.environ.get('EQEMU_DATABASE_USER', 'NOT SET')}")
+        logger.info(f"  EQEMU_DATABASE_TYPE: {os.environ.get('EQEMU_DATABASE_TYPE', 'NOT SET')}")
+        
         new_url = validator.get_connection_string_from_components()
         
+        # Log for debugging
+        logger.info(f"After setting {env_var} to '{selected_value}', new_url construction: {new_url}")
+        
+        # Update persistent storage regardless of whether we can construct a URL
+        persistent_config = get_persistent_config()
+        db_config = persistent_config.get_database_config() or {}
+        
+        # Update the URL if we have one
         if new_url:
-            # Update EQEMU_DATABASE_URL
             os.environ['EQEMU_DATABASE_URL'] = new_url
-            
-            # Update persistent storage
-            persistent_config = get_persistent_config()
-            db_config = persistent_config.get_database_config() or {}
             db_config['production_database_url'] = new_url
-            
-            # Update individual fields in persistent storage to match
-            if field == 'host':
-                db_config['database_host'] = selected_value
-            elif field == 'port':
-                db_config['database_port'] = int(selected_value) if selected_value else 3306
-            elif field == 'database':
-                db_config['database_name'] = selected_value
-            elif field == 'username':
-                db_config['database_username'] = selected_value
-            elif field == 'password':
-                db_config['database_password'] = selected_value
-            elif field == 'database_type':
-                db_config['database_type'] = selected_value
-            elif field == 'ssl':
-                db_config['database_ssl'] = selected_value.lower() == 'true'
-            
-            # Save to persistent storage
-            persistent_config.save_database_config(db_config)
-            
-            # Force reload of database configuration
-            from flask import current_app
-            if hasattr(current_app, 'db_config_manager'):
-                current_app.db_config_manager.invalidate()
-                logger.info(f"Database configuration updated: {field} = {selected_value}")
-            
-            # Run validation again to confirm resolution
-            new_validation = validator.validate_config()
-            
+        else:
+            # Log why we couldn't construct URL
+            logger.warning(f"Cannot construct URL - missing required components")
+            logger.info(f"Required: host={bool(os.environ.get('EQEMU_DATABASE_HOST'))}, "
+                       f"database={bool(os.environ.get('EQEMU_DATABASE_NAME'))}, "
+                       f"username={bool(os.environ.get('EQEMU_DATABASE_USER'))}")
+        
+        # Update individual fields in persistent storage to match
+        if field == 'host':
+            db_config['database_host'] = selected_value
+        elif field == 'port':
+            db_config['database_port'] = int(selected_value) if selected_value else 3306
+        elif field == 'database':
+            db_config['database_name'] = selected_value
+        elif field == 'username':
+            db_config['database_username'] = selected_value
+        elif field == 'password':
+            db_config['database_password'] = selected_value
+        elif field == 'database_type':
+            db_config['database_type'] = selected_value
+        elif field == 'ssl':
+            db_config['database_ssl'] = selected_value.lower() == 'true'
+        
+        # Save to persistent storage
+        # Extract the required parameters for save_database_config
+        db_url = db_config.get('production_database_url', '')
+        db_type = db_config.get('database_type', 'mysql')
+        use_ssl = db_config.get('database_ssl', False)
+        db_name = db_config.get('database_name', '')
+        db_password = db_config.get('database_password', '')
+        db_port = str(db_config.get('database_port', '3306'))
+        
+        persistent_config.save_database_config(
+            db_url=db_url,
+            db_type=db_type,
+            use_ssl=use_ssl,
+            db_name=db_name,
+            db_password=db_password,
+            db_port=db_port
+        )
+        
+        # Force reload of database configuration
+        from flask import current_app
+        if hasattr(current_app, 'db_config_manager'):
+            current_app.db_config_manager.invalidate()
+            logger.info(f"Database configuration updated: {field} = {selected_value}")
+        
+        # Run validation again to confirm resolution
+        new_validation = validator.validate_config()
+        
+        if new_url:
             return jsonify(create_success_response({
                 'message': f'Configuration mismatch resolved for {field}',
                 'field': field,
@@ -2171,7 +2121,14 @@ def resolve_config_mismatch():
                 'validation_result': new_validation
             }))
         else:
-            return create_error_response("Unable to construct database URL from components", 500)
+            return jsonify(create_success_response({
+                'message': f'Configuration value saved for {field}, but database URL could not be constructed due to missing required fields',
+                'field': field,
+                'value': selected_value,
+                'new_url': None,
+                'validation_result': new_validation,
+                'warning': 'Database connection requires host, database name, and username to be set'
+            }))
             
     except Exception as e:
         logger.error(f"Error resolving mismatch: {str(e)}")
@@ -2208,21 +2165,21 @@ def reconnect_database():
             logger.info("Found database config in persistent storage, reloading...")
             # The config manager should pick this up on next access
         
-        # Test new connection
-        from app import get_eqemu_db_connection
-        test_conn, db_type, error = get_eqemu_db_connection()
+        # Reset connection state without blocking operations
+        from utils.content_db_manager import get_content_db_manager
+        manager = get_content_db_manager()
         
-        if test_conn:
-            # Connection successful
-            test_conn.close()
-            return jsonify(create_success_response({
-                'message': 'Database reconnection successful',
-                'connected': True,
-                'db_type': db_type
-            }))
-        else:
-            logger.error(f"Reconnection failed: {error}")
-            return jsonify(create_error_response(f'Failed to reconnect to database: {error}', 500))
+        # Reset retry delay to allow immediate reconnection attempt
+        with manager._lock:
+            manager._connect_retry_delay = 1
+            manager._connection_healthy = False
+            manager._last_connect_attempt = 0
+            logger.info("Database connection state reset for reconnection")
+        
+        return jsonify(create_success_response({
+            'message': 'Database reconnection triggered (non-blocking)',
+            'status': 'reset'
+        }))
             
     except Exception as e:
         logger.error(f"Reconnection error: {str(e)}")
@@ -2230,6 +2187,11 @@ def reconnect_database():
 
 
 # System monitoring data storage
+# Initialize system metrics with loaded timeline data
+# Load database stats from persistent storage
+database_stats = query_persistence.load_metrics()
+database_stats['timeline'] = query_persistence.load_timeline()
+
 system_metrics = {
     'response_times': deque(maxlen=1000),  # Store last 1000 response times
     'endpoint_stats': defaultdict(lambda: {
@@ -2240,15 +2202,110 @@ system_metrics = {
     }),
     'server_start_time': time.time(),
     'error_log': deque(maxlen=100),  # Store last 100 errors
-    'database_stats': {
-        'total_queries': 0,
-        'query_times': deque(maxlen=100),  # Store last 100 query times
-        'slow_queries': deque(maxlen=20),  # Store last 20 slow queries
-        'query_types': defaultdict(int),  # Count by query type (SELECT, INSERT, etc.)
-        'tables_accessed': defaultdict(int),  # Count by table name
-        'timeline': deque(maxlen=168)  # Store hourly data for 7 days (24*7=168)
-    }
+    'database_stats': database_stats
 }
+
+# Don't start periodic saves immediately - they will be started when app is fully initialized
+# periodic_save_timeline()
+
+# Periodic save for query tracking data
+def periodic_save_query_tracking():
+    """Save query tracking data periodically - DISABLED."""
+    logger.info("⚠️ Periodic query tracking save DISABLED to debug hanging issue")
+    # TEMPORARILY DISABLED: Background timers may be causing hanging
+    
+    # def save_data():
+    #     try:
+    #         # Save metrics (excluding timeline which is handled separately)
+    #         metrics_to_save = {
+    #             'total_queries': system_metrics['database_stats']['total_queries'],
+    #             'query_times': system_metrics['database_stats']['query_times'],
+    #             'slow_queries': system_metrics['database_stats']['slow_queries'],
+    #             'query_types': system_metrics['database_stats']['query_types'],
+    #             'tables_accessed': system_metrics['database_stats']['tables_accessed'],
+    #             'table_sources': system_metrics['database_stats']['table_sources']
+    #         }
+    #         
+    #         query_persistence.save_metrics(metrics_to_save)
+    #         query_persistence.save_timeline(system_metrics['database_stats']['timeline'])
+    #         
+    #         # Schedule next save
+    #         threading.Timer(300, save_data).start()  # Save every 5 minutes
+    #     except Exception as e:
+    #         logger.error(f"Error saving query tracking data: {e}")
+    #         # Still schedule next save even if this one failed
+    #         threading.Timer(300, save_data).start()
+    # 
+    # # Start the periodic save (delay initial save by 1 minute)
+    # threading.Timer(60, save_data).start()
+
+# Don't start periodic query tracking save immediately 
+# periodic_save_query_tracking()
+
+# Save query tracking data on shutdown
+def save_query_tracking_on_shutdown():
+    """Save query tracking data when the application shuts down."""
+    try:
+        metrics_to_save = {
+            'total_queries': system_metrics['database_stats']['total_queries'],
+            'query_times': system_metrics['database_stats']['query_times'],
+            'slow_queries': system_metrics['database_stats']['slow_queries'],
+            'query_types': system_metrics['database_stats']['query_types'],
+            'tables_accessed': system_metrics['database_stats']['tables_accessed'],
+            'table_sources': system_metrics['database_stats']['table_sources']
+        }
+        
+        query_persistence.save_metrics(metrics_to_save)
+        query_persistence.save_timeline(system_metrics['database_stats']['timeline'])
+        logger.info("Query tracking data saved on shutdown")
+    except Exception as e:
+        logger.error(f"Error saving query tracking data on shutdown: {e}")
+
+# Register shutdown handler
+atexit.register(save_query_tracking_on_shutdown)
+
+# Daily cleanup of old query tracking data
+def periodic_cleanup_query_tracking():
+    """Clean up old query tracking data periodically - DISABLED."""
+    logger.info("⚠️ Periodic query tracking cleanup DISABLED to debug hanging issue")
+    # TEMPORARILY DISABLED: Background timers may be causing hanging
+    
+    # def cleanup():
+    #     try:
+    #         query_persistence.cleanup_old_data()
+    #         logger.info("Query tracking data cleanup completed")
+    #         
+    #         # Schedule next cleanup (24 hours)
+    #         threading.Timer(86400, cleanup).start()
+    #     except Exception as e:
+    #         logger.error(f"Error during query tracking cleanup: {e}")
+    #         # Still schedule next cleanup even if this one failed
+    #         threading.Timer(86400, cleanup).start()
+    # 
+    # # Start the first cleanup after 30 minutes
+    # threading.Timer(1800, cleanup).start()
+
+# Don't start periodic cleanup immediately
+# periodic_cleanup_query_tracking()
+
+# Function to start all periodic tasks (should be called after app initialization)
+def start_periodic_tasks():
+    """Start all periodic tasks."""
+    periodic_save_timeline()
+    periodic_save_query_tracking()  
+    periodic_cleanup_query_tracking()
+
+# Save timeline data on shutdown
+def save_timeline_on_shutdown():
+    """Save timeline data when the application shuts down."""
+    try:
+        db_stats = system_metrics['database_stats']
+        save_timeline_data(db_stats['timeline'])
+        logger.info("Timeline data saved on shutdown")
+    except Exception as e:
+        logger.error(f"Failed to save timeline data on shutdown: {e}")
+
+atexit.register(save_timeline_on_shutdown)
 
 
 @admin_bp.route('/admin/system/metrics', methods=['GET'])
@@ -2469,9 +2526,36 @@ def get_system_logs():
                                 if level != 'all' and log_level != level:
                                     continue
                                 
-                                # Determine context from message
+                                # Determine context from message and extract endpoint details
                                 context = None
-                                if 'scraping' in message.lower():
+                                endpoint = None
+                                status_code = None
+                                response_time = None
+                                error_details = None
+                                stack_trace = None
+                                
+                                # Parse endpoint failures
+                                if 'failed endpoint attempt' in message.lower() or 'endpoint accessed' in message.lower():
+                                    context = 'Endpoint monitoring'
+                                    # Extract endpoint from message
+                                    import re
+                                    endpoint_match = re.search(r'(GET|POST|PUT|DELETE|PATCH)\s+(/[^\s]+)', message)
+                                    if endpoint_match:
+                                        endpoint = f"{endpoint_match.group(1)} {endpoint_match.group(2)}"
+                                    
+                                    # Extract status code
+                                    status_match = re.search(r'(\d{3})\s+(status|error|response)', message.lower())
+                                    if status_match:
+                                        status_code = int(status_match.group(1))
+                                    
+                                    # Extract response time
+                                    time_match = re.search(r'(\d+)ms', message)
+                                    if time_match:
+                                        response_time = int(time_match.group(1))
+                                        
+                                elif 'api request' in message.lower() or 'api response' in message.lower():
+                                    context = 'API activity'
+                                elif 'scraping' in message.lower():
                                     context = 'Scraping operation'
                                 elif 'cache' in message.lower():
                                     context = 'Cache operation'
@@ -2479,14 +2563,37 @@ def get_system_logs():
                                     context = 'Database operation'
                                 elif 'oauth' in message.lower() or 'auth' in message.lower():
                                     context = 'Authentication'
+                                elif 'disabled' in message.lower() and 'spell' in message.lower():
+                                    context = 'Disabled endpoints'
                                 
-                                logs.append({
+                                # For error level logs, try to extract additional details
+                                if log_level == 'error':
+                                    if 'traceback' in message.lower() or 'exception' in message.lower():
+                                        # Extract error details for exceptions
+                                        if ':' in message:
+                                            error_details = message.split(':', 1)[1].strip()
+                                
+                                log_entry = {
                                     'id': len(logs) + 1,
                                     'timestamp': timestamp_str,
                                     'level': log_level,
                                     'message': message,
                                     'context': context
-                                })
+                                }
+                                
+                                # Add endpoint details if available
+                                if endpoint:
+                                    log_entry['endpoint'] = endpoint
+                                if status_code:
+                                    log_entry['statusCode'] = status_code
+                                if response_time:
+                                    log_entry['responseTime'] = response_time
+                                if error_details:
+                                    log_entry['errorDetails'] = error_details
+                                if stack_trace:
+                                    log_entry['stackTrace'] = stack_trace
+                                    
+                                logs.append(log_entry)
                     except Exception:
                         # Skip malformed log lines
                         continue
@@ -2498,13 +2605,27 @@ def get_system_logs():
         if not logs and system_metrics['error_log']:
             for i, error in enumerate(system_metrics['error_log']):
                 if level == 'all' or level == 'error':
-                    logs.append({
+                    log_entry = {
                         'id': i + 1,
                         'timestamp': error.get('timestamp', datetime.now().isoformat()),
                         'level': 'error',
                         'message': error.get('message', 'Unknown error'),
                         'context': error.get('context')
-                    })
+                    }
+                    
+                    # Add endpoint details if available
+                    if error.get('endpoint'):
+                        log_entry['endpoint'] = error.get('endpoint')
+                    if error.get('status_code'):
+                        log_entry['statusCode'] = error.get('status_code')
+                    if error.get('response_time'):
+                        log_entry['responseTime'] = error.get('response_time')
+                    if error.get('error_details'):
+                        log_entry['errorDetails'] = error.get('error_details')
+                    if error.get('stack_trace'):
+                        log_entry['stackTrace'] = error.get('stack_trace')
+                        
+                    logs.append(log_entry)
         
         # If still no logs, provide some sample logs
         if not logs:
@@ -2563,18 +2684,55 @@ def calculate_health_score(cpu_percent, memory_percent, error_rate, avg_response
     return max(0, score)
 
 
-def track_endpoint_metric(endpoint, response_time, is_error=False):
+def track_endpoint_metric(endpoint, response_time, is_error=False, status_code=None, error_details=None, stack_trace=None):
     """Track metrics for an endpoint (called by middleware)."""
-    stats = system_metrics['endpoint_stats'][endpoint]
-    stats['total_calls'] += 1
-    stats['total_time'] += response_time
-    stats['last_called'] = time.time()
-    
-    if is_error:
-        stats['errors'] += 1
-    
-    # Add to response time history
-    system_metrics['response_times'].append(response_time)
+    try:
+        # Initialize endpoint stats if not exists
+        if endpoint not in system_metrics['endpoint_stats']:
+            system_metrics['endpoint_stats'][endpoint] = {
+                'total_calls': 0,
+                'total_time': 0,
+                'errors': 0,
+                'last_called': None
+            }
+        
+        stats = system_metrics['endpoint_stats'][endpoint]
+        stats['total_calls'] += 1
+        stats['total_time'] += response_time
+        stats['last_called'] = time.time()
+        
+        if is_error:
+            stats['errors'] += 1
+            
+            # Log detailed endpoint failure information
+            error_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'message': f'Endpoint failure: {endpoint} - Status: {status_code} - {response_time}ms',
+                'context': 'Endpoint monitoring',
+                'endpoint': endpoint,
+                'status_code': status_code,
+                'response_time': response_time,
+                'error_details': error_details,
+                'stack_trace': stack_trace
+            }
+            
+            # Add to error log for system logs display
+            system_metrics['error_log'].append(error_entry)
+            
+            # Keep only last 100 errors to prevent memory issues
+            if len(system_metrics['error_log']) > 100:
+                system_metrics['error_log'] = system_metrics['error_log'][-100:]
+                
+            # Log to application logger as well
+            logger.error(f'Endpoint failure: {endpoint} - Status: {status_code} - Time: {response_time}ms - Error: {error_details}')
+        
+        # Add to response time history
+        system_metrics['response_times'].append(response_time)
+        
+    except Exception as e:
+        # Don't let metrics tracking break the app
+        logger.error(f'Error tracking endpoint metric: {e}')
+        pass
 
 
 def log_system_error(message, context=None):
@@ -2614,6 +2772,7 @@ def update_query_timeline(table_name=None):
     current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
     
     # Get the latest timeline entry or create a new one
+    timeline_updated = False
     if not db_stats['timeline'] or db_stats['timeline'][-1]['timestamp'] != current_hour.isoformat():
         # Create new hourly entry
         new_entry = {
@@ -2622,6 +2781,7 @@ def update_query_timeline(table_name=None):
             'tables': defaultdict(int)
         }
         db_stats['timeline'].append(new_entry)
+        timeline_updated = True
     
     # Update the current hour's data
     current_entry = db_stats['timeline'][-1]
@@ -2629,9 +2789,13 @@ def update_query_timeline(table_name=None):
     
     if table_name:
         current_entry['tables'][table_name.lower()] += 1
+    
+    # Only save when a new hour starts (reduces disk I/O)
+    if timeline_updated:
+        save_timeline_data(db_stats['timeline'])
 
 
-def track_database_query(query, execution_time, query_type=None, table_name=None):
+def track_database_query(query, execution_time, query_type=None, table_name=None, source_endpoint=None):
     """Track database query metrics."""
     db_stats = system_metrics['database_stats']
     
@@ -2648,7 +2812,8 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
             'execution_time': execution_time,
             'timestamp': datetime.now().isoformat(),
             'type': query_type,
-            'table': table_name
+            'table': table_name,
+            'source_endpoint': source_endpoint
         })
     
     # Detect query type if not provided
@@ -2691,12 +2856,85 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
                 table_part = parts[1].strip().split()[0]
                 table_name = table_part.strip('`"\' ')
     
+    # Detect source endpoint if not provided
+    if not source_endpoint:
+        # Try to get the current request context
+        try:
+            from flask import request
+            if request:
+                source_endpoint = f"{request.method} {request.path}"
+        except:
+            source_endpoint = "Unknown"
+    
     # Track table access
     if table_name:
-        db_stats['tables_accessed'][table_name.lower()] += 1
+        table_key = table_name.lower()
+        db_stats['tables_accessed'][table_key] += 1
+        
+        # Track which endpoint accessed this table
+        if source_endpoint:
+            db_stats['table_sources'][table_key][source_endpoint] += 1
     
     # Update timeline data
     update_query_timeline(table_name)
+    
+    # Save query tracking data every 100 queries to avoid too much I/O
+    if db_stats['total_queries'] % 100 == 0:
+        try:
+            metrics_to_save = {
+                'total_queries': db_stats['total_queries'],
+                'query_times': db_stats['query_times'],
+                'slow_queries': db_stats['slow_queries'],
+                'query_types': db_stats['query_types'],
+                'tables_accessed': db_stats['tables_accessed'],
+                'table_sources': db_stats['table_sources']
+            }
+            query_persistence.save_metrics(metrics_to_save)
+        except Exception as e:
+            logger.error(f"Error saving query tracking data: {e}")
+
+
+@admin_bp.route('/admin/database/table-sources/<table_name>', methods=['GET'])
+@require_admin
+def get_table_sources(table_name):
+    """
+    Get the breakdown of which endpoints/sources are accessing a specific table.
+    
+    Args:
+        table_name: The name of the table to get sources for
+        
+    Returns:
+        JSON response with source breakdown
+    """
+    try:
+        db_stats = system_metrics['database_stats']
+        table_key = table_name.lower()
+        
+        # Get the source breakdown for this table
+        sources = dict(db_stats['table_sources'].get(table_key, {}))
+        total_queries = db_stats['tables_accessed'].get(table_key, 0)
+        
+        # Sort sources by query count (descending)
+        sorted_sources = sorted(sources.items(), key=lambda x: x[1], reverse=True)
+        
+        # Format the response
+        source_breakdown = []
+        for endpoint, count in sorted_sources:
+            percentage = (count / total_queries * 100) if total_queries > 0 else 0
+            source_breakdown.append({
+                'endpoint': endpoint,
+                'query_count': count,
+                'percentage': round(percentage, 1)
+            })
+        
+        return jsonify(create_success_response({
+            'table_name': table_name,
+            'total_queries': total_queries,
+            'sources': source_breakdown
+        }, f"Source breakdown for table '{table_name}' retrieved successfully"))
+        
+    except Exception as e:
+        return create_error_response(f"Failed to get table sources: {str(e)}", 500)
 
 
 @admin_bp.route('/admin/debug/avatars', methods=['GET'])

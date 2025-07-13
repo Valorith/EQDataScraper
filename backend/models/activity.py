@@ -7,6 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+from utils.query_tracker import create_tracked_connection
 
 class ActivityLog:
     """Activity log model for tracking user actions and system events."""
@@ -37,7 +38,7 @@ class ActivityLog:
     RESOURCE_SYSTEM = 'system'
     
     def __init__(self, connection):
-        self.conn = connection
+        self.conn = create_tracked_connection(connection, 'postgresql')
     
     def log_activity(self, action: str, user_id: Optional[int] = None,
                     resource_type: Optional[str] = None, resource_id: Optional[str] = None,

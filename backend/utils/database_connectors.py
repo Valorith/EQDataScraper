@@ -4,8 +4,11 @@ Supports PostgreSQL, MySQL, and Microsoft SQL Server connections.
 """
 
 import os
+import logging
 from urllib.parse import quote_plus, urlparse
 from .query_tracker import create_tracked_connection
+
+logger = logging.getLogger(__name__)
 
 
 def get_database_connector(db_type, config, track_queries=True):
@@ -29,14 +32,21 @@ def get_database_connector(db_type, config, track_queries=True):
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
     
-    # Wrap connection with query tracking if enabled
+    # Re-enable query tracking with enhanced error handling
     if track_queries:
         try:
-            return create_tracked_connection(conn, db_type)
+            logger.debug(f"Creating tracked connection for {db_type}")
+            tracked_conn = create_tracked_connection(conn, db_type)
+            logger.debug(f"Tracked connection created successfully for {db_type}")
+            return tracked_conn
         except ImportError:
-            # If tracking not available, return raw connection
+            logger.warning("Query tracking not available, returning raw connection")
+            return conn
+        except Exception as e:
+            logger.error(f"Query tracking failed, returning raw connection: {e}")
             return conn
     
+    logger.debug(f"Returning raw connection for {db_type} (tracking disabled)")
     return conn
 
 
@@ -105,7 +115,9 @@ def get_mysql_connection(config):
         'password': config['password'],
         'charset': 'utf8mb4',
         'cursorclass': pymysql.cursors.DictCursor,
-        'connect_timeout': 30  # Increase timeout to 30 seconds
+        'connect_timeout': config.get('connect_timeout', 10),  # Use config timeout or default to 10
+        'read_timeout': config.get('read_timeout', 30),        # Add read timeout
+        'write_timeout': config.get('write_timeout', 30)       # Add write timeout
     }
     
     # Try without SSL first if we're getting connection errors

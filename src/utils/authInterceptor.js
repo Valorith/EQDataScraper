@@ -21,11 +21,6 @@ axios.interceptors.request.use(
   (config) => {
     // Skip auth header for non-authenticated endpoints
     const publicEndpoints = [
-      '/api/classes',
-      '/api/spells',
-      '/api/spell-details',
-      '/api/search-spells',
-      '/api/cache-status',
       '/api/health',
       '/api/auth/google/login',
       '/api/auth/google/callback',
