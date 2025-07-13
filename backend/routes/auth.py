@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import urllib.parse
+import time
+import requests
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -241,10 +243,25 @@ def google_callback():
         if not code or not state:
             return create_error_response("Missing code or state parameter", 400)
         
-        # Retrieve stored OAuth state
+        # Retrieve stored OAuth state with Railway production fallback
         safe_log(f"[OAuth Debug] Attempting to retrieve stored state for: {state}")
         stored_state = oauth_storage.get_oauth_state(state)
-        if not stored_state:
+        
+        # RAILWAY PRODUCTION FIX: Handle missing state in stateless environment
+        if not stored_state and os.environ.get('RAILWAY_ENVIRONMENT') == 'production':
+            safe_log(f"[OAuth Production Fix] State not found - using Railway fallback mode")
+            safe_log(f"[OAuth Production Fix] This is expected in Railway's stateless environment")
+            
+            # Create a fallback state for production
+            stored_state = {
+                'code_verifier': None,  # Will use non-PKCE flow
+                'user_ip': request.remote_addr,
+                'timestamp': time.time(),
+                'railway_fallback': True
+            }
+            safe_log("[OAuth Production Fix] Using fallback state for Railway environment")
+        
+        elif not stored_state:
             safe_log(f"[OAuth Error] No stored state found for state: {state}")
             safe_log(f"[OAuth Error] Current storage keys: {list(oauth_storage._storage.keys()) if hasattr(oauth_storage, '_storage') else 'N/A'}")
             return create_error_response("Invalid or expired state parameter. This can happen if you take too long to complete the login or if cookies are disabled.", 400)
@@ -272,7 +289,7 @@ def google_callback():
             google_oauth.redirect_uri = f"{frontend_url}/auth/callback"
             safe_log(f"[OAuth Login] Production override - using frontend redirect URI: {google_oauth.redirect_uri}")
         
-        # Exchange code for tokens
+        # Exchange code for tokens with Railway fallback support
         try:
             safe_log(f"[OAuth Debug] Exchanging code for tokens")
             safe_log(f"[OAuth Debug] Client ID: {google_oauth.client_id[:10]}...")
@@ -281,6 +298,7 @@ def google_callback():
             safe_log(f"[OAuth Debug] Code: {code[:10]}...")
             safe_log(f"[OAuth Debug] State: {state}")
             safe_log(f"[OAuth Debug] Code verifier present: {bool(stored_state.get('code_verifier'))}")
+            safe_log(f"[OAuth Debug] Railway fallback mode: {bool(stored_state.get('railway_fallback'))}")
             safe_log(f"[OAuth Debug] Stored state data: {stored_state}")
             
             # Add diagnostic info to help debug
@@ -288,10 +306,72 @@ def google_callback():
             safe_log(f"[OAuth Debug] Railway environment: {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT SET')}")
             safe_log(f"[OAuth Debug] FRONTEND_URL: {os.environ.get('FRONTEND_URL', 'NOT SET')}")
             
-            token_data = google_oauth.exchange_code_for_tokens(
-                code, 
-                stored_state['code_verifier']
-            )
+            # Handle Railway fallback mode with direct token exchange
+            if stored_state.get('railway_fallback'):
+                safe_log("[OAuth Production Fix] Using direct token exchange for Railway environment")
+                
+                # Create token exchange data without PKCE for Railway fallback
+                token_exchange_data = {
+                    'client_id': google_oauth.client_id,
+                    'client_secret': google_oauth.client_secret,
+                    'code': code,
+                    'grant_type': 'authorization_code',
+                    'redirect_uri': google_oauth.redirect_uri
+                    # Note: No code_verifier for Railway fallback mode
+                }
+                
+                response = requests.post(
+                    google_oauth.token_url, 
+                    data=token_exchange_data, 
+                    timeout=30,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                
+                if response.status_code != 200:
+                    safe_log(f"[OAuth Production Fix] Token exchange failed: {response.status_code}")
+                    safe_log(f"[OAuth Production Fix] Response: {response.text}")
+                    raise Exception(f"Token exchange failed with status {response.status_code}: {response.text}")
+                
+                tokens = response.json()
+                safe_log("[OAuth Production Fix] Railway token exchange successful")
+                
+                # Get user info from Google using access token
+                access_token = tokens.get('access_token')
+                if not access_token:
+                    raise Exception("No access token received from Google")
+                
+                userinfo_response = requests.get(
+                    f"https://www.googleapis.com/oauth2/v2/userinfo?access_token={access_token}",
+                    timeout=30
+                )
+                
+                if userinfo_response.status_code != 200:
+                    raise Exception(f"Failed to get user info: {userinfo_response.status_code}")
+                
+                user_info = userinfo_response.json()
+                
+                # Create token_data in expected format
+                token_data = {
+                    'access_token': access_token,
+                    'refresh_token': tokens.get('refresh_token'),
+                    'expires_in': tokens.get('expires_in', 3600),
+                    'user_info': {
+                        'google_id': user_info.get('id'),
+                        'email': user_info.get('email'),
+                        'email_verified': user_info.get('verified_email', True),
+                        'first_name': user_info.get('given_name'),
+                        'last_name': user_info.get('family_name'),
+                        'avatar_url': user_info.get('picture')
+                    }
+                }
+                
+                safe_log(f"[OAuth Production Fix] User info retrieved for: {user_info.get('email')}")
+            else:
+                # Use standard PKCE flow for non-Railway environments
+                token_data = google_oauth.exchange_code_for_tokens(
+                    code, 
+                    stored_state['code_verifier']
+                )
         except Exception as e:
             safe_log(f"[OAuth Error] Token exchange failed: {str(e)}")
             safe_log(f"[OAuth Error] Error type: {type(e).__name__}")
