@@ -11,8 +11,9 @@
       
     </div>
     
-    <!-- Global Search -->
-    <div class="global-search-container">
+    <!-- Global Search - Temporarily Disabled -->
+    <!-- To re-enable: change searchEnabled to true in data() -->
+    <div v-if="searchEnabled" class="global-search-container">
       <div class="search-input-wrapper">
         <input
           ref="searchInput"
@@ -184,6 +185,7 @@ export default {
   },
   data() {
     return {
+      searchEnabled: false, // Temporarily disabled
       searchQuery: '',
       searchResults: [],
       showDropdown: false,
