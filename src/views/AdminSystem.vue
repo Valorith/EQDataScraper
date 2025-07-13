@@ -216,19 +216,19 @@
             <h4 class="legend-title">Query Load Thresholds</h4>
             <div class="legend-items">
               <div class="legend-item">
-                <span class="legend-color threshold-normal"></span>
+                <span class="legend-ring threshold-normal"></span>
                 <span class="legend-label">Normal</span>
               </div>
               <div class="legend-item">
-                <span class="legend-color threshold-moderate"></span>
+                <span class="legend-ring threshold-moderate"></span>
                 <span class="legend-label">Moderate</span>
               </div>
               <div class="legend-item">
-                <span class="legend-color threshold-high"></span>
+                <span class="legend-ring threshold-high"></span>
                 <span class="legend-label">High</span>
               </div>
               <div class="legend-item">
-                <span class="legend-color threshold-critical"></span>
+                <span class="legend-ring threshold-critical"></span>
                 <span class="legend-label">Critical</span>
               </div>
             </div>
@@ -2701,6 +2701,33 @@ onUnmounted(() => {
 
 .legend-color.threshold-critical {
   background-color: #ff4757; /* Red for critical */
+}
+
+/* Ring styles for query load thresholds (matching graph indicators) */
+.legend-ring {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border-width: 2px;
+  border-style: solid;
+  background-color: transparent;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.legend-ring.threshold-normal {
+  border-color: #10b981; /* Green ring for normal */
+}
+
+.legend-ring.threshold-moderate {
+  border-color: #ffda79; /* Yellow ring for moderate */
+}
+
+.legend-ring.threshold-high {
+  border-color: #ffa502; /* Orange ring for high */
+}
+
+.legend-ring.threshold-critical {
+  border-color: #ff4757; /* Red ring for critical */
 }
 
 /* Responsive adjustments for legends */

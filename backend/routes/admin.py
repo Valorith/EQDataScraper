@@ -864,14 +864,14 @@ def get_database_config():
                     'use_ssl': config.get('database_ssl', True)  # Include SSL setting
                 }
                 
-                # Test EQEmu database connection
+                # Lightweight database connection test (no heavy queries)
                 try:
                     # Import database connector utils
                     import sys
                     backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                     if backend_path not in sys.path:
                         sys.path.append(backend_path)
-                    from utils.database_connectors import get_database_connector, test_database_query
+                    from utils.database_connectors import get_database_connector
                     
                     # Create connection config from saved settings
                     test_config = {
@@ -883,10 +883,24 @@ def get_database_config():
                         'use_ssl': config.get('database_ssl', True)
                     }
                     
-                    # Test the EQEmu database connection
-                    test_conn = get_database_connector(db_type, test_config)
-                    test_result = test_database_query(test_conn, db_type)
+                    # LIGHTWEIGHT TEST: Just verify connection without table queries
+                    test_conn = get_database_connector(db_type, test_config, track_queries=False)
+                    
+                    # Simple connection validation - no table queries to reduce load
+                    cursor = test_conn.cursor()
+                    cursor.execute("SELECT 1")  # Minimal query just to test connection
+                    cursor.fetchone()
+                    cursor.close()
                     test_conn.close()
+                    
+                    # Set basic connection success info without table details
+                    test_result = {
+                        'version': 'Connected',
+                        'tables': {
+                            'items_exists': None,  # Not tested to avoid unnecessary queries
+                            'discovered_items_exists': None
+                        }
+                    }
                     
                     db_info['version'] = test_result.get('version', 'Unknown')
                     db_info['status'] = 'connected'
