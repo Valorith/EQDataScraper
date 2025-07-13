@@ -162,7 +162,7 @@ class PersistentConfig:
                     'database_ssl': use_ssl,
                     'database_host': os.environ.get('EQEMU_DATABASE_HOST', ''),
                     'database_name': os.environ.get('EQEMU_DATABASE_NAME', ''),
-                    'database_username': os.environ.get('EQEMU_DATABASE_USERNAME', ''),
+                    'database_username': os.environ.get('EQEMU_DATABASE_USER', ''),
                     'database_password': os.environ.get('EQEMU_DATABASE_PW', ''),
                     'database_port': os.environ.get('EQEMU_DATABASE_PORT', ''),
                     'config_source': 'environment_variables'
