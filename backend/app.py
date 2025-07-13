@@ -676,16 +676,331 @@ def search_items():
             app.logger.error(f"No connection available: {error}")
             return jsonify({'error': error or 'Database not configured'}), 503
         
-        failed_spells = [row[0] for row in cursor.fetchall()]
+        app.logger.info(f"Got connection, db_type: {db_type}")
         
-        cursor.close()
-        conn.close()
+        # Validate parameters
+        validated_params = validate_item_search_params(request.args)
+        search_query = validated_params.get('q', '')
+        limit = validated_params.get('limit', 20)
+        offset = validated_params.get('offset', 0)
+        filters = validated_params.get('filters', [])
         
-        return failed_spells
+        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}, filters={len(filters)}")
+        
+        if not search_query and not filters:
+            return jsonify({'error': 'Search query or filters required'}), 400
+        
+        cursor = conn.cursor()
+        
+        # Build WHERE clause and parameters
+        where_conditions = []
+        query_params = []
+        
+        # Add search query condition if present
+        if search_query:
+            where_conditions.append("items.Name LIKE %s")
+            query_params.append(f'%{search_query}%')
+        
+        # Add filter conditions
+        for filter_item in filters:
+            field = filter_item['field']
+            operator = filter_item['operator']
+            value = filter_item.get('value')
+            
+            # Map frontend field names to database column names
+            field_mapping = {
+                'name': 'items.Name',
+                'ac': 'items.ac',
+                'hp': 'items.hp',
+                'mana': 'items.mana',
+                'str': 'items.astr',
+                'sta': 'items.asta',
+                'agi': 'items.aagi',
+                'dex': 'items.adex',
+                'wis': 'items.awis',
+                'int': 'items.aint',
+                'cha': 'items.acha',
+                'weight': 'items.weight',
+                'damage': 'items.damage',
+                'delay': 'items.delay',
+                'magic': 'items.magic',
+                'nodrop': 'items.nodrop',
+                'norent': 'items.norent',
+                'classes': 'items.classes',
+                'races': 'items.races',
+                'reqlevel': 'items.reqlevel',
+                'stackable': 'items.stackable',
+                'stacksize': 'items.stacksize',
+                'icon': 'items.icon',
+                'price': 'items.price',
+                'size': 'items.size',
+                'mr': 'items.mr',
+                'fr': 'items.fr',
+                'cr': 'items.cr',
+                'dr': 'items.dr',
+                'pr': 'items.pr',
+                'reclevel': 'items.reclevel',
+                'lore_flag': 'items.loregroup',
+                'lore': 'items.lore',
+                'loretext': 'items.lore',  # Map loretext to lore column
+                'clickeffect': 'items.clickeffect',
+                'proceffect': 'items.proceffect',
+                'worneffect': 'items.worneffect',
+                'focuseffect': 'items.focuseffect',
+                'slots': 'items.slots'
+            }
+            
+            db_field = field_mapping.get(field, f'items.{field}')
+            
+            # Build condition based on operator
+            if operator == 'contains':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}%')
+            elif operator == 'equals':
+                where_conditions.append(f"{db_field} = %s")
+                query_params.append(value)
+            elif operator == 'not equals':
+                where_conditions.append(f"{db_field} != %s")
+                query_params.append(value)
+            elif operator == 'greater than':
+                where_conditions.append(f"{db_field} > %s")
+                query_params.append(value)
+            elif operator == 'less than':
+                where_conditions.append(f"{db_field} < %s")
+                query_params.append(value)
+            elif operator == 'between':
+                if isinstance(value, list) and len(value) == 2:
+                    where_conditions.append(f"{db_field} BETWEEN %s AND %s")
+                    query_params.extend([value[0], value[1]])
+            elif operator == 'is':
+                # For boolean fields
+                if field in ['magic', 'nodrop', 'norent']:
+                    # Convert boolean to int (0 or 1)
+                    bool_value = 1 if value else 0
+                    # Note: nodrop and norent are inverted in the database (0=True, 1=False)
+                    if field in ['nodrop', 'norent']:
+                        bool_value = 0 if value else 1
+                    where_conditions.append(f"{db_field} = %s")
+                    query_params.append(bool_value)
+                elif field == 'lore_flag':
+                    # loregroup: 0 = not lore, non-zero = lore
+                    if value:
+                        where_conditions.append(f"{db_field} != 0")
+                    else:
+                        where_conditions.append(f"{db_field} = 0")
+            elif operator == 'exists':
+                # For effect fields
+                if value:
+                    where_conditions.append(f"{db_field} IS NOT NULL AND {db_field} != 0 AND {db_field} != -1")
+                else:
+                    where_conditions.append(f"({db_field} IS NULL OR {db_field} = 0 OR {db_field} = -1)")
+            elif operator == 'includes' and field == 'slots':
+                # Bitwise AND for slot checking
+                where_conditions.append(f"({db_field} & %s) != 0")
+                query_params.append(value)
+            elif operator == 'starts with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'{value}%')
+            elif operator == 'ends with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}')
+        
+        # Combine all WHERE conditions
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        # Build queries with dynamic WHERE clause
+        # First get count
+        count_query = f"""
+            SELECT COUNT(*) AS total_count
+            FROM items 
+            INNER JOIN discovered_items di ON items.id = di.item_id
+            WHERE {where_clause}
+        """
+        cursor.execute(count_query, query_params)
+        result = cursor.fetchone()
+        total_count = result['total_count'] if isinstance(result, dict) else result[0]
+        
+        # Then get items
+        items_query = f"""
+            SELECT 
+                items.id,
+                items.Name,
+                items.itemtype,
+                items.ac,
+                items.hp,
+                items.mana,
+                items.astr,
+                items.asta,
+                items.aagi,
+                items.adex,
+                items.awis,
+                items.aint,
+                items.acha,
+                items.weight,
+                items.damage,
+                items.delay,
+                items.magic,
+                items.nodrop,
+                items.norent,
+                items.classes,
+                items.races,
+                items.slots,
+                items.lore,
+                items.loregroup,
+                items.reqlevel,
+                items.stackable,
+                items.stacksize,
+                items.icon,
+                items.price,
+                items.size,
+                items.mr,
+                items.fr,
+                items.cr,
+                items.dr,
+                items.pr,
+                items.reclevel,
+                items.clickeffect,
+                items.proceffect,
+                items.worneffect,
+                items.focuseffect
+            FROM items 
+            INNER JOIN discovered_items di ON items.id = di.item_id
+            WHERE {where_clause}
+            ORDER BY items.Name
+            LIMIT %s OFFSET %s
+        """
+        # Add limit and offset to params
+        items_params = query_params + [limit, offset]
+        
+        # Execute with timeout protection
+        try:
+            cursor.execute(items_query, items_params)
+        except Exception as e:
+            app.logger.error(f"Database query failed: {e}")
+            app.logger.error(f"Query: {items_query}")
+            app.logger.error(f"Params: {items_params}")
+            raise Exception("Database query failed - connection may have timed out")
+            
+        items = cursor.fetchall()
+        
+        # Convert to response format
+        items_list = []
+        for item in items:
+            if isinstance(item, dict):
+                item_dict = {
+                    'item_id': str(item['id']),
+                    'name': item['Name'],
+                    'itemtype': item['itemtype'],
+                    'ac': _safe_int(item['ac']),
+                    'hp': _safe_int(item['hp']),
+                    'mana': _safe_int(item['mana']),
+                    'str': _safe_int(item['astr']),
+                    'sta': _safe_int(item['asta']),
+                    'agi': _safe_int(item['aagi']),
+                    'dex': _safe_int(item['adex']),
+                    'wis': _safe_int(item['awis']),
+                    'int': _safe_int(item['aint']),
+                    'cha': _safe_int(item['acha']),
+                    'weight': _safe_float(item['weight']),
+                    'damage': _safe_int(item['damage']),
+                    'delay': _safe_int(item['delay']),
+                    'magic': bool(item['magic']),
+                    'nodrop': not bool(item['nodrop']),  # Inverted: 0=True, 1=False
+                    'norent': not bool(item['norent']),  # Inverted: 0=True, 1=False
+                    'lore': item['lore'],
+                    'lore_flag': bool(item['loregroup'] != 0),  # 0=not lore, non-zero=lore
+                    'classes': _safe_int(item['classes']),
+                    'races': _safe_int(item['races']),
+                    'slots': _safe_int(item['slots']),
+                    'reqlevel': _safe_int(item['reqlevel']),
+                    'stackable': bool(item['stackable']),
+                    'stacksize': _safe_int(item['stacksize']),
+                    'icon': _safe_int(item['icon']),
+                    'price': _safe_int(item['price']),
+                    'size': _safe_int(item['size']),
+                    'mr': _safe_int(item['mr']),
+                    'fr': _safe_int(item['fr']),
+                    'cr': _safe_int(item['cr']),
+                    'dr': _safe_int(item['dr']),
+                    'pr': _safe_int(item['pr']),
+                    'reclevel': _safe_int(item['reclevel']),
+                    'clickeffect': _safe_int(item['clickeffect']),
+                    'proceffect': _safe_int(item['proceffect']),
+                    'worneffect': _safe_int(item['worneffect']),
+                    'focuseffect': _safe_int(item['focuseffect'])
+                }
+            else:
+                # Handle tuple results
+                item_dict = {
+                    'item_id': str(item[0]),
+                    'name': item[1],
+                    'itemtype': item[2],
+                    'ac': _safe_int(item[3]),
+                    'hp': _safe_int(item[4]),
+                    'mana': _safe_int(item[5]),
+                    'str': _safe_int(item[6]),
+                    'sta': _safe_int(item[7]),
+                    'agi': _safe_int(item[8]),
+                    'dex': _safe_int(item[9]),
+                    'wis': _safe_int(item[10]),
+                    'int': _safe_int(item[11]),
+                    'cha': _safe_int(item[12]),
+                    'weight': _safe_float(item[13]),
+                    'damage': _safe_int(item[14]),
+                    'delay': _safe_int(item[15]),
+                    'magic': bool(item[16]),
+                    'nodrop': not bool(item[17]),  # Inverted: 0=True, 1=False
+                    'norent': not bool(item[18]),  # Inverted: 0=True, 1=False
+                    'classes': _safe_int(item[19]),
+                    'races': _safe_int(item[20]),
+                    'slots': _safe_int(item[21]),
+                    'lore': item[22],
+                    'lore_flag': bool(item[23] != 0),  # 0=not lore, non-zero=lore
+                    'reqlevel': _safe_int(item[24]),
+                    'stackable': bool(item[25]),
+                    'stacksize': _safe_int(item[26]),
+                    'icon': _safe_int(item[27]),
+                    'price': _safe_int(item[28]),
+                    'size': _safe_int(item[29]),
+                    'mr': _safe_int(item[30]),
+                    'fr': _safe_int(item[31]),
+                    'cr': _safe_int(item[32]),
+                    'dr': _safe_int(item[33]),
+                    'pr': _safe_int(item[34]),
+                    'reclevel': _safe_int(item[35]),
+                    'clickeffect': _safe_int(item[36]),
+                    'proceffect': _safe_int(item[37]),
+                    'worneffect': _safe_int(item[38]),
+                    'focuseffect': _safe_int(item[39])
+                }
+            items_list.append(item_dict)
+        
+        return jsonify({
+            'items': items_list,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset,
+            'search_query': search_query,
+            'filters': filters
+        })
         
     except Exception as e:
-        logger.warning(f"Error checking failed pricing spells: {e}")
-        return []
+        app.logger.error(f"Error searching items: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 def get_bulk_pricing_from_db(spell_ids):
     """Efficiently get pricing for multiple spells using in-memory cache"""

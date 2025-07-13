@@ -553,23 +553,116 @@ def admin_cleanup():
 
 
 @admin_bp.route('/admin/activities', methods=['GET'])
+@require_admin
 def get_recent_activities():
-    """Get recent system activities - SIMPLIFIED FOR DEBUGGING"""
-    return jsonify({
-        'success': True,
-        'data': {
-            'activities': [
+    """Get recent system activities with pagination and filtering"""
+    try:
+        # Get query parameters
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        user_id = request.args.get('user_id', type=int)
+        action = request.args.get('action', type=str)
+        start_date = request.args.get('start_date', type=str)
+        end_date = request.args.get('end_date', type=str)
+        
+        # Validate parameters
+        if limit < 1 or limit > 100:
+            limit = 50
+        if offset < 0:
+            offset = 0
+            
+        # Parse date parameters
+        start_date_obj = None
+        end_date_obj = None
+        if start_date:
+            try:
+                start_date_obj = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            except ValueError:
+                return create_error_response("Invalid start_date format", 400)
+        if end_date:
+            try:
+                end_date_obj = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            except ValueError:
+                return create_error_response("Invalid end_date format", 400)
+        
+        # Get database connection
+        conn = get_db_connection()
+        if not conn:
+            # Return mock activities for development when no database
+            mock_activities = [
                 {
                     'id': 1,
-                    'action': 'test',
-                    'user_display': 'Test User',
-                    'description': 'Test activity for debugging',
-                    'created_at': '2025-07-08T21:00:00Z'
+                    'action': 'login',
+                    'user_display': 'Development User',
+                    'description': 'Development User logged in',
+                    'created_at': datetime.now().isoformat(),
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser'
+                },
+                {
+                    'id': 2,
+                    'action': 'user_view',
+                    'user_display': 'Development User',
+                    'description': 'Development User viewed profile',
+                    'created_at': (datetime.now() - timedelta(minutes=5)).isoformat(),
+                    'ip_address': '127.0.0.1',
+                    'user_agent': 'Development Browser'
                 }
-            ],
-            'total_count': 1
-        }
-    })
+            ]
+            return create_success_response({
+                'activities': mock_activities,
+                'total_count': len(mock_activities)
+            })
+        
+        # Use ActivityLog to fetch activities
+        activity_log = ActivityLog(conn)
+        activities = activity_log.get_recent_activities(
+            limit=limit,
+            offset=offset,
+            user_id=user_id,
+            action=action,
+            start_date=start_date_obj,
+            end_date=end_date_obj
+        )
+        total_count = activity_log.get_activity_count(
+            user_id=user_id,
+            action=action,
+            start_date=start_date_obj,
+            end_date=end_date_obj
+        )
+        
+        # Format activities with descriptions
+        formatted_activities = []
+        for activity in activities:
+            formatted_activity = dict(activity)
+            
+            # Add formatted description
+            user_display = activity.get('user_display', 'Unknown User')
+            action_type = activity.get('action', 'unknown')
+            
+            if action_type == ActivityLog.ACTION_LOGIN:
+                formatted_activity['description'] = f"{user_display} logged in"
+            elif action_type == 'user_view':
+                formatted_activity['description'] = f"{user_display} viewed profile"
+            elif action_type == 'admin_action':
+                formatted_activity['description'] = f"{user_display} performed admin action"
+            else:
+                formatted_activity['description'] = f"{user_display} performed {action_type}"
+            
+            # Ensure created_at is properly formatted
+            if 'created_at' in formatted_activity and isinstance(formatted_activity['created_at'], datetime):
+                formatted_activity['created_at'] = formatted_activity['created_at'].isoformat()
+                
+            formatted_activities.append(formatted_activity)
+        
+        return create_success_response({
+            'activities': formatted_activities,
+            'total_count': total_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get activities: {e}")
+        return create_error_response(f"Failed to get activities: {str(e)}", 500)
 
 
 @admin_bp.route('/admin/activities', methods=['POST'])
