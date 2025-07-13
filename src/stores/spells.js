@@ -146,8 +146,7 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
-    // Simple method to check cache status without pre-hydration
-    // DISABLED: Spell system temporarily disabled for redesign
+    // Spell system disabled - cache status check disabled
     async checkCacheStatus() {
       console.warn('Cache status check disabled - spell system temporarily disabled')
       return { disabled: true, message: 'Spell system temporarily disabled for redesign' }
@@ -178,7 +177,7 @@ export const useSpellsStore = defineStore('spells', {
       }
     },
 
-    // DISABLED: Spell system temporarily disabled for redesign
+    // Spell system disabled - fetch functionality disabled
     async fetchSpellsForClass(className, forceRefresh = false) {
       console.warn('Spell fetching disabled - spell system temporarily disabled')
       this.error = 'Spell system temporarily disabled for redesign'

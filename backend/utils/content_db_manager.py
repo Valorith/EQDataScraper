@@ -33,7 +33,7 @@ class ContentDatabaseManager:
         self._lock = threading.Lock()
         self._last_connect_attempt = 0
         self._connect_retry_delay = 1  # Start with 1 second delay
-        self._max_retry_delay = 60  # Max 60 seconds between retries
+        self._max_retry_delay = 10  # Max 10 seconds between retries (reduced from 60)
         self._connection_healthy = False
         self._config = None
         self._db_type = None
@@ -153,50 +153,54 @@ class ContentDatabaseManager:
             return False
             
     def _ensure_connection(self) -> bool:
-        """Ensure database connection is available, with retry logic."""
+        """Ensure database connection is available, with non-blocking retry logic."""
         with self._lock:
             # If connection is healthy, return immediately
             if self._connection_healthy and self._pool:
                 return True
                 
-            # Check if we should retry
+            # NON-BLOCKING: Check if we should retry, but don't block
             current_time = time.time()
             if current_time - self._last_connect_attempt < self._connect_retry_delay:
-                logger.debug(f"Waiting {self._connect_retry_delay}s before retry...")
+                # Instead of blocking, just return False immediately
+                # This prevents hanging the Flask thread
                 return False
                 
             self._last_connect_attempt = current_time
             
             logger.info("Attempting to establish database connection...")
             
-            # Try to create connection
-            if self._create_connection_pool():
-                return True
-            else:
-                # Exponential backoff
-                self._connect_retry_delay = min(
-                    self._connect_retry_delay * 2,
-                    self._max_retry_delay
-                )
-                logger.warning(f"Connection failed. Next retry in {self._connect_retry_delay}s")
-                return False
+            # Try to create connection (but we're using direct connections now)
+            # Skip connection pool creation since we disabled pooling
+            return False  # Always return False to use direct connections
                 
     @contextmanager
     def get_connection(self):
-        """Get a database connection with automatic retry."""
+        """Get a database connection with automatic retry (POOLING DISABLED)."""
         max_retries = 3
         retry_count = 0
         
         while retry_count < max_retries:
             try:
-                # Ensure connection is available
-                if not self._ensure_connection():
-                    raise Exception("Database connection not available")
-                    
-                # Get connection from pool
-                with self._pool.get_connection() as conn:
+                # Load config directly each time (no pooling)
+                config, db_type = self._load_database_config()
+                if not config or not db_type:
+                    raise Exception("Database configuration not available")
+                
+                # Create direct connection without pooling but with tracking
+                conn = get_database_connector(db_type, config, track_queries=True)
+                logger.info("Created direct database connection (no pooling, with tracking)")
+                
+                try:
                     yield conn
                     return
+                finally:
+                    # Always close the connection when done
+                    try:
+                        conn.close()
+                        logger.debug("Closed direct database connection")
+                    except:
+                        pass
                     
             except Exception as e:
                 retry_count += 1
@@ -215,24 +219,25 @@ class ContentDatabaseManager:
     def get_connection_status(self) -> Dict[str, Any]:
         """Get current connection status."""
         with self._lock:
+            # Test direct connection to get accurate status
+            try:
+                config, db_type = self._load_database_config()
+                connected = config is not None and db_type is not None
+            except:
+                connected = False
+            
             status = {
-                'connected': self._connection_healthy,
-                'pool_active': self._pool is not None,
-                'retry_delay': self._connect_retry_delay,
+                'connected': connected,
+                'pool_active': False,  # We're using direct connections, not pooling
+                'retry_delay': max(0, self._connect_retry_delay - (time.time() - self._last_connect_attempt)),
                 'last_attempt': self._last_connect_attempt,
                 'database_type': self._db_type,
                 'config_loaded': self._config is not None,
                 'validation_result': self._last_validation_result
             }
             
-            # Add pool statistics if available
-            if self._pool:
-                try:
-                    status['pool_stats'] = self._pool.get_pool_stats()
-                except:
-                    status['pool_stats'] = None
-            else:
-                status['pool_stats'] = None
+            # No pool statistics since we're using direct connections
+            status['pool_stats'] = None
                 
             return status
             

@@ -185,12 +185,18 @@ class PersistentConfig:
             'database_name': config.get('database_name', ''),
             'database_password': config.get('database_password', ''),
             'database_port': config.get('database_port', ''),
+            # Include individual components for environment variable comparison
+            'database_host': config.get('database_host', ''),
+            'database_username': config.get('database_username', ''),
             'config_source': 'persistent_storage'
         }
     
     def save_database_config(self, db_url: str, db_type: str, use_ssl: bool = True, 
                            db_name: str = '', db_password: str = '', db_port: str = '') -> bool:
         """Save database configuration persistently."""
+        # Parse the URL to extract individual components
+        parsed_components = self._parse_database_url(db_url)
+        
         # Sanitize all string inputs by stripping whitespace
         config = {
             'production_database_url': db_url.strip() if db_url else '',
@@ -198,9 +204,12 @@ class PersistentConfig:
             'use_production_database': True,
             'database_read_only': True,
             'database_ssl': use_ssl,
-            'database_name': db_name.strip() if db_name else '',
-            'database_password': db_password.strip() if db_password else '',
-            'database_port': db_port.strip() if db_port else ''
+            'database_name': db_name.strip() if db_name else parsed_components.get('database', ''),
+            'database_password': db_password.strip() if db_password else parsed_components.get('password', ''),
+            'database_port': db_port.strip() if db_port else parsed_components.get('port', ''),
+            # Save individual components for environment variable comparison
+            'database_host': parsed_components.get('host', ''),
+            'database_username': parsed_components.get('username', ''),
         }
         
         # Also update environment variables if we're on Railway
@@ -210,6 +219,23 @@ class PersistentConfig:
             # Users need to set these through Railway dashboard or CLI
         
         return self.save(config)
+    
+    def _parse_database_url(self, db_url: str) -> dict:
+        """Parse database URL into components."""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(db_url)
+            
+            return {
+                'host': parsed.hostname or '',
+                'port': str(parsed.port) if parsed.port else '',
+                'database': parsed.path.lstrip('/') if parsed.path else '',
+                'username': parsed.username or '',
+                'password': parsed.password or ''
+            }
+        except Exception as e:
+            logger.warning(f"Could not parse database URL: {e}")
+            return {}
 
 
 # Singleton instance

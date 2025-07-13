@@ -11,19 +11,35 @@ import os
 def create_dev_auth_blueprint():
     """Create development auth blueprint only if conditions are met."""
     
-    # Multiple safety checks to ensure this NEVER runs in production
+    # CRITICAL: Multiple safety checks to ensure this NEVER runs in production
+    
+    # Check 1: Block all production environments
     if os.environ.get('FLASK_ENV') == 'production':
         return None
     
+    # Check 2: Block Railway (cloud deployment)
     if os.environ.get('RAILWAY_ENVIRONMENT'):
         return None
-        
+    
+    # Check 3: Block any cloud environment indicators
+    cloud_indicators = ['HEROKU', 'AWS', 'AZURE', 'GCP', 'VERCEL', 'NETLIFY', 'DOCKER']
+    if any(os.environ.get(indicator) for indicator in cloud_indicators):
+        return None
+    
+    # Check 4: Require explicit dev auth flag
     if not os.environ.get('ENABLE_DEV_AUTH', 'false').lower() == 'true':
         return None
-        
-    # Only allow on localhost
-    if not any(host in os.environ.get('OAUTH_REDIRECT_URI', '') for host in ['localhost', '127.0.0.1']):
+    
+    # Check 5: Only allow on localhost/development URLs
+    oauth_redirect = os.environ.get('OAUTH_REDIRECT_URI', '')
+    if not any(host in oauth_redirect for host in ['localhost', '127.0.0.1']):
         return None
+    
+    # Check 6: Block if domain looks like production
+    if any(domain in oauth_redirect for domain in ['.com', '.org', '.net', '.app', '.dev']):
+        # Allow .dev domains only for localhost
+        if '.dev' in oauth_redirect and 'localhost' not in oauth_redirect:
+            return None
     
     dev_auth_bp = Blueprint('dev_auth', __name__)
     
@@ -38,8 +54,10 @@ def create_dev_auth_blueprint():
             "is_admin": false              // Optional, defaults to false
         }
         """
-        # Extra safety check at runtime
-        if os.environ.get('FLASK_ENV') == 'production':
+        # CRITICAL: Extra safety checks at runtime
+        if (os.environ.get('FLASK_ENV') == 'production' or 
+            os.environ.get('RAILWAY_ENVIRONMENT') or
+            any(os.environ.get(indicator) for indicator in ['HEROKU', 'AWS', 'AZURE', 'GCP', 'VERCEL', 'NETLIFY', 'DOCKER'])):
             return jsonify({"error": "Not available in production"}), 404
             
         # Get request data

@@ -110,6 +110,16 @@ export function useDevMode() {
       }
     }
     
+    // If not in custom dev mode, don't make network calls - just disable auth
+    if (appMode !== 'development') {
+      isDevAuthEnabled.value = false
+      devAuthCheckComplete.value = true
+      window._devModeState.lastCheckTime = now
+      sessionStorage.setItem('dev_auth_last_check', String(now))
+      sessionStorage.removeItem('dev_auth_enabled')
+      return
+    }
+    
     isChecking.value = true
     
     try {
@@ -131,11 +141,21 @@ export function useDevMode() {
       window._devModeState.lastCheckTime = now
       sessionStorage.setItem('dev_auth_last_check', String(now))
     } catch (err) {
+      // Only log errors in custom dev mode when backend connection is expected
+      if (import.meta.env.VITE_APP_MODE === 'development' && import.meta.env.MODE === 'development') {
+        console.warn('⚠️  Dev auth check failed in custom dev mode')
+        console.warn(`   Error: ${err.message}`)
+      }
+      
       // In our custom development mode, fallback to enabled if backend is unavailable
       if (import.meta.env.VITE_APP_MODE === 'development') {
+        if (import.meta.env.MODE === 'development') {
+          console.log('🔧 Custom dev mode: Enabling dev auth despite backend failure')
+        }
         isDevAuthEnabled.value = true
         sessionStorage.setItem('dev_auth_enabled', 'true')
       } else {
+        // In regular dev mode, silently disable auth (backend connection not expected)
         isDevAuthEnabled.value = false
         sessionStorage.removeItem('dev_auth_enabled')
       }

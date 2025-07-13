@@ -36,69 +36,6 @@
         </div>
       </div>
 
-      <!-- Cache Management Card -->
-      <div class="dashboard-card">
-        <div class="card-header">
-          <div class="card-icon cache">
-            <i class="fas fa-database"></i>
-          </div>
-          <h2>Cache Management</h2>
-        </div>
-        <div class="card-content">
-          <div class="stat-row">
-            <span class="stat-label">Cache Status</span>
-            <span class="stat-value" :class="cacheStatus.healthy ? 'success' : 'warning'">
-              {{ cacheStatus.healthy ? 'Healthy' : 'Needs Attention' }}
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Cached Classes</span>
-            <span class="stat-value">{{ cacheStatus.cachedClasses || 0 }}/16</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Last Update</span>
-            <span class="stat-value">{{ formatLastUpdate(cacheStatus.lastUpdate) }}</span>
-          </div>
-        </div>
-        <div class="card-actions">
-          <router-link to="/admin/cache" class="action-button primary">
-            <i class="fas fa-arrow-right"></i>
-            Manage Cache
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Scraping Control Card -->
-      <div class="dashboard-card">
-        <div class="card-header">
-          <div class="card-icon scraping">
-            <i class="fas fa-sync-alt"></i>
-          </div>
-          <h2>Scraping Control</h2>
-        </div>
-        <div class="card-content">
-          <div class="stat-row">
-            <span class="stat-label">Status</span>
-            <span class="stat-value" :class="scrapingStatus.active ? 'warning' : 'info'">
-              {{ scrapingStatus.active ? 'In Progress' : 'Idle' }}
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Current Class</span>
-            <span class="stat-value">{{ scrapingStatus.currentClass || 'None' }}</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Progress</span>
-            <span class="stat-value">{{ scrapingStatus.progress || 'N/A' }}</span>
-          </div>
-        </div>
-        <div class="card-actions">
-          <router-link to="/admin/scraping" class="action-button primary">
-            <i class="fas fa-arrow-right"></i>
-            Manage Scraping
-          </router-link>
-        </div>
-      </div>
 
       <!-- System Health Card -->
       <div class="dashboard-card">
@@ -206,14 +143,6 @@
     <div class="quick-actions">
       <h2>Quick Actions</h2>
       <div class="action-grid">
-        <button @click="refreshAllCaches" class="quick-action-btn" :disabled="refreshing">
-          <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshing }"></i>
-          <span>Refresh All Caches</span>
-        </button>
-        <button @click="triggerFullScrape" class="quick-action-btn" :disabled="scraping">
-          <i class="fas fa-cloud-download-alt" :class="{ 'fa-spin': scraping }"></i>
-          <span>Full Data Scrape</span>
-        </button>
         <button @click="exportData" class="quick-action-btn">
           <i class="fas fa-file-export"></i>
           <span>Export Data</span>
@@ -593,12 +522,51 @@
                 
                 <!-- Show warnings if any -->
                 <div v-if="diagnosticsResult.config_validation.warnings && diagnosticsResult.config_validation.warnings.length > 0" class="validation-warnings">
-                  <h5><i class="fas fa-exclamation-triangle"></i> Warnings:</h5>
-                  <ul>
-                    <li v-for="(warning, index) in diagnosticsResult.config_validation.warnings" :key="`warn-${index}`" class="warning">
-                      <strong>{{ warning.field }}:</strong> {{ warning.message }}
-                    </li>
-                  </ul>
+                  <h5><i class="fas fa-exclamation-triangle"></i> Configuration Warnings:</h5>
+                  <div v-for="(warning, index) in diagnosticsResult.config_validation.warnings" :key="`warn-${index}`" class="warning-item">
+                    <div class="warning-header">
+                      <strong>{{ formatFieldName(warning.field) }}</strong>
+                      <span class="warning-message">{{ warning.message }}</span>
+                    </div>
+                    <!-- Show resolution UI for warnings with url_value but no env_value -->
+                    <div v-if="warning.url_value && !warning.env_value" class="mismatch-resolution">
+                      <div class="resolution-options">
+                        <label class="resolution-option" :class="{ 'selected': mismatchResolutions[warning.field] === warning.url_value }">
+                          <input 
+                            type="radio" 
+                            :name="`resolve-warn-${warning.field}`"
+                            :value="warning.url_value"
+                            v-model="mismatchResolutions[warning.field]"
+                          />
+                          <span class="option-content">
+                            <span class="option-label">Use URL Value:</span>
+                            <code class="option-value">{{ warning.url_value }}</code>
+                          </span>
+                        </label>
+                        <label class="resolution-option" :class="{ 'selected': mismatchResolutions[warning.field] === '' }">
+                          <input 
+                            type="radio" 
+                            :name="`resolve-warn-${warning.field}`"
+                            value=""
+                            v-model="mismatchResolutions[warning.field]"
+                          />
+                          <span class="option-content">
+                            <span class="option-label">Keep Empty:</span>
+                            <code class="option-value">(not set)</code>
+                          </span>
+                        </label>
+                      </div>
+                      <button 
+                        v-if="mismatchResolutions[warning.field] !== undefined"
+                        @click="resolveMismatch(warning.field)"
+                        class="resolve-button"
+                        :disabled="resolvingMismatch[warning.field]"
+                      >
+                        <i class="fas" :class="resolvingMismatch[warning.field] ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                        {{ resolvingMismatch[warning.field] ? 'Saving...' : 'Save' }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 
                 <!-- Show config comparison -->
@@ -615,9 +583,19 @@
                     </thead>
                     <tbody>
                       <tr v-for="(comp, field) in diagnosticsResult.config_validation.config_comparison" :key="field">
-                        <td>{{ comp.field }}</td>
-                        <td>{{ comp.url_value || '(not set)' }}</td>
-                        <td>{{ comp.env_value || '(not set)' }}</td>
+                        <td>{{ formatFieldName(comp.field) }}</td>
+                        <td>
+                          <code v-if="comp.url_value && comp.env_value && comp.url_value !== comp.env_value" 
+                                v-html="highlightDifferences(comp.url_value, comp.env_value).str1">
+                          </code>
+                          <code v-else>{{ comp.url_value || '(not set)' }}</code>
+                        </td>
+                        <td>
+                          <code v-if="comp.url_value && comp.env_value && comp.url_value !== comp.env_value" 
+                                v-html="highlightDifferences(comp.url_value, comp.env_value).str2">
+                          </code>
+                          <code v-else>{{ comp.env_value || '(not set)' }}</code>
+                        </td>
                         <td>
                           <span :class="comp.match ? 'success' : 'error'">
                             <i class="fas" :class="comp.match ? 'fa-check' : 'fa-times'"></i>
@@ -880,17 +858,6 @@ const stats = ref({
   adminUsers: 0
 })
 
-const cacheStatus = ref({
-  healthy: true,
-  cachedClasses: 0,
-  lastUpdate: null
-})
-
-const scrapingStatus = ref({
-  active: false,
-  currentClass: null,
-  progress: null
-})
 
 const systemHealth = ref({
   apiStatus: 'Online',
@@ -899,8 +866,6 @@ const systemHealth = ref({
 })
 
 const recentActivities = ref([])
-const refreshing = ref(false)
-const scraping = ref(false)
 
 // Database configuration state
 const showDatabaseModal = ref(false)
@@ -910,6 +875,29 @@ const databaseStatus = ref({
   database: null,
   status: 'unknown'
 })
+
+// Circuit breaker to prevent overwhelming backend with failed requests
+const apiFailureCount = ref({
+  activities: 0,
+  database: 0,
+  stats: 0
+})
+const maxFailures = 5  // Increased threshold to be less aggressive
+
+// Circuit breaker reset timer - allow retry after 2 minutes (reduced from 5)
+setInterval(() => {
+  if (apiFailureCount.value.activities >= maxFailures || 
+      apiFailureCount.value.database >= maxFailures || 
+      apiFailureCount.value.stats >= maxFailures) {
+    
+    // Reset circuit breakers more aggressively
+    apiFailureCount.value.activities = Math.max(0, apiFailureCount.value.activities - 2)
+    apiFailureCount.value.database = Math.max(0, apiFailureCount.value.database - 2)
+    apiFailureCount.value.stats = Math.max(0, apiFailureCount.value.stats - 2)
+    
+    console.log('🔄 Circuit breakers reset - retrying failed endpoints')
+  }
+}, 120000) // 2 minutes
 
 // Network test state
 const showNetworkTestModal = ref(false)
@@ -994,12 +982,14 @@ const loadDashboardData = async () => {
     stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
   }
 
-  // Load database configuration status
-  try {
-    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+  // Load database configuration status (with circuit breaker)
+  if (apiFailureCount.value.database < maxFailures) {
+    try {
+      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+      const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000  // 10 second timeout
+      })
     
     if (dbConfigRes.data.success && dbConfigRes.data.data?.database) {
       const dbData = dbConfigRes.data.data.database
@@ -1038,104 +1028,50 @@ const loadDashboardData = async () => {
         status: 'not_configured',
         connection_type: 'none'
       }
+      
+      // Reset failure count on success
+      apiFailureCount.value.database = 0
     }
-  } catch (error) {
-    if (error.response?.status === 404) {
-      console.log('Database config endpoint not found - OAuth may be disabled')
-    } else if (error.response?.status === 401 || error.response?.status === 403) {
-      console.log('Database config requires admin authentication')
-    } else if (error.response) {
-      console.warn('Error loading database config:', error.response.status)
-    } else {
-      console.warn('Could not reach database config endpoint')
+    } catch (error) {
+      // Increment failure count
+      apiFailureCount.value.database++
+      
+      if (error.response?.status === 404) {
+        console.log('Database config endpoint not found - OAuth may be disabled')
+      } else if (error.response?.status === 401 || error.response?.status === 403) {
+        console.log('Database config requires admin authentication')
+      } else if (error.response?.status === 500) {
+        // Only log on first few failures to reduce console spam
+        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
+          console.warn(`Database config service error (${apiFailureCount.value.database}/${maxFailures})`)
+        }
+      } else if (error.response) {
+        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
+          console.warn(`Error loading database config: ${error.response.status} (${apiFailureCount.value.database}/${maxFailures})`)
+        }
+      } else {
+        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
+          console.warn(`Could not reach database config endpoint (${apiFailureCount.value.database}/${maxFailures})`)
+        }
+      }
+      // Set default values
+      databaseStatus.value = {
+        connected: false,
+        host: null,
+        database: null,
+        status: 'error'
+      }
     }
-    // Set default values
+  } else {
+    // Circuit breaker is open - skip API call (suppress logging to reduce spam)
     databaseStatus.value = {
       connected: false,
       host: null,
       database: null,
-      status: 'error'
+      status: 'circuit_breaker_open'
     }
   }
 
-  // Load cache status
-  try {
-    // Try to get detailed cache status first
-    const detailsRes = await axios.get(`${API_BASE_URL}/api/cache-status`)
-    
-    // Calculate total cached classes from the details
-    let totalCached = 0
-    let lastUpdate = null
-    let mostRecentUpdate = null
-    
-    for (const [className, classData] of Object.entries(detailsRes.data)) {
-      if (className !== '_config' && classData.cached) {
-        totalCached++
-        // Find the most recent update time - check multiple possible field names
-        const updateTimeField = classData.last_updated || classData.cache_time || classData.lastUpdated
-        if (updateTimeField) {
-          const updateTime = new Date(updateTimeField)
-          if (!mostRecentUpdate || updateTime > mostRecentUpdate) {
-            mostRecentUpdate = updateTime
-            lastUpdate = updateTimeField
-          }
-        }
-      }
-    }
-    
-    // If all classes are cached but no update time found, don't set a fake time
-    // This prevents confusion about when the cache was actually last updated
-    if (totalCached > 0 && !lastUpdate) {
-      // Keep lastUpdate as null instead of faking it
-      lastUpdate = null
-    }
-    
-    cacheStatus.value = {
-      healthy: totalCached >= 10,
-      cachedClasses: totalCached,
-      lastUpdate: lastUpdate
-    }
-    
-    // console.debug('Cache status from details:', { totalCached, lastUpdate })
-    
-    // Also try the summary endpoint for additional info
-    try {
-      const summaryRes = await axios.get(`${API_BASE_URL}/api/cache/status`)
-      // console.debug('Cache summary response:', summaryRes.data)
-      if (summaryRes.data.total_cached !== undefined) {
-        // Use the summary data if it has more info
-        cacheStatus.value.cachedClasses = summaryRes.data.total_cached
-        if (summaryRes.data.last_update) {
-          cacheStatus.value.lastUpdate = summaryRes.data.last_update
-        }
-      }
-    } catch (e) {
-      // Summary endpoint might not exist, that's ok
-      // console.debug('Summary endpoint not available')
-    }
-  } catch (error) {
-    if (!error.response || error.response.status !== 404) {
-      console.warn('Error loading cache status:', error.message)
-    }
-    
-    // Fallback: try to count cached classes from the classes endpoint
-    try {
-      const classesRes = await axios.get(`${API_BASE_URL}/api/classes`)
-      if (classesRes.data && Array.isArray(classesRes.data)) {
-        // Assume all classes have some cached data if the API is responding
-        cacheStatus.value = {
-          healthy: true,
-          cachedClasses: classesRes.data.length || 16,
-          lastUpdate: new Date().toISOString()
-        }
-      } else {
-        cacheStatus.value = { healthy: false, cachedClasses: 0, lastUpdate: null }
-      }
-    } catch (fallbackError) {
-      console.warn('Cache status endpoints not available')
-      cacheStatus.value = { healthy: false, cachedClasses: 0, lastUpdate: null }
-    }
-  }
 
   // Load health and system metrics
   try {
@@ -1210,40 +1146,18 @@ const loadDashboardData = async () => {
     systemHealth.value = { apiStatus: 'Offline', avgResponseTime: 0, errorRate: 0 }
   }
 
-  // Load scraping status
-  try {
-    // Check if any scraping is in progress
-    const startupRes = await axios.get(`${API_BASE_URL}/api/startup-status`)
-    if (startupRes.data) {
-      // Only mark as active if we have actual scraping activity
-      const isActuallyScraping = startupRes.data.scraping_in_progress || 
-                                 (startupRes.data.current_class && startupRes.data.current_class !== 'None') ||
-                                 (startupRes.data.progress_percent && startupRes.data.progress_percent > 0)
-      
-      scrapingStatus.value = {
-        active: isActuallyScraping,
-        currentClass: startupRes.data.current_class || null,
-        progress: startupRes.data.progress_percent ? `${startupRes.data.progress_percent}%` : null
-      }
-    }
-  } catch (error) {
-    // Silently ignore - scraping status is optional
-    scrapingStatus.value = {
-      active: false,
-      currentClass: null,
-      progress: null
-    }
-  }
 
-  // Load activities
-  try {
-    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const activitiesRes = await axios.get(`${API_BASE_URL}/api/admin/activities`, {
-      headers: { Authorization: `Bearer ${token}` },
-      params: {
-        limit: 10  // Show last 10 activities
-      }
-    })
+  // Load activities (with circuit breaker)
+  if (apiFailureCount.value.activities < maxFailures) {
+    try {
+      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+      const activitiesRes = await axios.get(`${API_BASE_URL}/api/admin/activities`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          limit: 10  // Show last 10 activities
+        },
+        timeout: 10000  // 10 second timeout
+      })
     // Handle both response formats
     if (activitiesRes.data.success && activitiesRes.data.data) {
       recentActivities.value = activitiesRes.data.data.activities || []
@@ -1265,17 +1179,35 @@ const loadDashboardData = async () => {
       userName: activity.user?.display_name || activity.userName || 'Unknown User',
       description: activity.description || formatActivityDescription(activity)
     }))
-  } catch (error) {
-    if (error.response?.status === 429) {
-      console.log('Rate limit reached for activities - will retry later')
-    } else if (error.response?.status === 401 || error.response?.status === 403) {
-      console.log('Activities require admin authentication')
-    } else if (error.response?.status === 404) {
-      console.log('Activities endpoint not found - OAuth may be disabled')
-    } else if (error.response) {
-      console.warn('Error loading activities:', error.response.status)
+    
+    // Reset failure count on success
+    apiFailureCount.value.activities = 0
+    } catch (error) {
+      // Increment failure count
+      apiFailureCount.value.activities++
+      
+      if (error.response?.status === 429) {
+        console.log('Rate limit reached for activities - will retry later')
+      } else if (error.response?.status === 401 || error.response?.status === 403) {
+        console.log('Activities require admin authentication')
+      } else if (error.response?.status === 404) {
+        if (import.meta.env.MODE === 'development') {
+          console.log('Activities endpoint not found - OAuth may be disabled')
+        }
+      } else if (error.response?.status === 500) {
+        if (import.meta.env.MODE === 'development' && apiFailureCount.value.activities <= 2) {
+          console.warn(`Activities service error (${apiFailureCount.value.activities}/${maxFailures})`)
+        }
+      } else if (error.response) {
+        if (import.meta.env.MODE === 'development' && apiFailureCount.value.activities <= 2) {
+          console.warn(`Error loading activities: ${error.response.status} (${apiFailureCount.value.activities}/${maxFailures})`)
+        }
+      }
+      // Show empty state if no activities can be loaded
+      recentActivities.value = []
     }
-    // Show empty state if no activities can be loaded
+  } else {
+    // Circuit breaker is open - skip API call (suppress logging to reduce spam)
     recentActivities.value = []
   }
   
@@ -1311,37 +1243,6 @@ const loadDashboardData = async () => {
   }
 }
 
-const refreshAllCaches = async () => {
-  refreshing.value = true
-  try {
-    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    await axios.post(`${API_BASE_URL}/api/cache/refresh`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    await loadDashboardData()
-  } catch (error) {
-    console.error('Error refreshing caches:', error)
-  } finally {
-    refreshing.value = false
-  }
-}
-
-const triggerFullScrape = async () => {
-  if (confirm('This will scrape all class data. This may take several minutes. Continue?')) {
-    scraping.value = true
-    try {
-      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-      await axios.post(`${API_BASE_URL}/api/scrape-all`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      await loadDashboardData()
-    } catch (error) {
-      console.error('Error triggering scrape:', error)
-    } finally {
-      scraping.value = false
-    }
-  }
-}
 
 const exportData = () => {
   router.push('/admin/export')
@@ -1401,9 +1302,6 @@ const getActivityIcon = (type) => {
     user_update: 'fas fa-user-edit',
     token_refresh: 'fas fa-key',
     
-    // Cache actions
-    cache_refresh: 'fas fa-sync-alt',
-    cache_clear: 'fas fa-trash-alt',
     
     // Scraping actions
     scrape_start: 'fas fa-download',
@@ -1438,10 +1336,6 @@ const formatActivityDescription = (activity) => {
     case 'user_register':
     case 'user_create':
       return `${user} created account`
-    case 'cache_refresh':
-      return `Cache refreshed${activity.resource_type ? ' for ' + activity.resource_type : ''}`
-    case 'cache_clear':
-      return 'Cache cleared'
     case 'scrape_start':
       return `Started scraping ${activity.resource_type || 'data'}`
     case 'scrape_complete':
@@ -1852,6 +1746,8 @@ const openDiagnosticsModal = () => {
   diagnosticsResult.value = null
   connectionTestResult.value = null
   copiedDiagnostics.value = false
+  mismatchResolutions.value = {}
+  resolvingMismatch.value = {}
 }
 
 const closeDiagnosticsModal = () => {
@@ -2076,24 +1972,51 @@ const escapeHtml = (str) => {
 
 const resolveMismatch = async (field) => {
   const selectedValue = mismatchResolutions.value[field]
-  if (!selectedValue) return
+  console.log('Resolving mismatch for field:', field, 'with value:', selectedValue)
+  console.log('All resolutions:', mismatchResolutions.value)
+  console.log('Current user:', userStore.user)
+  console.log('User role:', userStore.user?.role)
+  
+  // Check if no radio button is selected (undefined means no selection)
+  if (selectedValue === undefined) {
+    showToast('No Selection', 'Please select a value to save', 'warning')
+    return
+  }
+  
+  // Check if user is admin
+  if (userStore.user?.role !== 'admin') {
+    showToast('Admin Required', 'You must be logged in as an admin to save configuration changes', 'error')
+    return
+  }
+  
+  // selectedValue can be an empty string "" which is valid (for "Keep Empty")
   
   resolvingMismatch.value[field] = true
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await axios.post(`${API_BASE_URL}/api/admin/database/resolve-mismatch`, {
+    
+    const requestData = {
       field: field,
       selected_value: selectedValue
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
+    }
+    
+    console.log('Sending request to:', `${API_BASE_URL}/api/admin/database/resolve-mismatch`)
+    console.log('Request data:', requestData)
+    console.log('Authorization token exists:', !!token)
+    
+    const response = await axios.post(`${API_BASE_URL}/api/admin/database/resolve-mismatch`, requestData, {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
     })
     
     if (response.data.success) {
       showToast('Configuration Updated', `${formatFieldName(field)} has been synchronized across all configurations`, 'success')
       
       // Update the diagnostics result with the new validation
-      if (response.data.data.validation_result) {
+      if (response.data.data?.validation_result) {
         diagnosticsResult.value.config_validation = response.data.data.validation_result
       }
       
@@ -2109,7 +2032,34 @@ const resolveMismatch = async (field) => {
     }
   } catch (error) {
     console.error('Mismatch resolution error:', error)
-    showToast('Resolution Error', error.response?.data?.message || 'Failed to resolve configuration mismatch', 'error')
+    console.error('Error response:', error.response)
+    console.error('Error details:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      headers: error.response?.headers,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        data: error.config?.data,
+        headers: error.config?.headers
+      },
+      field: field,
+      selectedValue: selectedValue
+    })
+    
+    let errorMessage = 'Failed to resolve configuration mismatch'
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    } else if (error.response?.status === 404) {
+      errorMessage = 'Resolution endpoint not found. Make sure the backend is running.'
+    } else if (error.response?.status === 401) {
+      errorMessage = 'Authorization required. Please ensure you are logged in as admin.'
+    }
+    
+    showToast('Resolution Error', errorMessage, 'error')
   } finally {
     resolvingMismatch.value[field] = false
   }
@@ -2161,8 +2111,8 @@ onMounted(async () => {
   // Load dashboard data on mount
   await loadDashboardData()
   
-  // Refresh dashboard data every 30 seconds
-  refreshInterval = setInterval(loadDashboardData, 30000)
+  // Refresh dashboard data every 60 seconds (reduced from 30s to prevent overwhelming backend)
+  refreshInterval = setInterval(loadDashboardData, 60000)
   
   // Refresh activities every 60 seconds to avoid rate limits
   activityRefreshInterval = setInterval(async () => {
@@ -2184,8 +2134,10 @@ onMounted(async () => {
         }))
       }
     } catch (error) {
-      // Silently fail for refresh intervals
-      console.debug('Activity refresh failed:', error)
+      // Silently fail for refresh intervals to avoid console spam
+      if (import.meta.env.MODE === 'development' && error.response?.status !== 500) {
+        console.debug('Activity refresh failed:', error.response?.status || error.message)
+      }
     }
   }, 60000) // Refresh activities every 60 seconds instead of 10
 })
@@ -2288,13 +2240,6 @@ onUnmounted(() => {
               0 0 0 1px rgba(255, 255, 255, 0.2) inset;
 }
 
-.card-icon.cache {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-}
-
-.card-icon.scraping {
-  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-}
 
 .card-icon.health {
   background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
@@ -2315,6 +2260,7 @@ onUnmounted(() => {
 .card-icon.database.status-connecting {
   background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
 }
+
 
 .card-header h2 {
   font-size: 1.4rem;
@@ -2758,18 +2704,6 @@ onUnmounted(() => {
   border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
-/* Cache action icons */
-.activity-icon.cache_refresh {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.activity-icon.cache_clear {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
 
 /* Scraping action icons */
 .activity-icon.scrape_start {
@@ -2882,7 +2816,23 @@ onUnmounted(() => {
   max-width: 500px;
   width: 100%;
   max-height: 90vh;
-  overflow-y: auto;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Wider modal for diagnostics */
+.modal-content.diagnostics-modal {
+  max-width: 900px;
+  width: 95vw;
+}
+
+@media (max-width: 960px) {
+  .modal-content.diagnostics-modal {
+    max-width: 100%;
+    width: 100%;
+    margin: 10px;
+  }
 }
 
 .modal-header {
@@ -2929,7 +2879,20 @@ onUnmounted(() => {
 }
 
 .modal-body {
-  padding: 30px;
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* More compact padding for diagnostics modal */
+.modal-content.diagnostics-modal .modal-body {
+  padding: 20px 25px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .form-group {
@@ -3917,8 +3880,8 @@ onUnmounted(() => {
 }
 
 /* Diagnostics Modal Styles */
-.diagnostics-modal {
-  max-width: 700px;
+.modal-content.diagnostics-modal {
+  overflow: visible;
 }
 
 .diagnostic-tests {
@@ -4074,9 +4037,12 @@ onUnmounted(() => {
 
 
 /* Refined Diagnostics Modal Styles */
-.diagnostics-modal .modal-body {
+.modal-content.diagnostics-modal .modal-body {
   max-height: 70vh;
   overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .diagnostic-tests {
@@ -4128,6 +4094,9 @@ onUnmounted(() => {
   padding: 0;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   border: 1px solid rgba(138, 43, 226, 0.2);
   overflow: hidden;
 }
@@ -4370,5 +4339,359 @@ onUnmounted(() => {
 
 .test-results.error {
   background: rgba(244, 67, 54, 0.05);
+}
+
+/* Configuration Validation Styles */
+.validation-errors {
+  margin-top: 15px;
+}
+
+.validation-errors h5 {
+  color: #f87171;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mismatch-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.mismatch-header {
+  margin-bottom: 15px;
+}
+
+.mismatch-header strong {
+  color: #f7fafc;
+  font-size: 1.1em;
+}
+
+.mismatch-description {
+  color: #9ca3af;
+  display: block;
+  margin-top: 5px;
+  font-size: 0.9em;
+}
+
+.mismatch-info {
+  margin-top: 10px;
+}
+
+.info-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.info-badge.case-diff {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.info-badge.typo-likely {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+
+.info-badge.major-diff {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mismatch-resolution {
+  margin-top: 15px;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Old mismatch-option styles removed - using resolution-option instead */
+
+/* Resolution options layout */
+.resolution-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.resolution-option {
+  display: flex;
+  align-items: flex-start;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.resolution-option:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.resolution-option.selected {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3) inset;
+}
+
+.resolution-option input[type="radio"] {
+  margin-right: 12px;
+  margin-top: 2px;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
+.option-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.option-label {
+  display: block;
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 0.9em;
+  margin-bottom: 4px;
+}
+
+.option-value {
+  display: block;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8em;
+  color: #f7fafc;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  white-space: pre-wrap;
+}
+
+/* Diff highlighting */
+.diff-highlight {
+  background: rgba(251, 146, 60, 0.3);
+  color: #fbbf24;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+.resolve-button {
+  margin-top: 15px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.resolve-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.resolve-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Configuration Comparison Table */
+.config-comparison {
+  margin-top: 20px;
+}
+
+.config-comparison h5 {
+  color: #a78bfa;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  table-layout: fixed;
+}
+
+.comparison-table th {
+  background: rgba(139, 92, 246, 0.2);
+  color: #f7fafc;
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.comparison-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.comparison-table td code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px 8px;
+  word-break: break-all;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  color: #f7fafc;
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.comparison-table .success {
+  color: #4ade80;
+}
+
+.comparison-table .error {
+  color: #f87171;
+}
+
+/* Validation warnings */
+.validation-warnings {
+  margin-top: 20px;
+  background: rgba(251, 146, 60, 0.1);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  border-radius: 8px;
+  padding: 15px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.validation-warnings h5 {
+  color: #fb923c;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.validation-warnings ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.validation-warnings .warning {
+  color: #fbbf24;
+  margin-bottom: 8px;
+}
+
+.warning-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.warning-header {
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.warning-header strong {
+  color: #fb923c;
+  display: block;
+  margin-bottom: 5px;
+  font-size: 1.05em;
+}
+
+.warning-message {
+  color: #fbbf24;
+  font-size: 0.9em;
+  line-height: 1.4;
+  max-width: 400px;
+  word-break: break-word;
+}
+
+/* Suggested fix section */
+.suggested-fix {
+  margin-top: 20px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.suggested-fix h5 {
+  color: #4ade80;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fix-details p {
+  margin: 8px 0;
+  color: #e5e7eb;
+}
+
+.fix-details strong {
+  color: #f7fafc;
+}
+
+.fix-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 15px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.fix-command code {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  color: #4ade80;
+  font-size: 0.9em;
 }
 </style>

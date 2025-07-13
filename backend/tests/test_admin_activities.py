@@ -85,27 +85,15 @@ def mock_activities_data():
         },
         {
             'id': 2,
-            'action': 'spell_search',  # This would fall through to default case
+            'action': 'user_view',
             'user_id': 2,
             'user_display': 'Regular User',
-            'resource_type': 'spell',
-            'resource_id': 'heal',
-            'details': {'query': 'heal', 'results_count': 45},
+            'resource_type': 'profile',
+            'resource_id': 'profile_2',
+            'details': {'page': 'profile'},
             'ip_address': '127.0.0.1',
             'user_agent': 'Test Browser',
             'created_at': datetime.now() - timedelta(minutes=10)
-        },
-        {
-            'id': 3,
-            'action': ActivityLog.ACTION_CACHE_REFRESH,
-            'user_id': None,
-            'user_display': 'System',
-            'resource_type': 'cache',
-            'resource_id': 'all_classes',
-            'details': {'refreshed_classes': 16},
-            'ip_address': None,
-            'user_agent': None,
-            'created_at': datetime.now() - timedelta(hours=1)
         }
     ]
 
@@ -201,8 +189,8 @@ class TestAdminActivitiesEndpoint:
             assert data['success'] is True
             assert 'activities' in data['data']
             assert 'total_count' in data['data']
-            assert len(data['data']['activities']) == 3
-            assert data['data']['total_count'] == 3
+            assert len(data['data']['activities']) == 2
+            assert data['data']['total_count'] == 2
             
             # Check first activity formatting
             first_activity = data['data']['activities'][0]
@@ -336,56 +324,6 @@ class TestActivityDescriptionFormatting:
                 activity = data['data']['activities'][0]
                 assert activity['description'] == 'Test User logged in'
     
-    @patch('routes.admin.get_db_connection')
-    def test_system_activity_description(self, mock_get_db, flask_admin_test_client):
-        """Test system activity description formatting"""
-        mock_conn = Mock()
-        mock_get_db.return_value = mock_conn
-        
-        # Import ActivityLog to use the correct action constants
-        from models.activity import ActivityLog
-        
-        system_activity = {
-            'id': 1,
-            'action': ActivityLog.ACTION_CACHE_REFRESH,
-            'user_id': None,
-            'user_display': 'System',
-            'resource_type': 'cache',
-            'resource_id': 'all_classes',
-            'details': {'refreshed_classes': 16},
-            'ip_address': None,
-            'user_agent': None,
-            'created_at': datetime.now()
-        }
-        
-        # Mock the ActivityLog constructor and methods
-        with patch('routes.admin.ActivityLog') as mock_activity_log:
-            mock_activity_instance = Mock()
-            mock_activity_log.return_value = mock_activity_instance
-            mock_activity_instance.get_recent_activities.return_value = [system_activity]
-            mock_activity_instance.get_activity_count.return_value = 1
-            
-            # Set the ACTION_CACHE_REFRESH constant on the mocked class
-            mock_activity_log.ACTION_CACHE_REFRESH = 'cache_refresh'
-            
-            with patch('utils.jwt_utils.jwt_manager.extract_token_from_header') as mock_extract, \
-                 patch('utils.jwt_utils.jwt_manager.verify_token') as mock_verify:
-                
-                # Mock a valid admin token
-                mock_extract.return_value = 'admin_token'
-                mock_verify.return_value = {
-                    'user_id': 1,
-                    'email': 'admin@test.com',
-                    'role': 'admin',
-                    'type': 'access'
-                }
-                
-                response = flask_admin_test_client.get('/api/admin/activities',
-                                    headers={'Authorization': 'Bearer admin_token'})
-                data = json.loads(response.data)
-                
-                activity = data['data']['activities'][0]
-                assert activity['description'] == 'System refreshed cache'
 
 class TestActivityLoggingIntegration:
     """Test activity logging integration"""

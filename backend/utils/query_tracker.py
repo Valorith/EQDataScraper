@@ -29,13 +29,10 @@ class TrackedCursor:
             # Calculate execution time in milliseconds
             execution_time = (time.time() - start_time) * 1000
             
-            # Track the query if tracking is enabled
+            # Track the query if tracking is enabled - use direct tracking to avoid circular imports
             if self._track_queries:
                 try:
-                    from routes.admin import track_database_query
-                    track_database_query(query, execution_time)
-                except ImportError:
-                    pass  # Admin routes not available
+                    self._track_query_direct(query, execution_time)
                 except Exception as e:
                     logger.error(f"Error tracking query: {e}")
             
@@ -46,10 +43,9 @@ class TrackedCursor:
             execution_time = (time.time() - start_time) * 1000
             if self._track_queries:
                 try:
-                    from routes.admin import track_database_query, log_system_error
-                    track_database_query(query, execution_time)
-                    log_system_error(f"Database query failed: {str(e)}", "Database")
-                except ImportError:
+                    self._track_query_direct(query, execution_time)
+                    self._log_error_direct(f"Database query failed: {str(e)}")
+                except Exception:
                     pass
             raise
     
@@ -66,9 +62,8 @@ class TrackedCursor:
             # Track the query if tracking is enabled
             if self._track_queries:
                 try:
-                    from routes.admin import track_database_query
-                    track_database_query(f"{query} (batch of {len(params_list)})", execution_time)
-                except ImportError:
+                    self._track_query_direct(f"{query} (batch of {len(params_list)})", execution_time)
+                except Exception:
                     pass
             
             return result
@@ -77,10 +72,9 @@ class TrackedCursor:
             execution_time = (time.time() - start_time) * 1000
             if self._track_queries:
                 try:
-                    from routes.admin import track_database_query, log_system_error
-                    track_database_query(f"{query} (batch)", execution_time)
-                    log_system_error(f"Database batch query failed: {str(e)}", "Database")
-                except ImportError:
+                    self._track_query_direct(f"{query} (batch)", execution_time)
+                    self._log_error_direct(f"Database batch query failed: {str(e)}")
+                except Exception:
                     pass
             raise
     
@@ -119,6 +113,96 @@ class TrackedCursor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.close()
+    
+    def _track_query_direct(self, query, execution_time):
+        """Track query directly without importing admin routes to avoid circular dependency."""
+        try:
+            # Import the specific tracking function without circular dependency
+            import sys
+            import importlib.util
+            
+            # Check if admin module is already loaded to avoid circular import
+            if 'routes.admin' in sys.modules:
+                # Use the already loaded admin module
+                admin_module = sys.modules['routes.admin']
+                if hasattr(admin_module, 'track_database_query'):
+                    # Parse query to extract info
+                    table_name = self._extract_table_name(query)
+                    query_type = self._get_query_type(query)
+                    
+                    # Track using the existing function
+                    admin_module.track_database_query(
+                        query=query,
+                        execution_time=execution_time,
+                        query_type=query_type,
+                        table_name=table_name,
+                        source_endpoint="Database Operation"
+                    )
+                    return
+            
+            # If admin not loaded, skip tracking to avoid circular import
+            logger.debug("Admin module not loaded, skipping query tracking to avoid circular import")
+            
+        except Exception as e:
+            logger.error(f"Direct query tracking failed: {e}")
+    
+    def _log_error_direct(self, error_message):
+        """Log error directly without circular dependency."""
+        logger.error(error_message)
+    
+    def _extract_table_name(self, query):
+        """Extract table name from SQL query."""
+        try:
+            # Simple regex to extract table names from common SQL patterns
+            import re
+            
+            query_upper = query.upper().strip()
+            
+            # Handle different SQL patterns
+            if query_upper.startswith('SELECT'):
+                # Look for FROM clause
+                match = re.search(r'FROM\s+([`"]?)(\w+)\1', query_upper)
+                if match:
+                    return match.group(2).lower()
+            elif query_upper.startswith('INSERT'):
+                # Look for INSERT INTO
+                match = re.search(r'INSERT\s+INTO\s+([`"]?)(\w+)\1', query_upper)
+                if match:
+                    return match.group(2).lower()
+            elif query_upper.startswith('UPDATE'):
+                # Look for UPDATE table
+                match = re.search(r'UPDATE\s+([`"]?)(\w+)\1', query_upper)
+                if match:
+                    return match.group(2).lower()
+            elif query_upper.startswith('DELETE'):
+                # Look for DELETE FROM
+                match = re.search(r'DELETE\s+FROM\s+([`"]?)(\w+)\1', query_upper)
+                if match:
+                    return match.group(2).lower()
+            
+            return "unknown"
+            
+        except Exception:
+            return "unknown"
+    
+    def _get_query_type(self, query):
+        """Extract query type from SQL query."""
+        try:
+            query_upper = query.upper().strip()
+            
+            if query_upper.startswith('SELECT'):
+                return 'SELECT'
+            elif query_upper.startswith('INSERT'):
+                return 'INSERT'
+            elif query_upper.startswith('UPDATE'):
+                return 'UPDATE'
+            elif query_upper.startswith('DELETE'):
+                return 'DELETE'
+            else:
+                return 'OTHER'
+                
+        except Exception:
+            return 'OTHER'
 
 
 class TrackedConnection:

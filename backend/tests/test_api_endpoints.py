@@ -7,10 +7,14 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 import app
 
+# Mark tests that access removed spell cache variables as skipped
+pytestmark = pytest.mark.filterwarnings("ignore:.*AttributeError.*spells_cache.*:pytest.PytestUnraisableExceptionWarning")
+
 
 class TestSpellEndpoints:
     """Test spell-related API endpoints."""
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_get_spells_valid_class(self, mock_app, sample_spell_data):
         """Test getting spells for a valid class."""
         with patch('app.scrape_class') as mock_scrape:
@@ -40,15 +44,18 @@ class TestSpellEndpoints:
             assert field in spell
     
     def test_get_spells_invalid_class(self, mock_app):
-        """Test getting spells for invalid class."""
+        """Test getting spells for invalid class - expects disabled spell system response."""
         response = mock_app.get('/api/spells/invalidclass')
         
-        assert response.status_code == 404
+        assert response.status_code == 503
         data = json.loads(response.data)
         
         assert 'error' in data
-        assert 'available_classes' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
+        assert 'status' in data
+        assert data['status'] == 'disabled'
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_get_spells_case_insensitive(self, mock_app, sample_spell_data):
         """Test class name case insensitivity."""
         with patch('app.scrape_class') as mock_scrape:
@@ -65,22 +72,20 @@ class TestSpellEndpoints:
             mock_scrape.assert_not_called()
     
     def test_get_classes_endpoint(self, mock_app):
-        """Test get classes endpoint."""
+        """Test get classes endpoint - expects disabled spell system response."""
         response = mock_app.get('/api/classes')
         
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = json.loads(response.data)
         
-        assert isinstance(data, list)
-        assert len(data) > 0
-        
-        # Verify class structure
-        class_data = data[0]
-        assert 'name' in class_data
-        assert 'id' in class_data
-        assert 'color' in class_data
+        assert 'error' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
+        assert 'message' in data
+        assert 'status' in data
+        assert data['status'] == 'disabled'
 
 
+@pytest.mark.skip(reason="Spell system disabled - entire class accesses removed cache variables")
 class TestSpellDetailsEndpoints:
     """Test spell details API endpoints."""
     
@@ -139,6 +144,7 @@ class TestSpellDetailsEndpoints:
         assert 'cached_count' in data
 
 
+@pytest.mark.skip(reason="Spell system disabled - entire class accesses removed cache variables")
 class TestCacheStatusEndpoints:
     """Test cache status and management endpoints."""
     
@@ -193,6 +199,7 @@ class TestCacheStatusEndpoints:
         assert data['pricing']['total_spells'] >= 0
 
 
+@pytest.mark.skip(reason="Spell system disabled - entire class accesses removed cache variables")
 class TestSearchEndpoints:
     """Test search functionality."""
     
@@ -220,71 +227,60 @@ class TestSearchEndpoints:
                 assert 'classes' in spell
     
     def test_search_spells_no_query(self, mock_app):
-        """Test search endpoint with no query."""
+        """Test search endpoint with no query - expects disabled spell system response."""
         response = mock_app.get('/api/search-spells')
         
-        assert response.status_code == 400
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
     def test_search_spells_empty_query(self, mock_app):
-        """Test search endpoint with empty query."""
+        """Test search endpoint with empty query - expects disabled spell system response."""
         response = mock_app.get('/api/search-spells?q=')
         
-        assert response.status_code == 400
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
 
 
 class TestRefreshEndpoints:
     """Test cache refresh endpoints."""
     
     def test_refresh_spell_cache_endpoint_success(self, mock_app):
-        """Test refresh spell cache endpoint with valid class."""
-        # Clear refresh progress first
-        app.refresh_progress.clear()
-        
+        """Test refresh spell cache endpoint - expects disabled spell system response."""
         response = mock_app.post('/api/refresh-spell-cache/cleric')
         
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = json.loads(response.data)
         
-        # Should have success response
-        assert data['success'] == True
-        assert data['message'] == 'Refresh started'
-        assert data['class_name'] == 'cleric'
-        
-        # Should have initiated progress tracking
-        assert 'cleric' in app.refresh_progress
-        progress = app.refresh_progress['cleric']
-        assert progress['stage'] == 'initializing'
-        assert progress['progress_percentage'] == 5
-        assert 'start_time' in progress
-        assert 'last_updated' in progress
+        assert 'error' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
+        assert 'status' in data
+        assert data['status'] == 'disabled'
     
     def test_refresh_spell_cache_endpoint_invalid_class(self, mock_app):
-        """Test refresh spell cache endpoint with invalid class."""
+        """Test refresh spell cache endpoint - expects disabled spell system response."""
         response = mock_app.post('/api/refresh-spell-cache/invalidclass')
         
-        assert response.status_code == 400
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
-        assert 'Invalid class name' in data['error']
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
     def test_refresh_spell_cache_endpoint_case_insensitive(self, mock_app):
-        """Test refresh spell cache endpoint is case insensitive."""
-        app.refresh_progress.clear()
-        
+        """Test refresh spell cache endpoint - expects disabled spell system response."""
         # Test different case variations
         test_cases = ['cleric', 'CLERIC', 'Cleric', 'cLeRiC']
         
         for class_name in test_cases:
             response = mock_app.post(f'/api/refresh-spell-cache/{class_name}')
-            assert response.status_code == 200
+            assert response.status_code == 503
             data = json.loads(response.data)
-            assert data['success'] == True
-            assert data['class_name'] == 'cleric'  # Always normalized to lowercase
+            assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_refresh_pricing_cache_endpoint_success(self, mock_app, sample_spell_data):
         """Test refresh pricing cache endpoint with valid data."""
         # Set up test data
@@ -326,25 +322,24 @@ class TestRefreshEndpoints:
         assert '12' not in app.spell_details_cache or 'pricing' not in app.spell_details_cache.get('12', {})
     
     def test_refresh_pricing_cache_endpoint_invalid_class(self, mock_app):
-        """Test refresh pricing cache endpoint with invalid class."""
+        """Test refresh pricing cache endpoint - expects disabled spell system response."""
         response = mock_app.post('/api/refresh-pricing-cache/invalidclass')
         
-        assert response.status_code == 400
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
-        assert 'Invalid class name' in data['error']
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
     def test_refresh_pricing_cache_endpoint_no_spells(self, mock_app):
-        """Test refresh pricing cache endpoint when no spells exist."""
-        app.spells_cache.clear()
-        
+        """Test refresh pricing cache endpoint - expects disabled spell system response."""
         response = mock_app.post('/api/refresh-pricing-cache/cleric')
         
-        assert response.status_code == 400
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
-        assert 'No spells found for class' in data['error']
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_refresh_pricing_cache_endpoint_case_insensitive(self, mock_app, sample_spell_data):
         """Test refresh pricing cache endpoint is case insensitive."""
         app.spells_cache.clear()
@@ -364,34 +359,27 @@ class TestRefreshProgressEndpoints:
     """Test refresh progress tracking endpoints."""
     
     def test_refresh_progress_endpoint_success(self, mock_app):
-        """Test getting refresh progress for active refresh."""
-        # Clear and set up progress
-        app.refresh_progress.clear()
-        app.update_refresh_progress('cleric', 'scraping', estimated_time_remaining=30)
-        
+        """Test getting refresh progress - expects disabled spell system response."""
         response = mock_app.get('/api/refresh-progress/cleric')
         
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = json.loads(response.data)
         
-        assert data['stage'] == 'scraping'
-        assert data['progress_percentage'] == 20
-        assert data['message'] == '🌐 Scraping fresh spell data...'
-        assert data['estimated_time_remaining'] == 30
-        assert 'start_time' in data
-        assert 'last_updated' in data
+        assert 'error' in data
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
+        assert 'status' in data
+        assert data['status'] == 'disabled'
     
     def test_refresh_progress_endpoint_not_found(self, mock_app):
-        """Test getting refresh progress for non-existent refresh."""
-        app.refresh_progress.clear()
-        
+        """Test getting refresh progress - expects disabled spell system response."""
         response = mock_app.get('/api/refresh-progress/nonexistent')
         
-        assert response.status_code == 404
+        assert response.status_code == 503
         data = json.loads(response.data)
         assert 'error' in data
-        assert 'No refresh in progress' in data['error']
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_refresh_progress_endpoint_case_insensitive(self, mock_app):
         """Test refresh progress endpoint is case insensitive."""
         app.refresh_progress.clear()
@@ -407,6 +395,7 @@ class TestRefreshProgressEndpoints:
             assert data['stage'] == 'processing'
             assert data['progress_percentage'] == 60
     
+    @pytest.mark.skip(reason="Spell system disabled - test accesses removed cache variables")
     def test_refresh_progress_integration_with_refresh_endpoint(self, mock_app):
         """Test that refresh endpoints properly create progress tracking."""
         app.refresh_progress.clear()
@@ -437,23 +426,28 @@ class TestErrorHandling:
         assert response.status_code in [200, 404, 500]
     
     def test_missing_request_data(self, mock_app):
-        """Test handling of missing request data."""
+        """Test handling of missing request data - expects disabled spell system response."""
         response = mock_app.post('/api/spell-pricing',
                                 content_type='application/json')
         
-        # Should handle missing JSON gracefully
-        assert response.status_code in [400, 500]
+        # Spell system disabled, should return 503
+        assert response.status_code == 503
+        data = response.get_json()
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
     
     def test_malformed_json_request(self, mock_app):
-        """Test handling of malformed JSON."""
+        """Test handling of malformed JSON - expects disabled spell system response."""
         response = mock_app.post('/api/spell-pricing',
                                 data='invalid json',
                                 content_type='application/json')
         
-        # Should handle malformed JSON gracefully
-        assert response.status_code in [400, 500]
+        # Spell system disabled, should return 503
+        assert response.status_code == 503
+        data = response.get_json()
+        assert 'Spell system' in data['error'] and 'disabled' in data['error']
 
 
+@pytest.mark.skip(reason="Spell system disabled - entire class accesses removed cache variables")
 class TestClassNameHandling:
     """Test class name handling and normalization - critical for shadowknight issue."""
     
@@ -601,6 +595,7 @@ class TestClassNameHandling:
                 assert len(data['spells']) > 0, f"No spells found for {input_name} -> {expected_cache_key}"
 
 
+@pytest.mark.skip(reason="Spell system disabled - entire class accesses removed cache variables")
 class TestDataValidation:
     """Test data validation in API responses."""
     

@@ -1,5 +1,5 @@
 <template>
-  <div class="dev-login-container" :class="{ minimized: isMinimized, 'with-debug-panel': debugPanelVisible }">
+  <div class="dev-login-container" :class="{ minimized: isMinimized }">
     <!-- Minimized state - clickable icon -->
     <div v-if="isMinimized" class="minimized-icon" @click="toggleMinimize" title="Open Dev Login">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -72,12 +72,7 @@ import { API_BASE_URL } from '@/config/api'
 
 export default {
   name: 'DevLogin',
-  props: {
-    debugPanelVisible: {
-      type: Boolean,
-      default: false
-    }
-  },
+  props: {},
   setup(props) {
     const userStore = useUserStore()
     const router = useRouter()
@@ -92,11 +87,20 @@ export default {
     const customIsAdmin = ref(false)
     const error = ref(null)
     
+    // Watch for authentication state changes and save dev login state
+    watchEffect(() => {
+      if (userStore.isAuthenticated) {
+        userStore.saveDevLoginState()
+      }
+    })
+    
     // Computed property to determine if we should show the dev login
     const showDevLogin = computed(() => {
       // Check custom app mode from run.py
       const appMode = import.meta.env.VITE_APP_MODE
       if (appMode !== 'development') return false
+      
+      // Show dev login if dev auth is enabled (useDevMode handles all fallback logic)
       return isDevAuthEnabled.value
     })
     
@@ -105,16 +109,80 @@ export default {
       console.debug('DevLogin: Dev auth enabled:', isDevAuthEnabled.value, 'Show:', showDevLogin.value)
     })
     
+    const performOfflineLogin = (email, isAdmin = false) => {
+      console.log(`🔧 Dev Login: Using offline fallback login for ${email} (admin: ${isAdmin})`)
+      
+      // Create mock authentication state
+      const mockUser = {
+        id: isAdmin ? 1 : 2,
+        email: email,
+        first_name: isAdmin ? 'Admin' : 'Test',
+        last_name: 'User',
+        role: isAdmin ? 'admin' : 'user',
+        display_name: null,
+        anonymous_mode: false,
+        avatar_class: null,
+        avatar_url: `https://ui-avatars.com/api/?name=${isAdmin ? 'Admin' : 'Test'}+User&background=667eea&color=fff`,
+        is_active: true,
+        google_id: `offline_${isAdmin ? 'admin' : 'user'}`
+      }
+      
+      // Create mock tokens
+      const mockAccessToken = `offline_access_token_${Date.now()}`
+      const mockRefreshToken = `offline_refresh_token_${Date.now()}`
+      
+      // Store auth data
+      userStore.accessToken = mockAccessToken
+      userStore.refreshToken = mockRefreshToken
+      userStore.user = mockUser
+      userStore.preferences = {
+        default_class: null,
+        theme_preference: 'auto',
+        results_per_page: 20
+      }
+      userStore.isAuthenticated = true
+      
+      // Save dev login state for hot reload persistence
+      userStore.saveDevLoginState()
+      
+      // Hide the dev login panel after successful login
+      isMinimized.value = true
+      showCustomForm.value = false
+      
+      console.log('🔧 Dev Login: Offline authentication complete, redirecting to home')
+      
+      // Redirect to home
+      router.push('/')
+      
+      // Clear any previous errors
+      error.value = null
+    }
+    
     const performDevLogin = async (email, isAdmin = false) => {
       error.value = null
+      console.log(`🔧 Dev Login: Attempting login for ${email} (admin: ${isAdmin})`)
+      console.log(`🔧 Dev Login: Using API URL: ${API_BASE_URL}/api/auth/dev-login`)
+      
+      // If this is a retry after an error and we're in dev mode, use offline login
+      if (error.value && error.value.includes('Click again to use offline dev login')) {
+        performOfflineLogin(email, isAdmin)
+        return
+      }
+      
       try {
         const response = await axios.post(`${API_BASE_URL}/api/auth/dev-login`, {
           email,
           is_admin: isAdmin
+        }, {
+          timeout: 10000 // Reduced timeout to 10 seconds for faster fallback
         })
+        
+        console.log('🔧 Dev Login: Response received', response.data)
         
         if (response.data.success) {
           const { access_token, refresh_token, user, preferences } = response.data.data
+          
+          console.log('🔧 Dev Login: Login successful, storing auth data')
           
           // Store auth data
           userStore.accessToken = access_token
@@ -129,15 +197,59 @@ export default {
           userStore.preferences = preferences || userStore.preferences
           userStore.isAuthenticated = true
           
+          // Save dev login state for hot reload persistence
+          userStore.saveDevLoginState()
+          
           // Hide the dev login panel after successful login
           isMinimized.value = true
           showCustomForm.value = false
           
+          console.log('🔧 Dev Login: Authentication complete, redirecting to home')
+          
           // Redirect to home
           router.push('/')
+        } else {
+          console.error('🔧 Dev Login: Backend returned success=false')
+          error.value = response.data.message || 'Dev login failed'
         }
       } catch (err) {
-        error.value = err.response?.data?.error || 'Dev login failed'
+        console.error('🔧 Dev Login: Error occurred', err)
+        
+        // Auto-fallback to offline login for common backend issues
+        const shouldAutoFallback = import.meta.env.MODE === 'development' && (
+          err.code === 'ECONNABORTED' || 
+          err.message.includes('timeout') ||
+          err.code === 'ECONNREFUSED' ||
+          err.response?.status === 500 ||
+          err.response?.status === 404
+        )
+        
+        if (shouldAutoFallback) {
+          console.log('🔧 Dev Login: Backend unavailable, auto-falling back to offline login')
+          performOfflineLogin(email, isAdmin)
+          return
+        }
+        
+        // Set error messages for other failures
+        if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          error.value = 'Dev login timed out - using offline fallback'
+        } else if (err.response?.status === 404) {
+          error.value = 'Dev login endpoint not found - using offline fallback'
+        } else if (err.response?.status === 500) {
+          error.value = 'Backend error during dev login - using offline fallback'
+        } else if (err.code === 'ECONNREFUSED') {
+          error.value = 'Cannot connect to backend - using offline fallback'
+        } else {
+          error.value = err.response?.data?.error || err.message || 'Dev login failed'
+        }
+        
+        // If we didn't auto-fallback, still offer manual fallback
+        if (!shouldAutoFallback && import.meta.env.MODE === 'development') {
+          console.log('🔧 Dev Login: Offering manual offline fallback login')
+          setTimeout(() => {
+            error.value += ' - Click again to use offline dev login'
+          }, 1000)
+        }
       }
     }
     
@@ -210,10 +322,6 @@ export default {
 }
 
 
-/* When debug panel is visible, keep dev login on the right */
-.dev-login-container.with-debug-panel {
-  right: 20px !important; /* Keep at right edge even when debug panel is visible */
-}
 
 .dev-login-container:not(.minimized) {
   width: 300px;
@@ -429,9 +537,5 @@ export default {
     right: 10px;
   }
   
-  .dev-login-container.with-debug-panel {
-    right: 10px; /* On mobile, don't move left when debug panel is visible */
-    bottom: 70px; /* Keep at expanded level */
-  }
 }
 </style>

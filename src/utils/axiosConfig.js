@@ -28,8 +28,13 @@ axios.interceptors.response.use(
     // Handle timeout errors specially
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       const url = error.config?.url || ''
-      // Only log timeouts for non-auth endpoints
-      if (!url.includes('/api/auth/') && !url.includes('/api/user/')) {
+      // Only log timeouts for non-auth/admin endpoints to reduce noise
+      if (!url.includes('/api/auth/') && 
+          !url.includes('/api/user/') && 
+          !url.includes('/api/admin/system/') &&
+          !url.includes('/api/admin/database/') &&
+          !url.includes('/api/admin/activities') &&
+          !url.includes('/api/admin/stats')) {
         console.warn(`Request timeout: ${url}`)
       }
       return Promise.reject(error)
@@ -85,7 +90,6 @@ axios.interceptors.response.use(
     const url = error.config?.url || ''
     if (!url.includes('/api/health') && 
         !url.includes('/api/startup-status') &&
-        !url.includes('/api/cache-status') &&
         !url.includes('/api/auth/dev-status')) {
       console.error('API Error:', error.message)
     }

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class DatabaseConnectionPool:
     """Thread-safe database connection pool."""
     
-    def __init__(self, create_connection_func, max_connections=5, timeout=30):
+    def __init__(self, create_connection_func, max_connections=20, timeout=5):
         """
         Initialize connection pool.
         
@@ -162,7 +162,7 @@ _connection_pool = None
 _pool_lock = threading.Lock()
 
 
-def get_connection_pool(create_connection_func, max_connections=5):
+def get_connection_pool(create_connection_func, max_connections=20):
     """Get or create the global connection pool."""
     global _connection_pool
     

@@ -10,16 +10,20 @@
         <span class="dev-badge">DEV MODE</span>
         <span class="dev-user">Admin User</span>
       </div>
-      <GoogleAuthButton v-else />
+      <GoogleAuthButton v-else-if="devAuthCheckComplete" />
+      <div v-else class="auth-loading">
+        <i class="fas fa-spinner fa-spin"></i>
+      </div>
     </div>
     
-    <!-- Cache pre-hydration indicator - DISABLED -->
-    <!-- Spell system temporarily disabled for redesign -->
     
     <router-view />
     
+    <!-- Debug Panel for production debugging -->
+    <DebugPanel ref="debugPanel" />
     
-    <!-- Dev Login Panel - REMOVED: No longer needed with dev mode bypass -->
+    <!-- Dev Login Panel (only shows in development with flag) -->
+    <DevLogin v-if="!isProduction" ref="devLogin" />
     
     <!-- Toast Notification -->
     <ToastNotification 
@@ -30,14 +34,33 @@
       :type="currentToast.type"
       :duration="currentToast.duration"
     />
+    
+    <!-- Debug Panel Toggle Button -->
+    <button 
+      v-if="!isProduction" 
+      @click="toggleDebugPanel" 
+      class="debug-toggle-btn"
+      title="Toggle Debug Panel"
+    >
+      🔧
+    </button>
+    
+    <!-- Dev Login Toggle Button (for simulating login) -->
+    <button 
+      v-if="!isProduction" 
+      @click="toggleDevLogin" 
+      class="dev-login-toggle-btn"
+      title="Toggle Dev Login Panel"
+    >
+      👤
+    </button>
   </div>
 </template>
 
 <script>
-// DISABLED: Spell system temporarily disabled for redesign
-// import { useSpellsStore } from './stores/spells'
 import { useUserStore } from './stores/userStore'
-// import DevLogin from './components/DevLogin.vue' // REMOVED: No longer needed
+import DebugPanel from './components/DebugPanel.vue'
+import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
@@ -45,26 +68,27 @@ import ToastNotification from './components/ToastNotification.vue'
 import { toastService } from './services/toastService'
 import { ref, watch, watchEffect, toRef, computed } from 'vue'
 import { useDevMode } from './composables/useDevMode'
+import axios from 'axios'
+import { API_BASE_URL } from './config/api'
 
 export default {
   name: 'App',
   components: {
-    // DevLogin, // REMOVED: No longer needed with dev mode bypass
+    DebugPanel,
+    DevLogin,
     AppLogo,
     GoogleAuthButton,
     UserMenu,
     ToastNotification
   },
   setup() {
-    // DISABLED: Spell system temporarily disabled for redesign
-    // const spellsStore = useSpellsStore()
     const userStore = useUserStore()
     const isProduction = import.meta.env.PROD
     const currentToast = ref(null)
     const toast = ref(null)
     const devMode = useDevMode()
     // Use the ref directly from the composable
-    const { isDevAuthEnabled, checkDevAuthStatus } = devMode
+    const { isDevAuthEnabled, devAuthCheckComplete, checkDevAuthStatus } = devMode
     
     // Check if we should bypass auth completely in development mode
     const isDevModeBypass = computed(() => {
@@ -86,17 +110,14 @@ export default {
         })
       }
     }, { immediate: true })
-    
-    
-    // showDevLogin and handleTriggerDevLogin REMOVED: No longer needed with dev mode bypass
 
     return { 
-      // DISABLED: spellsStore disabled - spell system temporarily disabled
       userStore, 
       isProduction, 
       currentToast, 
       toast, 
       isDevAuthEnabled, 
+      devAuthCheckComplete,
       checkDevAuthStatus,
       isDevModeBypass
     }
@@ -109,6 +130,16 @@ export default {
       if (import.meta.env.MODE === 'development') {
         console.log('🔄 Dev mode state refreshed')
       }
+    },
+    toggleDebugPanel() {
+      if (this.$refs.debugPanel) {
+        this.$refs.debugPanel.toggleDebugPanel()
+      }
+    },
+    toggleDevLogin() {
+      if (this.$refs.devLogin) {
+        this.$refs.devLogin.toggleMinimize()
+      }
     }
   },
   async mounted() {
@@ -118,6 +149,33 @@ export default {
     // Hot reload detection
     const isHotReload = window._appMountCount > 0
     window._appMountCount = (window._appMountCount || 0) + 1
+    
+    // Trigger backend cleanup on page refresh to prevent hanging
+    if (!isHotReload) {
+      try {
+        // First check if backend is available before calling cleanup
+        // Use the centralized API_BASE_URL instead of environment variable
+        if (import.meta.env.MODE === 'development') {
+          console.debug(`🔧 Checking backend health at: ${API_BASE_URL}/api/health`)
+        }
+        
+        axios.get(`${API_BASE_URL}/api/health`, { timeout: 2000 })
+          .then(() => {
+            // Backend is available, call cleanup
+            return axios.post(`${API_BASE_URL}/api/cleanup`, {}, { timeout: 3000 })
+          })
+          .then(() => {
+            if (import.meta.env.MODE === 'development') {
+              console.debug('🧹 Backend cleanup completed')
+            }
+          })
+          .catch(() => {
+            // Silently ignore if backend not available or cleanup fails
+          })
+      } catch (error) {
+        // Silently ignore cleanup failures
+      }
+    }
     
     // Log current environment status (minimal logging)
     if (import.meta.env.MODE === 'development' && !isHotReload) {
@@ -236,6 +294,18 @@ export default {
     // Skip cache initialization in App.vue since main.js already handles it
     // This prevents duplicate initialization attempts and 429 errors
     
+    // Add cleanup on window unload to prevent backend hanging
+    const handleBeforeUnload = () => {
+      try {
+        // Send cleanup request on page unload using sendBeacon for reliability
+        navigator.sendBeacon(`${API_BASE_URL}/api/cleanup`, '{}')
+      } catch (error) {
+        // Silently ignore
+      }
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
     // Hot reload cleanup registration
     if (import.meta.hot) {
       import.meta.hot.dispose(() => {
@@ -315,6 +385,19 @@ export default {
   color: #f7fafc;
   font-size: 14px;
   font-weight: 500;
+}
+
+/* Auth loading indicator */
+.auth-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  color: #9ca3af;
+}
+
+.auth-loading i {
+  font-size: 16px;
 }
 
 /* Cache pre-hydration indicator */

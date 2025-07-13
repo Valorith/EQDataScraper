@@ -59,24 +59,13 @@ export const API_ENDPOINTS = {
   USER_PROFILE: '/api/user/profile',
   USER_PREFERENCES: '/api/user/preferences',
   
-  // Spell endpoints
-  CLASSES: '/api/classes',
-  SPELLS: (className) => `/api/spells/${className}`,
-  SPELL_DETAILS: (spellId) => `/api/spell-details/${spellId}`,
-  SEARCH_SPELLS: '/api/search-spells',
-  
-  // Cache endpoints
-  CACHE_STATUS: '/api/cache-status',
-  SCRAPE_ALL: '/api/scrape-all',
-  REFRESH_SPELL_CACHE: (className) => `/api/refresh-spell-cache/${className}`,
+  // Spell endpoints - DISABLED
+  // Note: Spell system temporarily disabled for redesign
   
   // Admin endpoints
   ADMIN_ACTIVITIES: '/api/admin/activities',
   ADMIN_USERS: '/api/admin/users',
   ADMIN_STATS: '/api/admin/stats',
-  ADMIN_CACHE_STATUS: '/api/admin/cache/status',
-  ADMIN_CACHE_SAVE: '/api/admin/cache/save',
-  ADMIN_CACHE_CLEAR: '/api/admin/cache/clear',
   
   // Health check
   HEALTH: '/api/health'
