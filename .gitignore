@@ -64,3 +64,4 @@ GEMINI.md
 backend/data/query_tracking/query_metrics.json
 backend/data/query_tracking/query_timeline.json
 *.json
+*.json
