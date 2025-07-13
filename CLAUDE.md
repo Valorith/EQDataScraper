@@ -39,9 +39,8 @@ python3 run.py stop      # Stop all services
 
 ### Legacy Scraper
 ```bash
-# Standalone scraper (original)
-python scrape_spells.py
-python scrape_spells.py --loop --interval 3600
+# Standalone scraper (original) - REMOVED
+# The spell scraping system has been disabled and scrape_spells.py has been deleted
 ```
 
 ## Architecture
@@ -55,8 +54,8 @@ python scrape_spells.py --loop --interval 3600
 
 ### Backend Structure
 - **backend/app.py**: Flask REST API with CORS enabled
-- **scrape_spells.py**: Core scraping logic (imported by Flask app)
 - Caching system with 24-hour expiry and rate limiting
+- **Note**: Spell scraping functionality has been disabled and removed
 
 ### Key Files
 - **run.py**: Unified application runner and dependency manager

@@ -33,60 +33,7 @@ pytestmark = pytest.mark.filterwarnings("ignore:.*spell.*:pytest.PytestUnraisabl
 TEST_JWT_SECRET = "test_jwt_secret_key_for_testing_only"
 TEST_ENCRYPTION_KEY = "test_encryption_key_for_testing_only"
 
-# Simple spell fixtures for disabled spell system tests
-@pytest.fixture
-def sample_spell_data():
-    """Mock spell data - spell system is disabled so this returns minimal data."""
-    return [
-        {
-            'name': 'Test Spell',
-            'level': 1,
-            'mana': 10,
-            'skill': 'Test',
-            'target_type': 'Single',
-            'spell_id': '123',
-            'effects': ['Test effect'],
-            'icon': 'test.gif'
-        }
-    ]
-
-@pytest.fixture
-def sample_spell_details():
-    """Mock spell details - spell system is disabled so this returns minimal data."""
-    return {
-        '202': {
-            'cast_time': '2.0 sec',
-            'duration': 'Instant',
-            'effects': ['Test effect'],
-            'pricing': {
-                'platinum': 0,
-                'gold': 0,
-                'silver': 4,
-                'bronze': 0,
-                'unknown': False
-            },
-            'range': '100',
-            'resist': 'Magic',
-            'skill': 'Test',
-            'target_type': 'Single'
-        },
-        '203': {
-            'cast_time': '1.5 sec',
-            'duration': 'Instant',
-            'effects': ['Test effect 2'],
-            'pricing': {
-                'platinum': 0,
-                'gold': 0,
-                'silver': 4,
-                'bronze': 0,
-                'unknown': False
-            },
-            'range': '200',
-            'resist': 'Fire',
-            'skill': 'Test',
-            'target_type': 'Area'
-        }
-    }
+# Spell system has been disabled - spell fixtures removed
 
 @pytest.fixture
 def mock_db_config():
@@ -409,4 +356,4 @@ def generate_test_session(**overrides):
     base_data.update(overrides)
     return base_data
 
-# Spell system fixtures removed - spell system disabled
+# Spell system has been disabled - spell fixtures removed
