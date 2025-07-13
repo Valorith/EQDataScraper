@@ -580,6 +580,15 @@ CACHE_EXPIRY_HOURS = config['cache_expiry_hours']
 PRICING_CACHE_EXPIRY_HOURS = config['pricing_cache_expiry_hours']
 MIN_SCRAPE_INTERVAL_MINUTES = config['min_scrape_interval_minutes']
 
+# Global cache variables - initialize at module level
+spells_cache = {}
+spell_details_cache = {}
+cache_timestamp = {}
+last_scrape_time = {}
+pricing_cache_timestamp = {}
+pricing_lookup = {}
+pricing_cache_loaded = False
+
 def load_all_pricing_to_memory():
     """Load all pricing data from database to memory cache (one-time operation)"""
     global pricing_lookup, pricing_cache_loaded
@@ -2003,7 +2012,10 @@ def startup_status():
 def health_check():
     """Health check endpoint with server memory status"""
     # This endpoint should not be rate limited
+    # Safe access to global cache variables
+    spells_count = len(spells_cache) if 'spells_cache' in globals() else 0
     pricing_count = len(pricing_lookup) if 'pricing_lookup' in globals() else 0
+    details_count = len(spell_details_cache) if 'spell_details_cache' in globals() else 0
     
     # Check content database status
     content_db_status = {'connected': False}
@@ -2017,11 +2029,11 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'cached_classes': len(spells_cache),
+        'cached_classes': spells_count,
         'cached_pricing': pricing_count,  # Now shows actual pricing count
-        'cached_spell_details': len(spell_details_cache),
-        'server_memory_loaded': len(spells_cache) > 0 or pricing_count > 0,
-        'ready_for_instant_responses': len(spells_cache) > 0 and pricing_count > 0,
+        'cached_spell_details': details_count,
+        'server_memory_loaded': spells_count > 0 or pricing_count > 0,
+        'ready_for_instant_responses': spells_count > 0 and pricing_count > 0,
         'startup_complete': server_startup_progress['startup_complete'],
         'content_database': content_db_status
     })
