@@ -50,10 +50,16 @@ def save_timeline_data(timeline_data):
         with open(TIMELINE_DATA_FILE, 'w') as f:
             json.dump(timeline_list, f, indent=2)
             
-        logger.info(f"Timeline data saved to {TIMELINE_DATA_FILE} ({len(timeline_list)} entries)")
+        try:
+            logger.info(f"Timeline data saved to {TIMELINE_DATA_FILE} ({len(timeline_list)} entries)")
+        except:
+            pass  # Logger may be closed during shutdown
         
     except Exception as e:
-        logger.error(f"Failed to save timeline data: {e}")
+        try:
+            logger.error(f"Failed to save timeline data: {e}")
+        except:
+            pass  # Logger may be closed during shutdown
 
 def load_timeline_data():
     """Load timeline data from disk."""
@@ -2271,9 +2277,15 @@ def save_query_tracking_on_shutdown():
         
         query_persistence.save_metrics(metrics_to_save)
         query_persistence.save_timeline(system_metrics['database_stats']['timeline'])
-        logger.info("Query tracking data saved on shutdown")
+        try:
+            logger.info("Query tracking data saved on shutdown")
+        except:
+            pass  # Logger may be closed during shutdown
     except Exception as e:
-        logger.error(f"Error saving query tracking data on shutdown: {e}")
+        try:
+            logger.error(f"Error saving query tracking data on shutdown: {e}")
+        except:
+            pass  # Logger may be closed during shutdown
 
 # Register shutdown handler
 atexit.register(save_query_tracking_on_shutdown)
@@ -2315,9 +2327,15 @@ def save_timeline_on_shutdown():
     try:
         db_stats = system_metrics['database_stats']
         save_timeline_data(db_stats['timeline'])
-        logger.info("Timeline data saved on shutdown")
+        try:
+            logger.info("Timeline data saved on shutdown")
+        except:
+            pass  # Logger may be closed during shutdown
     except Exception as e:
-        logger.error(f"Failed to save timeline data on shutdown: {e}")
+        try:
+            logger.error(f"Failed to save timeline data on shutdown: {e}")
+        except:
+            pass  # Logger may be closed during shutdown
 
 atexit.register(save_timeline_on_shutdown)
 

@@ -37,11 +37,17 @@ class QueryTrackingPersistence:
             with open(self.metrics_file, 'w') as f:
                 json.dump(serializable_data, f, indent=2)
             
-            logger.info(f"Query metrics saved to {self.metrics_file}")
+            try:
+                logger.info(f"Query metrics saved to {self.metrics_file}")
+            except:
+                pass  # Logger may be closed during shutdown
             return True
             
         except Exception as e:
-            logger.error(f"Failed to save query metrics: {e}")
+            try:
+                logger.error(f"Failed to save query metrics: {e}")
+            except:
+                pass  # Logger may be closed during shutdown
             return False
     
     def load_metrics(self) -> Dict[str, Any]:
@@ -84,11 +90,17 @@ class QueryTrackingPersistence:
             with open(self.timeline_file, 'w') as f:
                 json.dump(timeline_dict, f, indent=2)
             
-            logger.info(f"Query timeline saved to {self.timeline_file}")
+            try:
+                logger.info(f"Query timeline saved to {self.timeline_file}")
+            except:
+                pass  # Logger may be closed during shutdown
             return True
             
         except Exception as e:
-            logger.error(f"Failed to save query timeline: {e}")
+            try:
+                logger.error(f"Failed to save query timeline: {e}")
+            except:
+                pass  # Logger may be closed during shutdown
             return False
     
     def load_timeline(self) -> deque:
