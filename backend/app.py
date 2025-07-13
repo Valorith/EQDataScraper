@@ -231,6 +231,14 @@ if ENABLE_USER_ACCOUNTS:
         app.register_blueprint(users_bp, url_prefix='/api')
         app.register_blueprint(admin_bp, url_prefix='/api')
         
+        # Temporarily register debug OAuth blueprint for troubleshooting
+        try:
+            from routes.debug_oauth import debug_oauth_bp
+            app.register_blueprint(debug_oauth_bp, url_prefix='/api')
+            app.logger.info("🔧 Debug OAuth endpoints enabled")
+        except ImportError:
+            pass
+        
         # Import and register dev auth if conditions are met
         from routes.auth_dev import create_dev_auth_blueprint
         dev_auth_bp = create_dev_auth_blueprint()
