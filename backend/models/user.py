@@ -338,6 +338,28 @@ class OAuthSession:
     def __init__(self, connection):
         self.conn = connection
     
+    def _get_cursor(self):
+        """Get a cursor, trying RealDictCursor first, falling back to regular cursor."""
+        try:
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            return cursor, True  # True indicates dict cursor
+        except TypeError:
+            # Connection doesn't support cursor_factory
+            cursor = self.conn.cursor()
+            return cursor, False  # False indicates regular cursor
+    
+    def _row_to_dict(self, row, columns, use_dict_cursor):
+        """Convert a database row to a dictionary."""
+        if row is None:
+            return None
+        
+        if use_dict_cursor:
+            # RealDictCursor already returns dict-like objects
+            return dict(row)
+        else:
+            # Regular cursor returns tuples, convert to dict
+            return dict(zip(columns, row)) if row else None
+    
     def create_session(self, user_id: int, google_access_token: str, 
                       google_refresh_token: str = None, expires_in: int = 3600, 
                       local_session_token: str = None, ip_address: str = None) -> Dict[str, Any]:
@@ -356,7 +378,9 @@ class OAuthSession:
                 """, (user_id, google_access_token, google_refresh_token, 
                       expires_at, local_session_token, ip_address))
                 
-                session = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'user_id', 'token_expires_at', 'local_session_token', 'ip_address', 'created_at', 'last_used']
+                session = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return session
         except psycopg2.Error as e:
@@ -377,7 +401,7 @@ class OAuthSession:
                 """, (local_session_token,))
                 
                 result = cursor.fetchone()
-                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                columns = ['id', 'user_id', 'google_access_token', 'google_refresh_token', 'token_expires_at', 'local_session_token', 'ip_address', 'created_at', 'last_used']
                 return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get session by token: {str(e)}")
@@ -438,6 +462,8 @@ class OAuthSession:
                     ORDER BY last_used DESC
                 """, (user_id,))
                 
-                return [dict(row) for row in cursor.fetchall()]
+                rows = cursor.fetchall()
+                columns = ['id', 'user_id', 'token_expires_at', 'local_session_token', 'ip_address', 'created_at', 'last_used']
+                return [self._row_to_dict(row, columns, use_dict_cursor) for row in rows]
         except psycopg2.Error as e:
             raise Exception(f"Failed to get user sessions: {str(e)}")
