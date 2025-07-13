@@ -83,11 +83,10 @@ def debug_oauth_test():
         
         google_oauth = GoogleOAuth()
         
-        # Generate auth URL
-        code_verifier, code_challenge = google_oauth.generate_pkce_pair()
-        state = 'debug_test_' + code_verifier[:10]
+        # Generate auth URL (method generates its own state and code_challenge)
+        auth_data = google_oauth.get_authorization_url()
         
-        auth_url = google_oauth.get_authorization_url(state, code_challenge)
+        auth_url = auth_data.get('auth_url')
         
         return jsonify({
             'success': True,
