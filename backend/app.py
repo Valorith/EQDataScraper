@@ -6,9 +6,18 @@ import json
 from datetime import datetime, timedelta
 import logging
 import time
-import psycopg2
 from urllib.parse import urlparse
 import warnings
+
+# Try to import psycopg2, but make it optional for testing
+try:
+    import psycopg2
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    if not os.environ.get('TESTING'):
+        print("⚠️ psycopg2 not available - database features will be disabled")
+    psycopg2 = None
 
 # Suppress urllib3 OpenSSL warnings that spam the logs - MUST be done early
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1.1.1+')
@@ -110,10 +119,10 @@ if ENABLE_USER_ACCOUNTS:
         
         # Initialize rate limiter
         limiter = Limiter(
-            app,
             key_func=get_remote_address,
             default_limits=["200 per day", "50 per hour"]
         )
+        limiter.init_app(app)
         
         # Apply rate limits to OAuth endpoints
         limiter.limit("10 per minute")(auth_bp)
@@ -146,7 +155,7 @@ if ENABLE_USER_ACCOUNTS:
             
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
                 # Connect to database if DB_CONFIG is available (for OAuth)
-                if DB_CONFIG:
+                if DB_CONFIG and PSYCOPG2_AVAILABLE:
                     try:
                         if DB_TYPE == 'postgresql':
                             g.db_connection = psycopg2.connect(**DB_CONFIG)
@@ -160,6 +169,9 @@ if ENABLE_USER_ACCOUNTS:
                         app.logger.error(f"DB_TYPE: {DB_TYPE}")
                         app.logger.error(f"Full error: {str(e)}")
                         g.db_connection = None
+                elif not PSYCOPG2_AVAILABLE:
+                    app.logger.debug("psycopg2 not available - database connection skipped")
+                    g.db_connection = None
                 else:
                     app.logger.debug(f"No DB_CONFIG available for OAuth endpoint: {request.endpoint}")
                     g.db_connection = None
@@ -1906,13 +1918,11 @@ session.headers.update({
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# Set up retry strategy with timeout
+# Set up retry strategy
 retry_strategy = Retry(
     total=3,
     backoff_factor=1,
-    status_forcelist=[429, 500, 502, 503, 504],
-    read_timeout=10,
-    connect_timeout=5
+    status_forcelist=[429, 500, 502, 503, 504]
 )
 
 adapter = HTTPAdapter(max_retries=retry_strategy)
