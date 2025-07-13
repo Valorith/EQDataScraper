@@ -238,6 +238,14 @@ if ENABLE_USER_ACCOUNTS:
             app.logger.info("🔧 Debug OAuth endpoints enabled")
         except ImportError:
             pass
+            
+        # Register enhanced OAuth troubleshooting endpoint
+        try:
+            from routes.oauth_troubleshoot import oauth_troubleshoot_bp
+            app.register_blueprint(oauth_troubleshoot_bp, url_prefix='/api')
+            app.logger.info("🔧 Enhanced OAuth troubleshooting enabled")
+        except ImportError:
+            pass
         
         # Import and register dev auth if conditions are met
         from routes.auth_dev import create_dev_auth_blueprint

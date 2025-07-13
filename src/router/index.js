@@ -5,6 +5,7 @@ import Items from '../views/Items.vue'
 
 // OAuth authentication components (lazy loaded)
 const AuthCallback = () => import('../views/AuthCallback.vue')
+const AuthCallbackDebug = () => import('../views/AuthCallbackDebug.vue')
 const Profile = () => import('../views/Profile.vue')
 
 // Admin components - import directly for debugging
@@ -35,6 +36,11 @@ const routes = [
     path: '/auth/callback',
     name: 'AuthCallback',
     component: AuthCallback
+  },
+  {
+    path: '/auth/callback-debug',
+    name: 'AuthCallbackDebug',
+    component: AuthCallbackDebug
   },
   {
     path: '/profile',
