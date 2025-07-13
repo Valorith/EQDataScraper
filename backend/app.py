@@ -9,15 +9,7 @@ import time
 from urllib.parse import urlparse
 import warnings
 
-# Try to import psycopg2, but make it optional for testing
-try:
-    import psycopg2
-    PSYCOPG2_AVAILABLE = True
-except ImportError:
-    PSYCOPG2_AVAILABLE = False
-    if not os.environ.get('TESTING'):
-        print("⚠️ psycopg2 not available - database features will be disabled")
-    psycopg2 = None
+import psycopg2
 
 # Suppress urllib3 OpenSSL warnings that spam the logs - MUST be done early
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1.1.1+')
@@ -155,7 +147,7 @@ if ENABLE_USER_ACCOUNTS:
             
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
                 # Connect to database if DB_CONFIG is available (for OAuth)
-                if DB_CONFIG and PSYCOPG2_AVAILABLE:
+                if DB_CONFIG:
                     try:
                         if DB_TYPE == 'postgresql':
                             g.db_connection = psycopg2.connect(**DB_CONFIG)
@@ -169,9 +161,6 @@ if ENABLE_USER_ACCOUNTS:
                         app.logger.error(f"DB_TYPE: {DB_TYPE}")
                         app.logger.error(f"Full error: {str(e)}")
                         g.db_connection = None
-                elif not PSYCOPG2_AVAILABLE:
-                    app.logger.debug("psycopg2 not available - database connection skipped")
-                    g.db_connection = None
                 else:
                     app.logger.debug(f"No DB_CONFIG available for OAuth endpoint: {request.endpoint}")
                     g.db_connection = None
