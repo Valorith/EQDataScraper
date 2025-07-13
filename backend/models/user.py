@@ -15,11 +15,31 @@ class User:
     def __init__(self, connection):
         self.conn = connection
     
+    def _get_cursor(self):
+        """Get a cursor, trying RealDictCursor first, falling back to regular cursor."""
+        try:
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            return cursor, True  # True indicates dict cursor
+        except TypeError:
+            # Connection doesn't support cursor_factory
+            cursor = self.conn.cursor()
+            return cursor, False  # False indicates regular cursor
+    
+    def _row_to_dict(self, row, columns, use_dict_cursor):
+        """Convert row to dict, handling both cursor types."""
+        if not row:
+            return None
+        if use_dict_cursor:
+            return dict(row)
+        else:
+            return dict(zip(columns, row))
+    
     def create_user(self, google_id: str, email: str, first_name: str = None, 
                    last_name: str = None, avatar_url: str = None, role: str = 'user') -> Dict[str, Any]:
         """Create a new user from Google OAuth data."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     INSERT INTO users (google_id, email, first_name, last_name, avatar_url, role, last_login, display_name, anonymous_mode, avatar_class)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -27,7 +47,10 @@ class User:
                              is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
                 """, (google_id, email, first_name, last_name, avatar_url, role, datetime.utcnow(), None, False, None))
                 
-                user = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role',
+                          'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                user = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 
                 # Create default preferences
@@ -41,7 +64,8 @@ class User:
     def get_user_by_google_id(self, google_id: str) -> Optional[Dict[str, Any]]:
         """Get user by Google ID."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, google_id, email, first_name, last_name, avatar_url, role, 
                            is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
@@ -50,14 +74,17 @@ class User:
                 """, (google_id,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role',
+                          'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get user by Google ID: {str(e)}")
     
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get user by email address."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, google_id, email, first_name, last_name, avatar_url, role, 
                            is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
@@ -66,14 +93,16 @@ class User:
                 """, (email,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get user by email: {str(e)}")
     
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user by ID."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, google_id, email, first_name, last_name, avatar_url, role, 
                            is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
@@ -82,7 +111,8 @@ class User:
                 """, (user_id,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get user by ID: {str(e)}")
     
@@ -105,7 +135,8 @@ class User:
                            display_name: str = None, anonymous_mode: bool = None, avatar_class: str = None) -> Dict[str, Any]:
         """Update user profile information."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 # Build dynamic update query
                 updates = []
                 params = []
@@ -149,7 +180,9 @@ class User:
                              is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
                 """, params)
                 
-                user = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                user = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return user
         except psycopg2.Error as e:
@@ -161,10 +194,15 @@ class User:
         try:
             offset = (page - 1) * per_page
             
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 # Get total count
                 cursor.execute("SELECT COUNT(*) FROM users WHERE is_active = TRUE")
-                total_count = cursor.fetchone()['count']
+                count_row = cursor.fetchone()
+                if use_dict_cursor:
+                    total_count = count_row['count']
+                else:
+                    total_count = count_row[0]
                 
                 # Get users
                 cursor.execute("""
@@ -176,7 +214,9 @@ class User:
                     LIMIT %s OFFSET %s
                 """, (per_page, offset))
                 
-                users = [dict(row) for row in cursor.fetchall()]
+                rows = cursor.fetchall()
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                users = [self._row_to_dict(row, columns, use_dict_cursor) for row in rows]
                 
                 return {
                     'users': users,
@@ -191,7 +231,8 @@ class User:
     def update_user_role(self, user_id: int, role: str) -> Dict[str, Any]:
         """Update user role (admin only)."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     UPDATE users 
                     SET role = %s, updated_at = %s
@@ -200,7 +241,9 @@ class User:
                              is_active, created_at, updated_at, last_login, display_name, anonymous_mode, avatar_class
                 """, (role, datetime.utcnow(), user_id))
                 
-                user = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                user = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return user
         except psycopg2.Error as e:
@@ -210,7 +253,8 @@ class User:
     def create_user_preferences(self, user_id: int) -> Dict[str, Any]:
         """Create default user preferences."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     INSERT INTO user_preferences (user_id, theme_preference, results_per_page)
                     VALUES (%s, %s, %s)
@@ -218,7 +262,9 @@ class User:
                              created_at, updated_at
                 """, (user_id, 'auto', 20))
                 
-                preferences = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'user_id', 'theme_preference', 'results_per_page', 'created_at', 'updated_at']
+                preferences = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return preferences
         except psycopg2.Error as e:
@@ -228,7 +274,8 @@ class User:
     def get_user_preferences(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user preferences."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, user_id, theme_preference, results_per_page, 
                            created_at, updated_at
@@ -237,7 +284,8 @@ class User:
                 """, (user_id,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get user preferences: {str(e)}")
     
@@ -245,7 +293,8 @@ class User:
                                results_per_page: int = None) -> Dict[str, Any]:
         """Update user preferences."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 # Build dynamic update query
                 updates = []
                 params = []
@@ -273,7 +322,9 @@ class User:
                              created_at, updated_at
                 """, params)
                 
-                preferences = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'user_id', 'theme_preference', 'results_per_page', 'created_at', 'updated_at']
+                preferences = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return preferences
         except psycopg2.Error as e:
@@ -294,7 +345,8 @@ class OAuthSession:
         try:
             expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
             
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     INSERT INTO oauth_sessions (user_id, google_access_token, google_refresh_token, 
                                               token_expires_at, local_session_token, ip_address)
@@ -314,7 +366,8 @@ class OAuthSession:
     def get_session_by_token(self, local_session_token: str) -> Optional[Dict[str, Any]]:
         """Get session by local session token."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, user_id, google_access_token, google_refresh_token, 
                            token_expires_at, local_session_token, ip_address, 
@@ -324,7 +377,8 @@ class OAuthSession:
                 """, (local_session_token,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                columns = ['id', 'google_id', 'email', 'first_name', 'last_name', 'avatar_url', 'role', 'is_active', 'created_at', 'updated_at', 'last_login', 'display_name', 'anonymous_mode', 'avatar_class']
+                return self._row_to_dict(result, columns, use_dict_cursor)
         except psycopg2.Error as e:
             raise Exception(f"Failed to get session by token: {str(e)}")
     
@@ -374,7 +428,8 @@ class OAuthSession:
     def get_user_sessions(self, user_id: int) -> List[Dict[str, Any]]:
         """Get all sessions for a user."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     SELECT id, user_id, token_expires_at, local_session_token, 
                            ip_address, created_at, last_used

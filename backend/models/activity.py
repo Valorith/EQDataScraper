@@ -7,7 +7,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
-from utils.query_tracker import create_tracked_connection
 
 class ActivityLog:
     """Activity log model for tracking user actions and system events."""
@@ -38,7 +37,27 @@ class ActivityLog:
     RESOURCE_SYSTEM = 'system'
     
     def __init__(self, connection):
-        self.conn = create_tracked_connection(connection, 'postgresql')
+        # Use raw connection for auth database (no query tracking)
+        self.conn = connection
+    
+    def _get_cursor(self):
+        """Get a cursor, trying RealDictCursor first, falling back to regular cursor."""
+        try:
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            return cursor, True  # True indicates dict cursor
+        except TypeError:
+            # Connection doesn't support cursor_factory
+            cursor = self.conn.cursor()
+            return cursor, False  # False indicates regular cursor
+    
+    def _row_to_dict(self, row, columns, use_dict_cursor):
+        """Convert row to dict, handling both cursor types."""
+        if not row:
+            return None
+        if use_dict_cursor:
+            return dict(row)
+        else:
+            return dict(zip(columns, row))
     
     def log_activity(self, action: str, user_id: Optional[int] = None,
                     resource_type: Optional[str] = None, resource_id: Optional[str] = None,
@@ -46,7 +65,8 @@ class ActivityLog:
                     user_agent: Optional[str] = None) -> Dict[str, Any]:
         """Log a user activity or system event."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 cursor.execute("""
                     INSERT INTO activity_logs 
                     (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
@@ -59,7 +79,9 @@ class ActivityLog:
                     ip_address, user_agent
                 ))
                 
-                activity = dict(cursor.fetchone())
+                row = cursor.fetchone()
+                columns = ['id', 'user_id', 'action', 'resource_type', 'resource_id', 'details', 'ip_address', 'user_agent', 'created_at']
+                activity = self._row_to_dict(row, columns, use_dict_cursor)
                 self.conn.commit()
                 return activity
         except psycopg2.Error as e:
@@ -73,7 +95,8 @@ class ActivityLog:
                             end_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """Get recent activities with optional filtering."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 # Build query with filters
                 query = """
                     SELECT 
@@ -112,9 +135,10 @@ class ActivityLog:
                 
                 cursor.execute(query, params)
                 activities = []
+                columns = ['id', 'user_id', 'action', 'resource_type', 'resource_id', 'details', 'ip_address', 'user_agent', 'created_at', 'user_email', 'first_name', 'last_name', 'display_name', 'anonymous_mode']
                 
                 for row in cursor.fetchall():
-                    activity = dict(row)
+                    activity = self._row_to_dict(row, columns, use_dict_cursor)
                     # Format user info based on anonymous mode
                     if activity.get('anonymous_mode'):
                         activity['user_display'] = activity.get('display_name', 'Anonymous User')
@@ -136,7 +160,8 @@ class ActivityLog:
                           end_date: Optional[datetime] = None) -> int:
         """Get count of activities with optional filtering."""
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 query = "SELECT COUNT(*) as count FROM activity_logs WHERE 1=1"
                 params = []
                 
@@ -170,7 +195,8 @@ class ActivityLog:
         try:
             start_time = datetime.utcnow() - timedelta(hours=hours)
             
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor, use_dict_cursor = self._get_cursor()
+            with cursor:
                 # Get action counts
                 cursor.execute("""
                     SELECT action, COUNT(*) as count

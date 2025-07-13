@@ -213,9 +213,9 @@ class TrackedConnection:
         self.db_type = db_type
         self._track_queries = True
         
-    def cursor(self):
-        """Get a tracked cursor."""
-        original_cursor = self.connection.cursor()
+    def cursor(self, *args, **kwargs):
+        """Get a tracked cursor with support for cursor_factory and other parameters."""
+        original_cursor = self.connection.cursor(*args, **kwargs)
         return TrackedCursor(original_cursor, self.db_type)
     
     def commit(self):
