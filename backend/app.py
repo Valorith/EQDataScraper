@@ -1005,7 +1005,7 @@ def search_items():
 @app.route('/api/spells/search', methods=['GET'])
 @exempt_when_limiting
 @rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Same limits as item search
-def search_spells():
+def search_spells_new():
     """
     Search spells in the EQEmu database.
     Searches the spells_new table for spells matching the criteria.
