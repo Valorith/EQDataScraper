@@ -25,7 +25,7 @@ try:
 except ImportError:
     print("⚠️ python-dotenv not available, using system environment variables only")
 
-from utils.security import sanitize_search_input, validate_item_search_params, rate_limit_by_ip
+from utils.security import sanitize_search_input, validate_item_search_params, validate_spell_search_params, rate_limit_by_ip
 
 # Import activity logger if user accounts are enabled
 if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
@@ -986,6 +986,369 @@ def search_items():
         
     except Exception as e:
         app.logger.error(f"Error searching items: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
+@app.route('/api/spells/search', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Same limits as item search
+def search_spells():
+    """
+    Search spells in the EQEmu database.
+    Searches the spells_new table for spells matching the criteria.
+    """
+    app.logger.info("=== SPELL SEARCH START ===")
+    conn = None
+    cursor = None
+    
+    try:
+        # Get database connection using the helper function
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        app.logger.info(f"Got connection, db_type: {db_type}")
+        
+        # Validate parameters
+        validated_params = validate_spell_search_params(request.args)
+        search_query = validated_params.get('q', '')
+        limit = validated_params.get('limit', 20)
+        offset = validated_params.get('offset', 0)
+        filters = validated_params.get('filters', [])
+        
+        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}, filters={len(filters)}")
+        
+        if not search_query and not filters:
+            return jsonify({'error': 'Search query or filters required'}), 400
+        
+        cursor = conn.cursor()
+        
+        # Build WHERE clause and parameters
+        where_conditions = []
+        query_params = []
+        
+        # Add search query condition if present
+        if search_query:
+            where_conditions.append("spells_new.name LIKE %s")
+            query_params.append(f'%{search_query}%')
+        
+        # Add filter conditions
+        for filter_item in filters:
+            field = filter_item['field']
+            operator = filter_item['operator']
+            value = filter_item.get('value')
+            
+            # Map frontend field names to database column names
+            field_mapping = {
+                'name': 'spells_new.name',
+                'mana': 'spells_new.mana',
+                'cast_time': 'spells_new.cast_time',
+                'range': 'spells_new.range',
+                'targettype': 'spells_new.targettype',
+                'skill': 'spells_new.skill',
+                'resisttype': 'spells_new.resisttype',
+                'spell_category': 'spells_new.spell_category',
+                'buffduration': 'spells_new.buffduration',
+                'deities': 'spells_new.deities',
+                # Class level requirements
+                'warrior_level': 'spells_new.classes1',
+                'cleric_level': 'spells_new.classes2',
+                'paladin_level': 'spells_new.classes3',
+                'ranger_level': 'spells_new.classes4',
+                'shadowknight_level': 'spells_new.classes5',
+                'druid_level': 'spells_new.classes6',
+                'monk_level': 'spells_new.classes7',
+                'bard_level': 'spells_new.classes8',
+                'rogue_level': 'spells_new.classes9',
+                'shaman_level': 'spells_new.classes10',
+                'necromancer_level': 'spells_new.classes11',
+                'wizard_level': 'spells_new.classes12',
+                'magician_level': 'spells_new.classes13',
+                'enchanter_level': 'spells_new.classes14',
+                'beastlord_level': 'spells_new.classes15',
+                'berserker_level': 'spells_new.classes16',
+                # Spell effects
+                'effect1': 'spells_new.effectid1',
+                'effect2': 'spells_new.effectid2',
+                'effect3': 'spells_new.effectid3',
+                'effect4': 'spells_new.effectid4',
+                'effect5': 'spells_new.effectid5',
+                'effect6': 'spells_new.effectid6',
+                'effect7': 'spells_new.effectid7',
+                'effect8': 'spells_new.effectid8',
+                'effect9': 'spells_new.effectid9',
+                'effect10': 'spells_new.effectid10',
+                'effect11': 'spells_new.effectid11',
+                'effect12': 'spells_new.effectid12',
+                # Components
+                'component1': 'spells_new.components1',
+                'component2': 'spells_new.components2',
+                'component3': 'spells_new.components3',
+                'component4': 'spells_new.components4'
+            }
+            
+            db_field = field_mapping.get(field, f'spells_new.{field}')
+            
+            # Build condition based on operator
+            if operator == 'contains':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}%')
+            elif operator == 'equals':
+                where_conditions.append(f"{db_field} = %s")
+                query_params.append(value)
+            elif operator == 'not equals':
+                where_conditions.append(f"{db_field} != %s")
+                query_params.append(value)
+            elif operator == 'greater than':
+                where_conditions.append(f"{db_field} > %s")
+                query_params.append(value)
+            elif operator == 'less than':
+                where_conditions.append(f"{db_field} < %s")
+                query_params.append(value)
+            elif operator == 'between':
+                if isinstance(value, list) and len(value) == 2:
+                    where_conditions.append(f"{db_field} BETWEEN %s AND %s")
+                    query_params.extend([value[0], value[1]])
+            elif operator == 'exists':
+                # For effect fields and components
+                if value:
+                    where_conditions.append(f"{db_field} IS NOT NULL AND {db_field} != 0 AND {db_field} != -1")
+                else:
+                    where_conditions.append(f"({db_field} IS NULL OR {db_field} = 0 OR {db_field} = -1)")
+            elif operator == 'class_can_use':
+                # Special operator for class level requirements (255 = cannot use)
+                if value:
+                    where_conditions.append(f"{db_field} != 255")
+                else:
+                    where_conditions.append(f"{db_field} = 255")
+            elif operator == 'starts with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'{value}%')
+            elif operator == 'ends with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}')
+        
+        # Combine all WHERE conditions
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        # Build queries with dynamic WHERE clause
+        # First get count
+        count_query = f"""
+            SELECT COUNT(*) AS total_count
+            FROM spells_new
+            WHERE {where_clause}
+        """
+        cursor.execute(count_query, query_params)
+        result = cursor.fetchone()
+        total_count = result['total_count'] if isinstance(result, dict) else result[0]
+        
+        # Then get spells
+        spells_query = f"""
+            SELECT 
+                spells_new.id,
+                spells_new.name,
+                spells_new.mana,
+                spells_new.cast_time,
+                spells_new.range,
+                spells_new.targettype,
+                spells_new.skill,
+                spells_new.resisttype,
+                spells_new.spell_category,
+                spells_new.buffduration,
+                spells_new.deities,
+                spells_new.classes1,
+                spells_new.classes2,
+                spells_new.classes3,
+                spells_new.classes4,
+                spells_new.classes5,
+                spells_new.classes6,
+                spells_new.classes7,
+                spells_new.classes8,
+                spells_new.classes9,
+                spells_new.classes10,
+                spells_new.classes11,
+                spells_new.classes12,
+                spells_new.classes13,
+                spells_new.classes14,
+                spells_new.classes15,
+                spells_new.classes16,
+                spells_new.effectid1,
+                spells_new.effectid2,
+                spells_new.effectid3,
+                spells_new.effectid4,
+                spells_new.effectid5,
+                spells_new.effectid6,
+                spells_new.effectid7,
+                spells_new.effectid8,
+                spells_new.effectid9,
+                spells_new.effectid10,
+                spells_new.effectid11,
+                spells_new.effectid12,
+                spells_new.components1,
+                spells_new.components2,
+                spells_new.components3,
+                spells_new.components4,
+                spells_new.icon,
+                spells_new.new_icon
+            FROM spells_new
+            WHERE {where_clause}
+            ORDER BY spells_new.name
+            LIMIT %s OFFSET %s
+        """
+        # Add limit and offset to params
+        spells_params = query_params + [limit, offset]
+        
+        # Execute with timeout protection
+        try:
+            cursor.execute(spells_query, spells_params)
+        except Exception as e:
+            app.logger.error(f"Database query failed: {e}")
+            app.logger.error(f"Query: {spells_query}")
+            app.logger.error(f"Params: {spells_params}")
+            raise Exception("Database query failed - connection may have timed out")
+            
+        spells = cursor.fetchall()
+        
+        # Convert to response format
+        spells_list = []
+        for spell in spells:
+            if isinstance(spell, dict):
+                spell_dict = {
+                    'spell_id': str(spell['id']),
+                    'name': spell['name'],
+                    'mana': _safe_int(spell['mana']),
+                    'cast_time': _safe_int(spell['cast_time']),
+                    'range': _safe_int(spell['range']),
+                    'targettype': _safe_int(spell['targettype']),
+                    'skill': _safe_int(spell['skill']),
+                    'resisttype': _safe_int(spell['resisttype']),
+                    'spell_category': _safe_int(spell['spell_category']),
+                    'buffduration': _safe_int(spell['buffduration']),
+                    'deities': _safe_int(spell['deities']),
+                    'class_levels': {
+                        'warrior': _safe_int(spell['classes1']),
+                        'cleric': _safe_int(spell['classes2']),
+                        'paladin': _safe_int(spell['classes3']),
+                        'ranger': _safe_int(spell['classes4']),
+                        'shadowknight': _safe_int(spell['classes5']),
+                        'druid': _safe_int(spell['classes6']),
+                        'monk': _safe_int(spell['classes7']),
+                        'bard': _safe_int(spell['classes8']),
+                        'rogue': _safe_int(spell['classes9']),
+                        'shaman': _safe_int(spell['classes10']),
+                        'necromancer': _safe_int(spell['classes11']),
+                        'wizard': _safe_int(spell['classes12']),
+                        'magician': _safe_int(spell['classes13']),
+                        'enchanter': _safe_int(spell['classes14']),
+                        'beastlord': _safe_int(spell['classes15']),
+                        'berserker': _safe_int(spell['classes16'])
+                    },
+                    'effects': [
+                        _safe_int(spell['effectid1']),
+                        _safe_int(spell['effectid2']),
+                        _safe_int(spell['effectid3']),
+                        _safe_int(spell['effectid4']),
+                        _safe_int(spell['effectid5']),
+                        _safe_int(spell['effectid6']),
+                        _safe_int(spell['effectid7']),
+                        _safe_int(spell['effectid8']),
+                        _safe_int(spell['effectid9']),
+                        _safe_int(spell['effectid10']),
+                        _safe_int(spell['effectid11']),
+                        _safe_int(spell['effectid12'])
+                    ],
+                    'components': [
+                        _safe_int(spell['components1']),
+                        _safe_int(spell['components2']),
+                        _safe_int(spell['components3']),
+                        _safe_int(spell['components4'])
+                    ],
+                    'icon': _safe_int(spell['icon']),
+                    'new_icon': _safe_int(spell['new_icon'])
+                }
+            else:
+                # Handle tuple results
+                spell_dict = {
+                    'spell_id': str(spell[0]),
+                    'name': spell[1],
+                    'mana': _safe_int(spell[2]),
+                    'cast_time': _safe_int(spell[3]),
+                    'range': _safe_int(spell[4]),
+                    'targettype': _safe_int(spell[5]),
+                    'skill': _safe_int(spell[6]),
+                    'resisttype': _safe_int(spell[7]),
+                    'spell_category': _safe_int(spell[8]),
+                    'buffduration': _safe_int(spell[9]),
+                    'deities': _safe_int(spell[10]),
+                    'class_levels': {
+                        'warrior': _safe_int(spell[11]),
+                        'cleric': _safe_int(spell[12]),
+                        'paladin': _safe_int(spell[13]),
+                        'ranger': _safe_int(spell[14]),
+                        'shadowknight': _safe_int(spell[15]),
+                        'druid': _safe_int(spell[16]),
+                        'monk': _safe_int(spell[17]),
+                        'bard': _safe_int(spell[18]),
+                        'rogue': _safe_int(spell[19]),
+                        'shaman': _safe_int(spell[20]),
+                        'necromancer': _safe_int(spell[21]),
+                        'wizard': _safe_int(spell[22]),
+                        'magician': _safe_int(spell[23]),
+                        'enchanter': _safe_int(spell[24]),
+                        'beastlord': _safe_int(spell[25]),
+                        'berserker': _safe_int(spell[26])
+                    },
+                    'effects': [
+                        _safe_int(spell[27]),
+                        _safe_int(spell[28]),
+                        _safe_int(spell[29]),
+                        _safe_int(spell[30]),
+                        _safe_int(spell[31]),
+                        _safe_int(spell[32]),
+                        _safe_int(spell[33]),
+                        _safe_int(spell[34]),
+                        _safe_int(spell[35]),
+                        _safe_int(spell[36]),
+                        _safe_int(spell[37]),
+                        _safe_int(spell[38])
+                    ],
+                    'components': [
+                        _safe_int(spell[39]),
+                        _safe_int(spell[40]),
+                        _safe_int(spell[41]),
+                        _safe_int(spell[42])
+                    ],
+                    'icon': _safe_int(spell[43]),
+                    'new_icon': _safe_int(spell[44])
+                }
+            spells_list.append(spell_dict)
+        
+        return jsonify({
+            'spells': spells_list,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset,
+            'search_query': search_query,
+            'filters': filters
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error searching spells: {e}")
         import traceback
         app.logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Search failed: {str(e)}'}), 500
