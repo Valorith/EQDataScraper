@@ -97,7 +97,7 @@ router.beforeEach(async (to, from, next) => {
   }
   
   // Allow access to main page and auth callback without login
-  const publicRoutes = ['MainPage', 'AuthCallback', 'Home', 'Items', 'Spells']
+  const publicRoutes = ['MainPage', 'AuthCallback']
   
   // Check if the route is public
   if (publicRoutes.includes(to.name)) {
