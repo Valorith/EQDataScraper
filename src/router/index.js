@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import MainPage from '../views/MainPage.vue'
 import Home from '../views/Home.vue'
 import Items from '../views/Items.vue'
+import Spells from '../views/Spells.vue'
 
 // OAuth authentication components (lazy loaded)
 const AuthCallback = () => import('../views/AuthCallback.vue')
@@ -30,6 +31,11 @@ const routes = [
     path: '/items',
     name: 'Items',
     component: Items
+  },
+  {
+    path: '/spells',
+    name: 'Spells',
+    component: Spells
   },
   // OAuth authentication routes
   {
@@ -91,7 +97,7 @@ router.beforeEach(async (to, from, next) => {
   }
   
   // Allow access to main page and auth callback without login
-  const publicRoutes = ['MainPage', 'AuthCallback']
+  const publicRoutes = ['MainPage', 'AuthCallback', 'Home', 'Items', 'Spells']
   
   // Check if the route is public
   if (publicRoutes.includes(to.name)) {

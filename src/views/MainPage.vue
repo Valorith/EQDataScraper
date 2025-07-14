@@ -111,16 +111,18 @@
     
     <!-- Navigation Menu -->
     <div class="navigation-grid">
-      <div class="nav-card spells-nav disabled-card">
+      <router-link 
+        to="/spells"
+        class="nav-card spells-nav"
+      >
         <div class="nav-icon">
           <div class="nav-icon-symbol">✨</div>
         </div>
         <div class="nav-content">
           <h3 class="nav-title">Spells</h3>
           <p class="nav-description">Browse spells by class, view detailed information, and manage your spell collection</p>
-          <div class="coming-soon-badge">System Redesign in Progress</div>
         </div>
-      </div>
+      </router-link>
       
       <router-link 
         to="/items"
