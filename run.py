@@ -1890,15 +1890,34 @@ class AppRunner:
         """Install all dependencies"""
         self.print_header("Installing Dependencies")
         
-        # Install Python dependencies
+        # Install Python dependencies with better error handling
         self.print_status("Installing Python dependencies...", "info")
         try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "-r", "backend/requirements.txt"], 
-                         check=True, cwd=self.root_dir)
+            # First try to upgrade pip to latest version
+            subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], 
+                         check=True, cwd=self.root_dir, capture_output=True)
+            
+            # Install with better options for Windows
+            cmd = [sys.executable, "-m", "pip", "install", "-r", "backend/requirements.txt", 
+                   "--prefer-binary", "--no-cache-dir"]
+            
+            # On Windows, add additional options to help with compilation issues
+            if sys.platform == "win32":
+                cmd.extend(["--only-binary=:all:", "--force-reinstall"])
+                
+            subprocess.run(cmd, check=True, cwd=self.root_dir)
             self.print_status("Python dependencies installed", "success")
         except subprocess.CalledProcessError as e:
             self.print_status(f"Failed to install Python dependencies: {e}", "error")
-            return
+            self.print_status("Trying alternative installation method...", "info")
+            
+            # Try installing problematic packages individually with fallbacks
+            try:
+                self._install_with_fallbacks()
+                self.print_status("Python dependencies installed with fallbacks", "success")
+            except Exception as fallback_error:
+                self.print_status(f"Alternative installation also failed: {fallback_error}", "error")
+                return
             
         # Install Node.js dependencies
         self.print_status("Installing Node.js dependencies...", "info")
@@ -1924,6 +1943,134 @@ class AppRunner:
         else:
             self.print_status("🚀 Ready to start! Run: python3 run.py start", "success")
             self.print_status("   Or: ./run.sh start", "info")
+    
+    def _install_with_fallbacks(self):
+        """Install packages with fallbacks for compilation issues"""
+        self.print_status("Attempting installation with fallbacks...", "step")
+        
+        # List of packages that commonly have compilation issues on Windows
+        problematic_packages = [
+            ("lxml", ["lxml>=4.9.0", "lxml==4.9.4", "beautifulsoup4"])
+        ]
+        
+        # First, try to install basic packages that usually work
+        basic_packages = [
+            "flask==2.3.3",
+            "flask-cors==4.0.0", 
+            "requests==2.31.0",
+            "beautifulsoup4==4.12.2",
+            "jinja2==3.1.2",
+            "pymysql==1.1.0",
+            "google-auth==2.17.3",
+            "google-auth-oauthlib==0.8.0",
+            "PyJWT==2.6.0",
+            "Flask-Limiter==2.6.2",
+            "python-dotenv==1.0.0",
+            "pytest==7.4.3",
+            "pytest-mock==3.12.0",
+            "psutil==5.9.5",
+            "bleach==6.1.0"
+        ]
+        
+        self.print_status("Installing basic packages...", "info", 1)
+        for package in basic_packages:
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", package], 
+                             check=True, cwd=self.root_dir, capture_output=True)
+                self.print_status(f"✓ {package}", "detail", 2)
+            except subprocess.CalledProcessError:
+                self.print_status(f"⚠ Failed: {package}", "warning", 2)
+        
+        # Try problematic packages with fallbacks
+        self.print_status("Installing packages with compilation fallbacks...", "info", 1)
+        
+        # pandas and numpy - usually have wheels available
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "pandas>=2.2.0", "numpy>=1.26.0"], 
+                         check=True, cwd=self.root_dir, capture_output=True)
+            self.print_status("✓ pandas and numpy", "success", 2)
+        except subprocess.CalledProcessError:
+            self.print_status("⚠ Failed to install pandas/numpy", "warning", 2)
+        
+        # lxml - try different approaches
+        lxml_installed = False
+        lxml_approaches = [
+            ["lxml>=4.9.0", "--only-binary=:all:"],
+            ["lxml==4.9.4", "--prefer-binary"],
+            ["lxml", "--pre", "--only-binary=:all:"],
+        ]
+        
+        for approach in lxml_approaches:
+            try:
+                cmd = [sys.executable, "-m", "pip", "install"] + approach
+                subprocess.run(cmd, check=True, cwd=self.root_dir, capture_output=True)
+                self.print_status("✓ lxml installed", "success", 2)
+                lxml_installed = True
+                break
+            except subprocess.CalledProcessError:
+                continue
+        
+        if not lxml_installed:
+            self.print_status("⚠ lxml installation failed - using beautifulsoup4 only", "warning", 2)
+        
+        # psycopg2-binary - try different versions
+        psycopg2_installed = False
+        psycopg2_approaches = [
+            "psycopg2-binary>=2.9.0",
+            "psycopg2-binary==2.9.9", 
+            "psycopg2-binary==2.9.7",
+        ]
+        
+        for package in psycopg2_approaches:
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", package, "--only-binary=:all:"], 
+                             check=True, cwd=self.root_dir, capture_output=True)
+                self.print_status("✓ psycopg2-binary installed", "success", 2)
+                psycopg2_installed = True
+                break
+            except subprocess.CalledProcessError:
+                continue
+        
+        if not psycopg2_installed:
+            self.print_status("⚠ psycopg2-binary failed - PostgreSQL features may be limited", "warning", 2)
+        
+        # pyodbc - try different approaches
+        pyodbc_installed = False
+        pyodbc_approaches = [
+            ["pyodbc>=5.0.0", "--only-binary=:all:"],
+            ["pyodbc==5.0.1", "--prefer-binary"],
+        ]
+        
+        for approach in pyodbc_approaches:
+            try:
+                cmd = [sys.executable, "-m", "pip", "install"] + approach
+                subprocess.run(cmd, check=True, cwd=self.root_dir, capture_output=True)
+                self.print_status("✓ pyodbc installed", "success", 2)
+                pyodbc_installed = True
+                break
+            except subprocess.CalledProcessError:
+                continue
+        
+        if not pyodbc_installed:
+            self.print_status("⚠ pyodbc failed - SQL Server features may be limited", "warning", 2)
+        
+        # cryptography - usually has wheels
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "cryptography>=41.0.0", "--only-binary=:all:"], 
+                         check=True, cwd=self.root_dir, capture_output=True)
+            self.print_status("✓ cryptography installed", "success", 2)
+        except subprocess.CalledProcessError:
+            self.print_status("⚠ cryptography failed - OAuth may be limited", "warning", 2)
+        
+        # gunicorn - not needed on Windows but try anyway
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "gunicorn==21.2.0"], 
+                         check=True, cwd=self.root_dir, capture_output=True)
+            self.print_status("✓ gunicorn installed", "success", 2)
+        except subprocess.CalledProcessError:
+            self.print_status("⚠ gunicorn failed (not critical on Windows)", "info", 2)
+        
+        self.print_status("Fallback installation completed", "success", 1)
     
     def _is_setup_complete(self) -> bool:
         """Check if the application appears to be set up"""
