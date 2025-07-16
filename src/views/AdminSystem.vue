@@ -451,6 +451,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
+import { requestManager } from '../utils/requestManager'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -475,6 +476,7 @@ const systemLogs = ref([])
 const logLevel = ref('all')
 const refreshingLogs = ref(false)
 const databaseStats = ref(null)
+const loading = ref(false)
 
 // Heartbeat monitoring
 const heartbeatStatus = ref('Unknown')
@@ -628,9 +630,9 @@ const sortedTables = computed(() => {
 const checkHeartbeat = async () => {
   try {
     const startTime = Date.now()
-    const response = await axios.get(`${API_BASE_URL}/api/health`, {
-      timeout: 5000
-    })
+    const response = await requestManager.get(`${API_BASE_URL}/api/health`, {
+      timeout: 3000
+    }, 'heartbeat')
     const responseTime = Date.now() - startTime
     
     if (response.status === 200) {
@@ -672,7 +674,9 @@ const loadSystemStats = async () => {
       console.log('Loading limited system metrics for non-admin user')
       // Load basic health data that doesn't require admin
       try {
-        const healthResponse = await axios.get(`${API_BASE_URL}/api/health`)
+        const healthResponse = await requestManager.get(`${API_BASE_URL}/api/health`, {
+          timeout: 3000
+        }, 'health-check')
         if (healthResponse.data) {
           systemStats.value = {
             uptime: 0,
@@ -698,10 +702,10 @@ const loadSystemStats = async () => {
       'Authorization': `Bearer ${token}`
     }
     
-    const metricsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/metrics`, { 
+    const metricsResponse = await requestManager.get(`${API_BASE_URL}/api/admin/system/metrics`, { 
       headers,
-      timeout: 15000 // 15 second timeout for admin metrics
-    })
+      timeout: 5000 // 5 second timeout for admin metrics
+    }, 'system-metrics')
     const metricsData = metricsResponse.data.data
     
     // Update system stats with real data
@@ -1532,16 +1536,33 @@ onMounted(() => {
   }
   
   console.log('User authenticated as admin, loading system stats')
-  loadSystemStats()
+  // Load data with error handling
+  loadSystemStats().catch(err => {
+    console.error('Failed to load system stats:', err)
+    // Set offline mode
+    heartbeatStatus.value = 'Offline'
+    healthScore.value = 0
+  })
   
   // Re-enable auto-refresh with longer intervals to reduce load
   console.log('🔄 Starting auto-refresh every 60 seconds (reduced frequency)')
-  updateInterval = setInterval(loadSystemStats, 60000)  // Increased from 30s to 60s
+  updateInterval = setInterval(() => {
+    loadSystemStats().catch(err => {
+      console.error('Failed to refresh system stats:', err)
+    })
+  }, 60000)  // Increased from 30s to 60s
   
   // Re-enable heartbeat monitoring with longer intervals
   console.log('🫀 Starting heartbeat monitoring every 30 seconds (reduced frequency)')
-  checkHeartbeat()
-  heartbeatInterval = setInterval(checkHeartbeat, 30000)  // Increased from 15s to 30s
+  checkHeartbeat().catch(err => {
+    console.error('Initial heartbeat check failed:', err)
+    heartbeatStatus.value = 'Offline'
+  })
+  heartbeatInterval = setInterval(() => {
+    checkHeartbeat().catch(err => {
+      console.error('Heartbeat check failed:', err)
+    })
+  }, 30000)  // Increased from 15s to 30s
 })
 
 onUnmounted(() => {

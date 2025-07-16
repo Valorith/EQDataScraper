@@ -120,11 +120,11 @@ export const useUserStore = defineStore('user', {
      * Initialize authentication state on app load
      */
     async initializeAuth() {
-      // Set a timeout to prevent infinite loading
+      // Set a shorter timeout to prevent UI blocking
       const initTimeout = setTimeout(() => {
         console.warn('Auth initialization timeout - forcing completion')
         this.isLoading = false
-      }, 8000) // 8 second timeout to account for slow backends
+      }, 2000) // Reduced to 2 seconds to prevent UI blocking
 
       try {
         // Check if we were in the middle of OAuth redirect

@@ -383,12 +383,12 @@ class GoogleOAuth:
         # Allow configured redirect URI and multiple localhost ports for development
         allowed_uris = [
             self.redirect_uri,
-            'http://localhost:3000/auth/callback',
-            'http://localhost:3000/auth/callback',
-            'http://localhost:3000/auth/callback',
-            'http://localhost:3000/auth/callback',
-            'http://localhost:3000/auth/callback',
-            'http://localhost:3000/auth/callback'
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3001/auth/callback',
+            'http://localhost:3001/auth/callback'
         ]
         
         return redirect_uri in allowed_uris

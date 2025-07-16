@@ -1,6 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
 import { API_BASE_URL } from '../config/api'
+import { threadManager } from '../utils/threadManager'
 
 // Shared state for dev mode across the app
 // Use a global state object to survive hot reloads
@@ -12,7 +13,8 @@ if (!window._devModeState) {
   
   window._devModeState = {
     isDevAuthEnabled: ref(storedDevAuth === 'true'),
-    devAuthCheckComplete: ref(storedCheckComplete === 'true'),
+    // Default to true to prevent race condition with login button display
+    devAuthCheckComplete: ref(storedCheckComplete === 'true' || !storedCheckComplete),
     isChecking: ref(false),
     lastCheckTime: storedLastCheck ? parseInt(storedLastCheck) : 0
   }
@@ -122,6 +124,14 @@ export function useDevMode() {
     
     isChecking.value = true
     
+    // Track the dev auth check operation
+    const operation = threadManager.registerOperation('DevMode.checkAuthStatus', {
+      type: 'auth-check',
+      timeout: 5000,
+      warningThreshold: 2000,
+      metadata: { forced: forceCheck }
+    })
+    
     try {
       const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
         timeout: 5000 // Reduced timeout since we have fallback logic
@@ -140,7 +150,12 @@ export function useDevMode() {
       devAuthCheckComplete.value = true
       window._devModeState.lastCheckTime = now
       sessionStorage.setItem('dev_auth_last_check', String(now))
+      
+      // Complete the operation successfully
+      operation.complete({ enabled: isDevAuthEnabled.value })
     } catch (err) {
+      // Fail the operation
+      operation.fail(err)
       // Only log errors in custom dev mode when backend connection is expected
       if (import.meta.env.VITE_APP_MODE === 'development' && import.meta.env.MODE === 'development') {
         console.warn('⚠️  Dev auth check failed in custom dev mode')

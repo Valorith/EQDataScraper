@@ -1406,7 +1406,7 @@ class AppRunner:
             self.print_status(f"Backend API: http://localhost:{allocated_ports['backend']}", "success", 1)
             print()
             self.print_status("Press Ctrl+C to stop all services", "info")
-            self.print_status("Press Ctrl+R to restart all services", "info")
+            self.print_status("Press Ctrl+T to restart all services", "info")
             
             # Verify services are actually responding
             print()
@@ -1697,6 +1697,9 @@ class AppRunner:
             
         try:
             import platform
+            self.keyboard_thread = None
+            self.keyboard_running = True
+            
             if platform.system() == "Windows":
                 # Windows-specific keyboard handling
                 self._setup_windows_keyboard_handler()
@@ -1722,9 +1725,9 @@ class AppRunner:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, new_settings)
             
             # Start keyboard listener thread
-            keyboard_thread = threading.Thread(target=self._keyboard_listener_unix, daemon=True)
-            keyboard_thread.start()
-        except Exception:
+            self.keyboard_thread = threading.Thread(target=self._keyboard_listener_unix, daemon=True)
+            self.keyboard_thread.start()
+        except Exception as e:
             # Fallback if terminal manipulation fails
             pass
     
@@ -1734,21 +1737,23 @@ class AppRunner:
             return
             
         try:
-            keyboard_thread = threading.Thread(target=self._keyboard_listener_windows, daemon=True)
-            keyboard_thread.start()
-        except Exception:
+            self.keyboard_thread = threading.Thread(target=self._keyboard_listener_windows, daemon=True)
+            self.keyboard_thread.start()
+        except Exception as e:
             pass
     
     def _keyboard_listener_unix(self):
         """Keyboard listener for Unix-like systems"""
         try:
-            while self.running:
+            while self.running and self.keyboard_running:
                 # Check if input is available
                 if select.select([sys.stdin], [], [], 0.1)[0]:
                     char = sys.stdin.read(1)
-                    if char == '\x12':  # Ctrl+R
+                    if char == '\x14':  # Ctrl+T (0x14 = 20 decimal)
                         self.restart_requested = True
-        except Exception:
+                        print("\n🔄 Ctrl+T detected - restart requested...")
+                time.sleep(0.05)
+        except Exception as e:
             pass
     
     def _keyboard_listener_windows(self):
@@ -1757,20 +1762,37 @@ class AppRunner:
             return
             
         try:
-            while self.running:
+            while self.running and getattr(self, 'keyboard_running', True):
                 if msvcrt.kbhit():
                     key = msvcrt.getch()
-                    if key == b'\x12':  # Ctrl+R
+                    
+                    # Check for Ctrl+T - try multiple representations
+                    if (key == b'\x14' or  # Standard Ctrl+T (0x14 = 20 decimal)
+                        ord(key) == 20):   # Alternative representation
                         self.restart_requested = True
-                time.sleep(0.1)
-        except Exception:
+                        print("\n🔄 Ctrl+T detected - restart requested...")
+                        
+                time.sleep(0.05)
+        except Exception as e:
             pass
     
     def cleanup_keyboard_handler(self):
         """Cleanup keyboard handler"""
+        # Stop keyboard thread if it exists
+        if hasattr(self, 'keyboard_thread') and self.keyboard_thread:
+            try:
+                # Signal the thread to stop
+                self.keyboard_running = False
+                # Give the thread time to exit
+                if self.keyboard_thread.is_alive():
+                    self.keyboard_thread.join(timeout=1)
+            except Exception:
+                pass
+        
+        # Restore terminal settings on Unix-like systems
         if HAS_UNIX_TERMINAL:
             try:
-                if self.old_termios and sys.stdin.isatty():
+                if hasattr(self, 'old_termios') and self.old_termios and sys.stdin.isatty():
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_termios)
             except Exception:
                 pass

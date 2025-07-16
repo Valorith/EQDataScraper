@@ -39,6 +39,12 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  worker: {
+    format: 'es'
+  },
+  optimizeDeps: {
+    exclude: ['src/workers/authWorker.js']
+  },
   server: {
     host: '0.0.0.0', // Bind to all interfaces for Windows/WSL access
     port: frontendPort,

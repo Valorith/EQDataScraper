@@ -66,6 +66,10 @@
             <i class="fas fa-arrow-right"></i>
             System Details
           </button>
+          <button @click.stop="openBackendDiagnostic" class="action-button secondary backend-diagnostic-btn">
+            <i class="fas fa-stethoscope"></i>
+            Diagnostic
+          </button>
         </div>
       </div>
 
@@ -338,6 +342,22 @@
               >
                 <i class="fas fa-network-wired"></i>
                 Open Network Test
+              </button>
+            </div>
+            
+            <div class="test-card">
+              <div class="test-header">
+                <i class="fas fa-server"></i>
+                <h3>Backend Check</h3>
+              </div>
+              <p>Quick check to verify the backend server is reachable.</p>
+              <button 
+                @click="checkBackendConnectivity" 
+                class="test-button"
+                :disabled="checkingBackend"
+              >
+                <i class="fas" :class="checkingBackend ? 'fa-spinner fa-spin' : 'fa-server'"></i>
+                {{ checkingBackend ? 'Checking...' : 'Check Backend' }}
               </button>
             </div>
           </div>
@@ -817,6 +837,14 @@
         </div>
       </div>
     </div>
+    
+    <!-- Backend Diagnostic Modal -->
+    <div v-if="showBackendDiagnostic" class="modal-overlay" @click.self="showBackendDiagnostic = false">
+      <BackendDiagnostic 
+        @close="showBackendDiagnostic = false" 
+        @backendChanged="handleBackendChanged"
+      />
+    </div>
   </div>
   
   <!-- Toast Notifications -->
@@ -845,13 +873,19 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
-import axios from 'axios'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS, getApiBaseUrl } from '../config/api'
+import { api } from '../utils/apiClient'
+import { resilientApi } from '../utils/resilientRequest'
+import { requestManager } from '../utils/requestManager'
+import { trackAsync } from '../utils/threadManager'
+import { debounce } from '../utils/performance'
+import BackendDiagnostic from '../components/BackendDiagnostic.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 
 // State
+const showBackendDiagnostic = ref(false)
 const stats = ref({
   totalUsers: 0,
   activeToday: 0,
@@ -920,6 +954,9 @@ const diagnosticsResult = ref(null)
 const copiedFix = ref(false)
 const mismatchResolutions = ref({})
 const resolvingMismatch = ref({})
+const checkingBackend = ref(false)
+const runningDiagnostics = ref(false)
+const refreshingConnection = ref(false)
 
 // Toast notifications
 const toasts = ref([])
@@ -942,54 +979,64 @@ const databaseForm = ref({
 const databaseTestResult = ref(null)
 const testingConnection = ref(false)
 const savingConfig = ref(false)
-const refreshingConnection = ref(false)
-const runningDiagnostics = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
 
 // Methods
-const loadDashboardData = async () => {
-  // Silently load dashboard data
-  
-  // Load stats
-  try {
+const loadDashboardDataRaw = async () => {
+  // Track the entire dashboard load operation
+  await trackAsync('AdminDashboard.loadData', async () => {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const statsRes = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    // Handle both success response formats
-    if (statsRes.data.data) {
-      stats.value = statsRes.data.data
-    } else {
-      stats.value = statsRes.data
-    }
-  } catch (error) {
-    if (error.response?.status === 401) {
-      console.log('Admin stats require authentication')
-    } else if (error.response?.status === 403) {
-      console.log('Admin stats require admin privileges')
-    } else if (error.response?.status === 404) {
-      console.log('Admin stats endpoint not found - OAuth may be disabled')
-    } else if (error.response) {
-      console.warn('Error loading stats:', error.response.status, error.response.data?.message || '')
-    } else if (error.request) {
-      console.warn('No response from server when loading stats')
-    } else {
-      console.warn('Error setting up stats request:', error.message)
-    }
-    // Set default values
-    stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
-  }
-
-  // Load database configuration status (with circuit breaker)
-  if (apiFailureCount.value.database < maxFailures) {
-    try {
-      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-      const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
+    
+    // Use Promise.allSettled to load data in parallel without failing if one request fails
+    const results = await Promise.allSettled([
+      // Load stats with resilient API client
+      api.get('/api/admin/stats', {
         headers: { Authorization: `Bearer ${token}` },
-        timeout: 10000  // 10 second timeout
-      })
+        timeout: 5000, // 5 second timeout
+        cancelToken: requestManager.getCancelToken('admin-stats')
+      }),
+      
+      // Load database config with resilient API client
+      apiFailureCount.value.database < maxFailures ? 
+        api.get('/api/admin/database/config', {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 5000, // 5 second timeout
+          cancelToken: requestManager.getCancelToken('admin-database-config')
+        }) : 
+        Promise.reject(new Error('Circuit breaker open'))
+    ])
+    
+    // Process stats result
+    const [statsResult, dbConfigResult] = results
+    
+    if (statsResult.status === 'fulfilled' && statsResult.value) {
+      const statsRes = statsResult.value
+      // Handle both success response formats
+      if (statsRes.data.data) {
+        stats.value = statsRes.data.data
+      } else {
+        stats.value = statsRes.data
+      }
+    } else if (statsResult.status === 'rejected') {
+      const error = statsResult.reason
+      if (error?.response?.status === 401) {
+        console.log('Admin stats require authentication')
+      } else if (error?.response?.status === 403) {
+        console.log('Admin stats require admin privileges')
+      } else if (error?.response?.status === 404) {
+        console.log('Admin stats endpoint not found - OAuth may be disabled')
+      } else {
+        console.warn('Error loading stats:', error?.message || 'Unknown error')
+      }
+      // Set default values
+      stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
+    }
+
+    // Process database config result
+    if (dbConfigResult.status === 'fulfilled' && dbConfigResult.value) {
+      const dbConfigRes = dbConfigResult.value
     
     if (dbConfigRes.data.success && dbConfigRes.data.data?.database) {
       const dbData = dbConfigRes.data.data.database
@@ -1032,28 +1079,27 @@ const loadDashboardData = async () => {
       // Reset failure count on success
       apiFailureCount.value.database = 0
     }
-    } catch (error) {
+    } else if (dbConfigResult.status === 'rejected') {
+      const error = dbConfigResult.reason
       // Increment failure count
       apiFailureCount.value.database++
       
-      if (error.response?.status === 404) {
+      if (error?.message === 'Circuit breaker open') {
+        // Circuit breaker is open - skip logging
+        databaseStatus.value = {
+          connected: false,
+          host: null,
+          database: null,
+          status: 'circuit_breaker_open'
+        }
+      } else if (error?.response?.status === 404) {
         console.log('Database config endpoint not found - OAuth may be disabled')
-      } else if (error.response?.status === 401 || error.response?.status === 403) {
+      } else if (error?.response?.status === 401 || error?.response?.status === 403) {
         console.log('Database config requires admin authentication')
-      } else if (error.response?.status === 500) {
-        // Only log on first few failures to reduce console spam
-        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
-          console.warn(`Database config service error (${apiFailureCount.value.database}/${maxFailures})`)
-        }
-      } else if (error.response) {
-        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
-          console.warn(`Error loading database config: ${error.response.status} (${apiFailureCount.value.database}/${maxFailures})`)
-        }
-      } else {
-        if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
-          console.warn(`Could not reach database config endpoint (${apiFailureCount.value.database}/${maxFailures})`)
-        }
+      } else if (import.meta.env.MODE === 'development' && apiFailureCount.value.database <= 2) {
+        console.warn(`Database config error (${apiFailureCount.value.database}/${maxFailures}):`, error?.message || 'Unknown error')
       }
+      
       // Set default values
       databaseStatus.value = {
         connected: false,
@@ -1062,21 +1108,14 @@ const loadDashboardData = async () => {
         status: 'error'
       }
     }
-  } else {
-    // Circuit breaker is open - skip API call (suppress logging to reduce spam)
-    databaseStatus.value = {
-      connected: false,
-      host: null,
-      database: null,
-      status: 'circuit_breaker_open'
-    }
-  }
 
 
-  // Load health and system metrics
-  try {
-    // First get basic health status
-    const healthRes = await axios.get(`${API_BASE_URL}/api/health`)
+    // Load health and system metrics
+    try {
+      // First get basic health status using resilient API
+      const healthRes = await resilientApi.get('/api/health', {
+        timeout: 3000 // 3 second timeout
+      }, 'admin-health')
     const healthData = healthRes.data
     
     // Update content database status from health endpoint
@@ -1095,8 +1134,10 @@ const loadDashboardData = async () => {
     if (userStore.user?.role === 'admin') {
       try {
         const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-        const metricsRes = await axios.get(`${API_BASE_URL}/api/admin/system/metrics`, {
-          headers: { Authorization: `Bearer ${token}` }
+        const metricsRes = await api.get('/api/admin/system/metrics', {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 3000, // 3 second timeout
+          cancelToken: requestManager.getCancelToken('admin-metrics')
         })
         
         if (metricsRes.data.success && metricsRes.data.data) {
@@ -1147,17 +1188,18 @@ const loadDashboardData = async () => {
   }
 
 
-  // Load activities (with circuit breaker)
-  if (apiFailureCount.value.activities < maxFailures) {
-    try {
-      const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-      const activitiesRes = await axios.get(`${API_BASE_URL}/api/admin/activities`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          limit: 10  // Show last 10 activities
-        },
-        timeout: 10000  // 10 second timeout
-      })
+    // Load activities (with circuit breaker)
+    if (apiFailureCount.value.activities < maxFailures) {
+      try {
+        const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+        const activitiesRes = await api.get('/api/admin/activities', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            limit: 10  // Show last 10 activities
+          },
+          timeout: 5000,  // 5 second timeout
+          cancelToken: requestManager.getCancelToken('admin-activities')
+        })
     // Handle both response formats
     if (activitiesRes.data.success && activitiesRes.data.data) {
       recentActivities.value = activitiesRes.data.data.activities || []
@@ -1211,38 +1253,16 @@ const loadDashboardData = async () => {
     recentActivities.value = []
   }
   
-  // Activities loaded successfully
-
-  // Load database status
-  try {
-    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const dbRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    
-    if (dbRes.data.success && dbRes.data.data.database) {
-      const dbData = dbRes.data.data.database
-      databaseStatus.value = {
-        connected: dbData.connected || false,
-        host: dbData.host || null,
-        database: dbData.database || null,
-        status: dbData.status || 'unknown',
-        version: dbData.version || null
-      }
-    }
-  } catch (error) {
-    if (error.response?.status !== 404) {
-      console.warn('Could not load database status')
-    }
-    databaseStatus.value = {
-      connected: false,
-      host: null,
-      database: null,
-      status: 'error'
-    }
-  }
+    // Activities loaded successfully
+  }, {
+    warningThreshold: 5000,
+    timeout: 15000,
+    metadata: { component: 'AdminDashboard' }
+  })
 }
 
+// Create a debounced version to prevent overwhelming the backend
+const loadDashboardData = debounce(loadDashboardDataRaw, 1000)
 
 const exportData = () => {
   router.push('/admin/export')
@@ -1348,16 +1368,25 @@ const formatActivityDescription = (activity) => {
 }
 
 // Navigate to system page
-const navigateToSystem = () => {
+const navigateToSystem = async () => {
   console.log('Navigating to system page...')
   console.log('Current user:', userStore.user)
   console.log('Is authenticated:', userStore.isAuthenticated)
   console.log('Is admin:', userStore.user?.role === 'admin')
   
-  // Force navigation to system page
-  router.push('/admin/system').catch(err => {
+  try {
+    // Check if user is admin
+    if (userStore.user?.role === 'admin') {
+      await router.push('/admin/system')
+      console.log('Navigation successful')
+    } else {
+      console.error('Admin access required')
+      showToast('error', 'Access Denied', 'Admin access required to view system page')
+    }
+  } catch (err) {
     console.error('Navigation error:', err)
-  })
+    showToast('error', 'Navigation Failed', 'Failed to navigate to system page')
+  }
 }
 
 // Database configuration methods
@@ -1379,8 +1408,10 @@ const openDatabaseModal = async () => {
   // Try to load stored configuration even if database is disconnected
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const configRes = await axios.get(`${API_BASE_URL}/api/admin/database/stored-config`, {
-      headers: { Authorization: `Bearer ${token}` }
+    const configRes = await api.get('/api/admin/database/stored-config', {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken('get-stored-config')
     })
     
     if (configRes.data.success && configRes.data.data) {
@@ -1436,7 +1467,7 @@ const testDatabaseConnection = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await axios.post(`${API_BASE_URL}/api/admin/database/test`, {
+    const response = await api.post('/api/admin/database/test', {
       db_type: databaseForm.value.db_type,
       host: databaseForm.value.host,
       port: databaseForm.value.port,
@@ -1445,7 +1476,9 @@ const testDatabaseConnection = async () => {
       password: databaseForm.value.password,
       use_ssl: databaseForm.value.use_ssl
     }, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 10000, // 10 second timeout for connection test
+      cancelToken: requestManager.getCancelToken('db-connection-test')
     })
     
     if (response.data.success) {
@@ -1488,8 +1521,10 @@ const refreshConnection = async () => {
   try {
     // First, try to refresh the database configuration
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const dbConfigRes = await axios.get(`${API_BASE_URL}/api/admin/database/config`, {
-      headers: { Authorization: `Bearer ${token}` }
+    const dbConfigRes = await api.get('/api/admin/database/config', {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken('refresh-db-config')
     })
     
     if (dbConfigRes.data.success && dbConfigRes.data.data?.database) {
@@ -1516,8 +1551,10 @@ const refreshConnection = async () => {
       
       // Force backend to reconnect by invalidating cache
       try {
-        await axios.post(`${API_BASE_URL}/api/admin/database/reconnect`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
+        await api.post('/api/admin/database/reconnect', {}, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 5000,
+          cancelToken: requestManager.getCancelToken('db-reconnect')
         })
       } catch (e) {
         // Endpoint might not exist yet, that's ok
@@ -1561,6 +1598,67 @@ const refreshConnection = async () => {
   }
 }
 
+const checkBackendConnectivity = async () => {
+  checkingBackend.value = true
+  
+  try {
+    const startTime = Date.now()
+    // Use resilient API which will auto-discover backend if needed
+    const response = await resilientApi.get('/api/health', {
+      timeout: 5000 // 5 second timeout for quick check
+    }, 'backend-check')
+    
+    const responseTime = Date.now() - startTime
+    
+    if (response.data) {
+      showToast('Backend Online', `Backend server is reachable (${responseTime}ms response time)`, 'success')
+      
+      // Show additional info if available
+      if (response.data.version) {
+        console.log('Backend version:', response.data.version)
+      }
+      if (response.data.status) {
+        console.log('Backend status:', response.data.status)
+      }
+    }
+  } catch (error) {
+    let errorMessage = 'Backend server is not reachable. '
+    
+    // Safe error handling to avoid "axios is not defined" errors
+    try {
+      if (error && error.message) {
+        if (error.message.includes('timeout')) {
+          errorMessage += 'Request timed out after 5 seconds.'
+        } else if (error.message.includes('Network Error')) {
+          errorMessage += 'Network error - check if the server is running.'
+        } else {
+          errorMessage += error.message
+        }
+      } else if (error && error.code === 'ERR_NETWORK') {
+        errorMessage += 'Network error - check if the server is running.'
+      } else if (error && error.response && error.response.status) {
+        errorMessage += `Server responded with status ${error.response.status}.`
+      } else {
+        errorMessage += 'Unknown error occurred.'
+      }
+    } catch (e) {
+      // If error object itself causes issues, use generic message
+      errorMessage += 'Connection failed.'
+      console.warn('Error while processing error object:', e)
+    }
+    
+    showToast('Backend Offline', errorMessage, 'error')
+    
+    // Safe logging
+    console.error('Backend connectivity check failed:')
+    console.error('API Base URL:', API_BASE_URL)
+    // Don't log the error object directly to avoid issues
+    console.error('Error message:', error?.message || 'Unknown error')
+  } finally {
+    checkingBackend.value = false
+  }
+}
+
 const runDiagnostics = async () => {
   runningDiagnostics.value = true
   diagnosticsResult.value = null
@@ -1568,8 +1666,10 @@ const runDiagnostics = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await axios.get(`${API_BASE_URL}/api/admin/database/diagnostics`, {
-      headers: { Authorization: `Bearer ${token}` }
+    const response = await api.get('/api/admin/database/diagnostics', {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 30000, // 30 second timeout for diagnostics (may need more time)
+      cancelToken: requestManager.getCancelToken('database-diagnostics')
     })
     
     if (response.data.success && response.data.data) {
@@ -1640,12 +1740,32 @@ const runDiagnostics = async () => {
     console.error('Diagnostics error:', error)
     
     let errorMessage = 'Failed to run diagnostics: '
-    if (error.response?.data?.message) {
+    let errorDetails = ''
+    
+    if (error.message && error.message.includes('timeout')) {
+      errorMessage = 'Diagnostics request timed out. '
+      errorDetails = 'The backend server may be slow or unresponsive. Please check:\n' +
+                    '• Backend server is running\n' +
+                    '• Database connection is not hanging\n' +
+                    '• Network connectivity to the server'
+    } else if (error.response?.data?.message) {
       errorMessage += error.response.data.message
     } else if (error.message) {
       errorMessage += error.message
     } else {
       errorMessage += 'Unknown error'
+    }
+    
+    // Also set a partial diagnostics result with the error info
+    diagnosticsResult.value = {
+      error: true,
+      errorMessage: errorMessage,
+      errorDetails: errorDetails,
+      environment: {
+        frontend_url: window.location.origin,
+        api_base_url: API_BASE_URL,
+        timestamp: new Date().toISOString()
+      }
     }
     
     showToast('Diagnostics Error', errorMessage, 'error')
@@ -1664,7 +1784,7 @@ const saveDatabaseConfig = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await axios.post(`${API_BASE_URL}/api/admin/database/config`, {
+    const response = await api.post('/api/admin/database/config', {
       db_type: databaseForm.value.db_type,
       host: databaseForm.value.host,
       port: databaseForm.value.port,
@@ -1673,7 +1793,9 @@ const saveDatabaseConfig = async () => {
       password: databaseForm.value.password,
       use_ssl: databaseForm.value.use_ssl
     }, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 10000,
+      cancelToken: requestManager.getCancelToken('save-db-config')
     })
     
     if (response.data.success) {
@@ -2001,15 +2123,17 @@ const resolveMismatch = async (field) => {
       selected_value: selectedValue
     }
     
-    console.log('Sending request to:', `${API_BASE_URL}/api/admin/database/resolve-mismatch`)
+    console.log('Sending request to:', '/api/admin/database/resolve-mismatch')
     console.log('Request data:', requestData)
     console.log('Authorization token exists:', !!token)
     
-    const response = await axios.post(`${API_BASE_URL}/api/admin/database/resolve-mismatch`, requestData, {
+    const response = await api.post('/api/admin/database/resolve-mismatch', requestData, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      }
+      },
+      timeout: 10000,
+      cancelToken: requestManager.getCancelToken('resolve-mismatch')
     })
     
     if (response.data.success) {
@@ -2071,7 +2195,7 @@ const runNetworkTest = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await axios.post(`${API_BASE_URL}/api/admin/network/test`, {
+    const response = await api.post('/api/admin/network/test', {
       host: networkTestForm.value.host,
       port: networkTestForm.value.port,
       test_type: networkTestForm.value.test_type,
@@ -2079,7 +2203,9 @@ const runNetworkTest = async () => {
       password: networkTestForm.value.password,
       database: networkTestForm.value.database
     }, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15000, // 15 second timeout for network test
+      cancelToken: requestManager.getCancelToken('network-test')
     })
     
     if (response.data.success) {
@@ -2106,6 +2232,25 @@ const runNetworkTest = async () => {
   }
 }
 
+// Open backend diagnostic modal
+const openBackendDiagnostic = () => {
+  console.log('Opening backend diagnostic modal')
+  console.log('Current showBackendDiagnostic value:', showBackendDiagnostic.value)
+  showBackendDiagnostic.value = true
+  console.log('New showBackendDiagnostic value:', showBackendDiagnostic.value)
+}
+
+// Handle backend URL change from diagnostic tool
+const handleBackendChanged = async (newUrl) => {
+  showToast('Backend Updated', `Backend URL changed to ${newUrl}`, 'success')
+  
+  // Reload dashboard data with new backend
+  await loadDashboardData()
+  
+  // Close the diagnostic modal
+  showBackendDiagnostic.value = false
+}
+
 // Lifecycle
 onMounted(async () => {
   // Load dashboard data on mount
@@ -2118,9 +2263,11 @@ onMounted(async () => {
   activityRefreshInterval = setInterval(async () => {
     try {
       const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-      const activitiesRes = await axios.get(`${API_BASE_URL}/api/admin/activities`, {
+      const activitiesRes = await api.get('/api/admin/activities', {
         headers: { Authorization: `Bearer ${token}` },
-        params: { limit: 10 }
+        params: { limit: 10 },
+        timeout: 5000,
+        cancelToken: requestManager.getCancelToken('admin-activities-refresh')
       })
       
       if (activitiesRes.data.activities) {
@@ -2143,12 +2290,21 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // Clear intervals
   if (refreshInterval) {
     clearInterval(refreshInterval)
   }
   if (activityRefreshInterval) {
     clearInterval(activityRefreshInterval)
   }
+  
+  // Cancel any pending requests
+  requestManager.cancelRequest('admin-stats')
+  requestManager.cancelRequest('admin-database-config')
+  requestManager.cancelRequest('admin-health')
+  requestManager.cancelRequest('admin-metrics')
+  requestManager.cancelRequest('admin-activities')
+  requestManager.cancelRequest('admin-activities-refresh')
 })
 
 </script>
@@ -2341,6 +2497,10 @@ onUnmounted(() => {
 
 .card-actions {
   text-align: center;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .card-actions.database-actions {
@@ -2387,6 +2547,22 @@ onUnmounted(() => {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
   background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+/* Secondary action button style */
+.action-button.secondary {
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.3) 0%, rgba(75, 85, 99, 0.3) 100%);
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.action-button.secondary:hover {
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.5) 0%, rgba(75, 85, 99, 0.5) 100%);
+  color: #f7fafc;
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .quick-actions {
@@ -2802,7 +2978,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 9999;
   padding: 20px;
 }
 
@@ -4033,6 +4209,30 @@ onUnmounted(() => {
 .database-actions .action-button {
   flex: 1;
   min-width: 120px;
+}
+
+/* Backend diagnostic button styling */
+.backend-diagnostic-btn {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%) !important;
+  border: 1px solid rgba(147, 51, 234, 0.4) !important;
+  color: #e9d5ff !important;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  padding: 12px 20px !important;
+  min-width: 130px;
+}
+
+.backend-diagnostic-btn:hover {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%) !important;
+  border-color: rgba(147, 51, 234, 0.6) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(147, 51, 234, 0.3);
+  color: #f3e8ff !important;
+}
+
+.backend-diagnostic-btn i {
+  font-size: 1rem;
+  color: #e9d5ff;
 }
 
 

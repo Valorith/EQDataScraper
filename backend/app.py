@@ -9,7 +9,13 @@ import time
 from urllib.parse import urlparse
 import warnings
 
-import psycopg2
+# Import psycopg2 only when needed
+try:
+    import psycopg2
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+    print("⚠️ psycopg2 not available - PostgreSQL features disabled")
 
 # Suppress urllib3 OpenSSL warnings that spam the logs - MUST be done early
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1.1.1+')
@@ -75,9 +81,9 @@ limiter = None
 if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
-        'http://localhost:3000',
-        'http://localhost:3000',
-        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3001',
+        'http://localhost:3001',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     
@@ -86,10 +92,19 @@ if ENABLE_USER_ACCOUNTS:
     if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
     
-    CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
+    CORS(app, 
+         origins=allowed_origins, 
+         supports_credentials=True, 
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         automatic_options=True)
 else:
     # Standard CORS for existing functionality
-    CORS(app)
+    CORS(app, 
+         origins='*',
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         automatic_options=True)
 
 # Decorator to conditionally apply rate limiting
 def exempt_when_limiting(f):
@@ -148,7 +163,10 @@ if ENABLE_USER_ACCOUNTS:
                 if DB_CONFIG:
                     try:
                         if DB_TYPE == 'postgresql':
-                            g.db_connection = psycopg2.connect(**DB_CONFIG)
+                            if HAS_PSYCOPG2:
+                                g.db_connection = psycopg2.connect(**DB_CONFIG)
+                            else:
+                                raise Exception("psycopg2 not available")
                             app.logger.debug(f"Database connection established for endpoint: {request.endpoint}")
                         else:
                             app.logger.warning(f"Database type {DB_TYPE} not yet supported for OAuth")
@@ -268,6 +286,13 @@ if ENABLE_USER_ACCOUNTS:
         ENABLE_USER_ACCOUNTS = False
 else:
     app.logger.info("OAuth user accounts disabled")
+    # Register minimal admin routes when OAuth is disabled
+    try:
+        from routes.admin_minimal import admin_minimal_bp
+        app.register_blueprint(admin_minimal_bp, url_prefix='/api')
+        app.logger.info("✅ Minimal admin routes registered (OAuth disabled)")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Could not load minimal admin routes: {e}")
 
 # Load configuration
 def load_config():
@@ -476,7 +501,10 @@ def init_database_cache():
                 charset='utf8mb4'
             )
         else:
-            conn = psycopg2.connect(**DB_CONFIG)
+            if HAS_PSYCOPG2:
+                conn = psycopg2.connect(**DB_CONFIG)
+            else:
+                raise Exception("psycopg2 not available")
         cursor = conn.cursor()
         
         # SPELL CACHE TABLES REMOVED - spell system disabled

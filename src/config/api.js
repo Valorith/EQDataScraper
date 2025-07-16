@@ -3,35 +3,46 @@
  * This file provides a single source of truth for API URLs
  */
 
-// Determine the API base URL based on environment
-export const API_BASE_URL = (() => {
-  // Check if we have an explicit backend URL set
+import { discoverBackendUrl, getCurrentBackendUrl } from '../utils/backendDiscovery'
+
+// Initialize with a temporary URL - will be updated by discovery
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
+
+// In production, use fixed URL immediately
+if (import.meta.env.PROD) {
   const envBackendUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL
-  
-  // In production mode
-  if (import.meta.env.PROD) {
-    // Use environment variable if it's a valid production URL (not localhost)
-    if (envBackendUrl && !envBackendUrl.includes('localhost') && !envBackendUrl.includes('127.0.0.1')) {
-      return envBackendUrl
-    }
-    // Default production backend URL
-    const defaultProdUrl = 'https://eqdatascraper-backend-production.up.railway.app'
-    return defaultProdUrl
+  if (envBackendUrl && !envBackendUrl.includes('localhost') && !envBackendUrl.includes('127.0.0.1')) {
+    API_BASE_URL = envBackendUrl
+  } else {
+    API_BASE_URL = 'https://eqdatascraper-backend-production.up.railway.app'
   }
-  
-  // In development mode
-  if (envBackendUrl) {
-    return envBackendUrl
+} else {
+  // In development, start discovery process but don't spam console
+  discoverBackendUrl().then(url => {
+    API_BASE_URL = url
+    console.log('🔌 API Base URL set to:', API_BASE_URL)
+  }).catch(error => {
+    // Silent fail - backend discovery will retry automatically
+    console.debug('Initial backend discovery failed, will retry automatically')
+  })
+}
+
+// Export a getter function to always get the current URL
+export function getApiBaseUrl() {
+  // If we have a discovered URL, use it
+  const discovered = getCurrentBackendUrl()
+  if (discovered) {
+    return discovered
   }
-  
-  // Default development URL - should match config.json backend_port
-  const defaultDevUrl = 'http://localhost:5001'
-  return defaultDevUrl
-})()
+  return API_BASE_URL
+}
+
+// For backward compatibility, export the initial URL
+export { API_BASE_URL }
 
 // Export for debugging
 export const API_CONFIG = {
-  baseUrl: API_BASE_URL,
+  get baseUrl() { return getApiBaseUrl() },
   isDevelopment: !import.meta.env.PROD,
   isProduction: import.meta.env.PROD,
   environment: import.meta.env.MODE
@@ -43,7 +54,8 @@ export function buildApiUrl(endpoint) {
   if (!endpoint.startsWith('/')) {
     endpoint = '/' + endpoint
   }
-  return `${API_BASE_URL}${endpoint}`
+  // Use the dynamic getter to always get current URL
+  return `${getApiBaseUrl()}${endpoint}`
 }
 
 // Common API endpoints
