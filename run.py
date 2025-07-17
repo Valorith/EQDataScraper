@@ -946,15 +946,6 @@ class AppRunner:
             backend_url = f"http://127.0.0.1:{self.config['backend_port']}/api/health"
             request = urllib.request.Request(backend_url)
             
-            # Add debugging
-            if hasattr(self, '_health_check_debug_count'):
-                self._health_check_debug_count += 1
-            else:
-                self._health_check_debug_count = 1
-                
-            # Only show debug on first few checks
-            if self._health_check_debug_count <= 3:
-                self.print_status(f"DEBUG: Checking {backend_url} (attempt {self._health_check_debug_count})", "detail")
             
             with urllib.request.urlopen(request, timeout=10) as response:
                 if response.status == 200:
@@ -965,18 +956,12 @@ class AppRunner:
         except urllib.error.URLError as e:
             if "timed out" in str(e):
                 self.print_status("⚠ Backend health check timed out", "warning")
-                if self._health_check_debug_count <= 3:
-                    self.print_status(f"DEBUG: Timeout error: {e}", "detail")
                 # Check if backend has stuck connections
                 self._check_backend_stuck_connections()
             else:
                 self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
-                if self._health_check_debug_count <= 3:
-                    self.print_status(f"DEBUG: URLError: {e}", "detail")
         except Exception as e:
             self.print_status(f"⚠ Could not verify backend health: {e}", "warning")
-            if self._health_check_debug_count <= 3:
-                self.print_status(f"DEBUG: Exception type: {type(e).__name__}", "detail")
         
         # Check frontend health (basic connectivity)
         try:
