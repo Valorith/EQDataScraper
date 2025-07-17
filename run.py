@@ -920,9 +920,12 @@ class AppRunner:
             # Any other error during OAuth check, don't fail startup
             pass
     
-    def _verify_services_health(self):
+    def _verify_services_health(self, auto_recover=False):
         """Verify that services are actually responding"""
         self.print_status("Verifying service health...", "info")
+        
+        backend_healthy = False
+        frontend_healthy = False
         
         # Check backend health
         try:
@@ -934,10 +937,16 @@ class AppRunner:
             with urllib.request.urlopen(request, timeout=5) as response:
                 if response.status == 200:
                     self.print_status("✓ Backend API is responding", "success")
+                    backend_healthy = True
                 else:
                     self.print_status(f"⚠ Backend API returned status {response.status}", "warning")
-        except urllib.error.URLError:
-            self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
+        except urllib.error.URLError as e:
+            if "timed out" in str(e):
+                self.print_status("⚠ Backend health check timed out", "warning")
+                # Check if backend has stuck connections
+                self._check_backend_stuck_connections()
+            else:
+                self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
         except Exception as e:
             self.print_status(f"⚠ Could not verify backend health: {e}", "warning")
         
@@ -948,10 +957,78 @@ class AppRunner:
                 result = s.connect_ex(('localhost', self.config['frontend_port']))
                 if result == 0:
                     self.print_status("✓ Frontend server is accepting connections", "success")
+                    frontend_healthy = True
                 else:
                     self.print_status("⚠ Frontend server not yet accepting connections", "warning")
         except Exception as e:
             self.print_status(f"⚠ Could not verify frontend connectivity: {e}", "warning")
+        
+        # Auto-recover if requested and backend is unhealthy
+        if auto_recover and not backend_healthy and 'backend' in self.processes:
+            self.print_status("🔧 Attempting to recover stuck backend...", "warning")
+            self._recover_stuck_backend()
+        
+        return backend_healthy, frontend_healthy
+    
+    def _check_backend_stuck_connections(self):
+        """Check if backend has stuck connections (CLOSE_WAIT state)"""
+        if sys.platform == "win32":
+            cmd = f"netstat -ano | findstr :{self.config['backend_port']}"
+        else:
+            cmd = f"netstat -tan | grep :{self.config['backend_port']}"
+        
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.stdout:
+                close_wait_count = result.stdout.count("CLOSE_WAIT")
+                if close_wait_count > 10:
+                    self.print_status(f"⚠ Found {close_wait_count} stuck connections in CLOSE_WAIT state", "warning")
+                    return True
+        except:
+            pass
+        return False
+    
+    def _recover_stuck_backend(self):
+        """Attempt to recover a stuck backend process"""
+        backend_proc = self.processes.get('backend')
+        if backend_proc and backend_proc.poll() is None:
+            backend_pid = backend_proc.pid
+            self.print_status(f"Terminating stuck backend process (PID: {backend_pid})...", "step")
+            
+            # Force terminate the backend
+            if sys.platform == "win32":
+                subprocess.run(f"taskkill -F -PID {backend_pid}", shell=True, capture_output=True)
+            else:
+                try:
+                    os.kill(backend_pid, signal.SIGTERM)
+                    time.sleep(2)
+                    if backend_proc.poll() is None:
+                        os.kill(backend_pid, signal.SIGKILL)
+                except:
+                    pass
+            
+            # Remove from tracking
+            del self.processes['backend']
+            
+            # Wait a moment for port to be released
+            time.sleep(3)
+            
+            # Check if we're in dev mode and preserve the environment
+            if os.environ.get('ENABLE_DEV_AUTH') == 'true':
+                self.print_status("Preserving dev mode during recovery...", "detail")
+            
+            # Restart backend
+            self.print_status("Restarting backend service...", "step")
+            allocated_ports = {'backend': self.config['backend_port'], 'frontend': self.config['frontend_port']}
+            if self.start_backend(allocated_ports):
+                self.save_pids()
+                self.print_status("✅ Backend recovered successfully", "success")
+                # Wait for it to start
+                time.sleep(3)
+                # Verify it's healthy now
+                self._verify_services_health(auto_recover=False)
+            else:
+                self.print_status("❌ Failed to recover backend", "error")
     
     def save_pids(self):
         """Save process IDs and runtime info to file"""
@@ -1230,9 +1307,27 @@ class AppRunner:
                     if var in os.environ:
                         env[var] = os.environ[var]
                         
+                # Debug: Print ENABLE_DEV_AUTH status
+                if 'ENABLE_DEV_AUTH' in env:
+                    self.print_status(f"Dev auth passed to backend: {env['ENABLE_DEV_AUTH']}", "detail", 2)
+                else:
+                    self.print_status("ENABLE_DEV_AUTH not set in environment", "warning", 2)
+                    # Check if it's in os.environ directly
+                    if 'ENABLE_DEV_AUTH' in os.environ:
+                        self.print_status(f"Found in os.environ: {os.environ['ENABLE_DEV_AUTH']}", "warning", 2)
+                        # Force add it to env
+                        env['ENABLE_DEV_AUTH'] = os.environ['ENABLE_DEV_AUTH']
+                        self.print_status("Forced ENABLE_DEV_AUTH into subprocess env", "detail", 2)
+                        
             except ImportError:
                 # python-dotenv not available, OAuth will use system environment variables only
                 self.print_status("python-dotenv not available, using system environment only", "detail", 2)
+                
+                # Still need to copy critical variables even without dotenv
+                critical_vars = ['ENABLE_DEV_AUTH', 'ENABLE_USER_ACCOUNTS']
+                for var in critical_vars:
+                    if var in os.environ:
+                        env[var] = os.environ[var]
             
             # Platform-specific subprocess creation
             import platform
@@ -1417,6 +1512,9 @@ class AppRunner:
             
             try:
                 # Wait for processes and handle Ctrl+C
+                last_health_check = time.time()
+                health_check_interval = 60  # Check health every 60 seconds
+                
                 while self.running:
                     # Check if processes are still running
                     dead_processes = []
@@ -1436,6 +1534,16 @@ class AppRunner:
                         # If all processes are dead, exit
                         if not self.processes:
                             break
+                    
+                    # Periodic health check with auto-recovery
+                    current_time = time.time()
+                    if current_time - last_health_check > health_check_interval:
+                        # Only show health check output if there's an issue
+                        backend_healthy, frontend_healthy = self._verify_services_health(auto_recover=True)
+                        if backend_healthy and frontend_healthy:
+                            # Silent when everything is healthy
+                            pass
+                        last_health_check = current_time
                     
                     # Check if restart was requested
                     if self.restart_requested:
@@ -1654,18 +1762,24 @@ class AppRunner:
         backend_port = self.config['backend_port']
         frontend_port = self.config['frontend_port']
         
+        found_untracked = False
+        
         if self.is_port_in_use(backend_port):
             process_info = self.get_port_conflict_process(backend_port)
             if process_info and "Python" in process_info:
                 self.print_status(f"Backend may be running on port {backend_port} (untracked)", "warning", 2)
+                found_untracked = True
         
         if self.is_port_in_use(frontend_port):
             process_info = self.get_port_conflict_process(frontend_port)
             if process_info and ("node" in process_info or "vite" in process_info):
                 self.print_status(f"Frontend may be running on port {frontend_port} (untracked)", "warning", 2)
+                found_untracked = True
         
-        if self.is_port_in_use(backend_port) or self.is_port_in_use(frontend_port):
+        if found_untracked:
             self.print_status("Use 'python3 run.py stop' to clean up untracked services", "detail", 2)
+        else:
+            self.print_status("No untracked services found", "success", 2)
     
     def _is_deployment_environment(self) -> bool:
         """Check if we're running in a deployment environment"""

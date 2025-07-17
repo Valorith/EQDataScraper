@@ -9,6 +9,11 @@ import time
 from urllib.parse import urlparse
 import warnings
 
+# Debug: Print environment immediately
+print(f"[BACKEND STARTUP] ENABLE_DEV_AUTH = {os.environ.get('ENABLE_DEV_AUTH', 'NOT SET')}")
+print(f"[BACKEND STARTUP] Python: {sys.executable}")
+print(f"[BACKEND STARTUP] CWD: {os.getcwd()}")
+
 # Import psycopg2 only when needed
 try:
     import psycopg2
@@ -38,6 +43,10 @@ if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
     from utils.activity_logger import log_api_activity
 
 app = Flask(__name__)
+
+# Configure request timeout to prevent hanging connections
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # No caching in development
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
 
 # Configure dev mode auth bypass for development
 DEV_MODE_AUTH_BYPASS = (
@@ -81,9 +90,9 @@ limiter = None
 if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
-        'http://localhost:3001',
-        'http://localhost:3001',
-        'http://localhost:3001',
+        'http://localhost:3000',
+        'http://localhost:3000',
+        'http://localhost:3000',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     
@@ -343,16 +352,20 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
-# File handler with rotation
-try:
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file_path, maxBytes=10*1024*1024, backupCount=5  # 10MB max, 5 backup files
-    )
-    file_handler.setFormatter(log_formatter)
-    root_logger.addHandler(file_handler)
-    print(f"✅ Logging configured to write to: {log_file_path}")
-except Exception as e:
-    print(f"⚠️ Could not set up file logging: {e}")
+# File handler with rotation - TEMPORARILY DISABLED FOR DEBUGGING
+# TODO: Re-enable after fixing hanging issue
+if False:  # Disabled to debug hanging
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file_path, maxBytes=10*1024*1024, backupCount=5  # 10MB max, 5 backup files
+        )
+        file_handler.setFormatter(log_formatter)
+        root_logger.addHandler(file_handler)
+        print(f"✅ Logging configured to write to: {log_file_path}")
+    except Exception as e:
+        print(f"⚠️ Could not set up file logging: {e}")
+else:
+    print("⚠️ File logging temporarily disabled for debugging")
 
 
 logger = logging.getLogger(__name__)
@@ -1477,9 +1490,20 @@ retry_strategy = Retry(
     status_forcelist=[429, 500, 502, 503, 504]
 )
 
-adapter = HTTPAdapter(max_retries=retry_strategy)
+# Configure connection pooling limits to prevent resource exhaustion
+adapter = HTTPAdapter(
+    max_retries=retry_strategy,
+    pool_connections=10,  # Limit number of connection pools
+    pool_maxsize=20,      # Limit connections per pool
+    pool_block=False      # Don't block when pool is full, create new connection
+)
+
+# Apply to both HTTP and HTTPS
 session.mount("http://", adapter)
 session.mount("https://", adapter)
+
+# Set reasonable timeouts for all requests
+session.timeout = (5, 30)  # (connect timeout, read timeout)
 
 # Pricing cache is already declared at the top with other global storage variables
 
@@ -2441,6 +2465,7 @@ if __name__ == '__main__':
     
     # Initialize database connections on startup
     # Skip heavy database initialization in dev mode or testing for faster startup
+    logger.info(f"[MAIN BLOCK] ENABLE_DEV_AUTH = {os.environ.get('ENABLE_DEV_AUTH', 'NOT SET')}")
     if os.environ.get('ENABLE_DEV_AUTH') == 'true' or os.environ.get('TESTING') == '1':
         if os.environ.get('TESTING') == '1':
             logger.info("⚡ Testing mode: Skipping database initialization for fast startup")
@@ -2599,7 +2624,10 @@ def handle_503(error):
 # Request logging middleware
 @app.before_request
 def log_request_info():
-    """Log all incoming requests"""
+    """Log all incoming requests and set request timeout"""
+    # Store request start time for timeout handling
+    g.request_start_time = time.time()
+    
     # Skip logging for admin system endpoints to prevent spam
     excluded_paths = ['/api/admin/system/', '/api/health']
     if request.path.startswith('/api/') and not any(request.path.startswith(path) for path in excluded_paths):
@@ -2612,7 +2640,21 @@ def log_request_info():
 
 @app.after_request
 def log_response_info(response):
-    """Log response information for failed requests"""
+    """Log response information for failed requests and ensure connection cleanup"""
+    # Check request duration
+    if hasattr(g, 'request_start_time'):
+        duration = time.time() - g.request_start_time
+        if duration > 30:  # Log slow requests over 30 seconds
+            logger.warning(f"⏱️ Slow request: {request.method} {request.path} took {duration:.2f}s")
+    
+    # Force connection cleanup for any lingering connections
+    if hasattr(g, 'db_connection') and g.db_connection:
+        try:
+            g.db_connection.close()
+            g.db_connection = None
+        except:
+            pass
+    
     # Skip logging for admin system endpoints to prevent spam
     excluded_paths = ['/api/admin/system/', '/api/health']
     if (request.path.startswith('/api/') and 
@@ -2630,14 +2672,39 @@ def log_response_info(response):
         elif status >= 400:
             logger.warning(f"📤 API Response: {method} {endpoint} → {status} | IP: {ip}")
     
+    # Add connection close headers to prevent keep-alive issues
+    response.headers['Connection'] = 'close'
+    
     return response
 
 if __name__ == '__main__':
     # Use threaded Flask server to prevent hanging with multiple requests
+    # Add signal handlers for graceful shutdown
+    import signal
+    import atexit
+    
+    def signal_handler(sig, frame):
+        """Handle shutdown signals gracefully"""
+        logger.info(f"Received signal {sig}, shutting down gracefully...")
+        cleanup_resources()
+        sys.exit(0)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Register cleanup on exit
+    atexit.register(cleanup_resources)
+    
+    # Configure werkzeug to not hang on keep-alive connections
+    from werkzeug.serving import WSGIRequestHandler
+    WSGIRequestHandler.protocol_version = "HTTP/1.1"
+    
     app.run(
         debug=True, 
         host='0.0.0.0', 
         port=config['backend_port'],
         threaded=True,  # Enable threading to handle multiple requests
-        use_reloader=False  # Disable reloader to prevent issues with database connections
+        use_reloader=False,  # Disable reloader to prevent issues with database connections
+        request_handler=WSGIRequestHandler
     ) 

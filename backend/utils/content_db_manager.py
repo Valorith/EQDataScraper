@@ -170,9 +170,20 @@ class ContentDatabaseManager:
             
             logger.info("Attempting to establish database connection...")
             
-            # Try to create connection (but we're using direct connections now)
-            # Skip connection pool creation since we disabled pooling
-            return False  # Always return False to use direct connections
+            # Since we're using direct connections now (no pooling), 
+            # just check if we can load the config
+            try:
+                config, db_type = self._load_database_config()
+                if config and db_type:
+                    logger.info("Database configuration loaded successfully")
+                    self._connection_healthy = True
+                    return True
+                else:
+                    logger.warning("No database configuration available")
+                    return False
+            except Exception as e:
+                logger.error(f"Error loading database config: {e}")
+                return False
                 
     @contextmanager
     def get_connection(self):
@@ -271,17 +282,17 @@ def initialize_content_database():
     manager = get_content_db_manager()
     logger.info("Initializing content database connection...")
     
-    # Try to connect with retries
-    max_attempts = 5
+    # Try to connect with retries (reduced for faster startup)
+    max_attempts = 2
     for attempt in range(max_attempts):
         if manager._ensure_connection():
             logger.info("✅ Content database initialized successfully")
             return True
             
         if attempt < max_attempts - 1:
-            delay = 2 ** attempt  # Exponential backoff
+            delay = 1  # Simple 1 second delay instead of exponential backoff
             logger.info(f"Retrying in {delay} seconds... (attempt {attempt + 1}/{max_attempts})")
             time.sleep(delay)
             
-    logger.error("❌ Failed to initialize content database after all attempts")
+    logger.warning("⚠️ Content database not configured - will initialize on first request")
     return False

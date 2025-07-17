@@ -5,8 +5,8 @@
     
     <!-- User Authentication (top-right corner) -->
     <div class="auth-section">
-      <UserMenu v-if="userStore.isAuthenticated" />
-      <div v-else-if="isDevModeBypass" class="dev-bypass-indicator">
+      <UserMenu v-if="authInitialized && userStore.isAuthenticated" />
+      <div v-else-if="authInitialized && isDevModeBypass" class="dev-bypass-indicator">
         <span class="dev-badge">DEV MODE</span>
         <span class="dev-user">Admin User</span>
       </div>
@@ -42,7 +42,7 @@
     
     <!-- Thread Monitor Toggle Button -->
     <button 
-      v-if="!isProduction" 
+      v-if="!isProduction && (userStore.isAdmin || isDevModeBypass)" 
       @click="toggleThreadMonitor" 
       class="thread-monitor-toggle-btn"
       title="Toggle Thread Monitor"
@@ -52,7 +52,7 @@
     
     <!-- Thread Monitor Component -->
     <ThreadMonitor 
-      v-if="!isProduction"
+      v-if="!isProduction && (userStore.isAdmin || isDevModeBypass)"
       :visible="showThreadMonitor"
       @close="showThreadMonitor = false"
     />
@@ -99,6 +99,9 @@ export default {
     // Use the ref directly from the composable
     const { isDevAuthEnabled, devAuthCheckComplete, checkDevAuthStatus } = devMode
     
+    // Track auth initialization state to prevent UI race condition
+    const authInitialized = ref(false)
+    
     // Check if we should bypass auth completely in development mode
     const isDevModeBypass = computed(() => {
       // Use our custom dev auth flag set by run.py start dev
@@ -129,7 +132,8 @@ export default {
       isDevAuthEnabled, 
       devAuthCheckComplete,
       checkDevAuthStatus,
-      isDevModeBypass
+      isDevModeBypass,
+      authInitialized
     }
   },
   methods: {
@@ -236,6 +240,7 @@ export default {
       if (import.meta.env.MODE === 'development') {
         console.log('🔧 Dev mode bypass setup complete - skipping all auth initialization')
       }
+      this.authInitialized = true // Set auth as initialized for dev bypass
       return // Skip all other auth initialization
     }
     
@@ -297,6 +302,7 @@ export default {
       
       if (skipAuthInit) {
         // Hot reload detected - skipping auth re-initialization
+        this.authInitialized = true
       } else {
         // Initializing authentication...
         
@@ -314,10 +320,15 @@ export default {
         
         // Authentication initialized
       }
+      
+      // Set auth as initialized after auth check completes
+      this.authInitialized = true
     } catch (error) {
       console.error('❌ Authentication initialization failed:', error)
       // Ensure loading state is reset on error
       this.userStore.isLoading = false
+      // Set auth as initialized even on error to show login button
+      this.authInitialized = true
     }
     
     // Skip cache initialization in App.vue since main.js already handles it
