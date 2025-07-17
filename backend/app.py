@@ -2705,15 +2705,11 @@ if __name__ == '__main__':
     # Note: Already registered above, so commenting out to prevent double registration
     # atexit.register(cleanup_resources)
     
-    # Configure werkzeug to not hang on keep-alive connections
-    from werkzeug.serving import WSGIRequestHandler
-    WSGIRequestHandler.protocol_version = "HTTP/1.1"
-    
+    # Run Flask app with standard configuration
     app.run(
-        debug=True, 
+        debug=False,  # Disable debug mode to prevent hanging issues
         host='0.0.0.0', 
         port=config['backend_port'],
         threaded=True,  # Enable threading to handle multiple requests
-        use_reloader=False,  # Disable reloader to prevent issues with database connections
-        request_handler=WSGIRequestHandler
+        use_reloader=False  # Disable reloader to prevent issues with database connections
     ) 
