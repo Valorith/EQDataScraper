@@ -116,7 +116,30 @@ def periodic_save_timeline():
 
 def get_db_connection():
     """Get database connection - will be injected by main app."""
-    return getattr(g, 'db_connection', None)
+    conn = getattr(g, 'db_connection', None)
+    
+    # If no connection in dev mode, try to create one directly
+    if not conn and os.environ.get('ENABLE_DEV_AUTH') == 'true':
+        try:
+            database_url = os.environ.get('DATABASE_URL')
+            if database_url:
+                import psycopg2
+                from urllib.parse import urlparse
+                parsed = urlparse(database_url)
+                conn = psycopg2.connect(
+                    host=parsed.hostname,
+                    port=parsed.port or 5432,
+                    database=parsed.path[1:],
+                    user=parsed.username,
+                    password=parsed.password,
+                    connect_timeout=5
+                )
+                # Store it in g for cleanup
+                g.db_connection = conn
+        except Exception as e:
+            logger.error(f"Failed to create direct database connection: {e}")
+    
+    return conn
 
 
 @admin_bp.route('/admin/users', methods=['GET'])
