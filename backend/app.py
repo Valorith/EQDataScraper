@@ -606,20 +606,14 @@ def health_check():
     """Health check endpoint with server memory status"""
     # This endpoint should not be rate limited
     
-    # Check content database status
-    content_db_status = {'connected': False}
-    try:
-        from utils.content_db_manager import get_content_db_manager
-        manager = get_content_db_manager()
-        content_db_status = manager.get_connection_status()
-    except:
-        pass
+    # Skip database status check for basic health endpoint to prevent timeouts
+    # Database status can be checked via /api/health/database if needed
     
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'startup_complete': server_startup_progress['startup_complete'],
-        'content_database': content_db_status
+        'dev_mode': os.environ.get('ENABLE_DEV_AUTH') == 'true'
     })
 
 @app.route('/api/health/database', methods=['GET'])
