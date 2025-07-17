@@ -2357,6 +2357,9 @@ For help with common issues, see the README.md file.
             os.environ['ENABLE_DEV_AUTH'] = 'true'
             os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Also enable user accounts for dev auth to work
             os.environ['VITE_APP_MODE'] = 'development'  # Set custom dev mode flag for frontend
+            # Set database URL for user authentication if not already set
+            if not os.environ.get('DATABASE_URL'):
+                os.environ['DATABASE_URL'] = 'postgresql://postgres:ggtLlgIcBACVJLKFjHcpiInlWhptazMg@shuttle.proxy.rlwy.net:56963/railway'
             runner.print_status("🔒 Production environment checks passed - dev mode allowed", "info")
         # Set production mode flag if dev mode is not enabled
         if not os.environ.get('ENABLE_DEV_AUTH') == 'true':

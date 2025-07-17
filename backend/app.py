@@ -66,6 +66,7 @@ ENABLE_USER_ACCOUNTS = os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() =
 # Log OAuth configuration at startup for debugging
 if ENABLE_USER_ACCOUNTS:
     print("🔐 OAuth/User Accounts ENABLED")
+    print(f"   - DEV_MODE_AUTH_BYPASS: {DEV_MODE_AUTH_BYPASS}")
     print(f"   - GOOGLE_CLIENT_ID: {'SET' if os.environ.get('GOOGLE_CLIENT_ID') else 'NOT SET'}")
     print(f"   - GOOGLE_CLIENT_SECRET: {'SET' if os.environ.get('GOOGLE_CLIENT_SECRET') else 'NOT SET'}")
     oauth_redirect = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
@@ -168,7 +169,7 @@ if ENABLE_USER_ACCOUNTS:
             g.request_start_time = time.time()
             
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
-                # Skip auth endpoints in dev mode, but allow admin endpoints
+                # Skip auth endpoints in dev mode, but allow admin and users endpoints
                 if DEV_MODE_AUTH_BYPASS and request.endpoint.startswith('auth.'):
                     g.db_connection = None
                     return
@@ -463,6 +464,7 @@ DB_TYPE = None
 
 if DATABASE_URL and ENABLE_USER_ACCOUNTS:
     logger.info(f"Configuring database for OAuth from DATABASE_URL")
+    logger.info(f"DATABASE_URL starts with: {DATABASE_URL[:30]}...")
     # Parse DATABASE_URL for OAuth user storage
     # Detect database type from URL
     if DATABASE_URL.startswith('mysql://'):
@@ -485,10 +487,11 @@ if DATABASE_URL and ENABLE_USER_ACCOUNTS:
         'password': parsed.password,
         'connect_timeout': 10  # Add 10 second connection timeout
     }
-    logger.info(f"Database configured for OAuth: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
-    logger.info(f"DB_CONFIG is now set: {bool(DB_CONFIG)}")
+    logger.info(f"DB_CONFIG set with host: {DB_CONFIG['host']}, database: {DB_CONFIG['database']}")
+else:
+    logger.info(f"DB_CONFIG not set: DATABASE_URL={bool(DATABASE_URL)}, ENABLE_USER_ACCOUNTS={ENABLE_USER_ACCOUNTS}")
         
-elif DATABASE_URL and not ENABLE_USER_ACCOUNTS:
+if DATABASE_URL and not ENABLE_USER_ACCOUNTS:
     logger.info("DATABASE_URL is set but OAuth is disabled")
 elif not DATABASE_URL:
     logger.warning("No DATABASE_URL found - OAuth will work without persistence")
