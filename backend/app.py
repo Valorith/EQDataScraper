@@ -2482,16 +2482,19 @@ if __name__ == '__main__':
     else:
         initialize_database_connection()  # Auth database
         
-        # Initialize content database with retry logic
-        try:
-            from utils.content_db_manager import initialize_content_database
-            logger.info("Initializing content database...")
-            if initialize_content_database():
-                logger.info("✅ Content database initialized successfully")
-            else:
-                logger.warning("⚠️ Content database initialization failed - will retry on first request")
-        except Exception as e:
-            logger.error(f"Error initializing content database: {e}")
+        # Initialize content database only if configured
+        if config.get('production_database_url') or os.environ.get('EQEMU_DATABASE_URL'):
+            try:
+                from utils.content_db_manager import initialize_content_database
+                logger.info("Initializing content database...")
+                if initialize_content_database():
+                    logger.info("✅ Content database initialized successfully")
+                else:
+                    logger.warning("⚠️ Content database initialization failed - will retry on first request")
+            except Exception as e:
+                logger.error(f"Error initializing content database: {e}")
+        else:
+            logger.info("⚠️ No content database configured - skipping initialization")
     
     # Spell system disabled - skipping spell data preloading
     logger.info("🚫 Spell system disabled - skipping startup spell data preload")
@@ -2705,11 +2708,13 @@ if __name__ == '__main__':
     # Note: Already registered above, so commenting out to prevent double registration
     # atexit.register(cleanup_resources)
     
-    # Run Flask app with standard configuration
+    # Run Flask app with explicit threading configuration
+    logger.info(f"Starting Flask server on port {config['backend_port']} with threading enabled")
     app.run(
         debug=False,  # Disable debug mode to prevent hanging issues
         host='0.0.0.0', 
         port=config['backend_port'],
         threaded=True,  # Enable threading to handle multiple requests
-        use_reloader=False  # Disable reloader to prevent issues with database connections
+        use_reloader=False,  # Disable reloader to prevent issues with database connections
+        processes=1  # Ensure single process with multiple threads
     ) 

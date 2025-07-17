@@ -945,7 +945,7 @@ class AppRunner:
             
             backend_url = f"http://localhost:{self.config['backend_port']}/api/health"
             request = urllib.request.Request(backend_url)
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=10) as response:
                 if response.status == 200:
                     self.print_status("✓ Backend API is responding", "success")
                     backend_healthy = True
@@ -1348,13 +1348,17 @@ class AppRunner:
                 # On Windows, prevent console window popup
                 creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
             
+            # Add PYTHONUNBUFFERED to ensure output isn't buffered
+            env['PYTHONUNBUFFERED'] = '1'
+            
             process = subprocess.Popen(
-                [sys.executable, "app.py"],
+                [sys.executable, "-u", "app.py"],  # -u for unbuffered output
                 cwd=self.backend_dir,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                bufsize=1,  # Line buffering
                 creationflags=creation_flags if platform.system() == "Windows" else 0
             )
             
