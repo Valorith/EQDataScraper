@@ -927,6 +927,17 @@ class AppRunner:
         backend_healthy = False
         frontend_healthy = False
         
+        # Add cooldown for auto-recovery to prevent rapid recovery loops
+        if auto_recover:
+            if not hasattr(self, '_last_recovery_time'):
+                self._last_recovery_time = 0
+            
+            current_time = time.time()
+            recovery_cooldown = 30  # 30 seconds between recovery attempts
+            if current_time - self._last_recovery_time < recovery_cooldown:
+                # Skip auto-recovery if we recently tried
+                auto_recover = False
+        
         # Check backend health
         try:
             import urllib.request
@@ -966,6 +977,7 @@ class AppRunner:
         # Auto-recover if requested and backend is unhealthy
         if auto_recover and not backend_healthy and 'backend' in self.processes:
             self.print_status("🔧 Attempting to recover stuck backend...", "warning")
+            self._last_recovery_time = time.time()
             self._recover_stuck_backend()
         
         return backend_healthy, frontend_healthy
@@ -1023,10 +1035,10 @@ class AppRunner:
             if self.start_backend(allocated_ports):
                 self.save_pids()
                 self.print_status("✅ Backend recovered successfully", "success")
-                # Wait for it to start
-                time.sleep(3)
-                # Verify it's healthy now
-                self._verify_services_health(auto_recover=False)
+                # Wait for it to start properly
+                time.sleep(5)
+                # Skip immediate health check to give backend time to stabilize
+                # The periodic health check will verify it later
             else:
                 self.print_status("❌ Failed to recover backend", "error")
     
@@ -1512,7 +1524,7 @@ class AppRunner:
             
             try:
                 # Wait for processes and handle Ctrl+C
-                last_health_check = time.time()
+                last_health_check = time.time()  # Set this AFTER the initial health check
                 health_check_interval = 60  # Check health every 60 seconds
                 
                 while self.running:
