@@ -2386,10 +2386,18 @@ For help with common issues, see the README.md file.
             if not os.environ.get('DATABASE_URL'):
                 runner.print_status("⚠️  DATABASE_URL not set!", "warning")
                 runner.print_status("   Please set DATABASE_URL in your .env file or environment variables", "info")
-                runner.print_status("   Example: DATABASE_URL=postgresql://user:password@localhost:5432/eqdatascraper", "info")
+                runner.print_status("   Options for dev environment:", "info")
+                runner.print_status("   1. Local PostgreSQL: postgresql://user:password@localhost:5432/eqdatascraper", "info")
+                runner.print_status("   2. Railway PostgreSQL: Copy from Railway Variables tab", "info")
+                runner.print_status("      Format: postgresql://postgres:xxx@postgres.railway.internal:5432/railway", "info")
                 runner.print_status("   Note: This is for auth/spell cache (PostgreSQL), not the EQEmu content database", "info")
             else:
-                runner.print_status("✓ DATABASE_URL is configured", "info")
+                # Check if using Railway PostgreSQL
+                db_url = os.environ.get('DATABASE_URL')
+                if 'railway.internal' in db_url:
+                    runner.print_status("✓ DATABASE_URL configured (Railway PostgreSQL)", "info")
+                else:
+                    runner.print_status("✓ DATABASE_URL configured (Local PostgreSQL)", "info")
             
             runner.print_status("🔒 Production environment checks passed - dev mode allowed", "info")
         # Set production mode flag if dev mode is not enabled
