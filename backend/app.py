@@ -2533,19 +2533,20 @@ def handle_404(error):
     else:
         logger.warning(f"❌ Failed endpoint attempt: {method} {endpoint} (404 Not Found) | IP: {ip} | User-Agent: {user_agent[:100]}")
     
-    # Track endpoint failure metrics
-    try:
-        from routes.admin import track_endpoint_metric
-        track_endpoint_metric(
-            f"{method} {endpoint}", 
-            0,  # No response time for 404s
-            is_error=True, 
-            status_code=404,
-            error_details=f"Endpoint not found: {error_msg} | IP: {ip}",
-            stack_trace=None
-        )
-    except Exception:
-        pass  # Don't let metrics tracking break error handling
+    # Track endpoint failure metrics only if OAuth is enabled
+    if ENABLE_USER_ACCOUNTS:
+        try:
+            from routes.admin import track_endpoint_metric
+            track_endpoint_metric(
+                f"{method} {endpoint}", 
+                0,  # No response time for 404s
+                is_error=True, 
+                status_code=404,
+                error_details=f"Endpoint not found: {error_msg} | IP: {ip}",
+                stack_trace=None
+            )
+        except Exception:
+            pass  # Don't let metrics tracking break error handling
     
     # Return JSON error for API endpoints
     if endpoint.startswith('/api/'):
@@ -2593,20 +2594,21 @@ def handle_500(error):
     # Log with details
     logger.error(f"💥 Server error: {method} {endpoint} (500 Internal Server Error) | IP: {ip} | User-Agent: {user_agent[:100]} | Error: {str(error)}")
     
-    # Track endpoint failure metrics with full error details
-    try:
-        from routes.admin import track_endpoint_metric
-        import traceback
-        track_endpoint_metric(
-            f"{method} {endpoint}", 
-            0,  # No response time for server errors
-            is_error=True, 
-            status_code=500,
-            error_details=f"Internal server error: {str(error)} | IP: {ip}",
-            stack_trace=traceback.format_exc()
-        )
-    except Exception:
-        pass  # Don't let metrics tracking break error handling
+    # Track endpoint failure metrics with full error details only if OAuth is enabled
+    if ENABLE_USER_ACCOUNTS:
+        try:
+            from routes.admin import track_endpoint_metric
+            import traceback
+            track_endpoint_metric(
+                f"{method} {endpoint}", 
+                0,  # No response time for server errors
+                is_error=True, 
+                status_code=500,
+                error_details=f"Internal server error: {str(error)} | IP: {ip}",
+                stack_trace=traceback.format_exc()
+            )
+        except Exception:
+            pass  # Don't let metrics tracking break error handling
     
     return jsonify({
         'error': 'Internal server error',

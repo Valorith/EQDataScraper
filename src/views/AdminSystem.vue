@@ -449,7 +449,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { getApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 import { requestManager } from '../utils/requestManager'
 
@@ -630,9 +630,16 @@ const sortedTables = computed(() => {
 const checkHeartbeat = async () => {
   try {
     const startTime = Date.now()
-    const response = await requestManager.get(`${API_BASE_URL}/api/health`, {
+    const response = await requestManager.get(`${getApiBaseUrl()}/api/health`, {
       timeout: 3000
     }, 'heartbeat')
+    
+    // Check if request was cancelled
+    if (!response) {
+      console.log('Heartbeat request was cancelled')
+      return
+    }
+    
     const responseTime = Date.now() - startTime
     
     if (response.status === 200) {
@@ -665,19 +672,23 @@ const checkHeartbeat = async () => {
 }
 
 const loadSystemStats = async () => {
+  loading.value = true
+  
   try {
-    // Check if user has proper authentication
+    // Check if user has proper authentication or if OAuth is disabled
     const isAdmin = userStore.user && userStore.user.role === 'admin'
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     
-    if (!isAdmin) {
+    // In dev mode with OAuth disabled, allow access to system metrics
+    if (!isAdmin && !isOAuthDisabled) {
       console.log('Loading limited system metrics for non-admin user')
       // Load basic health data that doesn't require admin
       try {
-        const healthResponse = await requestManager.get(`${API_BASE_URL}/api/health`, {
+        const healthResponse = await requestManager.get(`${getApiBaseUrl()}/api/health`, {
           timeout: 3000
         }, 'health-check')
-        if (healthResponse.data) {
+        if (healthResponse && healthResponse.data) {
           systemStats.value = {
             uptime: 0,
             avgResponseTime: 0,
@@ -696,28 +707,74 @@ const loadSystemStats = async () => {
       }
       return
     }
+    
+    console.log('Loading system metrics:', {
+      isAdmin,
+      isOAuthDisabled,
+      hasToken: !!token,
+      mode: import.meta.env.MODE
+    })
 
     // Load comprehensive system metrics for admins
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const headers = {}
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
-    const metricsResponse = await requestManager.get(`${API_BASE_URL}/api/admin/system/metrics`, { 
+    const metricsResponse = await requestManager.get(`${getApiBaseUrl()}/api/admin/system/metrics`, { 
       headers,
       timeout: 5000 // 5 second timeout for admin metrics
     }, 'system-metrics')
-    const metricsData = metricsResponse.data.data
     
-    // Update system stats with real data
-    systemStats.value = {
-      uptime: metricsData.system.uptime_seconds,
-      avgResponseTime: metricsData.performance.avg_response_time,
-      serverLoad: metricsData.system.cpu_percent,
-      memoryUsed: metricsData.system.memory.used,
-      memoryTotal: metricsData.system.memory.total,
-      errorRate: metricsData.performance.error_rate,
-      errorCount: metricsData.performance.error_count
+    // Check if request was cancelled
+    if (!metricsResponse) {
+      console.log('Metrics request was cancelled')
+      return
     }
+    
+    console.log('Metrics response received:', {
+      status: metricsResponse.status,
+      data: metricsResponse.data,
+      hasData: !!metricsResponse.data,
+      hasNestedData: !!(metricsResponse.data && metricsResponse.data.data)
+    })
+    
+    // Check if response contains expected data structure
+    if (!metricsResponse.data || !metricsResponse.data.data) {
+      console.error('Invalid metrics response structure. Expected response.data.data but got:', {
+        responseData: metricsResponse.data,
+        responseKeys: metricsResponse.data ? Object.keys(metricsResponse.data) : 'No data'
+      })
+      throw new Error('Invalid metrics response structure')
+    }
+    
+    const metricsData = metricsResponse.data.data
+    console.log('Metrics data extracted:', {
+      hasSystem: !!metricsData.system,
+      hasPerformance: !!metricsData.performance,
+      systemKeys: metricsData.system ? Object.keys(metricsData.system) : 'No system data',
+      performanceKeys: metricsData.performance ? Object.keys(metricsData.performance) : 'No performance data'
+    })
+    
+    // Validate required fields exist
+    if (!metricsData.system || !metricsData.performance) {
+      console.error('Missing required metrics fields:', metricsData)
+      throw new Error('Missing required metrics fields')
+    }
+    
+    // Update system stats with real data (with fallbacks)
+    systemStats.value = {
+      uptime: metricsData.system?.uptime_seconds || 0,
+      avgResponseTime: metricsData.performance?.avg_response_time || 0,
+      serverLoad: metricsData.system?.cpu_percent || 0,
+      memoryUsed: metricsData.system?.memory?.used || 0,
+      memoryTotal: metricsData.system?.memory?.total || 100,
+      errorRate: metricsData.performance?.error_rate || 0,
+      errorCount: metricsData.performance?.error_count || 0
+    }
+    
+    console.log('System stats updated:', systemStats.value)
     
     // Use the calculated health score from backend
     healthScore.value = metricsData.health_score
@@ -748,64 +805,72 @@ const loadSystemStats = async () => {
     // Load API endpoints status
     await loadEndpointsStatus()
     
+    // Set loading to false on success
+    loading.value = false
+    
   } catch (error) {
+    console.error('Error loading system metrics:', error)
+    
+    // Set default stats for all error cases
+    const defaultStats = {
+      uptime: 0,
+      avgResponseTime: 0,
+      serverLoad: 0,
+      memoryUsed: 0,
+      memoryTotal: 100,
+      errorRate: 0,
+      errorCount: 0
+    }
+    
     if (error.response?.status === 401) {
       console.log('System metrics require authentication')
-      // Don't redirect, just show limited data
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 50
     } else if (error.response?.status === 403) {
       console.log('System metrics require admin privileges')
-      // Don't redirect, just show limited data
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 50
       router.push('/admin')
     } else if (error.response?.status === 404) {
-      console.log('System metrics endpoint not found')
-    } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.log('System metrics endpoint not found - ensure backend is running and endpoints are registered')
+      systemStats.value = defaultStats
+      healthScore.value = 0
+    } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.log('System metrics request timed out - using fallback data')
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 25 // Lower score for timeout
+    } else if (error.message?.includes('Invalid metrics response')) {
+      console.error('Invalid API response format - backend may be returning incorrect data structure')
+      systemStats.value = defaultStats
+      healthScore.value = 0
     } else if (error.response) {
-      console.warn('Error loading system stats:', error.response.status)
+      console.warn('Error loading system stats - HTTP status:', error.response.status)
+      console.warn('Response data:', error.response.data)
+      systemStats.value = defaultStats
+      healthScore.value = 0
     } else {
-      console.warn('Could not reach system metrics endpoint')
+      console.warn('Could not reach system metrics endpoint:', error.message)
+      systemStats.value = defaultStats
+      healthScore.value = 0
     }
+    
+    // Always set loading to false on error
+    loading.value = false
   }
 }
 
 const loadEndpointsStatus = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
+    const headers = {}
+    
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
-    const endpointsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/endpoints`, { 
+    const endpointsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/endpoints`, { 
       headers,
       timeout: 15000 // 15 second timeout for endpoint metrics
     })
@@ -851,8 +916,12 @@ const refreshLogs = async () => {
 const loadSystemLogs = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
+    const headers = {}
+    
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
     const params = {
@@ -860,7 +929,7 @@ const loadSystemLogs = async () => {
       limit: 50
     }
     
-    const logsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/logs`, { 
+    const logsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/logs`, { 
       headers, 
       params,
       timeout: 15000 // 15 second timeout for logs
@@ -1498,7 +1567,7 @@ const showTableBreakdown = async (tableName) => {
       'Authorization': `Bearer ${token}`
     }
     
-    const response = await axios.get(`${API_BASE_URL}/api/admin/database/table-sources/${tableName}`, { 
+    const response = await axios.get(`${getApiBaseUrl()}/api/admin/database/table-sources/${tableName}`, { 
       headers,
       timeout: 15000 // Increased timeout to match other endpoints
     })

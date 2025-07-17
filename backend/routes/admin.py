@@ -2488,24 +2488,13 @@ def get_system_metrics():
         error_rate = (total_errors / total_requests * 100) if total_requests > 0 else 0
         
         # Get cache statistics from main app
-        try:
-            from app import spells_cache, spell_details_cache, cache_timestamp
-            cache_stats = {
-                'cached_classes': len(spells_cache),
-                'cached_spell_details': len(spell_details_cache),
-                'total_spells': sum(len(spells) for spells in spells_cache.values()),
-                'cache_age_hours': {
-                    class_name: (time.time() - timestamp) / 3600
-                    for class_name, timestamp in cache_timestamp.items()
-                }
-            }
-        except ImportError:
-            cache_stats = {
-                'cached_classes': 0,
-                'cached_spell_details': 0,
-                'total_spells': 0,
-                'cache_age_hours': {}
-            }
+        # Note: Spell caching system has been disabled, so these imports will fail
+        cache_stats = {
+            'cached_classes': 0,
+            'cached_spell_details': 0,
+            'total_spells': 0,
+            'cache_age_hours': {}
+        }
         
         return jsonify(create_success_response({
             'system': {
@@ -2525,7 +2514,7 @@ def get_system_metrics():
                     'free': disk.free,
                     'percent': disk.percent
                 },
-                'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else [0, 0, 0]
+                'load_average': getattr(os, 'getloadavg', lambda: [0, 0, 0])()
             },
             'performance': {
                 'avg_response_time': round(avg_response_time, 2),
@@ -2548,7 +2537,11 @@ def get_system_metrics():
         }))
         
     except Exception as e:
-        return create_error_response(f"Failed to get system metrics: {str(e)}", 500)
+        import traceback
+        logger.error(f"Failed to get system metrics: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # Return a sanitized error message to avoid format string issues
+        return create_error_response("Failed to get system metrics: Internal error", 500)
 
 
 @admin_bp.route('/admin/system/endpoints', methods=['GET'])

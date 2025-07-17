@@ -72,22 +72,54 @@ def database_config():
 @admin_minimal_bp.route('/admin/system/metrics', methods=['GET', 'OPTIONS'])
 def system_metrics():
     """Return minimal system metrics when OAuth is disabled."""
-    return jsonify({
+    print("DEBUG: admin_minimal system_metrics endpoint called")
+    import psutil
+    import time
+    
+    # Get actual system metrics
+    try:
+        print("DEBUG: Getting CPU percent...")
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        print(f"DEBUG: CPU percent = {cpu_percent}")
+        memory = psutil.virtual_memory()
+        print(f"DEBUG: Memory percent = {memory.percent}")
+        process = psutil.Process()
+        uptime = time.time() - process.create_time()
+        print(f"DEBUG: Uptime = {uptime}")
+    except Exception as e:
+        print(f"DEBUG: Error getting metrics: {e}")
+        cpu_percent = 0
+        memory = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
+        uptime = 0
+    
+    print("DEBUG: Creating response...")
+    response_data = {
         'success': True,
         'data': {
             'performance': {
-                'avg_response_time': 0,
+                'avg_response_time': 50,  # Default 50ms
                 'error_rate': 0,
                 'total_requests': 0
             },
             'system': {
-                'cpu_percent': 0,
-                'memory_percent': 0,
-                'uptime_seconds': 0
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'memory_used': memory.used,
+                'memory_total': memory.total,
+                'uptime_seconds': int(uptime)
             },
             'message': 'OAuth is disabled - limited metrics available'
         }
-    })
+    }
+    print(f"DEBUG: Response data created: {response_data}")
+    
+    try:
+        result = jsonify(response_data)
+        print("DEBUG: jsonify successful")
+        return result
+    except Exception as e:
+        print(f"DEBUG: jsonify failed: {e}")
+        raise
 
 @admin_minimal_bp.route('/admin/database/test', methods=['POST', 'OPTIONS'])
 def test_database():
@@ -124,3 +156,50 @@ def database_diagnostics():
         'success': False,
         'message': 'Database diagnostics requires OAuth to be enabled'
     }), 403
+
+@admin_minimal_bp.route('/admin/system/endpoints', methods=['GET', 'OPTIONS'])
+def system_endpoints():
+    """Return minimal endpoint metrics when OAuth is disabled."""
+    return jsonify({
+        'success': True,
+        'data': {
+            'endpoints': [
+                {
+                    'endpoint': 'GET /api/health',
+                    'total_calls': 100,
+                    'avg_response_time': 50,
+                    'success_rate': 100,
+                    'last_called': datetime.now().isoformat(),
+                    'status': 'healthy'
+                },
+                {
+                    'endpoint': 'GET /api/items/search',
+                    'total_calls': 50,
+                    'avg_response_time': 200,
+                    'success_rate': 100,
+                    'last_called': datetime.now().isoformat(),
+                    'status': 'healthy'
+                }
+            ],
+            'message': 'OAuth is disabled - showing sample data only'
+        }
+    })
+
+@admin_minimal_bp.route('/admin/system/logs', methods=['GET', 'OPTIONS'])
+def system_logs():
+    """Return minimal logs when OAuth is disabled."""
+    return jsonify({
+        'success': True,
+        'data': {
+            'logs': [
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'INFO',
+                    'message': 'OAuth is disabled - system logs not available',
+                    'source': 'admin_minimal'
+                }
+            ],
+            'total': 1,
+            'message': 'OAuth is disabled - system logs not available'
+        }
+    })
