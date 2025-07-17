@@ -16,6 +16,21 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict
 
+def load_env_file(env_path='.env'):
+    """Load environment variables from .env file"""
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Only set if not already in environment
+                    if key not in os.environ:
+                        os.environ[key] = value
+        print(f"✓ Loaded environment variables from {env_path}")
+        return True
+    return False
+
 # Import platform-specific modules conditionally
 try:
     import termios
@@ -2279,6 +2294,9 @@ class AppRunner:
         self.print_status("", "info")
 
 def main():
+    # Load environment variables from .env file first
+    load_env_file()
+    
     # Check if we're in a deployment environment and warn about usage
     runner = AppRunner()
     if runner._is_deployment_environment() and len(sys.argv) > 1 and sys.argv[1] == "start":
@@ -2354,12 +2372,25 @@ For help with common issues, see the README.md file.
                 runner.print_status("⛔ Refusing to start dev mode for security reasons.", "error")
                 return
             
+            # Load environment variables from .env file
+            if load_env_file():
+                runner.print_status("✓ Environment variables loaded from .env file", "info")
+            else:
+                runner.print_status("⚠️  No .env file found. Create one from .env.example", "warning")
+            
             os.environ['ENABLE_DEV_AUTH'] = 'true'
             os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Also enable user accounts for dev auth to work
             os.environ['VITE_APP_MODE'] = 'development'  # Set custom dev mode flag for frontend
-            # Set database URL for user authentication if not already set
+            
+            # Check for database URL and provide helpful guidance
             if not os.environ.get('DATABASE_URL'):
-                os.environ['DATABASE_URL'] = 'postgresql://postgres:ggtLlgIcBACVJLKFjHcpiInlWhptazMg@shuttle.proxy.rlwy.net:56963/railway'
+                runner.print_status("⚠️  DATABASE_URL not set!", "warning")
+                runner.print_status("   Please set DATABASE_URL in your .env file or environment variables", "info")
+                runner.print_status("   Example: DATABASE_URL=postgresql://user:password@localhost:5432/eqdatascraper", "info")
+                runner.print_status("   Note: This is for auth/spell cache (PostgreSQL), not the EQEmu content database", "info")
+            else:
+                runner.print_status("✓ DATABASE_URL is configured", "info")
+            
             runner.print_status("🔒 Production environment checks passed - dev mode allowed", "info")
         # Set production mode flag if dev mode is not enabled
         if not os.environ.get('ENABLE_DEV_AUTH') == 'true':
