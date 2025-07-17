@@ -17,8 +17,6 @@
     
     <router-view />
     
-    <!-- Dev Login Panel (only shows in development with flag) -->
-    <DevLogin v-if="!isProduction" ref="devLogin" />
     
     <!-- Toast Notification -->
     <ToastNotification 
@@ -29,16 +27,6 @@
       :type="currentToast.type"
       :duration="currentToast.duration"
     />
-    
-    <!-- Dev Login Toggle Button (for simulating login) -->
-    <button 
-      v-if="!isProduction" 
-      @click="toggleDevLogin" 
-      class="dev-login-toggle-btn"
-      title="Toggle Dev Login Panel"
-    >
-      👤
-    </button>
     
     <!-- Thread Monitor Toggle Button -->
     <button 
@@ -64,7 +52,6 @@
 
 <script>
 import { useUserStore } from './stores/userStore'
-import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
@@ -143,11 +130,6 @@ export default {
       await refreshDevModeStatus()
       if (import.meta.env.MODE === 'development') {
         console.log('🔄 Dev mode state refreshed')
-      }
-    },
-    toggleDevLogin() {
-      if (this.$refs.devLogin) {
-        this.$refs.devLogin.toggleMinimize()
       }
     },
     toggleThreadMonitor() {
