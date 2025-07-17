@@ -168,12 +168,20 @@ if ENABLE_USER_ACCOUNTS:
             g.request_start_time = time.time()
             
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
+                # Skip auth endpoints in dev mode, but allow admin endpoints
+                if DEV_MODE_AUTH_BYPASS and request.endpoint.startswith('auth.'):
+                    g.db_connection = None
+                    return
+                
                 # Connect to database if DB_CONFIG is available (for OAuth)
                 if DB_CONFIG:
                     try:
                         if DB_TYPE == 'postgresql':
                             if HAS_PSYCOPG2:
-                                g.db_connection = psycopg2.connect(**DB_CONFIG)
+                                # Override with shorter timeout to prevent hanging
+                                db_config_with_timeout = DB_CONFIG.copy()
+                                db_config_with_timeout['connect_timeout'] = 2  # 2 second timeout
+                                g.db_connection = psycopg2.connect(**db_config_with_timeout)
                             else:
                                 raise Exception("psycopg2 not available")
                             app.logger.debug(f"Database connection established for endpoint: {request.endpoint}")
@@ -239,13 +247,18 @@ if ENABLE_USER_ACCOUNTS:
                         except:
                             pass
                     
-                    track_endpoint_metric(
-                        endpoint_key, 
-                        response_time, 
-                        is_error, 
-                        status_code=status_code,
-                        error_details=error_details
-                    )
+                    # Wrap in try-except to prevent metric tracking from breaking requests
+                    try:
+                        track_endpoint_metric(
+                            endpoint_key, 
+                            response_time, 
+                            is_error, 
+                            status_code=status_code,
+                            error_details=error_details
+                        )
+                    except Exception as metric_error:
+                        # Log but don't fail the request
+                        app.logger.debug(f"Metric tracking error: {metric_error}")
                 except ImportError:
                     pass  # Admin routes not loaded
                 except Exception as e:
@@ -2683,12 +2696,14 @@ if __name__ == '__main__':
         cleanup_resources()
         sys.exit(0)
     
-    # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Register signal handlers (skip on Windows as it can cause issues)
+    if sys.platform != 'win32':
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
     
-    # Register cleanup on exit
-    atexit.register(cleanup_resources)
+    # Register cleanup on exit (but avoid duplicate registration)
+    # Note: Already registered above, so commenting out to prevent double registration
+    # atexit.register(cleanup_resources)
     
     # Configure werkzeug to not hang on keep-alive connections
     from werkzeug.serving import WSGIRequestHandler
