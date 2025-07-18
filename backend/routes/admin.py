@@ -2466,6 +2466,8 @@ def get_system_metrics():
         JSON response with system metrics
     """
     try:
+        global system_metrics
+        
         # Get system resource usage
         process = psutil.Process()
         memory_info = process.memory_info()
@@ -2554,6 +2556,7 @@ def get_endpoint_metrics():
         JSON response with endpoint performance data
     """
     try:
+        global system_metrics
         endpoints = []
         
         for endpoint, stats in system_metrics['endpoint_stats'].items():
@@ -2639,6 +2642,7 @@ def get_system_logs():
         JSON response with system logs
     """
     try:
+        global system_metrics
         level = request.args.get('level', 'all')
         limit = min(int(request.args.get('limit', 50)), 500)
         
@@ -2828,6 +2832,7 @@ def calculate_health_score(cpu_percent, memory_percent, error_rate, avg_response
 def track_endpoint_metric(endpoint, response_time, is_error=False, status_code=None, error_details=None, stack_trace=None):
     """Track metrics for an endpoint (called by middleware)."""
     try:
+        global system_metrics
         # Initialize endpoint stats if not exists
         if endpoint not in system_metrics['endpoint_stats']:
             system_metrics['endpoint_stats'][endpoint] = {
@@ -2878,6 +2883,7 @@ def track_endpoint_metric(endpoint, response_time, is_error=False, status_code=N
 
 def log_system_error(message, context=None):
     """Log a system error for monitoring."""
+    global system_metrics
     system_metrics['error_log'].append({
         'timestamp': datetime.now().isoformat(),
         'message': message,
@@ -2909,6 +2915,7 @@ def format_query_timeline(timeline_data, time_scale='1h'):
 
 def update_query_timeline(table_name=None):
     """Update the timeline data for query tracking."""
+    global system_metrics
     db_stats = system_metrics['database_stats']
     current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
     
@@ -2938,6 +2945,7 @@ def update_query_timeline(table_name=None):
 
 def track_database_query(query, execution_time, query_type=None, table_name=None, source_endpoint=None):
     """Track database query metrics."""
+    global system_metrics
     db_stats = system_metrics['database_stats']
     
     # Track total queries
