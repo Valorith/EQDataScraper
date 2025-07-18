@@ -2328,18 +2328,44 @@ def reconnect_database():
 database_stats = query_persistence.load_metrics()
 database_stats['timeline'] = query_persistence.load_timeline()
 
-system_metrics = {
-    'response_times': deque(maxlen=1000),  # Store last 1000 response times
-    'endpoint_stats': defaultdict(lambda: {
-        'total_calls': 0,
-        'total_time': 0,
-        'errors': 0,
-        'last_called': None
-    }),
-    'server_start_time': time.time(),
-    'error_log': deque(maxlen=100),  # Store last 100 errors
-    'database_stats': database_stats
-}
+# Initialize system_metrics with error handling
+try:
+    system_metrics = {
+        'response_times': deque(maxlen=1000),  # Store last 1000 response times
+        'endpoint_stats': defaultdict(lambda: {
+            'total_calls': 0,
+            'total_time': 0,
+            'errors': 0,
+            'last_called': None
+        }),
+        'server_start_time': time.time(),
+        'error_log': deque(maxlen=100),  # Store last 100 errors
+        'database_stats': database_stats
+    }
+    logger.info("System metrics initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize system_metrics: {e}")
+    # Create a minimal system_metrics to prevent crashes
+    system_metrics = {
+        'response_times': deque(maxlen=1000),
+        'endpoint_stats': defaultdict(lambda: {
+            'total_calls': 0,
+            'total_time': 0,
+            'errors': 0,
+            'last_called': None
+        }),
+        'server_start_time': time.time(),
+        'error_log': deque(maxlen=100),
+        'database_stats': {
+            'total_queries': 0,
+            'query_times': deque(maxlen=1000),
+            'slow_queries': deque(maxlen=100),
+            'query_types': defaultdict(int),
+            'tables_accessed': defaultdict(int),
+            'table_sources': defaultdict(lambda: defaultdict(int)),
+            'timeline': []
+        }
+    }
 
 # Don't start periodic saves immediately - they will be started when app is fully initialized
 # periodic_save_timeline()
@@ -2468,9 +2494,14 @@ def get_system_metrics():
     try:
         global system_metrics
         
+        logger.info("Starting get_system_metrics")
+        
         # Get system resource usage
         process = psutil.Process()
+        logger.info("Created psutil process")
+        
         memory_info = process.memory_info()
+        logger.info("Got memory info")
         
         # System-wide metrics
         cpu_percent = psutil.cpu_percent(interval=0.1)
@@ -2542,8 +2573,52 @@ def get_system_metrics():
         import traceback
         logger.error(f"Failed to get system metrics: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        # Return a sanitized error message to avoid format string issues
-        return create_error_response("Failed to get system metrics: Internal error", 500)
+        
+        # Return a minimal response in case of error
+        return jsonify(create_success_response({
+            'system': {
+                'uptime_seconds': 0,
+                'cpu_percent': 0,
+                'memory': {
+                    'total': 0,
+                    'used': 0,
+                    'percent': 0,
+                    'available': 0,
+                    'process_rss': 0,
+                    'process_vms': 0
+                },
+                'disk': {
+                    'total': 0,
+                    'used': 0,
+                    'percent': 0,
+                    'free': 0
+                }
+            },
+            'performance': {
+                'avg_response_time': 0,
+                'total_requests': 0,
+                'error_rate': 0,
+                'error_count': 0,
+                'response_time_history': []
+            },
+            'cache': {
+                'cached_classes': 0,
+                'cached_spell_details': 0,
+                'total_spells': 0,
+                'cache_age_hours': {}
+            },
+            'database': {
+                'total_queries': 0,
+                'avg_query_time': 0,
+                'query_types': {},
+                'tables_accessed': {},
+                'slow_queries_count': 0,
+                'recent_slow_queries': [],
+                'timeline': []
+            },
+            'health_score': 0,
+            'error': str(e)
+        }))
 
 
 @admin_bp.route('/admin/system/endpoints', methods=['GET'])
