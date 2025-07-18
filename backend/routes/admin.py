@@ -2343,6 +2343,43 @@ try:
         'database_stats': database_stats
     }
     logger.info("System metrics initialized successfully")
+    
+    # Add some initial fake data for testing
+    if os.environ.get('ENABLE_DEV_AUTH') == 'true':
+        # Add some fake response times
+        for i in range(10):
+            system_metrics['response_times'].append(50 + i * 10)
+        
+        # Add some fake endpoint stats
+        system_metrics['endpoint_stats']['GET /api/health'] = {
+            'total_calls': 25,
+            'total_time': 1250,
+            'errors': 0,
+            'last_called': time.time()
+        }
+        system_metrics['endpoint_stats']['GET /api/admin/stats'] = {
+            'total_calls': 10,
+            'total_time': 800,
+            'errors': 1,
+            'last_called': time.time() - 60
+        }
+        
+        # Add some fake database stats (content database only)
+        system_metrics['database_stats']['total_queries'] = 150
+        system_metrics['database_stats']['query_times'].extend([10, 15, 20, 25, 30, 100, 5, 8, 12, 18])
+        system_metrics['database_stats']['slow_queries'].append({
+            'query': 'SELECT * FROM items WHERE name LIKE %s',
+            'execution_time': 100,
+            'timestamp': time.time() - 300
+        })
+        system_metrics['database_stats']['query_types']['SELECT'] = 120
+        system_metrics['database_stats']['query_types']['INSERT'] = 0  # Read-only database
+        system_metrics['database_stats']['query_types']['UPDATE'] = 0  # Read-only database
+        system_metrics['database_stats']['tables_accessed']['items'] = 80
+        system_metrics['database_stats']['tables_accessed']['discovered_items'] = 70
+        
+        logger.info("Added test data to system metrics for development")
+        
 except Exception as e:
     logger.error(f"Failed to initialize system_metrics: {e}")
     # Create a minimal system_metrics to prevent crashes
@@ -2617,7 +2654,7 @@ def get_system_metrics():
                 'timeline': []
             },
             'health_score': 0,
-            'error': str(e)
+            'error': repr(e)  # Use repr() instead of str() to avoid format issues
         }))
 
 
@@ -2908,6 +2945,10 @@ def track_endpoint_metric(endpoint, response_time, is_error=False, status_code=N
     """Track metrics for an endpoint (called by middleware)."""
     try:
         global system_metrics
+        
+        # Debug logging
+        logger.debug(f"Tracking metric for {endpoint}: {response_time}ms, error={is_error}")
+        
         # Initialize endpoint stats if not exists
         if endpoint not in system_metrics['endpoint_stats']:
             system_metrics['endpoint_stats'][endpoint] = {
