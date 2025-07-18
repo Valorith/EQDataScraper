@@ -68,7 +68,6 @@ import { threadManager, trackAsync } from './utils/threadManager'
 export default {
   name: 'App',
   components: {
-    DevLogin,
     AppLogo,
     GoogleAuthButton,
     UserMenu,
