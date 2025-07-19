@@ -128,7 +128,7 @@ if ENABLE_USER_ACCOUNTS:
     try:
         from routes.auth import auth_bp
         from routes.users import users_bp
-        from routes.admin import admin_bp
+        from routes.admin import admin_bp, initialize_test_data
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
         
@@ -237,6 +237,7 @@ if ENABLE_USER_ACCOUNTS:
                     from routes.admin import track_endpoint_metric
                     is_error = response.status_code >= 400
                     status_code = response.status_code if is_error else None
+                    track_endpoint_metric(endpoint_key, response_time, is_error, status_code)
                     error_details = None
                     
                     # Add error details for failed requests
@@ -271,6 +272,9 @@ if ENABLE_USER_ACCOUNTS:
         app.register_blueprint(auth_bp, url_prefix='/api')
         app.register_blueprint(users_bp, url_prefix='/api')
         app.register_blueprint(admin_bp, url_prefix='/api')
+        
+        # Initialize test data for dev mode after blueprints are registered
+        initialize_test_data()
         
         # Temporarily register debug OAuth blueprint for troubleshooting
         try:
@@ -616,6 +620,8 @@ scraping_status = {
 # All spell system configuration and cache variables removed
 
 # Spell system completely removed
+
+
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -2716,10 +2722,10 @@ if __name__ == '__main__':
     # Run Flask app with explicit threading configuration
     logger.info(f"Starting Flask server on port {config['backend_port']} with threading enabled")
     app.run(
-        debug=False,  # Disable debug mode to prevent hanging issues
+        debug=True,  # Enable debug mode for proper module reloading
         host='0.0.0.0', 
         port=config['backend_port'],
         threaded=True,  # Enable threading to handle multiple requests
-        use_reloader=False,  # Disable reloader to prevent issues with database connections
+        use_reloader=True,  # Enable reloader for development
         processes=1  # Ensure single process with multiple threads
     ) 

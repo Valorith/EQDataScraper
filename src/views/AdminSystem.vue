@@ -1614,12 +1614,12 @@ onMounted(() => {
   })
   
   // Re-enable auto-refresh with longer intervals to reduce load
-  console.log('🔄 Starting auto-refresh every 60 seconds (reduced frequency)')
+  console.log('🔄 Starting auto-refresh every 5 seconds')
   updateInterval = setInterval(() => {
     loadSystemStats().catch(err => {
       console.error('Failed to refresh system stats:', err)
     })
-  }, 60000)  // Increased from 30s to 60s
+  }, 5000)  // Update every 5 seconds for more real-time monitoring
   
   // Re-enable heartbeat monitoring with longer intervals
   console.log('🫀 Starting heartbeat monitoring every 30 seconds (reduced frequency)')
