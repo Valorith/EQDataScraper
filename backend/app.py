@@ -1057,6 +1057,7 @@ def search_items():
             except:
                 pass
 
+
 @app.route('/api/spells/search', methods=['GET'])
 @exempt_when_limiting
 @rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Same limits as item search
@@ -1093,13 +1094,14 @@ def search_spells():
         
         cursor = conn.cursor()
         
+        
         # Build WHERE clause and parameters
         where_conditions = []
         query_params = []
         
         # Add search query condition if present
         if search_query:
-            where_conditions.append("spells_new.name LIKE %s")
+            where_conditions.append("name LIKE %s")
             query_params.append(f'%{search_query}%')
         
         # Add filter conditions
@@ -1202,75 +1204,58 @@ def search_spells():
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
         
         # Build queries with dynamic WHERE clause
-        # First get count
+        # First get count - with a reasonable limit to prevent full table scans
         count_query = f"""
             SELECT COUNT(*) AS total_count
-            FROM spells_new
-            WHERE {where_clause}
+            FROM (
+                SELECT 1 FROM spells_new
+                WHERE {where_clause}
+                LIMIT 10000
+            ) AS limited_count
         """
-        cursor.execute(count_query, query_params)
-        result = cursor.fetchone()
-        total_count = result['total_count'] if isinstance(result, dict) else result[0]
+        app.logger.info(f"Executing spell count query")
+        count_start = time.time()
+        try:
+            cursor.execute(count_query, query_params)
+            count_time = (time.time() - count_start) * 1000
+            app.logger.info(f"Spell count query completed in {count_time:.2f}ms")
+            result = cursor.fetchone()
+            total_count = result['total_count'] if isinstance(result, dict) else result[0]
+            app.logger.info(f"Found {total_count} spells matching criteria")
+        except Exception as e:
+            app.logger.error(f"Count query failed: {e}")
+            # If count fails, just set a high number and continue
+            total_count = 9999
         
-        # Then get spells
+        # Then get spells - reduce columns for better performance
         spells_query = f"""
             SELECT 
-                spells_new.id,
-                spells_new.name,
-                spells_new.mana,
-                spells_new.cast_time,
-                spells_new.range,
-                spells_new.targettype,
-                spells_new.skill,
-                spells_new.resisttype,
-                spells_new.spell_category,
-                spells_new.buffduration,
-                spells_new.deities,
-                spells_new.classes1,
-                spells_new.classes2,
-                spells_new.classes3,
-                spells_new.classes4,
-                spells_new.classes5,
-                spells_new.classes6,
-                spells_new.classes7,
-                spells_new.classes8,
-                spells_new.classes9,
-                spells_new.classes10,
-                spells_new.classes11,
-                spells_new.classes12,
-                spells_new.classes13,
-                spells_new.classes14,
-                spells_new.classes15,
-                spells_new.classes16,
-                spells_new.effectid1,
-                spells_new.effectid2,
-                spells_new.effectid3,
-                spells_new.effectid4,
-                spells_new.effectid5,
-                spells_new.effectid6,
-                spells_new.effectid7,
-                spells_new.effectid8,
-                spells_new.effectid9,
-                spells_new.effectid10,
-                spells_new.effectid11,
-                spells_new.effectid12,
-                spells_new.components1,
-                spells_new.components2,
-                spells_new.components3,
-                spells_new.components4,
-                spells_new.icon,
-                spells_new.new_icon
+                id,
+                name,
+                mana,
+                cast_time,
+                `range`,
+                targettype,
+                skill,
+                classes1, classes2, classes3, classes4, classes5, classes6,
+                classes7, classes8, classes9, classes10, classes11, classes12,
+                classes13, classes14, classes15, classes16,
+                icon, new_icon
             FROM spells_new
             WHERE {where_clause}
-            ORDER BY spells_new.name
+            ORDER BY id
             LIMIT %s OFFSET %s
         """
         # Add limit and offset to params
         spells_params = query_params + [limit, offset]
         
-        # Execute with timeout protection
+        # Execute spell search query with timeout protection
         try:
+            app.logger.info(f"Executing spell search query")
+            start_time = time.time()
             cursor.execute(spells_query, spells_params)
+            query_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            app.logger.info(f"Spell search query completed in {query_time:.2f}ms")
         except Exception as e:
             app.logger.error(f"Database query failed: {e}")
             app.logger.error(f"Query: {spells_query}")
@@ -1279,7 +1264,7 @@ def search_spells():
             
         spells = cursor.fetchall()
         
-        # Convert to response format
+        # Convert to response format with reduced columns
         spells_list = []
         for spell in spells:
             if isinstance(spell, dict):
@@ -1291,10 +1276,10 @@ def search_spells():
                     'range': _safe_int(spell['range']),
                     'targettype': _safe_int(spell['targettype']),
                     'skill': _safe_int(spell['skill']),
-                    'resisttype': _safe_int(spell['resisttype']),
-                    'spell_category': _safe_int(spell['spell_category']),
-                    'buffduration': _safe_int(spell['buffduration']),
-                    'deities': _safe_int(spell['deities']),
+                    'resisttype': 0,  # Not retrieved for performance
+                    'spell_category': 0,  # Not retrieved for performance
+                    'buffduration': 0,  # Not retrieved for performance
+                    'deities': 0,  # Not retrieved for performance
                     'class_levels': {
                         'warrior': _safe_int(spell['classes1']),
                         'cleric': _safe_int(spell['classes2']),
@@ -1313,83 +1298,48 @@ def search_spells():
                         'beastlord': _safe_int(spell['classes15']),
                         'berserker': _safe_int(spell['classes16'])
                     },
-                    'effects': [
-                        _safe_int(spell['effectid1']),
-                        _safe_int(spell['effectid2']),
-                        _safe_int(spell['effectid3']),
-                        _safe_int(spell['effectid4']),
-                        _safe_int(spell['effectid5']),
-                        _safe_int(spell['effectid6']),
-                        _safe_int(spell['effectid7']),
-                        _safe_int(spell['effectid8']),
-                        _safe_int(spell['effectid9']),
-                        _safe_int(spell['effectid10']),
-                        _safe_int(spell['effectid11']),
-                        _safe_int(spell['effectid12'])
-                    ],
-                    'components': [
-                        _safe_int(spell['components1']),
-                        _safe_int(spell['components2']),
-                        _safe_int(spell['components3']),
-                        _safe_int(spell['components4'])
-                    ],
+                    'effects': [0] * 12,  # Not retrieved for performance
+                    'components': [0] * 4,  # Not retrieved for performance
                     'icon': _safe_int(spell['icon']),
                     'new_icon': _safe_int(spell['new_icon'])
                 }
             else:
                 # Handle tuple results
+                idx = 0
                 spell_dict = {
-                    'spell_id': str(spell[0]),
-                    'name': spell[1],
-                    'mana': _safe_int(spell[2]),
-                    'cast_time': _safe_int(spell[3]),
-                    'range': _safe_int(spell[4]),
-                    'targettype': _safe_int(spell[5]),
-                    'skill': _safe_int(spell[6]),
-                    'resisttype': _safe_int(spell[7]),
-                    'spell_category': _safe_int(spell[8]),
-                    'buffduration': _safe_int(spell[9]),
-                    'deities': _safe_int(spell[10]),
+                    'spell_id': str(spell[idx]),
+                    'name': spell[idx + 1],
+                    'mana': _safe_int(spell[idx + 2]),
+                    'cast_time': _safe_int(spell[idx + 3]),
+                    'range': _safe_int(spell[idx + 4]),
+                    'targettype': _safe_int(spell[idx + 5]),
+                    'skill': _safe_int(spell[idx + 6]),
+                    'resisttype': 0,  # Not retrieved for performance
+                    'spell_category': 0,  # Not retrieved for performance
+                    'buffduration': 0,  # Not retrieved for performance
+                    'deities': 0,  # Not retrieved for performance
                     'class_levels': {
-                        'warrior': _safe_int(spell[11]),
-                        'cleric': _safe_int(spell[12]),
-                        'paladin': _safe_int(spell[13]),
-                        'ranger': _safe_int(spell[14]),
-                        'shadowknight': _safe_int(spell[15]),
-                        'druid': _safe_int(spell[16]),
-                        'monk': _safe_int(spell[17]),
-                        'bard': _safe_int(spell[18]),
-                        'rogue': _safe_int(spell[19]),
-                        'shaman': _safe_int(spell[20]),
-                        'necromancer': _safe_int(spell[21]),
-                        'wizard': _safe_int(spell[22]),
-                        'magician': _safe_int(spell[23]),
-                        'enchanter': _safe_int(spell[24]),
-                        'beastlord': _safe_int(spell[25]),
-                        'berserker': _safe_int(spell[26])
+                        'warrior': _safe_int(spell[idx + 7]),
+                        'cleric': _safe_int(spell[idx + 8]),
+                        'paladin': _safe_int(spell[idx + 9]),
+                        'ranger': _safe_int(spell[idx + 10]),
+                        'shadowknight': _safe_int(spell[idx + 11]),
+                        'druid': _safe_int(spell[idx + 12]),
+                        'monk': _safe_int(spell[idx + 13]),
+                        'bard': _safe_int(spell[idx + 14]),
+                        'rogue': _safe_int(spell[idx + 15]),
+                        'shaman': _safe_int(spell[idx + 16]),
+                        'necromancer': _safe_int(spell[idx + 17]),
+                        'wizard': _safe_int(spell[idx + 18]),
+                        'magician': _safe_int(spell[idx + 19]),
+                        'enchanter': _safe_int(spell[idx + 20]),
+                        'beastlord': _safe_int(spell[idx + 21]),
+                        'berserker': _safe_int(spell[idx + 22])
                     },
-                    'effects': [
-                        _safe_int(spell[27]),
-                        _safe_int(spell[28]),
-                        _safe_int(spell[29]),
-                        _safe_int(spell[30]),
-                        _safe_int(spell[31]),
-                        _safe_int(spell[32]),
-                        _safe_int(spell[33]),
-                        _safe_int(spell[34]),
-                        _safe_int(spell[35]),
-                        _safe_int(spell[36]),
-                        _safe_int(spell[37]),
-                        _safe_int(spell[38])
-                    ],
-                    'components': [
-                        _safe_int(spell[39]),
-                        _safe_int(spell[40]),
-                        _safe_int(spell[41]),
-                        _safe_int(spell[42])
-                    ],
-                    'icon': _safe_int(spell[43]),
-                    'new_icon': _safe_int(spell[44])
+                    'effects': [0] * 12,  # Not retrieved for performance
+                    'components': [0] * 4,  # Not retrieved for performance
+                    'icon': _safe_int(spell[idx + 23]),
+                    'new_icon': _safe_int(spell[idx + 24])
                 }
             spells_list.append(spell_dict)
         
@@ -1750,10 +1700,10 @@ def get_eqemu_db_connection():
         # Add connection timeout settings to prevent hanging
         if db_type == 'mysql':
             db_config.update({
-                'connect_timeout': 5,   # 5 second connection timeout (reduced from 10)
-                'read_timeout': 15,     # 15 second read timeout (reduced from 30)
-                'write_timeout': 15,    # 15 second write timeout (reduced from 30)
-                'autocommit': True      # Enable autocommit to avoid transaction hangs
+                'connect_timeout': 10,   # 10 second connection timeout
+                'read_timeout': 60,      # 60 second read timeout for spell searches
+                'write_timeout': 30,     # 30 second write timeout
+                'autocommit': True       # Enable autocommit to avoid transaction hangs
             })
         elif db_type == 'postgresql':
             db_config.update({
