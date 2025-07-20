@@ -543,7 +543,7 @@ let updateInterval = null
 
 // Query timeline graph state
 const queryTimelineChart = ref(null)
-const selectedTimeScale = ref('1h')
+const selectedTimeScale = ref('6h')
 const timeScales = [
   { value: '1h', label: '1 Hour' },
   { value: '6h', label: '6 Hours' },
@@ -1362,6 +1362,7 @@ const drawQueryTimeline = () => {
   
   // Get data based on selected time scale
   const timelineData = generateTimelineData()
+  
   if (!timelineData || timelineData.length === 0) {
     // Draw empty state message
     ctx.fillStyle = '#6b7280'
@@ -1420,7 +1421,10 @@ const drawQueryTimeline = () => {
     
     const points = []
     timelineData.forEach((point, index) => {
-      const x = padding + (index / (timelineData.length - 1)) * chartWidth
+      // Handle single data point case
+      const x = timelineData.length === 1 ? 
+        padding + chartWidth / 2 : 
+        padding + (index / (timelineData.length - 1)) * chartWidth
       const y = padding + chartHeight - (point.data[table] || 0) / maxValue * chartHeight
       points.push({ x, y, value: point.data[table] || 0 })
       
