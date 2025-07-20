@@ -246,6 +246,13 @@
       :randomClassIcon="true"
       :fullScreen="true"
     />
+    <!-- Merchant Sources Loading Modal -->
+    <LoadingModal 
+      :visible="loadingMerchantSources"
+      text="Loading merchant sources..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+    />
 
     <!-- Search Results Section -->
     <div v-if="searching || searchPerformed" class="results-section">
@@ -777,6 +784,47 @@
               </div>
             </div>
             
+            <!-- Merchant Sources Section -->
+            <div class="detail-section merchant-sources-section">
+              <div class="merchant-sources-header">
+                <h4>Where can this be bought?</h4>
+                <button 
+                  v-if="!merchantSourcesRequested"
+                  @click="loadMerchantSources" 
+                  class="merchant-sources-button"
+                >
+                  <i class="fas fa-coins"></i>
+                  <span>Show Merchant Sources</span>
+                </button>
+              </div>
+              
+              <!-- Merchant Sources Results -->
+              <div v-if="merchantSources && !loadingMerchantSources" class="merchant-sources-results">
+                <div v-if="merchantSources.length === 0" class="no-merchant-sources">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No merchant sources found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in merchantSources" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="merchant-count">({{ zone.merchants.length }} merchants)</span>
+                    </div>
+                    
+                    <div class="merchants-list">
+                      <div v-for="merchant in zone.merchants" :key="merchant.npc_id" class="merchant-item">
+                        <span class="merchant-name">{{ merchant.npc_name }}</span>
+                        <span v-if="merchant.pricing_info" class="merchant-pricing">{{ merchant.pricing_info }}</span>
+                        <span v-else class="merchant-type">{{ merchant.merchant_type }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             <!-- Lore Text -->
             <div v-if="selectedItemDetail.lore" class="detail-section lore-section">
               <h4>Lore</h4>
@@ -817,6 +865,11 @@ const searchStartTime = ref(null) // Track when search started
 const dropSources = ref(null)
 const loadingDropSources = ref(false)
 const dropSourcesRequested = ref(false)
+
+// Merchant sources state
+const merchantSources = ref(null)
+const loadingMerchantSources = ref(false)
+const merchantSourcesRequested = ref(false)
 
 // Advanced filtering state
 const showFilterDropdown = ref(false)
@@ -1172,6 +1225,10 @@ const closeItemModal = () => {
   dropSources.value = null
   loadingDropSources.value = false
   dropSourcesRequested.value = false
+  // Clear merchant sources when closing modal
+  merchantSources.value = null
+  loadingMerchantSources.value = false
+  merchantSourcesRequested.value = false
 }
 
 const loadDropSources = async () => {
@@ -1210,6 +1267,45 @@ const loadDropSources = async () => {
     }
     
     loadingDropSources.value = false
+  }
+}
+
+const loadMerchantSources = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  merchantSourcesRequested.value = true
+  loadingMerchantSources.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    merchantSources.value = data.zones || []
+    
+  } catch (error) {
+    console.error('Error loading merchant sources:', error)
+    alert('Error loading merchant sources: ' + error.message)
+    merchantSources.value = []
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingMerchantSources.value = false
   }
 }
 
@@ -3365,5 +3461,114 @@ const handleClickOutside = (event) => {
   background: rgba(129, 199, 132, 0.2);
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+/* Merchant Sources Section */
+.merchant-sources-section {
+  margin-top: 20px;
+}
+
+.merchant-sources-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.merchant-sources-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.merchant-sources-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.merchant-sources-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+}
+
+.merchant-sources-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.merchant-sources-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-merchant-sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.merchant-count {
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  font-weight: normal;
+}
+
+.merchants-list {
+  padding: 8px;
+}
+
+.merchant-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.merchant-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.merchant-name {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.merchant-pricing {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(251, 191, 36, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.merchant-type {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  font-style: italic;
 }
 </style>

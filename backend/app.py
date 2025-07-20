@@ -2691,6 +2691,122 @@ def get_item_drop_sources(item_id):
         return jsonify({'error': f'Failed to get drop sources: {str(e)}'}), 500
 
 
+@app.route('/api/items/<item_id>/merchant-sources', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_merchant_sources(item_id):
+    """
+    Get NPCs and zones where an item is sold by merchants.
+    Optimized version of the legacy PHP query with proper JOINs and pricing info.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'merchantlist'")
+            if not cursor.fetchone():
+                app.logger.warning("Merchant tables not available in this database")
+                return jsonify({'zones': [], 'message': 'Merchant data not available in this database'})
+            
+            # Check if item is sold anywhere (optimized pre-check)
+            cursor.execute("""
+                SELECT 1 FROM merchantlist 
+                WHERE item = %s LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'zones': []})
+            
+            # Optimized query using explicit JOINs and proper indexing
+            # Include pricing information for shopkeepers and LDON merchants
+            query = """
+                SELECT DISTINCT
+                    nt.id as npc_id,
+                    nt.name as npc_name,
+                    nt.class as npc_class,
+                    s2.zone,
+                    z.long_name as zone_name,
+                    ml.slot as merchant_slot
+                FROM npc_types nt
+                INNER JOIN merchantlist ml ON nt.merchant_id = ml.merchantid
+                INNER JOIN spawnentry se ON nt.id = se.npcID
+                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                INNER JOIN zone z ON s2.zone = z.short_name
+                LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
+                WHERE ml.item = %s
+                  AND z.min_status = 0
+                  AND s2d.spawn2_id IS NULL
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                ORDER BY z.long_name, nt.name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    npc_id, npc_name, npc_class, zone_short, zone_name, merchant_slot = (
+                        row['npc_id'], row['npc_name'], row['npc_class'], row['zone'], 
+                        row['zone_name'], row['merchant_slot']
+                    )
+                else:
+                    # Tuple format: npc_id, npc_name, npc_class, zone, zone_name, merchant_slot
+                    npc_id, npc_name, npc_class, zone_short, zone_name, merchant_slot = row
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'merchants': []
+                    }
+                
+                # Determine merchant type and pricing info
+                merchant_type = 'merchant'
+                pricing_info = None
+                
+                if npc_class == 41:  # Shopkeeper
+                    merchant_type = 'shopkeeper'
+                    pricing_info = 'Sold for coins'
+                elif npc_class == 61:  # LDON merchant
+                    merchant_type = 'ldon_merchant'
+                    pricing_info = 'Sold for adventure points'
+                
+                zones_data[zone_short]['merchants'].append({
+                    'npc_id': npc_id,
+                    'npc_name': npc_name.replace('_', ' '),
+                    'npc_class': npc_class,
+                    'merchant_type': merchant_type,
+                    'pricing_info': pricing_info,
+                    'merchant_slot': merchant_slot
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item merchant sources for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get merchant sources: {str(e)}'}), 500
+
+
 def cleanup_resources():
     """Clean up resources on shutdown to prevent hanging."""
     logger.info("Cleaning up resources...")
