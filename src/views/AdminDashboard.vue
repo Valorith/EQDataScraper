@@ -17,15 +17,24 @@
         <div class="card-content">
           <div class="stat-row">
             <span class="stat-label">Total Users</span>
-            <span class="stat-value">{{ stats.users?.total || stats.totalUsers || 0 }}</span>
+            <span class="stat-value" :class="{ 'loading': statsLoading }">
+              <span v-if="!statsLoading">{{ stats.users?.total || stats.totalUsers || 0 }}</span>
+              <span v-else class="skeleton-text">--</span>
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Active Today</span>
-            <span class="stat-value">{{ stats.users?.active_today || stats.activeToday || 0 }}</span>
+            <span class="stat-value" :class="{ 'loading': statsLoading }">
+              <span v-if="!statsLoading">{{ stats.users?.active_today || stats.activeToday || 0 }}</span>
+              <span v-else class="skeleton-text">--</span>
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Admin Users</span>
-            <span class="stat-value">{{ stats.users?.admins || stats.adminUsers || 0 }}</span>
+            <span class="stat-value" :class="{ 'loading': statsLoading }">
+              <span v-if="!statsLoading">{{ stats.users?.admins || stats.adminUsers || 0 }}</span>
+              <span v-else class="skeleton-text">--</span>
+            </span>
           </div>
         </div>
         <div class="card-actions">
@@ -886,6 +895,7 @@ const userStore = useUserStore()
 
 // State
 const showBackendDiagnostic = ref(false)
+const statsLoading = ref(true)
 const stats = ref({
   totalUsers: 0,
   activeToday: 0,
@@ -1019,6 +1029,7 @@ const loadDashboardDataRaw = async () => {
       } else {
         stats.value = statsRes.data
       }
+      statsLoading.value = false
     } else if (statsResult.status === 'rejected') {
       const error = statsResult.reason
       if (error?.response?.status === 401) {
@@ -1032,6 +1043,7 @@ const loadDashboardDataRaw = async () => {
       }
       // Set default values
       stats.value = { totalUsers: 0, activeToday: 0, adminUsers: 0 }
+      statsLoading.value = false
     }
 
     // Process database config result
@@ -1262,6 +1274,27 @@ const loadDashboardDataRaw = async () => {
 }
 
 // Create a debounced version to prevent overwhelming the backend
+// Fast user stats loader for immediate feedback
+const loadUserStatsOnly = async () => {
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const response = await api.get('/api/admin/stats', {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 3000, // Shorter timeout for faster feedback
+      cancelToken: requestManager.getCancelToken('admin-stats-fast')
+    })
+    
+    if (response.data) {
+      const statsData = response.data.data || response.data
+      stats.value = statsData
+      statsLoading.value = false
+    }
+  } catch (error) {
+    // Silently fail and let the full load handle errors
+    console.debug('Fast user stats load failed, falling back to full load')
+  }
+}
+
 const loadDashboardData = debounce(loadDashboardDataRaw, 1000)
 
 const exportData = () => {
@@ -2253,7 +2286,10 @@ const handleBackendChanged = async (newUrl) => {
 
 // Lifecycle
 onMounted(async () => {
-  // Load dashboard data on mount
+  // Load user stats immediately for instant feedback
+  loadUserStatsOnly()
+  
+  // Load full dashboard data (this will also update stats with complete data)
   await loadDashboardData()
   
   // Refresh dashboard data every 60 seconds (reduced from 30s to prevent overwhelming backend)
@@ -4893,5 +4929,33 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', monospace;
   color: #4ade80;
   font-size: 0.9em;
+}
+
+/* Loading states for user management card */
+.stat-value.loading {
+  opacity: 0.6;
+}
+
+.skeleton-text {
+  display: inline-block;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.1) 25%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    rgba(255, 255, 255, 0.1) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+  min-width: 20px;
+  height: 1em;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 </style>
