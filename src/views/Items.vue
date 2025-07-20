@@ -730,6 +730,46 @@
               </div>
             </div>
             
+            <!-- Drop Sources Section -->
+            <div class="detail-section drop-sources-section">
+              <div class="drop-sources-header">
+                <h4>Where does this drop?</h4>
+                <button 
+                  @click="loadDropSources" 
+                  :disabled="loadingDropSources"
+                  class="drop-sources-button"
+                >
+                  <i :class="loadingDropSources ? 'fas fa-spinner fa-spin' : 'fas fa-map-marked-alt'"></i>
+                  <span>{{ loadingDropSources ? 'Loading...' : 'Show Drop Sources' }}</span>
+                </button>
+              </div>
+              
+              <!-- Drop Sources Results -->
+              <div v-if="dropSources && !loadingDropSources" class="drop-sources-results">
+                <div v-if="dropSources.length === 0" class="no-drop-sources">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No drop sources found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in dropSources" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="npc-count">({{ zone.npcs.length }} NPCs)</span>
+                    </div>
+                    
+                    <div class="npcs-list">
+                      <div v-for="npc in zone.npcs" :key="npc.npc_id" class="npc-item">
+                        <span class="npc-name">{{ npc.npc_name }}</span>
+                        <span class="drop-chance">{{ npc.drop_chance }}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             <!-- Lore Text -->
             <div v-if="selectedItemDetail.lore" class="detail-section lore-section">
               <h4>Lore</h4>
@@ -765,6 +805,10 @@ const selectedItemDetail = ref(null)
 const viewMode = ref('list') // Default to list view
 const paginating = ref(false) // Loading state for pagination
 const searchStartTime = ref(null) // Track when search started
+
+// Drop sources state
+const dropSources = ref(null)
+const loadingDropSources = ref(false)
 
 // Advanced filtering state
 const showFilterDropdown = ref(false)
@@ -1116,6 +1160,32 @@ const selectItem = async (item) => {
 
 const closeItemModal = () => {
   selectedItemDetail.value = null
+  // Clear drop sources when closing modal
+  dropSources.value = null
+  loadingDropSources.value = false
+}
+
+const loadDropSources = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  try {
+    loadingDropSources.value = true
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    dropSources.value = data.zones || []
+  } catch (error) {
+    console.error('Error loading drop sources:', error)
+    alert('Error loading drop sources: ' + error.message)
+    dropSources.value = []
+  } finally {
+    loadingDropSources.value = false
+  }
 }
 
 const hasStats = (item) => {
@@ -3139,5 +3209,136 @@ const handleClickOutside = (event) => {
 .item-icon-grid[style*="display: none"] + .item-icon-placeholder-grid,
 .item-icon-modal[style*="display: none"] + .item-icon-placeholder-modal {
   display: flex !important;
+}
+
+/* Drop Sources Section */
+.drop-sources-section {
+  margin-top: 20px;
+}
+
+.drop-sources-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.drop-sources-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.drop-sources-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.drop-sources-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.drop-sources-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.drop-sources-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-drop-sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.zones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zone-section {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.zone-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(102, 126, 234, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f7fafc;
+  font-weight: 600;
+}
+
+.zone-name {
+  flex: 1;
+}
+
+.npc-count {
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  font-weight: normal;
+}
+
+.npcs-list {
+  padding: 8px;
+}
+
+.npc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.npc-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.npc-name {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.drop-chance {
+  color: #81c784;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(129, 199, 132, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 </style>

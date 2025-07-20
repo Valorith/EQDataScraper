@@ -2580,6 +2580,94 @@ def get_item_types():
         return jsonify({'error': f'Failed to get item types: {str(e)}'}), 500
 
 
+@app.route('/api/items/<item_id>/drop-sources', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_drop_sources(item_id):
+    """
+    Get NPCs and zones where an item is dropped.
+    Optimized version of the legacy PHP query with proper JOINs and indexing.
+    """
+    try:
+        with get_content_connection() as content_conn:
+            cursor = content_conn.cursor(dictionary=True)
+            
+            # First check if item has any drops (optimized pre-check)
+            cursor.execute("""
+                SELECT 1 FROM lootdrop_entries 
+                WHERE item_id = %s LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'zones': []})
+            
+            # Optimized query using explicit JOINs and proper indexing
+            query = """
+                SELECT DISTINCT
+                    nt.id as npc_id,
+                    nt.name as npc_name,
+                    s2.zone,
+                    z.long_name as zone_name,
+                    lte.multiplier,
+                    lte.probability,
+                    lde.chance
+                FROM npc_types nt
+                INNER JOIN spawn_entry se ON nt.id = se.npcID
+                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                INNER JOIN zones z ON s2.zone = z.short_name
+                INNER JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+                INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+                LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
+                WHERE lde.item_id = %s
+                  AND z.min_status = 0
+                  AND s2d.spawn2_id IS NULL
+                  AND nt.merchant_id = 0
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                ORDER BY z.long_name, nt.name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                zone_short = row['zone']
+                zone_name = row['zone_name']
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'npcs': []
+                    }
+                
+                # Calculate drop chance (chance * probability / 100)
+                drop_chance = round((row['chance'] * row['probability'] / 100), 2)
+                
+                zones_data[zone_short]['npcs'].append({
+                    'npc_id': row['npc_id'],
+                    'npc_name': row['npc_name'].replace('_', ' '),
+                    'chance': row['chance'],
+                    'probability': row['probability'],
+                    'multiplier': row['multiplier'],
+                    'drop_chance': drop_chance
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item drop sources for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get drop sources: {str(e)}'}), 500
+
+
 def cleanup_resources():
     """Clean up resources on shutdown to prevent hanging."""
     logger.info("Cleaning up resources...")
