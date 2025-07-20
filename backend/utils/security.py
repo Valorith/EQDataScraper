@@ -78,13 +78,14 @@ def validate_numeric_input(value, min_val=0, max_val=999999, default=None):
     except (ValueError, TypeError):
         return default
 
-def validate_json_filters(filters_json, max_filters=10):
+def validate_json_filters(filters_json, max_filters=10, filter_type='item'):
     """
     Validate and sanitize JSON filter data.
     
     Args:
         filters_json: JSON string of filters
         max_filters: Maximum number of filters allowed
+        filter_type: Type of filter validation ('item' or 'spell')
         
     Returns:
         Dictionary with keys:
@@ -113,16 +114,36 @@ def validate_json_filters(filters_json, max_filters=10):
                 "error": f"Maximum {max_filters} filters allowed"
             }
         
-        # Define field categories for validation
-        text_fields = {'loretext'}
-        numeric_fields = {'price', 'weight', 'size', 'damage', 'delay', 'ac', 'hp', 'mana', 
-                         'str', 'sta', 'agi', 'dex', 'wis', 'int', 'cha', 
-                         'mr', 'fr', 'cr', 'dr', 'pr', 'reqlevel', 'reclevel'}
-        boolean_fields = {'magic', 'lore', 'lore_flag', 'nodrop', 'norent', 'artifact'}
-        effect_fields = {'clickeffect', 'proceffect', 'worneffect', 'focuseffect'}
-        
-        # All allowed fields
-        allowed_fields = text_fields | numeric_fields | boolean_fields | effect_fields | {'slots'}
+        # Define field categories for validation based on filter type
+        if filter_type == 'spell':
+            text_fields = {'name'}
+            numeric_fields = {'mana', 'cast_time', 'range', 'targettype', 'skill', 'resisttype', 
+                             'spell_category', 'buffduration', 'deities',
+                             'effect1', 'effect2', 'effect3', 'effect4', 'effect5', 'effect6',
+                             'effect7', 'effect8', 'effect9', 'effect10', 'effect11', 'effect12',
+                             'component1', 'component2', 'component3', 'component4'}
+            boolean_fields = set()
+            effect_fields = {'effect1', 'effect2', 'effect3', 'effect4', 'effect5', 'effect6',
+                            'effect7', 'effect8', 'effect9', 'effect10', 'effect11', 'effect12'}
+            class_fields = {'warrior_level', 'cleric_level', 'paladin_level', 'ranger_level',
+                           'shadowknight_level', 'druid_level', 'monk_level', 'bard_level',
+                           'rogue_level', 'shaman_level', 'necromancer_level', 'wizard_level',
+                           'magician_level', 'enchanter_level', 'beastlord_level', 'berserker_level'}
+            
+            # All allowed fields for spells
+            allowed_fields = text_fields | numeric_fields | boolean_fields | effect_fields | class_fields
+        else:
+            # Item validation (original)
+            text_fields = {'loretext'}
+            numeric_fields = {'price', 'weight', 'size', 'damage', 'delay', 'ac', 'hp', 'mana', 
+                             'str', 'sta', 'agi', 'dex', 'wis', 'int', 'cha', 
+                             'mr', 'fr', 'cr', 'dr', 'pr', 'reqlevel', 'reclevel'}
+            boolean_fields = {'magic', 'lore', 'lore_flag', 'nodrop', 'norent', 'artifact'}
+            effect_fields = {'clickeffect', 'proceffect', 'worneffect', 'focuseffect'}
+            class_fields = set()
+            
+            # All allowed fields for items
+            allowed_fields = text_fields | numeric_fields | boolean_fields | effect_fields | {'slots'}
         
         # Operators by field type
         text_operators = {'contains', 'equals', 'not equals', 'starts with', 'ends with'}
@@ -130,6 +151,7 @@ def validate_json_filters(filters_json, max_filters=10):
         boolean_operators = {'is'}
         effect_operators = {'exists'}
         slot_operators = {'includes'}
+        class_operators = {'class_can_use'}
         
         # Validate each filter
         validated_filters = []
@@ -169,6 +191,8 @@ def validate_json_filters(filters_json, max_filters=10):
             elif field in effect_fields and operator in effect_operators:
                 valid_operator = True
             elif field == 'slots' and operator in slot_operators:
+                valid_operator = True
+            elif field in class_fields and (operator in class_operators or operator in numeric_operators):
                 valid_operator = True
                 
             if not valid_operator:
@@ -365,5 +389,128 @@ def validate_item_search_params(params):
         else:
             # Include empty filters list if validation fails
             validated['filters'] = []
+    
+    return validated
+
+def validate_spell_search_params(params):
+    """
+    Validate all spell search parameters.
+    
+    Args:
+        params: Dictionary of search parameters
+        
+    Returns:
+        Dictionary of validated parameters
+    """
+    validated = {}
+    
+    # Sanitize text search query
+    if 'q' in params:
+        validated['q'] = sanitize_search_input(params.get('q', ''), max_length=100)
+    
+    # Validate numeric inputs
+    validated['limit'] = validate_numeric_input(
+        params.get('limit'), min_val=1, max_val=100, default=20
+    )
+    validated['offset'] = validate_numeric_input(
+        params.get('offset'), min_val=0, max_val=10000, default=0
+    )
+    
+    # Validate spell category
+    if 'category' in params:
+        validated['category'] = validate_numeric_input(
+            params.get('category'), min_val=0, max_val=999
+        )
+    
+    # Validate skill filter
+    if 'skill' in params:
+        validated['skill'] = validate_numeric_input(
+            params.get('skill'), min_val=0, max_val=999
+        )
+    
+    # Validate target type
+    if 'targettype' in params:
+        validated['targettype'] = validate_numeric_input(
+            params.get('targettype'), min_val=0, max_val=999
+        )
+    
+    # Validate resist type
+    if 'resisttype' in params:
+        validated['resisttype'] = validate_numeric_input(
+            params.get('resisttype'), min_val=0, max_val=999
+        )
+    
+    # Validate level filters for all classes
+    for class_name in ['warrior', 'cleric', 'paladin', 'ranger', 'shadowknight', 'druid', 
+                       'monk', 'bard', 'rogue', 'shaman', 'necromancer', 'wizard', 
+                       'magician', 'enchanter', 'beastlord', 'berserker']:
+        min_key = f'min_{class_name}_level'
+        max_key = f'max_{class_name}_level'
+        
+        if min_key in params:
+            validated[min_key] = validate_numeric_input(
+                params.get(min_key), min_val=0, max_val=255
+            )
+        
+        if max_key in params:
+            validated[max_key] = validate_numeric_input(
+                params.get(max_key), min_val=0, max_val=255
+            )
+    
+    # Validate mana cost range
+    if 'min_mana' in params:
+        validated['min_mana'] = validate_numeric_input(
+            params.get('min_mana'), min_val=0, max_val=9999
+        )
+    
+    if 'max_mana' in params:
+        validated['max_mana'] = validate_numeric_input(
+            params.get('max_mana'), min_val=0, max_val=9999
+        )
+    
+    # Validate cast time range
+    if 'min_cast_time' in params:
+        validated['min_cast_time'] = validate_numeric_input(
+            params.get('min_cast_time'), min_val=0, max_val=99999
+        )
+    
+    if 'max_cast_time' in params:
+        validated['max_cast_time'] = validate_numeric_input(
+            params.get('max_cast_time'), min_val=0, max_val=99999
+        )
+    
+    # Validate duration range
+    if 'min_duration' in params:
+        validated['min_duration'] = validate_numeric_input(
+            params.get('min_duration'), min_val=0, max_val=999999
+        )
+    
+    if 'max_duration' in params:
+        validated['max_duration'] = validate_numeric_input(
+            params.get('max_duration'), min_val=0, max_val=999999
+        )
+    
+    # Validate range
+    if 'min_range' in params:
+        validated['min_range'] = validate_numeric_input(
+            params.get('min_range'), min_val=0, max_val=9999
+        )
+    
+    if 'max_range' in params:
+        validated['max_range'] = validate_numeric_input(
+            params.get('max_range'), min_val=0, max_val=9999
+        )
+    
+    # Validate JSON filters
+    if 'filters' in params:
+        filter_result = validate_json_filters(params.get('filters'), filter_type='spell')
+        if filter_result['is_valid']:
+            validated['filters'] = filter_result['filters']
+        else:
+            # Include empty filters list if validation fails
+            validated['filters'] = []
+    else:
+        # Set default empty filters list
+        validated['filters'] = []
     
     return validated

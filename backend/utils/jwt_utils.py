@@ -242,6 +242,10 @@ def require_admin(f):
     def decorated_function(*args, **kwargs):
         from flask import g
         
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == 'OPTIONS':
+            return f(*args, **kwargs)
+        
         # DEV MODE BYPASS: Skip authentication in development mode
         if current_app.config.get('DEV_MODE_AUTH_BYPASS', False):
             g.current_user = {

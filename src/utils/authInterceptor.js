@@ -49,11 +49,16 @@ axios.interceptors.request.use(
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config
+    // Ensure error object exists
+    if (!error) {
+      return Promise.reject(new Error('Unknown request error'))
+    }
+    
+    const originalRequest = error.config || {}
     const userStore = useUserStore()
     
     // If error is 401 and we have a refresh token
-    if (error.response?.status === 401 && !originalRequest._retry && userStore.refreshToken) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && userStore.refreshToken) {
       if (isRefreshing) {
         // If already refreshing, queue this request
         return new Promise((resolve, reject) => {

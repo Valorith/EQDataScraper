@@ -16,6 +16,21 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict
 
+def load_env_file(env_path='.env'):
+    """Load environment variables from .env file"""
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Only set if not already in environment
+                    if key not in os.environ:
+                        os.environ[key] = value
+        print(f"✓ Loaded environment variables from {env_path}")
+        return True
+    return False
+
 # Import platform-specific modules conditionally
 try:
     import termios
@@ -99,7 +114,6 @@ class AppRunner:
             'backend_port': 5001,
             'frontend_port': 3000,
             'cache_expiry_hours': 24,
-            'min_scrape_interval_minutes': 5
         }
         
         try:
@@ -847,13 +861,13 @@ class AppRunner:
             return False
     
     def _check_network_connectivity(self) -> bool:
-        """Check if we can reach the spell data source"""
+        """Check basic network connectivity"""
         try:
             import urllib.request
             import urllib.error
             
-            # Test connectivity to the spell data source
-            test_url = "https://alla.clumsysworld.com/"
+            # Test basic network connectivity
+            test_url = "https://www.google.com/"
             request = urllib.request.Request(test_url)
             request.add_header('User-Agent', 'EQDataScraper/1.0')
             
@@ -920,24 +934,46 @@ class AppRunner:
             # Any other error during OAuth check, don't fail startup
             pass
     
-    def _verify_services_health(self):
+    def _verify_services_health(self, auto_recover=False):
         """Verify that services are actually responding"""
         self.print_status("Verifying service health...", "info")
+        
+        backend_healthy = False
+        frontend_healthy = False
+        
+        # Add cooldown for auto-recovery to prevent rapid recovery loops
+        if auto_recover:
+            if not hasattr(self, '_last_recovery_time'):
+                self._last_recovery_time = 0
+            
+            current_time = time.time()
+            recovery_cooldown = 30  # 30 seconds between recovery attempts
+            if current_time - self._last_recovery_time < recovery_cooldown:
+                # Skip auto-recovery if we recently tried
+                auto_recover = False
         
         # Check backend health
         try:
             import urllib.request
             import urllib.error
             
-            backend_url = f"http://localhost:{self.config['backend_port']}/api/health"
+            backend_url = f"http://127.0.0.1:{self.config['backend_port']}/api/health"
             request = urllib.request.Request(backend_url)
-            with urllib.request.urlopen(request, timeout=5) as response:
+            
+            
+            with urllib.request.urlopen(request, timeout=10) as response:
                 if response.status == 200:
                     self.print_status("✓ Backend API is responding", "success")
+                    backend_healthy = True
                 else:
                     self.print_status(f"⚠ Backend API returned status {response.status}", "warning")
-        except urllib.error.URLError:
-            self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
+        except urllib.error.URLError as e:
+            if "timed out" in str(e):
+                self.print_status("⚠ Backend health check timed out", "warning")
+                # Check if backend has stuck connections
+                self._check_backend_stuck_connections()
+            else:
+                self.print_status("⚠ Backend API not yet responding (may still be starting up)", "warning")
         except Exception as e:
             self.print_status(f"⚠ Could not verify backend health: {e}", "warning")
         
@@ -948,10 +984,79 @@ class AppRunner:
                 result = s.connect_ex(('localhost', self.config['frontend_port']))
                 if result == 0:
                     self.print_status("✓ Frontend server is accepting connections", "success")
+                    frontend_healthy = True
                 else:
                     self.print_status("⚠ Frontend server not yet accepting connections", "warning")
         except Exception as e:
             self.print_status(f"⚠ Could not verify frontend connectivity: {e}", "warning")
+        
+        # Auto-recover if requested and backend is unhealthy
+        if auto_recover and not backend_healthy and 'backend' in self.processes:
+            self.print_status("🔧 Attempting to recover stuck backend...", "warning")
+            self._last_recovery_time = time.time()
+            self._recover_stuck_backend()
+        
+        return backend_healthy, frontend_healthy
+    
+    def _check_backend_stuck_connections(self):
+        """Check if backend has stuck connections (CLOSE_WAIT state)"""
+        if sys.platform == "win32":
+            cmd = f"netstat -ano | findstr :{self.config['backend_port']}"
+        else:
+            cmd = f"netstat -tan | grep :{self.config['backend_port']}"
+        
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.stdout:
+                close_wait_count = result.stdout.count("CLOSE_WAIT")
+                if close_wait_count > 10:
+                    self.print_status(f"⚠ Found {close_wait_count} stuck connections in CLOSE_WAIT state", "warning")
+                    return True
+        except:
+            pass
+        return False
+    
+    def _recover_stuck_backend(self):
+        """Attempt to recover a stuck backend process"""
+        backend_proc = self.processes.get('backend')
+        if backend_proc and backend_proc.poll() is None:
+            backend_pid = backend_proc.pid
+            self.print_status(f"Terminating stuck backend process (PID: {backend_pid})...", "step")
+            
+            # Force terminate the backend
+            if sys.platform == "win32":
+                subprocess.run(f"taskkill -F -PID {backend_pid}", shell=True, capture_output=True)
+            else:
+                try:
+                    os.kill(backend_pid, signal.SIGTERM)
+                    time.sleep(2)
+                    if backend_proc.poll() is None:
+                        os.kill(backend_pid, signal.SIGKILL)
+                except:
+                    pass
+            
+            # Remove from tracking
+            del self.processes['backend']
+            
+            # Wait a moment for port to be released
+            time.sleep(3)
+            
+            # Check if we're in dev mode and preserve the environment
+            if os.environ.get('ENABLE_DEV_AUTH') == 'true':
+                self.print_status("Preserving dev mode during recovery...", "detail")
+            
+            # Restart backend
+            self.print_status("Restarting backend service...", "step")
+            allocated_ports = {'backend': self.config['backend_port'], 'frontend': self.config['frontend_port']}
+            if self.start_backend(allocated_ports):
+                self.save_pids()
+                self.print_status("✅ Backend recovered successfully", "success")
+                # Wait for it to start properly
+                time.sleep(5)
+                # Skip immediate health check to give backend time to stabilize
+                # The periodic health check will verify it later
+            else:
+                self.print_status("❌ Failed to recover backend", "error")
     
     def save_pids(self):
         """Save process IDs and runtime info to file"""
@@ -1230,9 +1335,27 @@ class AppRunner:
                     if var in os.environ:
                         env[var] = os.environ[var]
                         
+                # Debug: Print ENABLE_DEV_AUTH status
+                if 'ENABLE_DEV_AUTH' in env:
+                    self.print_status(f"Dev auth passed to backend: {env['ENABLE_DEV_AUTH']}", "detail", 2)
+                else:
+                    self.print_status("ENABLE_DEV_AUTH not set in environment", "warning", 2)
+                    # Check if it's in os.environ directly
+                    if 'ENABLE_DEV_AUTH' in os.environ:
+                        self.print_status(f"Found in os.environ: {os.environ['ENABLE_DEV_AUTH']}", "warning", 2)
+                        # Force add it to env
+                        env['ENABLE_DEV_AUTH'] = os.environ['ENABLE_DEV_AUTH']
+                        self.print_status("Forced ENABLE_DEV_AUTH into subprocess env", "detail", 2)
+                        
             except ImportError:
                 # python-dotenv not available, OAuth will use system environment variables only
                 self.print_status("python-dotenv not available, using system environment only", "detail", 2)
+                
+                # Still need to copy critical variables even without dotenv
+                critical_vars = ['ENABLE_DEV_AUTH', 'ENABLE_USER_ACCOUNTS']
+                for var in critical_vars:
+                    if var in os.environ:
+                        env[var] = os.environ[var]
             
             # Platform-specific subprocess creation
             import platform
@@ -1241,15 +1364,31 @@ class AppRunner:
                 # On Windows, prevent console window popup
                 creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
             
-            process = subprocess.Popen(
-                [sys.executable, "app.py"],
-                cwd=self.backend_dir,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                creationflags=creation_flags if platform.system() == "Windows" else 0
-            )
+            # Add PYTHONUNBUFFERED to ensure output isn't buffered
+            env['PYTHONUNBUFFERED'] = '1'
+            
+            # On Windows, capturing stdout/stderr can cause blocking issues
+            # Let's try without capturing output
+            if platform.system() == "Windows":
+                process = subprocess.Popen(
+                    [sys.executable, "-u", "app.py"],  # -u for unbuffered output
+                    cwd=self.backend_dir,
+                    env=env,
+                    stdout=None,  # Don't capture stdout
+                    stderr=None,  # Don't capture stderr
+                    creationflags=creation_flags
+                )
+            else:
+                process = subprocess.Popen(
+                    [sys.executable, "-u", "app.py"],  # -u for unbuffered output
+                    cwd=self.backend_dir,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,  # Line buffering
+                    creationflags=0
+                )
             
             self.processes["backend"] = process
             
@@ -1406,7 +1545,7 @@ class AppRunner:
             self.print_status(f"Backend API: http://localhost:{allocated_ports['backend']}", "success", 1)
             print()
             self.print_status("Press Ctrl+C to stop all services", "info")
-            self.print_status("Press Ctrl+R to restart all services", "info")
+            self.print_status("Press Ctrl+T to restart all services", "info")
             
             # Verify services are actually responding
             print()
@@ -1417,6 +1556,9 @@ class AppRunner:
             
             try:
                 # Wait for processes and handle Ctrl+C
+                last_health_check = time.time()  # Set this AFTER the initial health check
+                health_check_interval = 60  # Check health every 60 seconds
+                
                 while self.running:
                     # Check if processes are still running
                     dead_processes = []
@@ -1436,6 +1578,16 @@ class AppRunner:
                         # If all processes are dead, exit
                         if not self.processes:
                             break
+                    
+                    # Periodic health check with auto-recovery
+                    current_time = time.time()
+                    if current_time - last_health_check > health_check_interval:
+                        # Only show health check output if there's an issue
+                        backend_healthy, frontend_healthy = self._verify_services_health(auto_recover=True)
+                        if backend_healthy and frontend_healthy:
+                            # Silent when everything is healthy
+                            pass
+                        last_health_check = current_time
                     
                     # Check if restart was requested
                     if self.restart_requested:
@@ -1654,18 +1806,24 @@ class AppRunner:
         backend_port = self.config['backend_port']
         frontend_port = self.config['frontend_port']
         
+        found_untracked = False
+        
         if self.is_port_in_use(backend_port):
             process_info = self.get_port_conflict_process(backend_port)
             if process_info and "Python" in process_info:
                 self.print_status(f"Backend may be running on port {backend_port} (untracked)", "warning", 2)
+                found_untracked = True
         
         if self.is_port_in_use(frontend_port):
             process_info = self.get_port_conflict_process(frontend_port)
             if process_info and ("node" in process_info or "vite" in process_info):
                 self.print_status(f"Frontend may be running on port {frontend_port} (untracked)", "warning", 2)
+                found_untracked = True
         
-        if self.is_port_in_use(backend_port) or self.is_port_in_use(frontend_port):
+        if found_untracked:
             self.print_status("Use 'python3 run.py stop' to clean up untracked services", "detail", 2)
+        else:
+            self.print_status("No untracked services found", "success", 2)
     
     def _is_deployment_environment(self) -> bool:
         """Check if we're running in a deployment environment"""
@@ -1697,6 +1855,9 @@ class AppRunner:
             
         try:
             import platform
+            self.keyboard_thread = None
+            self.keyboard_running = True
+            
             if platform.system() == "Windows":
                 # Windows-specific keyboard handling
                 self._setup_windows_keyboard_handler()
@@ -1722,9 +1883,9 @@ class AppRunner:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, new_settings)
             
             # Start keyboard listener thread
-            keyboard_thread = threading.Thread(target=self._keyboard_listener_unix, daemon=True)
-            keyboard_thread.start()
-        except Exception:
+            self.keyboard_thread = threading.Thread(target=self._keyboard_listener_unix, daemon=True)
+            self.keyboard_thread.start()
+        except Exception as e:
             # Fallback if terminal manipulation fails
             pass
     
@@ -1734,21 +1895,23 @@ class AppRunner:
             return
             
         try:
-            keyboard_thread = threading.Thread(target=self._keyboard_listener_windows, daemon=True)
-            keyboard_thread.start()
-        except Exception:
+            self.keyboard_thread = threading.Thread(target=self._keyboard_listener_windows, daemon=True)
+            self.keyboard_thread.start()
+        except Exception as e:
             pass
     
     def _keyboard_listener_unix(self):
         """Keyboard listener for Unix-like systems"""
         try:
-            while self.running:
+            while self.running and self.keyboard_running:
                 # Check if input is available
                 if select.select([sys.stdin], [], [], 0.1)[0]:
                     char = sys.stdin.read(1)
-                    if char == '\x12':  # Ctrl+R
+                    if char == '\x14':  # Ctrl+T (0x14 = 20 decimal)
                         self.restart_requested = True
-        except Exception:
+                        print("\n🔄 Ctrl+T detected - restart requested...")
+                time.sleep(0.05)
+        except Exception as e:
             pass
     
     def _keyboard_listener_windows(self):
@@ -1757,20 +1920,37 @@ class AppRunner:
             return
             
         try:
-            while self.running:
+            while self.running and getattr(self, 'keyboard_running', True):
                 if msvcrt.kbhit():
                     key = msvcrt.getch()
-                    if key == b'\x12':  # Ctrl+R
+                    
+                    # Check for Ctrl+T - try multiple representations
+                    if (key == b'\x14' or  # Standard Ctrl+T (0x14 = 20 decimal)
+                        ord(key) == 20):   # Alternative representation
                         self.restart_requested = True
-                time.sleep(0.1)
-        except Exception:
+                        print("\n🔄 Ctrl+T detected - restart requested...")
+                        
+                time.sleep(0.05)
+        except Exception as e:
             pass
     
     def cleanup_keyboard_handler(self):
         """Cleanup keyboard handler"""
+        # Stop keyboard thread if it exists
+        if hasattr(self, 'keyboard_thread') and self.keyboard_thread:
+            try:
+                # Signal the thread to stop
+                self.keyboard_running = False
+                # Give the thread time to exit
+                if self.keyboard_thread.is_alive():
+                    self.keyboard_thread.join(timeout=1)
+            except Exception:
+                pass
+        
+        # Restore terminal settings on Unix-like systems
         if HAS_UNIX_TERMINAL:
             try:
-                if self.old_termios and sys.stdin.isatty():
+                if hasattr(self, 'old_termios') and self.old_termios and sys.stdin.isatty():
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_termios)
             except Exception:
                 pass
@@ -2113,6 +2293,9 @@ class AppRunner:
         self.print_status("", "info")
 
 def main():
+    # Load environment variables from .env file first
+    load_env_file()
+    
     # Check if we're in a deployment environment and warn about usage
     runner = AppRunner()
     if runner._is_deployment_environment() and len(sys.argv) > 1 and sys.argv[1] == "start":
@@ -2188,9 +2371,33 @@ For help with common issues, see the README.md file.
                 runner.print_status("⛔ Refusing to start dev mode for security reasons.", "error")
                 return
             
+            # Load environment variables from .env file
+            if load_env_file():
+                runner.print_status("✓ Environment variables loaded from .env file", "info")
+            else:
+                runner.print_status("⚠️  No .env file found. Create one from .env.example", "warning")
+            
             os.environ['ENABLE_DEV_AUTH'] = 'true'
             os.environ['ENABLE_USER_ACCOUNTS'] = 'true'  # Also enable user accounts for dev auth to work
             os.environ['VITE_APP_MODE'] = 'development'  # Set custom dev mode flag for frontend
+            
+            # Check for database URL and provide helpful guidance
+            if not os.environ.get('DATABASE_URL'):
+                runner.print_status("⚠️  DATABASE_URL not set!", "warning")
+                runner.print_status("   Please set DATABASE_URL in your .env file or environment variables", "info")
+                runner.print_status("   Options for dev environment:", "info")
+                runner.print_status("   1. Local PostgreSQL: postgresql://user:password@localhost:5432/eqdatascraper", "info")
+                runner.print_status("   2. Railway PostgreSQL: Copy from Railway Variables tab", "info")
+                runner.print_status("      Format: postgresql://postgres:xxx@postgres.railway.internal:5432/railway", "info")
+                runner.print_status("   Note: This is for auth/spell cache (PostgreSQL), not the EQEmu content database", "info")
+            else:
+                # Check if using Railway PostgreSQL
+                db_url = os.environ.get('DATABASE_URL')
+                if 'railway.internal' in db_url:
+                    runner.print_status("✓ DATABASE_URL configured (Railway PostgreSQL)", "info")
+                else:
+                    runner.print_status("✓ DATABASE_URL configured (Local PostgreSQL)", "info")
+            
             runner.print_status("🔒 Production environment checks passed - dev mode allowed", "info")
         # Set production mode flag if dev mode is not enabled
         if not os.environ.get('ENABLE_DEV_AUTH') == 'true':

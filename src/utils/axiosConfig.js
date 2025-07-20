@@ -15,6 +15,12 @@ let lastRateLimitWarning = 0
 axios.interceptors.response.use(
   response => response,
   error => {
+    // Ensure error object exists
+    if (!error) {
+      console.error('Undefined error in axios interceptor')
+      return Promise.reject(new Error('Unknown network error'))
+    }
+    
     // Check if error was already handled by auth interceptor
     if (error.handled) {
       return Promise.reject(error)
@@ -26,7 +32,7 @@ axios.interceptors.response.use(
     }
 
     // Handle timeout errors specially
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+    if (error.code === 'ECONNABORTED' || (error.message && error.message.includes('timeout'))) {
       const url = error.config?.url || ''
       // Only log timeouts for non-auth/admin endpoints to reduce noise
       if (!url.includes('/api/auth/') && 

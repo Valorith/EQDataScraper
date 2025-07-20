@@ -229,18 +229,19 @@
       </div>
     </div>
 
+    <!-- Loading Modals (outside conditional section for initial search) -->
+    <LoadingModal 
+      :visible="searching && !paginating"
+      text="Searching"
+    />
+    <!-- Pagination Loading Modal -->
+    <LoadingModal 
+      :visible="paginating"
+      text="Loading"
+    />
+
     <!-- Search Results Section -->
     <div v-if="searching || searchPerformed" class="results-section">
-      <!-- Loading Modals -->
-      <LoadingModal 
-        :visible="searching && !paginating"
-        text="Searching"
-      />
-      <!-- Pagination Loading Modal -->
-      <LoadingModal 
-        :visible="paginating"
-        text="Loading"
-      />
       
       <div v-if="!searching && items.length > 0" class="results-header">
         <div class="results-title-section">
@@ -763,6 +764,7 @@ const databaseAvailable = ref(true)
 const selectedItemDetail = ref(null)
 const viewMode = ref('list') // Default to list view
 const paginating = ref(false) // Loading state for pagination
+const searchStartTime = ref(null) // Track when search started
 
 // Advanced filtering state
 const showFilterDropdown = ref(false)
@@ -871,6 +873,7 @@ const performSearch = async (page = 1) => {
   }
   searchPerformed.value = true
   currentPage.value = page
+  searchStartTime.value = Date.now() // Record when search started
 
   try {
     const params = new URLSearchParams()
@@ -932,6 +935,16 @@ const performSearch = async (page = 1) => {
     items.value = data.items || []
     totalCount.value = data.total_count || 0
     databaseAvailable.value = true
+    
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - searchStartTime.value
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
   } catch (error) {
     console.error('Error searching items:', error)
     if (error.name === 'AbortError') {
@@ -941,6 +954,15 @@ const performSearch = async (page = 1) => {
     }
     items.value = []
     totalCount.value = 0
+    
+    // Ensure loading modal shows for minimum 1 second even on error
+    const elapsedTime = Date.now() - searchStartTime.value
+    const minDisplayTime = 1000
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
   } finally {
     searching.value = false
     paginating.value = false
@@ -954,6 +976,7 @@ const changePage = (page) => {
     
     // Set paginating state
     paginating.value = true
+    searchStartTime.value = Date.now() // Track pagination start time too
     
     // Perform the search
     performSearch(page)

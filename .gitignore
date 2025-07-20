@@ -1,3 +1,6 @@
+# Python virtual environment
+venv/
+
 # Ignore generated HTML files and logs
 *_spells.html
 temp_*.html
@@ -68,3 +71,8 @@ backend/data/query_tracking/query_metrics.json
 backend/data/query_tracking/query_timeline.json
 *.json
 *.json
+backend/backend_output.log
+
+# Sample/test directories
+backend/samples/
+backend/server.log

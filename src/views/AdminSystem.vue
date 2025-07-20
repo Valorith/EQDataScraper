@@ -120,7 +120,18 @@
 
     <!-- Database Metrics -->
     <div class="metrics-section" v-if="databaseStats">
-      <h2>Database Performance</h2>
+      <div class="section-header">
+        <h2>Database Performance</h2>
+        <button 
+          class="reset-button"
+          @click="showResetConfirmation = true"
+          :disabled="isResetting"
+          title="Reset all database performance metrics and tracking data"
+        >
+          <i class="fas fa-undo"></i>
+          Reset Metrics
+        </button>
+      </div>
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-header">
@@ -443,14 +454,59 @@
       </div>
     </div>
   </div>
+
+  <!-- Reset Confirmation Modal -->
+  <div v-if="showResetConfirmation" class="modal-overlay" @click="showResetConfirmation = false">
+    <div class="modal-content" @click.stop>
+      <div class="modal-header">
+        <h3><i class="fas fa-exclamation-triangle"></i> Reset Database Metrics</h3>
+        <button class="close-button" @click="showResetConfirmation = false">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to reset all database performance metrics and tracking data?</p>
+        <p class="warning-text">
+          <i class="fas fa-info-circle"></i>
+          This will permanently clear:
+        </p>
+        <ul class="reset-list">
+          <li>Query execution times and history</li>
+          <li>Slow query records</li>
+          <li>Table access statistics</li>
+          <li>Query type counters</li>
+          <li>Timeline data</li>
+        </ul>
+        <p class="warning-text">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button 
+          class="cancel-button"
+          @click="showResetConfirmation = false"
+          :disabled="isResetting"
+        >
+          Cancel
+        </button>
+        <button 
+          class="confirm-button"
+          @click="resetDatabaseMetrics"
+          :disabled="isResetting"
+        >
+          <i class="fas fa-undo"></i>
+          {{ isResetting ? 'Resetting...' : 'Reset Metrics' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { getApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
+import { requestManager } from '../utils/requestManager'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -475,6 +531,7 @@ const systemLogs = ref([])
 const logLevel = ref('all')
 const refreshingLogs = ref(false)
 const databaseStats = ref(null)
+const loading = ref(false)
 
 // Heartbeat monitoring
 const heartbeatStatus = ref('Unknown')
@@ -486,7 +543,7 @@ let updateInterval = null
 
 // Query timeline graph state
 const queryTimelineChart = ref(null)
-const selectedTimeScale = ref('1h')
+const selectedTimeScale = ref('6h')
 const timeScales = [
   { value: '1h', label: '1 Hour' },
   { value: '6h', label: '6 Hours' },
@@ -501,6 +558,10 @@ const showTableModal = ref(false)
 const selectedTable = ref('')
 const tableBreakdown = ref({})
 const tableBreakdownLoading = ref(false)
+
+// Reset confirmation modal data
+const showResetConfirmation = ref(false)
+const isResetting = ref(false)
 
 // Computed
 const systemHealthClass = computed(() => {
@@ -628,9 +689,16 @@ const sortedTables = computed(() => {
 const checkHeartbeat = async () => {
   try {
     const startTime = Date.now()
-    const response = await axios.get(`${API_BASE_URL}/api/health`, {
-      timeout: 5000
-    })
+    const response = await requestManager.get(`${getApiBaseUrl()}/api/health`, {
+      timeout: 3000
+    }, 'heartbeat')
+    
+    // Check if request was cancelled
+    if (!response) {
+      console.log('Heartbeat request was cancelled')
+      return
+    }
+    
     const responseTime = Date.now() - startTime
     
     if (response.status === 200) {
@@ -663,17 +731,23 @@ const checkHeartbeat = async () => {
 }
 
 const loadSystemStats = async () => {
+  loading.value = true
+  
   try {
-    // Check if user has proper authentication
+    // Check if user has proper authentication or if OAuth is disabled
     const isAdmin = userStore.user && userStore.user.role === 'admin'
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     
-    if (!isAdmin) {
+    // In dev mode with OAuth disabled, allow access to system metrics
+    if (!isAdmin && !isOAuthDisabled) {
       console.log('Loading limited system metrics for non-admin user')
       // Load basic health data that doesn't require admin
       try {
-        const healthResponse = await axios.get(`${API_BASE_URL}/api/health`)
-        if (healthResponse.data) {
+        const healthResponse = await requestManager.get(`${getApiBaseUrl()}/api/health`, {
+          timeout: 3000
+        }, 'health-check')
+        if (healthResponse && healthResponse.data) {
           systemStats.value = {
             uptime: 0,
             avgResponseTime: 0,
@@ -692,41 +766,88 @@ const loadSystemStats = async () => {
       }
       return
     }
+    
+    console.log('Loading system metrics:', {
+      isAdmin,
+      isOAuthDisabled,
+      hasToken: !!token,
+      mode: import.meta.env.MODE
+    })
 
     // Load comprehensive system metrics for admins
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const headers = {}
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
-    const metricsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/metrics`, { 
+    const metricsResponse = await requestManager.get(`${getApiBaseUrl()}/api/admin/system/metrics`, { 
       headers,
-      timeout: 15000 // 15 second timeout for admin metrics
-    })
-    const metricsData = metricsResponse.data.data
+      timeout: 5000 // 5 second timeout for admin metrics
+    }, 'system-metrics')
     
-    // Update system stats with real data
-    systemStats.value = {
-      uptime: metricsData.system.uptime_seconds,
-      avgResponseTime: metricsData.performance.avg_response_time,
-      serverLoad: metricsData.system.cpu_percent,
-      memoryUsed: metricsData.system.memory.used,
-      memoryTotal: metricsData.system.memory.total,
-      errorRate: metricsData.performance.error_rate,
-      errorCount: metricsData.performance.error_count
+    // Check if request was cancelled
+    if (!metricsResponse) {
+      console.log('Metrics request was cancelled')
+      return
     }
+    
+    console.log('Metrics response received:', {
+      status: metricsResponse.status,
+      data: metricsResponse.data,
+      hasData: !!metricsResponse.data,
+      hasNestedData: !!(metricsResponse.data && metricsResponse.data.data)
+    })
+    
+    // Check if response contains expected data structure
+    if (!metricsResponse.data || !metricsResponse.data.data) {
+      console.error('Invalid metrics response structure. Expected response.data.data but got:', {
+        responseData: metricsResponse.data,
+        responseKeys: metricsResponse.data ? Object.keys(metricsResponse.data) : 'No data'
+      })
+      throw new Error('Invalid metrics response structure')
+    }
+    
+    const metricsData = metricsResponse.data.data
+    console.log('Metrics data extracted:', {
+      hasSystem: !!metricsData.system,
+      hasPerformance: !!metricsData.performance,
+      systemKeys: metricsData.system ? Object.keys(metricsData.system) : 'No system data',
+      performanceKeys: metricsData.performance ? Object.keys(metricsData.performance) : 'No performance data'
+    })
+    
+    // Validate required fields exist
+    if (!metricsData.system || !metricsData.performance) {
+      console.error('Missing required metrics fields:', metricsData)
+      throw new Error('Missing required metrics fields')
+    }
+    
+    // Update system stats with real data (with fallbacks)
+    systemStats.value = {
+      uptime: metricsData.system?.uptime_seconds || 0,
+      avgResponseTime: metricsData.performance?.avg_response_time || 0,
+      serverLoad: metricsData.system?.cpu_percent || 0,
+      memoryUsed: metricsData.system?.memory?.used || 0,
+      memoryTotal: metricsData.system?.memory?.total || 100,
+      errorRate: metricsData.performance?.error_rate || 0,
+      errorCount: metricsData.performance?.error_count || 0
+    }
+    
+    console.log('System stats updated:', systemStats.value)
     
     // Use the calculated health score from backend
     healthScore.value = metricsData.health_score
     
     // Update database stats
     databaseStats.value = metricsData.database
-    console.log('Database stats updated:', databaseStats.value)
     
     // Generate table colors if we have table data
     if (databaseStats.value?.tables_accessed) {
       tableColors.value = generateTableColors(databaseStats.value.tables_accessed)
       // Draw the timeline chart
-      setTimeout(() => drawQueryTimeline(), 100)
+      setTimeout(() => {
+        drawQueryTimeline()
+      }, 100)
     }
     
     // Update response time history
@@ -744,64 +865,72 @@ const loadSystemStats = async () => {
     // Load API endpoints status
     await loadEndpointsStatus()
     
+    // Set loading to false on success
+    loading.value = false
+    
   } catch (error) {
+    console.error('Error loading system metrics:', error)
+    
+    // Set default stats for all error cases
+    const defaultStats = {
+      uptime: 0,
+      avgResponseTime: 0,
+      serverLoad: 0,
+      memoryUsed: 0,
+      memoryTotal: 100,
+      errorRate: 0,
+      errorCount: 0
+    }
+    
     if (error.response?.status === 401) {
       console.log('System metrics require authentication')
-      // Don't redirect, just show limited data
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 50
     } else if (error.response?.status === 403) {
       console.log('System metrics require admin privileges')
-      // Don't redirect, just show limited data
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 50
       router.push('/admin')
     } else if (error.response?.status === 404) {
-      console.log('System metrics endpoint not found')
-    } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.log('System metrics endpoint not found - ensure backend is running and endpoints are registered')
+      systemStats.value = defaultStats
+      healthScore.value = 0
+    } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.log('System metrics request timed out - using fallback data')
-      systemStats.value = {
-        uptime: 0,
-        avgResponseTime: 0,
-        serverLoad: 0,
-        memoryUsed: 0,
-        memoryTotal: 100,
-        errorRate: 0,
-        errorCount: 0
-      }
+      systemStats.value = defaultStats
       healthScore.value = 25 // Lower score for timeout
+    } else if (error.message?.includes('Invalid metrics response')) {
+      console.error('Invalid API response format - backend may be returning incorrect data structure')
+      systemStats.value = defaultStats
+      healthScore.value = 0
     } else if (error.response) {
-      console.warn('Error loading system stats:', error.response.status)
+      console.warn('Error loading system stats - HTTP status:', error.response.status)
+      console.warn('Response data:', error.response.data)
+      systemStats.value = defaultStats
+      healthScore.value = 0
     } else {
-      console.warn('Could not reach system metrics endpoint')
+      console.warn('Could not reach system metrics endpoint:', error.message)
+      systemStats.value = defaultStats
+      healthScore.value = 0
     }
+    
+    // Always set loading to false on error
+    loading.value = false
   }
 }
 
 const loadEndpointsStatus = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
+    const headers = {}
+    
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
-    const endpointsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/endpoints`, { 
+    const endpointsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/endpoints`, { 
       headers,
       timeout: 15000 // 15 second timeout for endpoint metrics
     })
@@ -847,8 +976,12 @@ const refreshLogs = async () => {
 const loadSystemLogs = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const headers = {
-      'Authorization': `Bearer ${token}`
+    const isOAuthDisabled = import.meta.env.MODE === 'development' && !userStore.user
+    const headers = {}
+    
+    // Only add auth header if we have a token and OAuth is enabled
+    if (token && !isOAuthDisabled) {
+      headers['Authorization'] = `Bearer ${token}`
     }
     
     const params = {
@@ -856,7 +989,7 @@ const loadSystemLogs = async () => {
       limit: 50
     }
     
-    const logsResponse = await axios.get(`${API_BASE_URL}/api/admin/system/logs`, { 
+    const logsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/logs`, { 
       headers, 
       params,
       timeout: 15000 // 15 second timeout for logs
@@ -1206,7 +1339,9 @@ const calculateQueryThresholds = (timelineData) => {
 
 // Draw query timeline chart
 const drawQueryTimeline = () => {
-  if (!queryTimelineChart.value) return
+  if (!queryTimelineChart.value) {
+    return
+  }
   
   const canvas = queryTimelineChart.value
   const ctx = canvas.getContext('2d')
@@ -1227,12 +1362,33 @@ const drawQueryTimeline = () => {
   
   // Get data based on selected time scale
   const timelineData = generateTimelineData()
-  if (!timelineData || timelineData.length === 0) return
+  
+  if (!timelineData || timelineData.length === 0) {
+    // Draw empty state message
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '16px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('No query data available', width / 2, height / 2)
+    ctx.font = '12px sans-serif'
+    ctx.fillText('Data will appear as queries are executed', width / 2, height / 2 + 20)
+    return
+  }
   
   // Find max value for scaling
   const maxValue = Math.max(...timelineData.flatMap(point => 
     Object.values(point.data).reduce((sum, val) => sum + val, 0)
   )) || 1
+  
+  // If maxValue is 0 or very small, show minimal data message
+  if (maxValue <= 1) {
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '14px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Minimal query activity', width / 2, height / 2 - 10)
+    ctx.font = '12px sans-serif'
+    ctx.fillText('Chart will display meaningful data as more queries are executed', width / 2, height / 2 + 10)
+    return
+  }
   
   // Calculate intelligent thresholds
   const thresholds = calculateQueryThresholds(timelineData)
@@ -1265,7 +1421,10 @@ const drawQueryTimeline = () => {
     
     const points = []
     timelineData.forEach((point, index) => {
-      const x = padding + (index / (timelineData.length - 1)) * chartWidth
+      // Handle single data point case
+      const x = timelineData.length === 1 ? 
+        padding + chartWidth / 2 : 
+        padding + (index / (timelineData.length - 1)) * chartWidth
       const y = padding + chartHeight - (point.data[table] || 0) / maxValue * chartHeight
       points.push({ x, y, value: point.data[table] || 0 })
       
@@ -1311,6 +1470,12 @@ const drawQueryTimeline = () => {
     })
   })
   
+  // Draw time scale indicator
+  ctx.fillStyle = '#667eea'
+  ctx.font = 'bold 14px sans-serif'
+  ctx.textAlign = 'right'
+  ctx.fillText(`${selectedTimeScale.value.toUpperCase()} (${timelineData.length} points)`, padding + chartWidth, padding - 10)
+  
   // Draw axis labels
   ctx.fillStyle = '#d1d5db'
   ctx.font = '12px sans-serif'
@@ -1331,13 +1496,19 @@ const drawQueryTimeline = () => {
   ctx.font = '11px sans-serif'
   ctx.textAlign = 'center'
   
-  const labelInterval = Math.ceil(timelineData.length / 6)
-  timelineData.forEach((point, index) => {
-    if (index % labelInterval === 0 || index === timelineData.length - 1) {
-      const x = padding + (index / (timelineData.length - 1)) * chartWidth
-      ctx.fillText(point.time, x, height - 25)
-    }
-  })
+  if (timelineData.length === 1) {
+    // Single point - center the label
+    ctx.fillText(timelineData[0].time, padding + chartWidth / 2, height - 25)
+  } else {
+    // Multiple points - distribute labels
+    const labelInterval = Math.max(1, Math.ceil(timelineData.length / 4))
+    timelineData.forEach((point, index) => {
+      if (index % labelInterval === 0 || index === timelineData.length - 1) {
+        const x = padding + (index / (timelineData.length - 1)) * chartWidth
+        ctx.fillText(point.time, x, height - 25)
+      }
+    })
+  }
   
   // Add threshold lines based on intelligent analysis
   // Only show threshold lines if they would be meaningful and visible
@@ -1399,66 +1570,48 @@ const generateTimelineData = () => {
   const now = new Date()
   const points = []
   
-  // Determine how many hours to include based on time scale
-  let hoursToInclude = 1
-  if (selectedTimeScale.value === '1h') hoursToInclude = 1
-  else if (selectedTimeScale.value === '6h') hoursToInclude = 6
-  else if (selectedTimeScale.value === '24h') hoursToInclude = 24
-  else if (selectedTimeScale.value === '7d') hoursToInclude = 168
+  // Determine how many entries to include based on time scale  
+  let entriesToInclude = timeline.length // Start with all available data
+  if (selectedTimeScale.value === '1h') {
+    entriesToInclude = 1 // Always show only the most recent entry
+  } else if (selectedTimeScale.value === '6h') {
+    entriesToInclude = Math.min(3, timeline.length) // Show last 3 hours for visual difference
+  } else if (selectedTimeScale.value === '24h') {
+    entriesToInclude = Math.min(5, timeline.length) // Show last 5 entries
+  } else if (selectedTimeScale.value === '7d') {
+    entriesToInclude = timeline.length // Show all available data
+  }
   
   // Get the relevant timeline entries
-  const relevantEntries = timeline.slice(-hoursToInclude)
+  const relevantEntries = timeline.slice(-entriesToInclude)
   
-  // Aggregate data based on time scale
-  if (selectedTimeScale.value === '1h') {
-    // For 1 hour, show data points every 5 minutes (interpolated)
-    for (let i = 0; i < 12; i++) {
-      const entry = relevantEntries[0] || { tables: {} }
-      const data = {}
-      Object.keys(entry.tables || {}).forEach(table => {
-        // Distribute the hourly count across 5-minute intervals
-        data[table] = Math.round((entry.tables[table] || 0) / 12)
-      })
-      points.push({ 
-        time: `-${(11 - i) * 5}m`, 
-        data 
-      })
-    }
-  } else if (selectedTimeScale.value === '6h' || selectedTimeScale.value === '24h') {
-    // Show hourly data
-    relevantEntries.forEach((entry, index) => {
-      const hoursAgo = relevantEntries.length - index - 1
-      points.push({
-        time: `-${hoursAgo}h`,
-        data: entry.tables || {}
-      })
-    })
-  } else if (selectedTimeScale.value === '7d') {
-    // Aggregate by day
-    const dailyData = {}
-    relevantEntries.forEach(entry => {
-      const date = new Date(entry.timestamp)
-      const dayKey = date.toISOString().split('T')[0]
-      
-      if (!dailyData[dayKey]) {
-        dailyData[dayKey] = {}
-      }
-      
-      Object.entries(entry.tables || {}).forEach(([table, count]) => {
-        dailyData[dayKey][table] = (dailyData[dayKey][table] || 0) + count
-      })
-    })
+  // Process entries based on time scale
+  relevantEntries.forEach((entry, index) => {
+    let timeLabel
     
-    // Convert to points
-    const days = Object.keys(dailyData).sort()
-    days.forEach((day, index) => {
-      const daysAgo = days.length - index - 1
-      points.push({
-        time: `-${daysAgo}d`,
-        data: dailyData[day]
-      })
+    if (selectedTimeScale.value === '1h') {
+      timeLabel = 'Now'
+    } else if (selectedTimeScale.value === '7d') {
+      // For 7-day view, show date
+      const date = new Date(entry.timestamp)
+      timeLabel = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    } else {
+      // For hourly views (6h, 24h), show relative time
+      const hoursAgo = relevantEntries.length - index - 1
+      timeLabel = hoursAgo === 0 ? 'Now' : `-${hoursAgo}h`
+    }
+    
+    let data = entry.tables || {}
+    // If no table-specific data, use total as a general metric
+    if (Object.keys(data).length === 0 && entry.total_queries > 0) {
+      data = { 'queries': entry.total_queries }
+    }
+    
+    points.push({
+      time: timeLabel,
+      data: data
     })
-  }
+  })
   
   // Ensure we have data for all accessed tables
   const allTables = Object.keys(databaseStats.value?.tables_accessed || {})
@@ -1478,6 +1631,55 @@ watch(selectedTimeScale, () => {
   drawQueryTimeline()
 })
 
+// Reset database performance metrics
+const resetDatabaseMetrics = async () => {
+  try {
+    isResetting.value = true
+    
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+    
+    console.log('Resetting database performance metrics...')
+    
+    const response = await axios.post(`${getApiBaseUrl()}/api/admin/system/metrics/reset`, {}, { 
+      headers,
+      timeout: 10000
+    })
+    
+    if (response.data.success) {
+      console.log('Database metrics reset successfully')
+      
+      // Show success notification
+      notificationStore.addNotification({
+        type: 'success',
+        title: 'Metrics Reset',
+        message: 'Database performance metrics have been reset successfully'
+      })
+      
+      // Refresh the metrics data
+      await loadSystemStats()
+      
+    } else {
+      throw new Error(response.data.message || 'Reset failed')
+    }
+    
+  } catch (error) {
+    console.error('Error resetting database metrics:', error)
+    
+    notificationStore.addNotification({
+      type: 'error',
+      title: 'Reset Failed',
+      message: error.response?.data?.message || error.message || 'Failed to reset database metrics'
+    })
+  } finally {
+    isResetting.value = false
+    showResetConfirmation.value = false
+  }
+}
+
 // Show table breakdown modal
 const showTableBreakdown = async (tableName) => {
   try {
@@ -1494,7 +1696,7 @@ const showTableBreakdown = async (tableName) => {
       'Authorization': `Bearer ${token}`
     }
     
-    const response = await axios.get(`${API_BASE_URL}/api/admin/database/table-sources/${tableName}`, { 
+    const response = await axios.get(`${getApiBaseUrl()}/api/admin/database/table-sources/${tableName}`, { 
       headers,
       timeout: 15000 // Increased timeout to match other endpoints
     })
@@ -1532,16 +1734,33 @@ onMounted(() => {
   }
   
   console.log('User authenticated as admin, loading system stats')
-  loadSystemStats()
+  // Load data with error handling
+  loadSystemStats().catch(err => {
+    console.error('Failed to load system stats:', err)
+    // Set offline mode
+    heartbeatStatus.value = 'Offline'
+    healthScore.value = 0
+  })
   
   // Re-enable auto-refresh with longer intervals to reduce load
-  console.log('🔄 Starting auto-refresh every 60 seconds (reduced frequency)')
-  updateInterval = setInterval(loadSystemStats, 60000)  // Increased from 30s to 60s
+  console.log('🔄 Starting auto-refresh every 5 seconds')
+  updateInterval = setInterval(() => {
+    loadSystemStats().catch(err => {
+      console.error('Failed to refresh system stats:', err)
+    })
+  }, 5000)  // Update every 5 seconds for more real-time monitoring
   
   // Re-enable heartbeat monitoring with longer intervals
   console.log('🫀 Starting heartbeat monitoring every 30 seconds (reduced frequency)')
-  checkHeartbeat()
-  heartbeatInterval = setInterval(checkHeartbeat, 30000)  // Increased from 15s to 30s
+  checkHeartbeat().catch(err => {
+    console.error('Initial heartbeat check failed:', err)
+    heartbeatStatus.value = 'Offline'
+  })
+  heartbeatInterval = setInterval(() => {
+    checkHeartbeat().catch(err => {
+      console.error('Heartbeat check failed:', err)
+    })
+  }, 30000)  // Increased from 15s to 30s
 })
 
 onUnmounted(() => {
@@ -2981,5 +3200,120 @@ onUnmounted(() => {
 
 .modal-body::-webkit-scrollbar-thumb:hover {
   background: rgba(102, 126, 234, 0.8);
+}
+
+/* Section header styles */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+/* Reset button styles */
+.reset-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.reset-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.reset-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Reset confirmation modal styles */
+.warning-text {
+  color: #f59e0b;
+  font-weight: 500;
+  margin: 1rem 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reset-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem 1.5rem;
+}
+
+.reset-list li {
+  padding: 0.25rem 0;
+  position: relative;
+}
+
+.reset-list li::before {
+  content: '•';
+  color: #f59e0b;
+  position: absolute;
+  left: -1rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cancel-button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.confirm-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.confirm-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+}
+
+.confirm-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

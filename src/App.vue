@@ -5,25 +5,18 @@
     
     <!-- User Authentication (top-right corner) -->
     <div class="auth-section">
-      <UserMenu v-if="userStore.isAuthenticated" />
-      <div v-else-if="isDevModeBypass" class="dev-bypass-indicator">
+      <UserMenu v-if="authInitialized && userStore.isAuthenticated" />
+      <div v-else-if="authInitialized && isDevModeBypass" class="dev-bypass-indicator">
         <span class="dev-badge">DEV MODE</span>
         <span class="dev-user">Admin User</span>
       </div>
-      <GoogleAuthButton v-else-if="devAuthCheckComplete" />
-      <div v-else class="auth-loading">
-        <i class="fas fa-spinner fa-spin"></i>
-      </div>
+      <!-- Show GoogleAuthButton by default to avoid race condition -->
+      <GoogleAuthButton v-else />
     </div>
     
     
     <router-view />
     
-    <!-- Debug Panel for production debugging -->
-    <DebugPanel ref="debugPanel" />
-    
-    <!-- Dev Login Panel (only shows in development with flag) -->
-    <DevLogin v-if="!isProduction" ref="devLogin" />
     
     <!-- Toast Notification -->
     <ToastNotification 
@@ -35,60 +28,65 @@
       :duration="currentToast.duration"
     />
     
-    <!-- Debug Panel Toggle Button -->
+    <!-- Thread Monitor Toggle Button -->
     <button 
-      v-if="!isProduction" 
-      @click="toggleDebugPanel" 
-      class="debug-toggle-btn"
-      title="Toggle Debug Panel"
+      v-if="!isProduction && (userStore.isAdmin || isDevModeBypass)" 
+      @click="toggleThreadMonitor" 
+      class="thread-monitor-toggle-btn"
+      title="Toggle Thread Monitor"
     >
-      🔧
+      📊
     </button>
     
-    <!-- Dev Login Toggle Button (for simulating login) -->
-    <button 
-      v-if="!isProduction" 
-      @click="toggleDevLogin" 
-      class="dev-login-toggle-btn"
-      title="Toggle Dev Login Panel"
-    >
-      👤
-    </button>
+    <!-- Thread Monitor Component -->
+    <ThreadMonitor 
+      v-if="!isProduction && (userStore.isAdmin || isDevModeBypass)"
+      :visible="showThreadMonitor"
+      @close="showThreadMonitor = false"
+    />
+    
+    <!-- Backend Status Indicator -->
+    <BackendStatus :always-show="!isProduction" />
   </div>
 </template>
 
 <script>
 import { useUserStore } from './stores/userStore'
-import DebugPanel from './components/DebugPanel.vue'
-import DevLogin from './components/DevLogin.vue'
 import AppLogo from './components/AppLogo.vue'
 import GoogleAuthButton from './components/GoogleAuthButton.vue'
 import UserMenu from './components/UserMenu.vue'
 import ToastNotification from './components/ToastNotification.vue'
+import ThreadMonitor from './components/ThreadMonitor.vue'
+import BackendStatus from './components/BackendStatus.vue'
 import { toastService } from './services/toastService'
 import { ref, watch, watchEffect, toRef, computed } from 'vue'
 import { useDevMode } from './composables/useDevMode'
 import axios from 'axios'
 import { API_BASE_URL } from './config/api'
+import { threadManager, trackAsync } from './utils/threadManager'
 
 export default {
   name: 'App',
   components: {
-    DebugPanel,
-    DevLogin,
     AppLogo,
     GoogleAuthButton,
     UserMenu,
-    ToastNotification
+    ToastNotification,
+    ThreadMonitor,
+    BackendStatus
   },
   setup() {
     const userStore = useUserStore()
     const isProduction = import.meta.env.PROD
     const currentToast = ref(null)
     const toast = ref(null)
+    const showThreadMonitor = ref(false)
     const devMode = useDevMode()
     // Use the ref directly from the composable
     const { isDevAuthEnabled, devAuthCheckComplete, checkDevAuthStatus } = devMode
+    
+    // Track auth initialization state to prevent UI race condition
+    const authInitialized = ref(false)
     
     // Check if we should bypass auth completely in development mode
     const isDevModeBypass = computed(() => {
@@ -116,10 +114,12 @@ export default {
       isProduction, 
       currentToast, 
       toast, 
+      showThreadMonitor,
       isDevAuthEnabled, 
       devAuthCheckComplete,
       checkDevAuthStatus,
-      isDevModeBypass
+      isDevModeBypass,
+      authInitialized
     }
   },
   methods: {
@@ -131,15 +131,8 @@ export default {
         console.log('🔄 Dev mode state refreshed')
       }
     },
-    toggleDebugPanel() {
-      if (this.$refs.debugPanel) {
-        this.$refs.debugPanel.toggleDebugPanel()
-      }
-    },
-    toggleDevLogin() {
-      if (this.$refs.devLogin) {
-        this.$refs.devLogin.toggleMinimize()
-      }
+    toggleThreadMonitor() {
+      this.showThreadMonitor = !this.showThreadMonitor
     }
   },
   async mounted() {
@@ -152,28 +145,35 @@ export default {
     
     // Trigger backend cleanup on page refresh to prevent hanging
     if (!isHotReload) {
-      try {
-        // First check if backend is available before calling cleanup
-        // Use the centralized API_BASE_URL instead of environment variable
-        if (import.meta.env.MODE === 'development') {
-          console.debug(`🔧 Checking backend health at: ${API_BASE_URL}/api/health`)
+      // Use requestIdleCallback to avoid blocking initial render
+      const performCleanup = async () => {
+        try {
+          // Use fetch with keepalive for better reliability
+          const healthCheck = await fetch(`${API_BASE_URL}/api/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(1000) // 1 second timeout
+          });
+          
+          if (healthCheck.ok) {
+            // Backend is available, call cleanup with keepalive
+            fetch(`${API_BASE_URL}/api/cleanup`, {
+              method: 'POST',
+              keepalive: true,
+              body: JSON.stringify({}),
+              headers: { 'Content-Type': 'application/json' }
+            }).catch(() => {
+              // Silently ignore cleanup failures
+            });
+          }
+        } catch (error) {
+          // Silently ignore if backend not available
         }
-        
-        axios.get(`${API_BASE_URL}/api/health`, { timeout: 2000 })
-          .then(() => {
-            // Backend is available, call cleanup
-            return axios.post(`${API_BASE_URL}/api/cleanup`, {}, { timeout: 3000 })
-          })
-          .then(() => {
-            if (import.meta.env.MODE === 'development') {
-              console.debug('🧹 Backend cleanup completed')
-            }
-          })
-          .catch(() => {
-            // Silently ignore if backend not available or cleanup fails
-          })
-      } catch (error) {
-        // Silently ignore cleanup failures
+      };
+      
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(performCleanup, { timeout: 2000 });
+      } else {
+        setTimeout(performCleanup, 100);
       }
     }
     
@@ -221,6 +221,7 @@ export default {
       if (import.meta.env.MODE === 'development') {
         console.log('🔧 Dev mode bypass setup complete - skipping all auth initialization')
       }
+      this.authInitialized = true // Set auth as initialized for dev bypass
       return // Skip all other auth initialization
     }
     
@@ -264,9 +265,16 @@ export default {
     
     // Only retry if we didn't have cached state AND we're not in production AND not enabled
     if (!isHotReload && !wasRestored && !this.isDevAuthEnabled && !this.isProduction) {
-      setTimeout(async () => {
-        await this.checkDevAuthStatus(true) // Force re-check
-      }, 3000)
+      // Use requestIdleCallback to avoid blocking the UI
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(async () => {
+          await this.checkDevAuthStatus(true) // Force re-check
+        }, { timeout: 3000 });
+      } else {
+        setTimeout(async () => {
+          await this.checkDevAuthStatus(true) // Force re-check
+        }, 3000)
+      }
     }
     
     // Initialize authentication system (skip on hot reload if already authenticated)
@@ -275,20 +283,33 @@ export default {
       
       if (skipAuthInit) {
         // Hot reload detected - skipping auth re-initialization
+        this.authInitialized = true
       } else {
         // Initializing authentication...
         
-        // The userStore.initializeAuth() now handles all OAuth state cleanup
-        // and has proper timeouts to prevent hanging
-        await this.userStore.initializeAuth()
-        this.userStore.setupTokenRefresh()
+        // Track authentication initialization
+        await trackAsync('App.initializeAuth', async () => {
+          // The userStore.initializeAuth() now handles all OAuth state cleanup
+          // and has proper timeouts to prevent hanging
+          await this.userStore.initializeAuth()
+          this.userStore.setupTokenRefresh()
+        }, {
+          warningThreshold: 3000,
+          timeout: 10000,
+          metadata: { component: 'App', lifecycle: 'mounted' }
+        })
         
         // Authentication initialized
       }
+      
+      // Set auth as initialized after auth check completes
+      this.authInitialized = true
     } catch (error) {
       console.error('❌ Authentication initialization failed:', error)
       // Ensure loading state is reset on error
       this.userStore.isLoading = false
+      // Set auth as initialized even on error to show login button
+      this.authInitialized = true
     }
     
     // Skip cache initialization in App.vue since main.js already handles it
@@ -444,6 +465,34 @@ export default {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* Thread Monitor Toggle Button */
+.thread-monitor-toggle-btn {
+  position: fixed;
+  bottom: 120px;
+  right: 20px;
+  background: rgba(147, 112, 219, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(147, 112, 219, 0.3);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 998;
+  font-size: 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.thread-monitor-toggle-btn:hover {
+  background: rgba(147, 112, 219, 0.3);
+  border-color: rgba(147, 112, 219, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(147, 112, 219, 0.3);
 }
 
 </style> 

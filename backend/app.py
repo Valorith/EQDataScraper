@@ -9,7 +9,18 @@ import time
 from urllib.parse import urlparse
 import warnings
 
-import psycopg2
+# Debug: Print environment immediately
+print(f"[BACKEND STARTUP] ENABLE_DEV_AUTH = {os.environ.get('ENABLE_DEV_AUTH', 'NOT SET')}")
+print(f"[BACKEND STARTUP] Python: {sys.executable}")
+print(f"[BACKEND STARTUP] CWD: {os.getcwd()}")
+
+# Import psycopg2 only when needed
+try:
+    import psycopg2
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+    print("⚠️ psycopg2 not available - PostgreSQL features disabled")
 
 # Suppress urllib3 OpenSSL warnings that spam the logs - MUST be done early
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1.1.1+')
@@ -25,13 +36,17 @@ try:
 except ImportError:
     print("⚠️ python-dotenv not available, using system environment variables only")
 
-from utils.security import sanitize_search_input, validate_item_search_params, rate_limit_by_ip
+from utils.security import sanitize_search_input, validate_item_search_params, validate_spell_search_params, rate_limit_by_ip
 
 # Import activity logger if user accounts are enabled
 if os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() == 'true':
     from utils.activity_logger import log_api_activity
 
 app = Flask(__name__)
+
+# Configure request timeout to prevent hanging connections
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # No caching in development
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
 
 # Configure dev mode auth bypass for development
 DEV_MODE_AUTH_BYPASS = (
@@ -51,6 +66,7 @@ ENABLE_USER_ACCOUNTS = os.environ.get('ENABLE_USER_ACCOUNTS', 'false').lower() =
 # Log OAuth configuration at startup for debugging
 if ENABLE_USER_ACCOUNTS:
     print("🔐 OAuth/User Accounts ENABLED")
+    print(f"   - DEV_MODE_AUTH_BYPASS: {DEV_MODE_AUTH_BYPASS}")
     print(f"   - GOOGLE_CLIENT_ID: {'SET' if os.environ.get('GOOGLE_CLIENT_ID') else 'NOT SET'}")
     print(f"   - GOOGLE_CLIENT_SECRET: {'SET' if os.environ.get('GOOGLE_CLIENT_SECRET') else 'NOT SET'}")
     oauth_redirect = os.environ.get('OAUTH_REDIRECT_URI', 'NOT SET')
@@ -86,10 +102,19 @@ if ENABLE_USER_ACCOUNTS:
     if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
     
-    CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])
+    CORS(app, 
+         origins=allowed_origins, 
+         supports_credentials=True, 
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         automatic_options=True)
 else:
     # Standard CORS for existing functionality
-    CORS(app)
+    CORS(app, 
+         origins='*',
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         automatic_options=True)
 
 # Decorator to conditionally apply rate limiting
 def exempt_when_limiting(f):
@@ -98,12 +123,20 @@ def exempt_when_limiting(f):
         return limiter.exempt(f)
     return f
 
+# Import search logging function regardless of OAuth status
+try:
+    from routes.admin import log_search_event
+    SEARCH_LOGGING_AVAILABLE = True
+except ImportError:
+    SEARCH_LOGGING_AVAILABLE = False
+    app.logger.warning("Search event logging not available - admin module not found")
+
 # Import OAuth components only if enabled
 if ENABLE_USER_ACCOUNTS:
     try:
         from routes.auth import auth_bp
         from routes.users import users_bp
-        from routes.admin import admin_bp
+        from routes.admin import admin_bp, initialize_test_data
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
         
@@ -144,11 +177,22 @@ if ENABLE_USER_ACCOUNTS:
             g.request_start_time = time.time()
             
             if request.endpoint and any(request.endpoint.startswith(prefix) for prefix in ['auth.', 'users.', 'admin.']):
+                # Skip auth endpoints in dev mode, but allow admin and users endpoints
+                if DEV_MODE_AUTH_BYPASS and request.endpoint.startswith('auth.'):
+                    g.db_connection = None
+                    return
+                
                 # Connect to database if DB_CONFIG is available (for OAuth)
                 if DB_CONFIG:
                     try:
                         if DB_TYPE == 'postgresql':
-                            g.db_connection = psycopg2.connect(**DB_CONFIG)
+                            if HAS_PSYCOPG2:
+                                # Override with shorter timeout to prevent hanging
+                                db_config_with_timeout = DB_CONFIG.copy()
+                                db_config_with_timeout['connect_timeout'] = 2  # 2 second timeout
+                                g.db_connection = psycopg2.connect(**db_config_with_timeout)
+                            else:
+                                raise Exception("psycopg2 not available")
                             app.logger.debug(f"Database connection established for endpoint: {request.endpoint}")
                         else:
                             app.logger.warning(f"Database type {DB_TYPE} not yet supported for OAuth")
@@ -201,6 +245,7 @@ if ENABLE_USER_ACCOUNTS:
                     from routes.admin import track_endpoint_metric
                     is_error = response.status_code >= 400
                     status_code = response.status_code if is_error else None
+                    track_endpoint_metric(endpoint_key, response_time, is_error, status_code)
                     error_details = None
                     
                     # Add error details for failed requests
@@ -212,13 +257,18 @@ if ENABLE_USER_ACCOUNTS:
                         except:
                             pass
                     
-                    track_endpoint_metric(
-                        endpoint_key, 
-                        response_time, 
-                        is_error, 
-                        status_code=status_code,
-                        error_details=error_details
-                    )
+                    # Wrap in try-except to prevent metric tracking from breaking requests
+                    try:
+                        track_endpoint_metric(
+                            endpoint_key, 
+                            response_time, 
+                            is_error, 
+                            status_code=status_code,
+                            error_details=error_details
+                        )
+                    except Exception as metric_error:
+                        # Log but don't fail the request
+                        app.logger.debug(f"Metric tracking error: {metric_error}")
                 except ImportError:
                     pass  # Admin routes not loaded
                 except Exception as e:
@@ -230,6 +280,9 @@ if ENABLE_USER_ACCOUNTS:
         app.register_blueprint(auth_bp, url_prefix='/api')
         app.register_blueprint(users_bp, url_prefix='/api')
         app.register_blueprint(admin_bp, url_prefix='/api')
+        
+        # Initialize test data for dev mode after blueprints are registered
+        initialize_test_data()
         
         # Temporarily register debug OAuth blueprint for troubleshooting
         try:
@@ -268,6 +321,13 @@ if ENABLE_USER_ACCOUNTS:
         ENABLE_USER_ACCOUNTS = False
 else:
     app.logger.info("OAuth user accounts disabled")
+    # Register minimal admin routes when OAuth is disabled
+    try:
+        from routes.admin_minimal import admin_minimal_bp
+        app.register_blueprint(admin_minimal_bp, url_prefix='/api')
+        app.logger.info("✅ Minimal admin routes registered (OAuth disabled)")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Could not load minimal admin routes: {e}")
 
 # Load configuration
 def load_config():
@@ -278,7 +338,6 @@ def load_config():
         'frontend_port': 3000,
         'cache_expiry_hours': 24,
         'pricing_cache_expiry_hours': 168,  # 1 week
-        'min_scrape_interval_minutes': 5,
         'use_production_database': False,
         'production_database_url': ''
     }
@@ -298,7 +357,6 @@ def load_config():
     config['frontend_port'] = int(os.getenv('FRONTEND_PORT', config['frontend_port']))
     config['cache_expiry_hours'] = int(os.getenv('CACHE_EXPIRY_HOURS', config['cache_expiry_hours']))
     config['pricing_cache_expiry_hours'] = int(os.getenv('PRICING_CACHE_EXPIRY_HOURS', config['pricing_cache_expiry_hours']))
-    config['min_scrape_interval_minutes'] = int(os.getenv('MIN_SCRAPE_INTERVAL_MINUTES', config['min_scrape_interval_minutes']))
     
     return config
 
@@ -318,16 +376,20 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
-# File handler with rotation
-try:
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file_path, maxBytes=10*1024*1024, backupCount=5  # 10MB max, 5 backup files
-    )
-    file_handler.setFormatter(log_formatter)
-    root_logger.addHandler(file_handler)
-    print(f"✅ Logging configured to write to: {log_file_path}")
-except Exception as e:
-    print(f"⚠️ Could not set up file logging: {e}")
+# File handler with rotation - TEMPORARILY DISABLED FOR DEBUGGING
+# TODO: Re-enable after fixing hanging issue
+if False:  # Disabled to debug hanging
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file_path, maxBytes=10*1024*1024, backupCount=5  # 10MB max, 5 backup files
+        )
+        file_handler.setFormatter(log_formatter)
+        root_logger.addHandler(file_handler)
+        print(f"✅ Logging configured to write to: {log_file_path}")
+    except Exception as e:
+        print(f"⚠️ Could not set up file logging: {e}")
+else:
+    print("⚠️ File logging temporarily disabled for debugging")
 
 
 logger = logging.getLogger(__name__)
@@ -412,6 +474,7 @@ DB_TYPE = None
 
 if DATABASE_URL and ENABLE_USER_ACCOUNTS:
     logger.info(f"Configuring database for OAuth from DATABASE_URL")
+    logger.info(f"DATABASE_URL starts with: {DATABASE_URL[:30]}...")
     # Parse DATABASE_URL for OAuth user storage
     # Detect database type from URL
     if DATABASE_URL.startswith('mysql://'):
@@ -434,10 +497,11 @@ if DATABASE_URL and ENABLE_USER_ACCOUNTS:
         'password': parsed.password,
         'connect_timeout': 10  # Add 10 second connection timeout
     }
-    logger.info(f"Database configured for OAuth: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
-    logger.info(f"DB_CONFIG is now set: {bool(DB_CONFIG)}")
+    logger.info(f"DB_CONFIG set with host: {DB_CONFIG['host']}, database: {DB_CONFIG['database']}")
+else:
+    logger.info(f"DB_CONFIG not set: DATABASE_URL={bool(DATABASE_URL)}, ENABLE_USER_ACCOUNTS={ENABLE_USER_ACCOUNTS}")
         
-elif DATABASE_URL and not ENABLE_USER_ACCOUNTS:
+if DATABASE_URL and not ENABLE_USER_ACCOUNTS:
     logger.info("DATABASE_URL is set but OAuth is disabled")
 elif not DATABASE_URL:
     logger.warning("No DATABASE_URL found - OAuth will work without persistence")
@@ -452,8 +516,6 @@ else:
     CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'cache')
     
     # Cache file paths (disabled but defined to prevent NameError)
-    SPELLS_CACHE_FILE = os.path.join(CACHE_DIR, 'spells_cache.json')
-    SPELL_DETAILS_CACHE_FILE = os.path.join(CACHE_DIR, 'spell_details_cache.json')
     METADATA_CACHE_FILE = os.path.join(CACHE_DIR, 'cache_metadata.json')
 
 # Initialize cache storage
@@ -478,7 +540,10 @@ def init_database_cache():
                 charset='utf8mb4'
             )
         else:
-            conn = psycopg2.connect(**DB_CONFIG)
+            if HAS_PSYCOPG2:
+                conn = psycopg2.connect(**DB_CONFIG)
+            else:
+                raise Exception("psycopg2 not available")
         cursor = conn.cursor()
         
         # SPELL CACHE TABLES REMOVED - spell system disabled
@@ -562,25 +627,21 @@ scraping_status = {
 
 # Spell system completely removed
 
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint with server memory status"""
     # This endpoint should not be rate limited
     
-    # Check content database status
-    content_db_status = {'connected': False}
-    try:
-        from utils.content_db_manager import get_content_db_manager
-        manager = get_content_db_manager()
-        content_db_status = manager.get_connection_status()
-    except:
-        pass
+    # Skip database status check for basic health endpoint to prevent timeouts
+    # Database status can be checked via /api/health/database if needed
     
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'startup_complete': server_startup_progress['startup_complete'],
-        'content_database': content_db_status
+        'dev_mode': os.environ.get('ENABLE_DEV_AUTH') == 'true'
     })
 
 @app.route('/api/health/database', methods=['GET'])
@@ -874,7 +935,11 @@ def search_items():
         
         # Execute with timeout protection
         try:
+            app.logger.info(f"Executing item search query")
+            start_time = time.time()
             cursor.execute(items_query, items_params)
+            query_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            app.logger.info(f"Item search query completed in {query_time:.2f}ms")
         except Exception as e:
             app.logger.error(f"Database query failed: {e}")
             app.logger.error(f"Query: {items_query}")
@@ -975,6 +1040,77 @@ def search_items():
                 }
             items_list.append(item_dict)
         
+        # Log search event for monitoring
+        try:
+            # Gather user information including username when available
+            user_info = {
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent', '')
+            }
+            
+            # Try to get authenticated user information
+            current_user = None
+            try:
+                from utils.jwt_utils import get_current_user
+                current_user = get_current_user()
+                if current_user:
+                    user_info['user_id'] = current_user.get('id')
+                    user_info['user_email'] = current_user.get('email')
+                    
+                    # Get full user details for display name
+                    if current_user.get('id') and ENABLE_USER_ACCOUNTS:
+                        try:
+                            from models.user import User
+                            from utils.oauth import get_oauth_db_connection
+                            oauth_conn = get_oauth_db_connection()
+                            if oauth_conn:
+                                user_model = User(oauth_conn)
+                                user_details = user_model.get_user_by_id(current_user['id'])
+                                if user_details:
+                                    # Use display_name if available, otherwise first_name + last_name
+                                    display_name = user_details.get('display_name')
+                                    if not display_name:
+                                        first_name = user_details.get('first_name', '')
+                                        last_name = user_details.get('last_name', '')
+                                        if first_name or last_name:
+                                            display_name = f"{first_name} {last_name}".strip()
+                                    
+                                    if display_name:
+                                        user_info['username'] = display_name
+                                    else:
+                                        user_info['username'] = current_user.get('email', 'Unknown User')
+                        except Exception as e:
+                            # Don't let user lookup break logging
+                            pass
+            except Exception as e:
+                # Don't let auth check break logging
+                pass
+            
+            # Gather filter information (handle both dict and list formats)
+            applied_filters = {}
+            if isinstance(filters, dict):
+                applied_filters = {k: v for k, v in filters.items() if v is not None and v != ''}
+            elif isinstance(filters, list):
+                # Convert list of filters to a dict representation
+                applied_filters = {'filter_count': len(filters), 'filters': filters} if filters else {}
+            
+            # Log the search event (always log search events for monitoring)
+            if SEARCH_LOGGING_AVAILABLE:
+                try:
+                    log_search_event(
+                        search_type='item',
+                        query=search_query,
+                        results_count=len(items_list),
+                        execution_time_ms=round(query_time, 2),
+                        filters=applied_filters if applied_filters else None,
+                        user_info=user_info
+                    )
+                except Exception as log_error:
+                    app.logger.error(f"Failed to log item search event: {log_error}")
+        except Exception as e:
+            # Don't let logging break the search
+            app.logger.error(f"Error gathering search event data: {e}")
+        
         return jsonify({
             'items': items_list,
             'total_count': total_count,
@@ -1002,197 +1138,768 @@ def search_items():
             except:
                 pass
 
-def get_bulk_pricing_from_db(spell_ids):
-    """Efficiently get pricing for multiple spells using in-memory cache"""
-    if not spell_ids:
-        return {}
-    
-    # Ensure pricing data is loaded to memory
-    if not pricing_cache_loaded:
-        load_all_pricing_to_memory()
-    
-    # Use in-memory lookup (much faster than DB queries)
-    pricing_data = {}
-    for spell_id in spell_ids:
-        if spell_id in pricing_lookup:
-            pricing_data[spell_id] = pricing_lookup[spell_id]
-    
-    return pricing_data
 
-def rebuild_pricing_lookup():
-    """Rebuild the fast pricing lookup index from spell_details_cache"""
-    global pricing_lookup
-    pricing_lookup = {}
-    failed_count = 0
-    success_count = 0
+@app.route('/api/spells/search', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Same limits as item search
+def search_spells():
+    """
+    Search spells in the EQEmu database.
+    Searches the spells_new table for spells matching the criteria.
+    """
+    app.logger.info("=== SPELL SEARCH START ===")
+    conn = None
+    cursor = None
     
-    for spell_id, details in spell_details_cache.items():
-        if details.get('pricing'):
-            pricing_lookup[spell_id] = details['pricing']
-            if details['pricing'].get('unknown') == True:
-                failed_count += 1
+    try:
+        # Get database connection using the helper function
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        app.logger.info(f"Got connection, db_type: {db_type}")
+        
+        # Validate parameters
+        validated_params = validate_spell_search_params(request.args)
+        search_query = validated_params.get('q', '')
+        limit = validated_params.get('limit', 20)
+        offset = validated_params.get('offset', 0)
+        filters = validated_params.get('filters', [])
+        
+        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}, filters={len(filters)}")
+        
+        if not search_query and not filters:
+            return jsonify({'error': 'Search query or filters required'}), 400
+        
+        cursor = conn.cursor()
+        
+        
+        # Build WHERE clause and parameters
+        where_conditions = []
+        query_params = []
+        
+        # Add search query condition if present
+        if search_query:
+            where_conditions.append("name LIKE %s")
+            query_params.append(f'%{search_query}%')
+        
+        # Add filter conditions
+        for filter_item in filters:
+            field = filter_item['field']
+            operator = filter_item['operator']
+            value = filter_item.get('value')
+            
+            # Map frontend field names to database column names
+            field_mapping = {
+                'name': 'spells_new.name',
+                'mana': 'spells_new.mana',
+                'cast_time': 'spells_new.cast_time',
+                'range': 'spells_new.range',
+                'targettype': 'spells_new.targettype',
+                'skill': 'spells_new.skill',
+                'resisttype': 'spells_new.resisttype',
+                'spell_category': 'spells_new.spell_category',
+                'buffduration': 'spells_new.buffduration',
+                'deities': 'spells_new.deities',
+                # Class level requirements
+                'warrior_level': 'spells_new.classes1',
+                'cleric_level': 'spells_new.classes2',
+                'paladin_level': 'spells_new.classes3',
+                'ranger_level': 'spells_new.classes4',
+                'shadowknight_level': 'spells_new.classes5',
+                'druid_level': 'spells_new.classes6',
+                'monk_level': 'spells_new.classes7',
+                'bard_level': 'spells_new.classes8',
+                'rogue_level': 'spells_new.classes9',
+                'shaman_level': 'spells_new.classes10',
+                'necromancer_level': 'spells_new.classes11',
+                'wizard_level': 'spells_new.classes12',
+                'magician_level': 'spells_new.classes13',
+                'enchanter_level': 'spells_new.classes14',
+                'beastlord_level': 'spells_new.classes15',
+                'berserker_level': 'spells_new.classes16',
+                # Spell effects
+                'effect1': 'spells_new.effectid1',
+                'effect2': 'spells_new.effectid2',
+                'effect3': 'spells_new.effectid3',
+                'effect4': 'spells_new.effectid4',
+                'effect5': 'spells_new.effectid5',
+                'effect6': 'spells_new.effectid6',
+                'effect7': 'spells_new.effectid7',
+                'effect8': 'spells_new.effectid8',
+                'effect9': 'spells_new.effectid9',
+                'effect10': 'spells_new.effectid10',
+                'effect11': 'spells_new.effectid11',
+                'effect12': 'spells_new.effectid12',
+                # Components
+                'component1': 'spells_new.components1',
+                'component2': 'spells_new.components2',
+                'component3': 'spells_new.components3',
+                'component4': 'spells_new.components4'
+            }
+            
+            db_field = field_mapping.get(field, f'spells_new.{field}')
+            
+            # Build condition based on operator
+            if operator == 'contains':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}%')
+            elif operator == 'equals':
+                where_conditions.append(f"{db_field} = %s")
+                query_params.append(value)
+            elif operator == 'not equals':
+                where_conditions.append(f"{db_field} != %s")
+                query_params.append(value)
+            elif operator == 'greater than':
+                where_conditions.append(f"{db_field} > %s")
+                query_params.append(value)
+            elif operator == 'less than':
+                where_conditions.append(f"{db_field} < %s")
+                query_params.append(value)
+            elif operator == 'between':
+                if isinstance(value, list) and len(value) == 2:
+                    where_conditions.append(f"{db_field} BETWEEN %s AND %s")
+                    query_params.extend([value[0], value[1]])
+            elif operator == 'exists':
+                # For effect fields and components
+                if value:
+                    where_conditions.append(f"{db_field} IS NOT NULL AND {db_field} != 0 AND {db_field} != -1")
+                else:
+                    where_conditions.append(f"({db_field} IS NULL OR {db_field} = 0 OR {db_field} = -1)")
+            elif operator == 'class_can_use':
+                # Special operator for class level requirements (255 = cannot use)
+                if value:
+                    where_conditions.append(f"{db_field} != 255")
+                else:
+                    where_conditions.append(f"{db_field} = 255")
+            elif operator == 'starts with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'{value}%')
+            elif operator == 'ends with':
+                where_conditions.append(f"{db_field} LIKE %s")
+                query_params.append(f'%{value}')
+        
+        # Detect if a specific class level filter is being used for sorting
+        class_field_for_sorting = None
+        class_to_column_map = {
+            'warrior_level': 'classes1',
+            'cleric_level': 'classes2', 
+            'paladin_level': 'classes3',
+            'ranger_level': 'classes4',
+            'shadowknight_level': 'classes5',
+            'druid_level': 'classes6',
+            'monk_level': 'classes7',
+            'bard_level': 'classes8',
+            'rogue_level': 'classes9',
+            'shaman_level': 'classes10',
+            'necromancer_level': 'classes11',
+            'wizard_level': 'classes12',
+            'magician_level': 'classes13',
+            'enchanter_level': 'classes14',
+            'beastlord_level': 'classes15',
+            'berserker_level': 'classes16'
+        }
+        
+        # Look for class level filters to determine sorting column
+        for filter_item in filters:
+            field = filter_item['field']
+            if field in class_to_column_map:
+                class_field_for_sorting = class_to_column_map[field]
+                app.logger.info(f"Using {field} ({class_field_for_sorting}) for sorting")
+                break
+        
+        # Combine all WHERE conditions
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        # Build queries with dynamic WHERE clause
+        # First get count - with a reasonable limit to prevent full table scans
+        count_query = f"""
+            SELECT COUNT(*) AS total_count
+            FROM (
+                SELECT 1 FROM spells_new
+                WHERE {where_clause}
+                LIMIT 10000
+            ) AS limited_count
+        """
+        app.logger.info(f"Executing spell count query")
+        count_start = time.time()
+        try:
+            cursor.execute(count_query, query_params)
+            count_time = (time.time() - count_start) * 1000
+            app.logger.info(f"Spell count query completed in {count_time:.2f}ms")
+            result = cursor.fetchone()
+            total_count = result['total_count'] if isinstance(result, dict) else result[0]
+            app.logger.info(f"Found {total_count} spells matching criteria")
+        except Exception as e:
+            app.logger.error(f"Count query failed: {e}")
+            # If count fails, just set a high number and continue
+            total_count = 9999
+        
+        # Determine sorting column - use specific class if filtered, otherwise minimum level
+        if class_field_for_sorting:
+            sort_column = f"CASE WHEN {class_field_for_sorting} = 255 THEN 999 ELSE {class_field_for_sorting} END"
+        else:
+            sort_column = """LEAST(
+                CASE WHEN classes1 = 255 THEN 999 ELSE classes1 END,
+                CASE WHEN classes2 = 255 THEN 999 ELSE classes2 END,
+                CASE WHEN classes3 = 255 THEN 999 ELSE classes3 END,
+                CASE WHEN classes4 = 255 THEN 999 ELSE classes4 END,
+                CASE WHEN classes5 = 255 THEN 999 ELSE classes5 END,
+                CASE WHEN classes6 = 255 THEN 999 ELSE classes6 END,
+                CASE WHEN classes7 = 255 THEN 999 ELSE classes7 END,
+                CASE WHEN classes8 = 255 THEN 999 ELSE classes8 END,
+                CASE WHEN classes9 = 255 THEN 999 ELSE classes9 END,
+                CASE WHEN classes10 = 255 THEN 999 ELSE classes10 END,
+                CASE WHEN classes11 = 255 THEN 999 ELSE classes11 END,
+                CASE WHEN classes12 = 255 THEN 999 ELSE classes12 END,
+                CASE WHEN classes13 = 255 THEN 999 ELSE classes13 END,
+                CASE WHEN classes14 = 255 THEN 999 ELSE classes14 END,
+                CASE WHEN classes15 = 255 THEN 999 ELSE classes15 END,
+                CASE WHEN classes16 = 255 THEN 999 ELSE classes16 END
+            )"""
+        
+        # Then get spells - reduce columns for better performance
+        spells_query = f"""
+            SELECT 
+                id,
+                name,
+                mana,
+                cast_time,
+                `range`,
+                targettype,
+                skill,
+                classes1, classes2, classes3, classes4, classes5, classes6,
+                classes7, classes8, classes9, classes10, classes11, classes12,
+                classes13, classes14, classes15, classes16,
+                icon, new_icon,
+                {sort_column} AS sort_level
+            FROM spells_new
+            WHERE {where_clause}
+            ORDER BY sort_level ASC, name ASC
+            LIMIT %s OFFSET %s
+        """
+        # Add limit and offset to params
+        spells_params = query_params + [limit, offset]
+        
+        # Execute spell search query with timeout protection
+        try:
+            app.logger.info(f"Executing spell search query")
+            start_time = time.time()
+            cursor.execute(spells_query, spells_params)
+            query_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            app.logger.info(f"Spell search query completed in {query_time:.2f}ms")
+        except Exception as e:
+            app.logger.error(f"Database query failed: {e}")
+            app.logger.error(f"Query: {spells_query}")
+            app.logger.error(f"Params: {spells_params}")
+            raise Exception("Database query failed - connection may have timed out")
+            
+        spells = cursor.fetchall()
+        
+        # Convert to response format with reduced columns
+        spells_list = []
+        for spell in spells:
+            if isinstance(spell, dict):
+                spell_dict = {
+                    'spell_id': str(spell['id']),
+                    'name': spell['name'],
+                    'mana': _safe_int(spell['mana']),
+                    'cast_time': _safe_int(spell['cast_time']),
+                    'range': _safe_int(spell['range']),
+                    'targettype': _safe_int(spell['targettype']),
+                    'skill': _safe_int(spell['skill']),
+                    'resisttype': 0,  # Not retrieved for performance
+                    'spell_category': 0,  # Not retrieved for performance
+                    'buffduration': 0,  # Not retrieved for performance
+                    'deities': 0,  # Not retrieved for performance
+                    'class_levels': {
+                        'warrior': _safe_int(spell['classes1']),
+                        'cleric': _safe_int(spell['classes2']),
+                        'paladin': _safe_int(spell['classes3']),
+                        'ranger': _safe_int(spell['classes4']),
+                        'shadowknight': _safe_int(spell['classes5']),
+                        'druid': _safe_int(spell['classes6']),
+                        'monk': _safe_int(spell['classes7']),
+                        'bard': _safe_int(spell['classes8']),
+                        'rogue': _safe_int(spell['classes9']),
+                        'shaman': _safe_int(spell['classes10']),
+                        'necromancer': _safe_int(spell['classes11']),
+                        'wizard': _safe_int(spell['classes12']),
+                        'magician': _safe_int(spell['classes13']),
+                        'enchanter': _safe_int(spell['classes14']),
+                        'beastlord': _safe_int(spell['classes15']),
+                        'berserker': _safe_int(spell['classes16'])
+                    },
+                    'effects': [0] * 12,  # Not retrieved for performance
+                    'components': [0] * 4,  # Not retrieved for performance
+                    'icon': _safe_int(spell['icon']),
+                    'new_icon': _safe_int(spell['new_icon'])
+                }
             else:
-                success_count += 1
+                # Handle tuple results
+                idx = 0
+                spell_dict = {
+                    'spell_id': str(spell[idx]),
+                    'name': spell[idx + 1],
+                    'mana': _safe_int(spell[idx + 2]),
+                    'cast_time': _safe_int(spell[idx + 3]),
+                    'range': _safe_int(spell[idx + 4]),
+                    'targettype': _safe_int(spell[idx + 5]),
+                    'skill': _safe_int(spell[idx + 6]),
+                    'resisttype': 0,  # Not retrieved for performance
+                    'spell_category': 0,  # Not retrieved for performance
+                    'buffduration': 0,  # Not retrieved for performance
+                    'deities': 0,  # Not retrieved for performance
+                    'class_levels': {
+                        'warrior': _safe_int(spell[idx + 7]),
+                        'cleric': _safe_int(spell[idx + 8]),
+                        'paladin': _safe_int(spell[idx + 9]),
+                        'ranger': _safe_int(spell[idx + 10]),
+                        'shadowknight': _safe_int(spell[idx + 11]),
+                        'druid': _safe_int(spell[idx + 12]),
+                        'monk': _safe_int(spell[idx + 13]),
+                        'bard': _safe_int(spell[idx + 14]),
+                        'rogue': _safe_int(spell[idx + 15]),
+                        'shaman': _safe_int(spell[idx + 16]),
+                        'necromancer': _safe_int(spell[idx + 17]),
+                        'wizard': _safe_int(spell[idx + 18]),
+                        'magician': _safe_int(spell[idx + 19]),
+                        'enchanter': _safe_int(spell[idx + 20]),
+                        'beastlord': _safe_int(spell[idx + 21]),
+                        'berserker': _safe_int(spell[idx + 22])
+                    },
+                    'effects': [0] * 12,  # Not retrieved for performance
+                    'components': [0] * 4,  # Not retrieved for performance
+                    'icon': _safe_int(spell[idx + 23]),
+                    'new_icon': _safe_int(spell[idx + 24])
+                }
+            spells_list.append(spell_dict)
+        
+        # Log search event for monitoring
+        try:
+            # Gather user information including username when available
+            user_info = {
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent', '')
+            }
+            
+            # Try to get authenticated user information
+            current_user = None
+            try:
+                from utils.jwt_utils import get_current_user
+                current_user = get_current_user()
+                if current_user:
+                    user_info['user_id'] = current_user.get('id')
+                    user_info['user_email'] = current_user.get('email')
+                    
+                    # Get full user details for display name
+                    if current_user.get('id') and ENABLE_USER_ACCOUNTS:
+                        try:
+                            from models.user import User
+                            from utils.oauth import get_oauth_db_connection
+                            oauth_conn = get_oauth_db_connection()
+                            if oauth_conn:
+                                user_model = User(oauth_conn)
+                                user_details = user_model.get_user_by_id(current_user['id'])
+                                if user_details:
+                                    # Use display_name if available, otherwise first_name + last_name
+                                    display_name = user_details.get('display_name')
+                                    if not display_name:
+                                        first_name = user_details.get('first_name', '')
+                                        last_name = user_details.get('last_name', '')
+                                        if first_name or last_name:
+                                            display_name = f"{first_name} {last_name}".strip()
+                                    
+                                    if display_name:
+                                        user_info['username'] = display_name
+                                    else:
+                                        user_info['username'] = current_user.get('email', 'Unknown User')
+                        except Exception as e:
+                            # Don't let user lookup break logging
+                            pass
+            except Exception as e:
+                # Don't let auth check break logging
+                pass
+            
+            # Gather filter information (handle both dict and list formats)
+            applied_filters = {}
+            if isinstance(filters, dict):
+                applied_filters = {k: v for k, v in filters.items() if v is not None and v != ''}
+            elif isinstance(filters, list):
+                # Convert list of filters to a dict representation
+                applied_filters = {'filter_count': len(filters), 'filters': filters} if filters else {}
+            
+            # Log the search event (always log search events for monitoring)
+            try:
+                from routes.admin import log_search_event
+                log_search_event(
+                    search_type='spell',
+                    query=search_query,
+                    results_count=len(spells_list),
+                    execution_time_ms=round(query_time, 2),
+                    filters=applied_filters if applied_filters else None,
+                    user_info=user_info
+                )
+            except Exception as log_error:
+                app.logger.error(f"Failed to log spell search event: {log_error}")
+        except Exception as e:
+            # Don't let logging break the search
+            app.logger.error(f"Error gathering search event data: {e}")
+        
+        return jsonify({
+            'spells': spells_list,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset,
+            'search_query': search_query,
+            'filters': filters
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error searching spells: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
+
+@app.route('/api/spells/<spell_id>/details', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=120, requests_per_hour=1200)  # Higher limits for single spell lookup
+def get_spell_details(spell_id):
+    """
+    Get detailed information for a specific spell by ID.
+    Returns all available spell data from the spells_new table.
+    """
+    app.logger.info(f"=== SPELL DETAILS START for ID: {spell_id} ===")
+    conn = None
+    cursor = None
     
-    logger.info(f"Rebuilt pricing lookup index with {len(pricing_lookup)} entries ({success_count} successful, {failed_count} failed)")
+    try:
+        # Validate spell_id
+        try:
+            spell_id_int = int(spell_id)
+        except ValueError:
+            return jsonify({'error': 'Invalid spell ID'}), 400
+        
+        # Get database connection
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        app.logger.info(f"Got connection, db_type: {db_type}")
+        cursor = conn.cursor()
+        
+        # Query for detailed spell information
+        spell_query = """
+            SELECT 
+                id,
+                name,
+                player_1,
+                teleport_zone,
+                you_cast,
+                other_casts,
+                cast_on_you,
+                cast_on_other,
+                spell_fades,
+                `range`,
+                aoerange,
+                pushback,
+                pushup,
+                cast_time,
+                recovery_time,
+                recast_time,
+                buffdurationformula,
+                buffduration,
+                AEDuration,
+                mana,
+                effect_base_value1, effect_base_value2, effect_base_value3, effect_base_value4,
+                effect_base_value5, effect_base_value6, effect_base_value7, effect_base_value8,
+                effect_base_value9, effect_base_value10, effect_base_value11, effect_base_value12,
+                effect_limit_value1, effect_limit_value2, effect_limit_value3, effect_limit_value4,
+                effect_limit_value5, effect_limit_value6, effect_limit_value7, effect_limit_value8,
+                effect_limit_value9, effect_limit_value10, effect_limit_value11, effect_limit_value12,
+                max1, max2, max3, max4, max5, max6, max7, max8, max9, max10, max11, max12,
+                icon,
+                new_icon,
+                spell_icon,
+                memicon,
+                components1, components2, components3, components4,
+                component_counts1, component_counts2, component_counts3, component_counts4,
+                NoexpendReagent1, NoexpendReagent2, NoexpendReagent3, NoexpendReagent4,
+                formula1, formula2, formula3, formula4, formula5, formula6,
+                formula7, formula8, formula9, formula10, formula11, formula12,
+                LightType,
+                goodEffect,
+                Activated,
+                resisttype,
+                effectid1, effectid2, effectid3, effectid4, effectid5, effectid6,
+                effectid7, effectid8, effectid9, effectid10, effectid11, effectid12,
+                targettype,
+                basediff,
+                skill,
+                zonetype,
+                EnvironmentType,
+                TimeOfDay,
+                classes1, classes2, classes3, classes4, classes5, classes6,
+                classes7, classes8, classes9, classes10, classes11, classes12,
+                classes13, classes14, classes15, classes16,
+                CastingAnim,
+                TargetAnim,
+                TravelType,
+                SpellAffectIndex,
+                disallow_sit,
+                deities,
+                field142,
+                field143,
+                new_icon,
+                spellanim,
+                uninterruptable,
+                ResistDiff,
+                dot_stacking_exempt,
+                deleteable,
+                RecourseLink,
+                no_partial_resist,
+                field152,
+                field153,
+                short_buff_box,
+                descnum,
+                typedescnum,
+                effectdescnum,
+                effectdescnum2,
+                npc_no_los,
+                field160,
+                reflectable,
+                bonushate,
+                field163,
+                field164,
+                ldon_trap,
+                EndurCost,
+                EndurTimerID,
+                IsDiscipline,
+                field169,
+                field170,
+                field171,
+                HateAdded,
+                EndurUpkeep,
+                numhits,
+                pvpresistbase,
+                pvpresistcalc,
+                pvpresistcap,
+                spell_category,
+                pvp_duration,
+                pvp_duration_cap,
+                pcnpc_only_flag,
+                cast_not_standing,
+                can_mgb,
+                nodispell,
+                npc_category,
+                npc_usefulness,
+                MinResist,
+                MaxResist,
+                viral_targets,
+                viral_timer,
+                nimbuseffect,
+                ConeStartAngle,
+                ConeStopAngle,
+                sneaking,
+                not_extendable,
+                field198,
+                field199,
+                suspendable,
+                viral_range,
+                songcap,
+                field203,
+                field204,
+                no_block,
+                field206,
+                spellgroup,
+                rank,
+                field209,
+                field210,
+                CastRestriction,
+                allowrest,
+                InCombat,
+                OutofCombat,
+                field215,
+                field216,
+                field217,
+                aemaxtargets,
+                maxtargets,
+                field220,
+                field221,
+                field222,
+                field223,
+                persistdeath,
+                field225,
+                field226,
+                min_dist,
+                min_dist_mod,
+                max_dist,
+                max_dist_mod,
+                min_range,
+                field232,
+                field233,
+                field234,
+                field235,
+                field236
+            FROM spells_new
+            WHERE id = %s
+        """
+        
+        app.logger.info(f"Executing spell details query for ID: {spell_id_int}")
+        cursor.execute(spell_query, (spell_id_int,))
+        
+        spell = cursor.fetchone()
+        if not spell:
+            return jsonify({'error': 'Spell not found'}), 404
+        
+        # Convert to dict if it's a tuple
+        if isinstance(spell, dict):
+            spell_dict = spell
+        else:
+            # Handle tuple results - map to expected field names
+            fields = [
+                'id', 'name', 'player_1', 'teleport_zone', 'you_cast', 'other_casts',
+                'cast_on_you', 'cast_on_other', 'spell_fades', 'range', 'aoerange',
+                'pushback', 'pushup', 'cast_time', 'recovery_time', 'recast_time',
+                'buffdurationformula', 'buffduration', 'AEDuration', 'mana',
+                'effect_base_value1', 'effect_base_value2', 'effect_base_value3', 'effect_base_value4',
+                'effect_base_value5', 'effect_base_value6', 'effect_base_value7', 'effect_base_value8',
+                'effect_base_value9', 'effect_base_value10', 'effect_base_value11', 'effect_base_value12',
+                'effect_limit_value1', 'effect_limit_value2', 'effect_limit_value3', 'effect_limit_value4',
+                'effect_limit_value5', 'effect_limit_value6', 'effect_limit_value7', 'effect_limit_value8',
+                'effect_limit_value9', 'effect_limit_value10', 'effect_limit_value11', 'effect_limit_value12',
+                'max1', 'max2', 'max3', 'max4', 'max5', 'max6', 'max7', 'max8', 'max9', 'max10', 'max11', 'max12',
+                'icon', 'new_icon', 'spell_icon', 'memicon',
+                'components1', 'components2', 'components3', 'components4',
+                'component_counts1', 'component_counts2', 'component_counts3', 'component_counts4',
+                'NoexpendReagent1', 'NoexpendReagent2', 'NoexpendReagent3', 'NoexpendReagent4',
+                'formula1', 'formula2', 'formula3', 'formula4', 'formula5', 'formula6',
+                'formula7', 'formula8', 'formula9', 'formula10', 'formula11', 'formula12',
+                'LightType', 'goodEffect', 'Activated', 'resisttype',
+                'effectid1', 'effectid2', 'effectid3', 'effectid4', 'effectid5', 'effectid6',
+                'effectid7', 'effectid8', 'effectid9', 'effectid10', 'effectid11', 'effectid12',
+                'targettype', 'basediff', 'skill', 'zonetype', 'EnvironmentType', 'TimeOfDay',
+                'classes1', 'classes2', 'classes3', 'classes4', 'classes5', 'classes6',
+                'classes7', 'classes8', 'classes9', 'classes10', 'classes11', 'classes12',
+                'classes13', 'classes14', 'classes15', 'classes16'
+            ] + ['field' + str(i) for i in range(142, 237)]  # Add remaining fields
+            
+            spell_dict = {field: spell[i] if i < len(spell) else None for i, field in enumerate(fields)}
+        
+        # Build detailed response
+        detailed_spell = {
+            'spell_id': str(spell_dict['id']),
+            'name': spell_dict['name'],
+            'mana': _safe_int(spell_dict['mana']),
+            'cast_time': _safe_int(spell_dict['cast_time']),
+            'recovery_time': _safe_int(spell_dict['recovery_time']),
+            'recast_time': _safe_int(spell_dict['recast_time']),
+            'range': _safe_int(spell_dict['range']),
+            'aoerange': _safe_int(spell_dict['aoerange']),
+            'buffduration': _safe_int(spell_dict['buffduration']),
+            'targettype': _safe_int(spell_dict['targettype']),
+            'skill': _safe_int(spell_dict['skill']),
+            'resisttype': _safe_int(spell_dict['resisttype']),
+            'spell_category': _safe_int(spell_dict.get('spell_category', 0)),
+            'class_levels': {
+                'warrior': _safe_int(spell_dict['classes1']),
+                'cleric': _safe_int(spell_dict['classes2']),
+                'paladin': _safe_int(spell_dict['classes3']),
+                'ranger': _safe_int(spell_dict['classes4']),
+                'shadowknight': _safe_int(spell_dict['classes5']),
+                'druid': _safe_int(spell_dict['classes6']),
+                'monk': _safe_int(spell_dict['classes7']),
+                'bard': _safe_int(spell_dict['classes8']),
+                'rogue': _safe_int(spell_dict['classes9']),
+                'shaman': _safe_int(spell_dict['classes10']),
+                'necromancer': _safe_int(spell_dict['classes11']),
+                'wizard': _safe_int(spell_dict['classes12']),
+                'magician': _safe_int(spell_dict['classes13']),
+                'enchanter': _safe_int(spell_dict['classes14']),
+                'beastlord': _safe_int(spell_dict['classes15']),
+                'berserker': _safe_int(spell_dict['classes16'])
+            },
+            'effects': [
+                _safe_int(spell_dict.get('effectid1', 0)),
+                _safe_int(spell_dict.get('effectid2', 0)),
+                _safe_int(spell_dict.get('effectid3', 0)),
+                _safe_int(spell_dict.get('effectid4', 0)),
+                _safe_int(spell_dict.get('effectid5', 0)),
+                _safe_int(spell_dict.get('effectid6', 0)),
+                _safe_int(spell_dict.get('effectid7', 0)),
+                _safe_int(spell_dict.get('effectid8', 0)),
+                _safe_int(spell_dict.get('effectid9', 0)),
+                _safe_int(spell_dict.get('effectid10', 0)),
+                _safe_int(spell_dict.get('effectid11', 0)),
+                _safe_int(spell_dict.get('effectid12', 0))
+            ],
+            'components': [
+                _safe_int(spell_dict.get('components1', 0)),
+                _safe_int(spell_dict.get('components2', 0)),
+                _safe_int(spell_dict.get('components3', 0)),
+                _safe_int(spell_dict.get('components4', 0))
+            ],
+            'icon': _safe_int(spell_dict['icon']),
+            'new_icon': _safe_int(spell_dict['new_icon']),
+            'spell_icon': _safe_int(spell_dict.get('spell_icon', 0)),
+            'you_cast': spell_dict.get('you_cast', ''),
+            'other_casts': spell_dict.get('other_casts', ''),
+            'cast_on_you': spell_dict.get('cast_on_you', ''),
+            'cast_on_other': spell_dict.get('cast_on_other', ''),
+            'spell_fades': spell_dict.get('spell_fades', ''),
+            'pushback': _safe_int(spell_dict.get('pushback', 0)),
+            'pushup': _safe_int(spell_dict.get('pushup', 0)),
+            'goodEffect': _safe_int(spell_dict.get('goodEffect', 0)),
+            'deities': _safe_int(spell_dict.get('deities', 0))
+        }
+        
+        app.logger.info(f"Spell details retrieved successfully for ID: {spell_id_int}")
+        
+        return jsonify(detailed_spell)
+        
+    except Exception as e:
+        app.logger.error(f"Error getting spell details: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Failed to get spell details: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
 
 def load_cache_from_storage():
     """DISABLED - spell system disabled"""
     logger.info("Cache loading disabled - spell system disabled")
     pass
 
-def load_cache_from_database():
-    """Load cached data from PostgreSQL database"""
-    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache, pricing_cache_timestamp
-    
-    logger.info(f"=== DATABASE CACHE LOADING ===")
-    
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # Load spells cache
-        cursor.execute("SELECT class_name, data FROM spell_cache")
-        spell_rows = cursor.fetchall()
-        spells_cache = {row[0].lower(): row[1] for row in spell_rows}
-        logger.info(f"✓ Loaded {len(spells_cache)} classes from database spell cache")
-        
-        # Load pricing cache
-        cursor.execute("SELECT spell_id, data FROM pricing_cache")
-        pricing_rows = cursor.fetchall()
-        # pricing_cache table is deprecated - using spell_details_cache instead
-        logger.info(f"✓ Loaded 0 spells from database pricing cache (deprecated)")
-        
-        # Load spell details cache
-        cursor.execute("SELECT spell_id, data FROM spell_details_cache")
-        details_rows = cursor.fetchall()
-        spell_details_cache = {row[0]: row[1] for row in details_rows}
-        logger.info(f"✓ Loaded {len(spell_details_cache)} spell details from database cache")
-        
-        # Load metadata
-        cursor.execute("SELECT key, value FROM cache_metadata")
-        metadata_rows = cursor.fetchall()
-        for key, value in metadata_rows:
-            if key == 'cache_timestamp':
-                # Convert class names to lowercase for consistency
-                cache_timestamp.update({k.lower(): v for k, v in value.items()})
-            elif key == 'pricing_cache_timestamp':
-                pricing_cache_timestamp.update(value)
-            elif key == 'last_scrape_time':
-                # Convert class names to lowercase for consistency
-                last_scrape_time.update({k.lower(): v for k, v in value.items()})
-        
-        logger.info(f"✓ Loaded cache metadata for {len(cache_timestamp)} classes")
-        
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"=== DATABASE CACHE LOADING COMPLETE ===")
-        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: 0 spells (deprecated), Details: {len(spell_details_cache)} spells")
-        
-    except Exception as e:
-        logger.error(f"✗ Error loading cache from database: {e}")
-        # Initialize empty caches if loading fails
-        spells_cache = {}
-        spell_details_cache = {}
-        cache_timestamp = {}
-        last_scrape_time = {}
 
-def load_cache_from_files():
-    """Load cached data from JSON files (fallback for local development)"""
-    global spells_cache, cache_timestamp, last_scrape_time, spell_details_cache, pricing_cache_timestamp
-    
-    logger.info(f"=== FILE CACHE LOADING ===")
-    logger.info(f"Cache directory: {CACHE_DIR}")
-    logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
-    
-    try:
-        # Load spells cache
-        if os.path.exists(SPELLS_CACHE_FILE):
-            with open(SPELLS_CACHE_FILE, 'r') as f:
-                spells_cache = json.load(f)
-                logger.info(f"✓ Successfully loaded {len(spells_cache)} classes from spells cache")
-        else:
-            logger.warning(f"✗ Spells cache file not found: {SPELLS_CACHE_FILE}")
-        
-        # Skip loading pricing_cache - deprecated in favor of spell_details_cache
-        logger.info(f"✓ Skipped loading pricing cache (deprecated)")
-        
-        # Load spell details cache
-        if os.path.exists(SPELL_DETAILS_CACHE_FILE):
-            with open(SPELL_DETAILS_CACHE_FILE, 'r') as f:
-                spell_details_cache = json.load(f)
-                logger.info(f"✓ Loaded {len(spell_details_cache)} spell details from cache")
-        
-        # Load metadata
-        if os.path.exists(METADATA_CACHE_FILE):
-            with open(METADATA_CACHE_FILE, 'r') as f:
-                metadata = json.load(f)
-                cache_timestamp.update(metadata.get('cache_timestamp', {}))
-                pricing_cache_timestamp.update(metadata.get('pricing_cache_timestamp', {}))
-                last_scrape_time.update(metadata.get('last_scrape_time', {}))
-                logger.info(f"✓ Successfully loaded cache metadata for {len(cache_timestamp)} classes")
-        else:
-            logger.warning(f"✗ Metadata cache file not found: {METADATA_CACHE_FILE}")
-        
-        logger.info(f"=== FILE CACHE LOADING COMPLETE ===")
-        logger.info(f"Final cache state - Spells: {len(spells_cache)} classes, Pricing: 0 spells (deprecated)")
-                
-    except Exception as e:
-        logger.error(f"✗ Error loading cache from files: {e}")
-        # Initialize empty caches if loading fails
-        spells_cache = {}
-        spell_details_cache = {}
-        cache_timestamp = {}
-        pricing_cache_timestamp = {}
-        last_scrape_time = {}
 
-def update_refresh_progress(class_name, stage, progress_percentage=None, message=None, estimated_time_remaining=None):
-    """Update refresh progress for a specific class"""
-    global refresh_progress
-    
-    if class_name not in refresh_progress:
-        refresh_progress[class_name] = {
-            'stage': 'initializing',
-            'progress_percentage': 0,
-            'message': 'Initializing refresh process...',
-            'estimated_time_remaining': None,
-            'start_time': datetime.now().isoformat(),
-            'last_updated': datetime.now().isoformat()
-        }
-    
-    refresh_progress[class_name]['stage'] = stage
-    refresh_progress[class_name]['last_updated'] = datetime.now().isoformat()
-    
-    if progress_percentage is not None:
-        refresh_progress[class_name]['progress_percentage'] = progress_percentage
-    if message is not None:
-        refresh_progress[class_name]['message'] = message
-    if estimated_time_remaining is not None:
-        refresh_progress[class_name]['estimated_time_remaining'] = estimated_time_remaining
-    
-    # Stage-specific defaults
-    stage_defaults = {
-        'initializing': {'progress': 5, 'message': '🔄 Initializing refresh process...'},
-        'scraping': {'progress': 20, 'message': '🌐 Scraping fresh spell data...'},
-        'processing': {'progress': 60, 'message': '⚙️ Processing spell information...'},
-        'updating_cache': {'progress': 80, 'message': '💾 Updating cached data...'},
-        'loading_memory': {'progress': 95, 'message': '📥 Loading into memory...'},
-        'complete': {'progress': 100, 'message': '✅ Refresh completed successfully!'},
-        'error': {'progress': 0, 'message': '❌ Error occurred during refresh'}
-    }
-    
-    if stage in stage_defaults:
-        if progress_percentage is None:
-            refresh_progress[class_name]['progress_percentage'] = stage_defaults[stage]['progress']
-        if message is None:
-            refresh_progress[class_name]['message'] = stage_defaults[stage]['message']
-
-def clear_refresh_progress(class_name):
-    """Clear refresh progress for a specific class"""
-    global refresh_progress
-    if class_name in refresh_progress:
-        del refresh_progress[class_name]
 
 def save_cache_to_storage():
     """DISABLED - spell system disabled"""
@@ -1208,147 +1915,6 @@ def save_cache_to_database():
     """DISABLED - spell system disabled"""
     logger.info("Database cache saving disabled - spell system disabled")
     pass
-    
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # Save spells cache
-        logger.info(f"Saving spells cache ({len(spells_cache)} classes) to database")
-        # Make a copy to avoid "dictionary changed size during iteration" errors
-        spells_cache_copy = dict(spells_cache)
-        for class_name, data in spells_cache_copy.items():
-            cursor.execute("""
-                INSERT INTO spell_cache (class_name, data, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (class_name) 
-                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-            """, (class_name, json.dumps(data)))
-        
-        # Skip saving pricing_cache - deprecated in favor of spell_details_cache
-        logger.info(f"Saving pricing cache (0 entries) to database")
-        
-        # Save spell details cache
-        logger.info(f"Saving spell details cache ({len(spell_details_cache)} entries) to database")
-        # Make a copy to avoid "dictionary changed size during iteration" errors
-        spell_details_copy = dict(spell_details_cache)
-        for spell_id, data in spell_details_copy.items():
-            cursor.execute("""
-                INSERT INTO spell_details_cache (spell_id, data, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (spell_id) 
-                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-            """, (spell_id, json.dumps(data)))
-        
-        # Save metadata
-        metadata_items = [
-            ('cache_timestamp', cache_timestamp),
-            ('pricing_cache_timestamp', pricing_cache_timestamp),
-            ('last_scrape_time', last_scrape_time),
-            ('last_updated', datetime.now().isoformat())
-        ]
-        
-        for key, value in metadata_items:
-            cursor.execute("""
-                INSERT INTO cache_metadata (key, value, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (key) 
-                DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-            """, (key, json.dumps(value)))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"✓ Successfully saved all cache data to database")
-        logger.info(f"=== DATABASE CACHE SAVE COMPLETE ===")
-        
-    except Exception as e:
-        logger.error(f"✗ Error saving cache to database: {e}")
-        logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-
-def save_single_class_to_database(class_name):
-    """Save a single class to PostgreSQL database - optimized for single class updates"""
-    logger.info(f"Saving single class '{class_name}' to database")
-    
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # Save only the specific class
-        if class_name in spells_cache:
-            cursor.execute("""
-                INSERT INTO spell_cache (class_name, data, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (class_name) 
-                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
-            """, (class_name, json.dumps(spells_cache[class_name])))
-        
-        # Update metadata for this class only
-        if class_name in cache_timestamp:
-            cursor.execute("""
-                INSERT INTO cache_metadata (key, value, updated_at) 
-                VALUES (%s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (key) 
-                DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-            """, (f'cache_timestamp', json.dumps(cache_timestamp)))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"✓ Successfully saved class '{class_name}' to database")
-        
-    except Exception as e:
-        logger.error(f"✗ Error saving single class to database: {e}")
-        raise
-
-def save_cache_to_files():
-    """DISABLED - spell system disabled"""
-    logger.info("File cache saving disabled - spell system disabled")
-    pass
-    logger.info(f"Cache directory exists: {os.path.exists(CACHE_DIR)}")
-    logger.info(f"Cache directory writable: {os.access(CACHE_DIR, os.W_OK) if os.path.exists(CACHE_DIR) else 'Directory does not exist'}")
-    
-    try:
-        # Save spells cache
-        logger.info(f"Saving spells cache ({len(spells_cache)} classes) to {SPELLS_CACHE_FILE}")
-        with open(SPELLS_CACHE_FILE, 'w') as f:
-            json.dump(spells_cache, f, indent=2)
-        logger.info(f"✓ Spells cache saved successfully")
-        
-        # Skip saving pricing_cache - deprecated in favor of spell_details_cache
-        logger.info(f"Skipped saving pricing cache (deprecated)")
-        logger.info(f"✓ Pricing cache saved successfully")
-        
-        # Save spell details cache
-        logger.info(f"Saving spell details cache ({len(spell_details_cache)} entries) to {SPELL_DETAILS_CACHE_FILE}")
-        with open(SPELL_DETAILS_CACHE_FILE, 'w') as f:
-            json.dump(spell_details_cache, f, indent=2)
-        logger.info(f"✓ Spell details cache saved successfully")
-        
-        # Save metadata
-        metadata = {
-            'cache_timestamp': cache_timestamp,
-            'pricing_cache_timestamp': pricing_cache_timestamp,
-            'last_scrape_time': last_scrape_time,
-            'last_updated': datetime.now().isoformat()
-        }
-        logger.info(f"Saving metadata ({len(cache_timestamp)} classes) to {METADATA_CACHE_FILE}")
-        with open(METADATA_CACHE_FILE, 'w') as f:
-            json.dump(metadata, f, indent=2)
-        logger.info(f"✓ Metadata cache saved successfully")
-            
-        logger.info(f"✓ Successfully saved all cache files")
-        logger.info(f"=== FILE CACHE SAVE COMPLETE ===")
-        
-    except Exception as e:
-        logger.error(f"✗ Error saving cache to files: {e}")
-        logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Load existing cache on startup
 # Skip for gunicorn workers to prevent timeout
@@ -1367,730 +1933,28 @@ def is_cache_expired(class_name):
 def is_pricing_cache_expired(spell_id):
     """DISABLED - spell system disabled"""
     return True
-    expiry_time = cache_time + timedelta(hours=PRICING_CACHE_EXPIRY_HOURS)
-    return datetime.now() > expiry_time
 
 def clear_expired_cache():
     """DISABLED - spell system disabled"""
     logger.info("Cache clearing disabled - spell system disabled")
     pass
-    
-    # Save changes to storage if any entries were cleared
-    if expired_classes or expired_pricing:
-        save_cache_to_storage()
-
-def can_scrape_class(class_name):
-    """Check if enough time has passed since last scrape for rate limiting"""
-    # Use lowercase class name for cache lookups since cache keys are stored in lowercase
-    cache_key = class_name.lower()
-    if cache_key not in last_scrape_time:
-        return True
-    
-    last_scrape = datetime.fromisoformat(last_scrape_time[cache_key])
-    min_interval = timedelta(minutes=MIN_SCRAPE_INTERVAL_MINUTES)
-    return datetime.now() > last_scrape + min_interval
-
-@app.route('/api/spells/<class_name>', methods=['GET'])
-def get_spells(class_name):
-    """Get spells for a specific class - SPELL SYSTEM DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
-
-@app.route('/api/scrape-all', methods=['POST'])
-def scrape_all_classes():
-    """Scrape spells for all classes - SPELL SYSTEM DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
-
-@app.route('/api/classes', methods=['GET'])
-def get_classes():
-    """Get list of all available classes - SPELL SYSTEM DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
 
-@app.route('/api/cache-status', methods=['GET'])
-def get_cache_status():
-    """Get cache status for all classes - SPELL SYSTEM DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/cache-expiry-status/<class_name>', methods=['GET'])
-def get_cache_expiry_status(class_name):
-    """Get cache expiry status for a specific class - DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/refresh-progress/<class_name>', methods=['GET'])
-def get_refresh_progress(class_name):
-    """Get current refresh progress for a specific class - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/refresh-spell-cache/<class_name>', methods=['POST'])
-def refresh_spell_cache(class_name):
-    """Manually refresh spell cache for a specific class with progress tracking - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/refresh-pricing-cache/<class_name>', methods=['POST'])
-def refresh_pricing_cache_for_class(class_name):
-    """Manually refresh pricing cache for all spells in a class - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/retry-failed-pricing/<class_name>', methods=['POST'])
-def retry_failed_pricing_for_class(class_name):
-    """Retry pricing fetch for all previously failed spells in a class - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/merge-pricing-cache', methods=['POST'])
-def merge_pricing_cache():
-    """Merge pricing data from UI into the cache - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/spell-states/<class_name>', methods=['GET'])
-def get_spell_states(class_name):
-    """Get pricing states for spells in a class (untried, failed, success) - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/spell-details/<int:spell_id>', methods=['GET'])
-def get_spell_details(spell_id):
-    """Get detailed spell information from alla website - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-def extract_scroll_pricing(items_with_spell):
-    """Extract pricing from scroll/spell items"""
-    import requests
-    from bs4 import BeautifulSoup
-    import re
-    
-    if not items_with_spell:
-        return None
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-    }
-    
-    # Prioritize spell items first, then scrolls, then other items
-    spell_items = [item for item in items_with_spell if item.get('name', '').lower().startswith('spell:')]
-    scroll_items = [item for item in items_with_spell if 'scroll' in item.get('name', '').lower()]
-    other_items = [item for item in items_with_spell if not item.get('name', '').lower().startswith('spell:') and 'scroll' not in item.get('name', '').lower()]
-    
-    # Check items in priority order: spell items first, then scrolls, then others
-    items_to_check = spell_items + scroll_items + other_items[:3]
-    
-    logger.info(f"Found {len(spell_items)} spell items, {len(scroll_items)} scroll items, {len(other_items)} other items")
-    if spell_items:
-        logger.info(f"Prioritizing spell items: {[item.get('name') for item in spell_items]}")
-    
-    for item in items_to_check:
-        try:
-            if not item.get('item_id'):
-                continue
-                
-            item_url = f"https://alla.clumsysworld.com/?a=item&id={item['item_id']}"
-            logger.info(f"Fetching pricing from item: {item_url}")
-            
-            response = requests.get(item_url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                continue
-                
-            soup = BeautifulSoup(response.text, 'html.parser')
-            pricing = parse_item_pricing(soup)
-            
-            if pricing and any(pricing.values()):
-                logger.info(f"Found pricing for {item.get('name')}: {pricing}")
-                return pricing
-                
-        except Exception as e:
-            logger.warning(f"Error extracting pricing from {item.get('name', 'unknown')}: {e}")
-            continue
-    
-    return None
 
-def parse_item_pricing(soup):
-    """Parse pricing information from an item page"""
-    import re
-    
-    pricing = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
-    
-    try:
-        # Look for vendor pricing in format like "(4s)" or "(2g 5s)" - this is what players pay
-        page_text = soup.get_text()
-        
-        # Pattern to match pricing like (4s), (2g), (1p 5g 10s), etc.
-        price_patterns = [
-            r'\((\d+)p\s+(\d+)g\s+(\d+)s\s+(\d+)c\)',  # full format
-            r'\((\d+)p\s+(\d+)g\s+(\d+)s\)',  # plat gold silver
-            r'\((\d+)g\s+(\d+)s\s+(\d+)c\)',  # gold silver copper
-            r'\((\d+)p\s+(\d+)g\)',  # plat gold
-            r'\((\d+)g\s+(\d+)s\)',  # gold silver  
-            r'\((\d+)p\s+(\d+)s\)',  # plat silver
-            r'\((\d+)s\s+(\d+)c\)',  # silver copper
-            r'\((\d+)p\)',  # platinum only
-            r'\((\d+)g\)',  # gold only
-            r'\((\d+)s\)',  # silver only
-            r'\((\d+)c\)',  # copper only
-        ]
-        
-        for pattern in price_patterns:
-            matches = re.findall(pattern, page_text)
-            if matches:
-                match = matches[0]  # Take the first match
-                
-                if pattern == r'\((\d+)p\s+(\d+)g\s+(\d+)s\s+(\d+)c\)':
-                    pricing['platinum'] = int(match[0])
-                    pricing['gold'] = int(match[1])
-                    pricing['silver'] = int(match[2])
-                    pricing['bronze'] = int(match[3])
-                elif pattern == r'\((\d+)p\s+(\d+)g\s+(\d+)s\)':
-                    pricing['platinum'] = int(match[0])
-                    pricing['gold'] = int(match[1])
-                    pricing['silver'] = int(match[2])
-                elif pattern == r'\((\d+)g\s+(\d+)s\s+(\d+)c\)':
-                    pricing['gold'] = int(match[0])
-                    pricing['silver'] = int(match[1])
-                    pricing['bronze'] = int(match[2])
-                elif pattern == r'\((\d+)p\s+(\d+)g\)':
-                    pricing['platinum'] = int(match[0])
-                    pricing['gold'] = int(match[1])
-                elif pattern == r'\((\d+)g\s+(\d+)s\)':
-                    pricing['gold'] = int(match[0])
-                    pricing['silver'] = int(match[1])
-                elif pattern == r'\((\d+)p\s+(\d+)s\)':
-                    pricing['platinum'] = int(match[0])
-                    pricing['silver'] = int(match[1])
-                elif pattern == r'\((\d+)s\s+(\d+)c\)':
-                    pricing['silver'] = int(match[0])
-                    pricing['bronze'] = int(match[1])
-                elif pattern == r'\((\d+)p\)':
-                    pricing['platinum'] = int(match)
-                elif pattern == r'\((\d+)g\)':
-                    pricing['gold'] = int(match)
-                elif pattern == r'\((\d+)s\)':
-                    pricing['silver'] = int(match)
-                elif pattern == r'\((\d+)c\)':
-                    pricing['bronze'] = int(match)
-                
-                # If we found any pricing, return it
-                if any(pricing.values()):
-                    logger.info(f"Found vendor pricing: {pricing}")
-                    return pricing
-        
-        # Fallback: Look for price/value information in tables
-        tables = soup.find_all('table')
-        
-        for table in tables:
-            rows = table.find_all('tr')
-            
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
-                    label = cells[0].get_text(strip=True).lower()
-                    value_cell = cells[1]
-                    
-                    # Look for price/value/cost labels
-                    if any(keyword in label for keyword in ['price', 'value', 'cost', 'worth']):
-                        # Look for coin images and associated values
-                        coins_found = extract_coins_from_cell(value_cell)
-                        if coins_found:
-                            pricing.update(coins_found)
-                            return pricing
-                        
-                        # Fallback: try to parse text for coin values
-                        value_text = value_cell.get_text(strip=True)
-                        text_coins = parse_coin_text(value_text)
-                        if text_coins:
-                            pricing.update(text_coins)
-                            return pricing
-        
-        # Alternative approach: look for coin images anywhere on the page with associated numbers
-        coin_images = soup.find_all('img')
-        for img in coin_images:
-            src = img.get('src', '').lower()
-            if any(coin in src for coin in ['plat', 'gold', 'silver', 'bronze', 'copper']):
-                # Look for numbers near this coin image
-                parent = img.find_parent(['td', 'div', 'span'])
-                if parent:
-                    coins_found = extract_coins_from_cell(parent)
-                    if coins_found and any(coins_found.values()):
-                        pricing.update(coins_found)
-                        return pricing
-        
-    except Exception as e:
-        logger.warning(f"Error parsing item pricing: {e}")
-    
-    return pricing
 
-def extract_coins_from_cell(cell):
-    """Extract coin values from a table cell containing coin images and values"""
-    import re
-    
-    coins = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
-    
-    try:
-        # Look for images with coin-related src attributes
-        images = cell.find_all('img')
-        
-        for img in images:
-            src = img.get('src', '').lower()
-            
-            # Identify coin type from image source
-            coin_type = None
-            if 'plat' in src:
-                coin_type = 'platinum'
-            elif 'gold' in src:
-                coin_type = 'gold'
-            elif 'silver' in src:
-                coin_type = 'silver'
-            elif 'bronze' in src or 'copper' in src:
-                coin_type = 'bronze'
-            
-            if coin_type:
-                # Look for a number near this coin image
-                # Check previous and next siblings
-                current = img
-                value = None
-                
-                # Look backwards for a number
-                for _ in range(3):  # Check up to 3 elements back
-                    prev = current.previous_sibling
-                    if prev:
-                        if hasattr(prev, 'get_text'):
-                            text = prev.get_text(strip=True)
-                        else:
-                            text = str(prev).strip()
-                        
-                        numbers = re.findall(r'\d+', text)
-                        if numbers:
-                            value = int(numbers[-1])  # Take the last number found
-                            break
-                        current = prev
-                    else:
-                        break
-                
-                # If no number found backwards, try forwards
-                if value is None:
-                    current = img
-                    for _ in range(3):  # Check up to 3 elements forward
-                        next_elem = current.next_sibling
-                        if next_elem:
-                            if hasattr(next_elem, 'get_text'):
-                                text = next_elem.get_text(strip=True)
-                            else:
-                                text = str(next_elem).strip()
-                            
-                            numbers = re.findall(r'\d+', text)
-                            if numbers:
-                                value = int(numbers[0])  # Take the first number found
-                                break
-                            current = next_elem
-                        else:
-                            break
-                
-                if value is not None:
-                    coins[coin_type] = value
-                    
-    except Exception as e:
-        logger.warning(f"Error extracting coins from cell: {e}")
-    
-    return coins
 
-def parse_coin_text(text):
-    """Parse coin values from text like '5 platinum, 10 gold, 20 silver'"""
-    import re
-    
-    coins = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
-    
-    try:
-        # Look for patterns like "5 platinum", "10pp", etc.
-        patterns = [
-            (r'(\d+)\s*(?:platinum|plat|pp)', 'platinum'),
-            (r'(\d+)\s*(?:gold|gp)', 'gold'),
-            (r'(\d+)\s*(?:silver|sp)', 'silver'),
-            (r'(\d+)\s*(?:bronze|copper|cp)', 'bronze')
-        ]
-        
-        for pattern, coin_type in patterns:
-            matches = re.findall(pattern, text.lower())
-            if matches:
-                coins[coin_type] = int(matches[0])
-                
-    except Exception as e:
-        logger.warning(f"Error parsing coin text: {e}")
-    
-    return coins
 
-def enhance_reagents_with_icons(components):
-    """Enhance reagent components with icons from their individual item pages"""
-    import requests
-    from bs4 import BeautifulSoup
-    
-    if not components:
-        return components
-    
-    enhanced_components = []
-    
-    for reagent in components:
-        try:
-            # Skip if no item_id or if icon is already present
-            if not reagent.get('item_id') or reagent.get('icon'):
-                enhanced_components.append(reagent)
-                continue
-                
-            item_id = reagent['item_id']
-            
-            # Fetch the item page to get the icon
-            item_url = f'https://alla.clumsysworld.com/?a=item&id={item_id}'
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-            }
-            
-            response = requests.get(item_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                item_soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Look for the item icon - typically the first image in the item details
-                item_icon = None
-                
-                # Try to find icon in common locations
-                for img in item_soup.find_all('img'):
-                    src = img.get('src', '')
-                    if ('icon' in src.lower() or 'item_' in src) and src.endswith('.png'):
-                        if src.startswith('/'):
-                            item_icon = f"https://alla.clumsysworld.com{src}"
-                        elif not src.startswith('http'):
-                            item_icon = f"https://alla.clumsysworld.com/{src}"
-                        else:
-                            item_icon = src
-                        break
-                
-                # Add icon if found
-                if item_icon:
-                    reagent['icon'] = item_icon
-                    logger.info(f"Found icon for reagent {reagent['name']}: {item_icon}")
-                else:
-                    logger.debug(f"No icon found for reagent {reagent['name']}")
-            else:
-                logger.warning(f"Failed to fetch item page for {reagent['name']} (status: {response.status_code})")
-                
-        except Exception as e:
-            logger.warning(f"Error fetching icon for reagent {reagent.get('name', 'unknown')}: {e}")
-        
-        enhanced_components.append(reagent)
-    
-    return enhanced_components
 
-def parse_spell_details_from_html(soup):
-    """Parse spell details from the HTML soup object"""
-    details = {}
-    
-    try:
-        # Look for tables containing spell information
-        tables = soup.find_all('table')
-        
-        for table in tables:
-            rows = table.find_all('tr')
-            
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
-                    label = cells[0].get_text(strip=True).lower()
-                    value = cells[1].get_text(strip=True)
-                    
-                    if label and value and value != '-':
-                        # Map common spell attributes
-                        if 'cast time' in label or 'casting time' in label:
-                            details['cast_time'] = value
-                        elif 'duration' in label:
-                            details['duration'] = value
-                        elif 'range' in label:
-                            details['range'] = value
-                        elif 'resist' in label:
-                            details['resist'] = value
-                        elif 'description' in label:
-                            details['description'] = value
-                        elif 'recast' in label or 'recast time' in label:
-                            details['recast_time'] = value
-                        elif 'skill' in label:
-                            details['skill'] = value
-                        elif 'target' in label:
-                            details['target_type'] = value
-        
-        # Look for spell effects in different possible locations
-        effects = []
-        
-        # First, try to find the specific "Spell Effects" section
-        spell_effects_header = None
-        for header in soup.find_all('h2', class_='section_header'):
-            if header.get_text(strip=True) == 'Spell Effects':
-                spell_effects_header = header
-                break
-        
-        if spell_effects_header:
-            # Look for the parent table cell that contains the effects
-            effects_container = spell_effects_header.find_parent('td')
-            if effects_container:
-                # Find all <ul> elements that contain effect information
-                effect_lists = effects_container.find_all('ul')
-                for ul in effect_lists:
-                    effect_text = ul.get_text(strip=True)
-                    if effect_text and 'Effect type' in effect_text:
-                        # Clean up the effect text
-                        cleaned_effect = effect_text.replace('Effect type :', '').replace('Effect type:', '').strip()
-                        if cleaned_effect and len(cleaned_effect) > 5 and cleaned_effect not in effects:
-                            effects.append(cleaned_effect)
-        
-        # Alternative approach: look for <ul> elements with effect information
-        if not effects:
-            for ul in soup.find_all('ul'):
-                # Look for <b> tags containing effect numbers and types
-                b_tags = ul.find_all('b')
-                for b_tag in b_tags:
-                    b_text = b_tag.get_text(strip=True)
-                    if 'Effect type' in b_text and ':' in b_text:
-                        # Get the parent <ul> element to extract the full effect text
-                        ul_text = ul.get_text(strip=True)
-                        # Extract everything after "Effect type :"
-                        if 'Effect type :' in ul_text:
-                            effect_desc = ul_text.split('Effect type :')[-1].strip()
-                            if effect_desc and len(effect_desc) > 5 and effect_desc not in effects:
-                                effects.append(effect_desc)
-        
-        # Fallback: Try to find effect text in various elements
-        if not effects:
-            for element in soup.find_all(['td', 'div', 'p']):
-                text = element.get_text(strip=True)
-                
-                # Look for effect-like text patterns
-                if (text and len(text) > 10 and 
-                    any(keyword in text.lower() for keyword in [
-                        'increase', 'decrease', 'damage', 'heal', 'restore', 
-                        'drain', 'buff', 'debuff', 'summon', 'teleport',
-                        'effect:', 'slot 1:', 'slot 2:', 'slot 3:'
-                    ])):
-                    # Clean up the text
-                    cleaned_text = ' '.join(text.split())
-                    if cleaned_text not in effects and len(cleaned_text) < 200:
-                        effects.append(cleaned_text)
-        
-        if effects:
-            details['effects'] = effects[:5]  # Limit to 5 effects to avoid clutter
-        
-        # Look for spell components/reagents
-        components = []
-        
-        # Look for table rows with reagent information
-        for table in soup.find_all('table'):
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
-                    label_cell = cells[0]
-                    value_cell = cells[1]
-                    
-                    label_text = label_cell.get_text(strip=True).lower()
-                    
-                    # Check if this row contains reagent information
-                    if 'reagent' in label_text or 'component' in label_text:
-                        # Extract reagent information from the value cell
-                        reagent_info = {}
-                        
-                        # Look for links to items (reagent names)
-                        links = value_cell.find_all('a')
-                        if links:
-                            for link in links:
-                                href = link.get('href', '')
-                                reagent_name = link.get_text(strip=True)
-                                
-                                if href and reagent_name:
-                                    # Build full URL for the reagent
-                                    if href.startswith('?'):
-                                        reagent_url = f"https://alla.clumsysworld.com/{href}"
-                                    else:
-                                        reagent_url = href
-                                    
-                                    reagent_info['name'] = reagent_name
-                                    reagent_info['url'] = reagent_url
-                                    
-                                    # Look for an icon in the same row/cell
-                                    parent_cell = link.find_parent(['td', 'div'])
-                                    if parent_cell:
-                                        icon_img = parent_cell.find('img')
-                                        if icon_img and icon_img.get('src'):
-                                            icon_src = icon_img.get('src')
-                                            if icon_src.startswith('/'):
-                                                reagent_info['icon'] = f"https://alla.clumsysworld.com{icon_src}"
-                                            elif not icon_src.startswith('http'):
-                                                reagent_info['icon'] = f"https://alla.clumsysworld.com/{icon_src}"
-                                            else:
-                                                reagent_info['icon'] = icon_src
-                                    
-                                    # Extract item ID from href if possible
-                                    import re
-                                    reagent_id_match = re.search(r'id=(\d+)', href)
-                                    if reagent_id_match:
-                                        reagent_info['item_id'] = int(reagent_id_match.group(1))
-                        
-                        # Extract quantity from the cell text
-                        cell_text = value_cell.get_text(strip=True)
-                        # Look for quantity in parentheses like "(1)" or "(5)"
-                        import re
-                        quantity_match = re.search(r'\((\d+)\)', cell_text)
-                        if quantity_match:
-                            reagent_info['quantity'] = int(quantity_match.group(1))
-                        
-                        # If we have reagent information, add it to components
-                        if reagent_info.get('name'):
-                            components.append(reagent_info)
-        
-        if components:
-            details['components'] = components
-            
-            # Enhance reagents with icons from their item pages (lightweight approach)
-            details['components'] = enhance_reagents_with_icons(details['components'])
-        
-        # Look for "Items with spell" section
-        items_with_spell = []
-        
-        # Find the "Items with spell" header or similar text
-        items_header = None
-        for element in soup.find_all(['h2', 'h3', 'th', 'td', 'b', 'strong']):
-            element_text = element.get_text(strip=True).lower()
-            if 'items with spell' in element_text or 'items with this spell' in element_text:
-                items_header = element
-                break
-        
-        if items_header:
-            # Find the table or container that follows the header
-            current = items_header
-            while current:
-                current = current.find_next()
-                if not current:
-                    break
-                
-                # Look for links that might be items
-                if hasattr(current, 'find_all'):
-                    item_links = current.find_all('a', href=True)
-                    
-                    for link in item_links:
-                        href = link.get('href', '')
-                        item_name = link.get_text(strip=True)
-                        
-                        # Check if this looks like an item link
-                        if ('a=item' in href and item_name and 
-                            len(item_name) > 2 and item_name != 'Items with spell'):
-                            
-                            item_info = {
-                                'name': item_name,
-                                'url': href if href.startswith('http') else f"https://alla.clumsysworld.com/{href.lstrip('/')}"
-                            }
-                            
-                            # Look for an icon in the same row/cell
-                            parent_cell = link.find_parent(['td', 'div'])
-                            if parent_cell:
-                                icon_img = parent_cell.find('img')
-                                if icon_img and icon_img.get('src'):
-                                    icon_src = icon_img.get('src')
-                                    if icon_src.startswith('/'):
-                                        item_info['icon'] = f"https://alla.clumsysworld.com{icon_src}"
-                                    elif not icon_src.startswith('http'):
-                                        item_info['icon'] = f"https://alla.clumsysworld.com/{icon_src}"
-                                    else:
-                                        item_info['icon'] = icon_src
-                            
-                            # Extract item ID from href if possible
-                            import re
-                            id_match = re.search(r'id=(\d+)', href)
-                            if id_match:
-                                item_info['item_id'] = int(id_match.group(1))
-                            
-                            items_with_spell.append(item_info)
-                
-                # Stop if we've found items or hit another major section
-                if items_with_spell and len(items_with_spell) > 10:
-                    break
-                    
-                # Stop if we hit another section header
-                if (hasattr(current, 'get_text') and current.name in ['h2', 'h3'] and 
-                    current != items_header and 'items with spell' not in current.get_text(strip=True).lower()):
-                    break
-        
-        if items_with_spell:
-            details['items_with_spell'] = items_with_spell[:20]  # Limit to 20 items to avoid clutter
-            
-            # Extract pricing from the first scroll/spell item
-            scroll_pricing = extract_scroll_pricing(items_with_spell)
-            if scroll_pricing:
-                details['pricing'] = scroll_pricing
-            
-        # If we didn't find much detail, try to get basic description from title or headers
-        if not details.get('description'):
-            title_element = soup.find('title')
-            if title_element:
-                title_text = title_element.get_text(strip=True)
-                if 'spell' in title_text.lower():
-                    details['description'] = title_text
-                    
-        logger.info(f"Parsed spell details: {list(details.keys())}")
-        return details
-        
-    except Exception as e:
-        logger.error(f"Error parsing spell details: {e}")
-        return {'description': 'Spell information available on alla website'}
 
-@app.route('/api/search-spells', methods=['GET'])
-def search_spells():
-    """Search for spells across all classes - SPELL SYSTEM DISABLED"""
-    return jsonify({
-        'error': 'Spell system disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
 # Global session for connection pooling with proper timeouts
 import requests
@@ -2113,92 +1977,24 @@ retry_strategy = Retry(
     status_forcelist=[429, 500, 502, 503, 504]
 )
 
-adapter = HTTPAdapter(max_retries=retry_strategy)
+# Configure connection pooling limits to prevent resource exhaustion
+adapter = HTTPAdapter(
+    max_retries=retry_strategy,
+    pool_connections=10,  # Limit number of connection pools
+    pool_maxsize=20,      # Limit connections per pool
+    pool_block=False      # Don't block when pool is full, create new connection
+)
+
+# Apply to both HTTP and HTTPS
 session.mount("http://", adapter)
 session.mount("https://", adapter)
 
+# Set reasonable timeouts for all requests
+session.timeout = (5, 30)  # (connect timeout, read timeout)
+
 # Pricing cache is already declared at the top with other global storage variables
 
-def fetch_single_spell_pricing(spell_id, max_retries=2):
-    """Fetch pricing for a single spell with retry logic"""
-    # Check cache first (return even if expired - let frontend decide)
-    # Check spell_details_cache instead of deprecated pricing_cache
-    details = spell_details_cache.get(str(spell_id), {})
-    if details.get('pricing'):
-        return details['pricing']
-    
-    for attempt in range(max_retries + 1):
-        try:
-            from bs4 import BeautifulSoup
-            
-            url = f'https://alla.clumsysworld.com/?a=spell&id={spell_id}'
-            response = session.get(url, timeout=8)
-            
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                details = parse_spell_details_from_html(soup)
-                
-                if details.get('pricing'):
-                    result = details['pricing']
-                else:
-                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-                    details['pricing'] = result
-                
-                # Cache the result in spell_details_cache and timestamp
-                spell_details_cache[str(spell_id)] = details
-                pricing_lookup[str(spell_id)] = result
-                pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
-                # Save cache periodically (every 10 new entries)
-                if len(pricing_cache_timestamp) % 10 == 0:
-                    save_cache_to_storage()
-                return result
-            else:
-                if attempt == max_retries:
-                    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-                    # Store failed pricing attempt in spell_details_cache
-                    spell_details_cache[str(spell_id)] = {'pricing': result}
-                    pricing_lookup[str(spell_id)] = result
-                    pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
-                    # Save on failure too
-                    if len(pricing_cache_timestamp) % 10 == 0:
-                        save_cache_to_storage()
-                    return result
-                
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1} failed for spell {spell_id}: {e}")
-            if attempt == max_retries:
-                result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-                # Store failed pricing attempt in spell_details_cache
-                spell_details_cache[str(spell_id)] = {'pricing': result}
-                pricing_lookup[str(spell_id)] = result
-                pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
-                # Save on failure too
-                if len(pricing_cache_timestamp) % 10 == 0:
-                    save_cache_to_storage()
-                return result
-            
-            # Exponential backoff: 0.5s, 1s, 2s
-            time.sleep(0.5 * (2 ** attempt))
-    
-    # Fallback
-    result = {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0, 'unknown': True}
-    # Store failed pricing attempt in spell_details_cache
-    spell_details_cache[str(spell_id)] = {'pricing': result}
-    pricing_lookup[str(spell_id)] = result
-    pricing_cache_timestamp[str(spell_id)] = datetime.now().isoformat()
-    # Save fallback too
-    if len(pricing_cache_timestamp) % 10 == 0:
-        save_cache_to_storage()
-    return result
 
-@app.route('/api/spell-pricing', methods=['POST'])
-def get_spell_pricing():
-    """Get pricing for multiple spells with optimized fetching - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
 @app.route('/api/startup-status', methods=['GET'])
 def startup_status():
@@ -2248,6 +2044,15 @@ def save_cache():
         'status': 'disabled'
     }), 503
 
+@app.route('/api/classes', methods=['GET'])
+def get_classes():
+    """Get EverQuest classes list - DISABLED"""
+    return jsonify({
+        'error': 'Spell system temporarily disabled',
+        'message': 'The spell system is being redesigned and is currently unavailable.',
+        'status': 'disabled'
+    }), 503
+
 @app.route('/api/cache/clear', methods=['POST'])
 def clear_cache():
     """Clear all cached data - DISABLED"""
@@ -2266,23 +2071,7 @@ def cache_status():
         'status': 'disabled'
     }), 503
 
-@app.route('/api/debug/pricing-lookup/<class_name>', methods=['GET'])
-def debug_pricing_lookup(class_name):
-    """Debug endpoint to check pricing lookup for a specific class - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/debug/cache-keys', methods=['GET'])
-def debug_cache_keys():
-    """Debug endpoint to examine cache key formatting and contents - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
 def update_startup_progress(step_name, step_number):
     """Update server startup progress"""
@@ -2294,134 +2083,10 @@ def update_startup_progress(step_name, step_number):
     
     logger.info(f"📈 Startup Progress: {server_startup_progress['progress_percent']}% - {step_name}")
 
-def get_expired_spell_cache_classes():
-    """Identify which spell cache classes have expired and need refresh"""
-    expired_classes = []
-    
-    for class_name in CLASSES.keys():
-        class_key = class_name.lower()
-        if is_cache_expired(class_key):
-            expired_classes.append(class_name)
-    
-    return expired_classes
 
-def refresh_expired_spell_caches(expired_classes):
-    """Refresh spell cache for expired classes only"""
-    refreshed_classes = []
-    failed_classes = []
-    
-    for class_name in expired_classes:
-        class_key = class_name.lower()
-        try:
-            logger.info(f"🔄 Refreshing expired spell cache for {class_name}...")
-            
-            # Remove from cache to force fresh scrape
-            spells_cache.pop(class_key, None)
-            cache_timestamp.pop(class_key, None)
-            
-            # Trigger fresh scrape (use original class name, not lowercase)
-            df = scrape_class(class_name, 'https://alla.clumsysworld.com/', None)
-            
-            if df is not None and not df.empty:
-                new_spells = df.to_dict('records')
-            else:
-                new_spells = None
-            
-            if new_spells:
-                spells_cache[class_key] = new_spells
-                cache_timestamp[class_key] = datetime.now().isoformat()
-                refreshed_classes.append(class_name)
-                logger.info(f"✅ Successfully refreshed {class_name} cache with {len(new_spells)} spells")
-            else:
-                failed_classes.append(class_name)
-                logger.warning(f"⚠️ Failed to refresh {class_name} cache - no data returned")
-                
-        except Exception as e:
-            failed_classes.append(class_name)
-            logger.error(f"❌ Error refreshing {class_name} cache: {e}")
-    
-    return refreshed_classes, failed_classes
 
-def preload_spell_data_on_startup():
-    """Load all spell data into server memory on startup for optimal performance"""
-    global server_startup_progress
-    import time
-    
-    startup_start_time = time.time()
-    logger.info("🚀 Preloading spell data into server memory on startup...")
-    
-    try:
-        # Step 1: Initialize cache storage
-        update_startup_progress("Setting up cache storage...", 1)
-        # (init_cache_storage already called earlier)
-        time.sleep(0.5)  # Brief pause for UI feedback
-        
-        # Step 2: Skip cache loading - spell system disabled
-        update_startup_progress("Cache loading skipped - spell system disabled", 2)
-        logger.info("🚫 Skipping cache loading - spell system disabled")
-        time.sleep(0.5)  # Brief pause for UI feedback
-        
-        # Step 3: Skip spell cache refresh - system disabled
-        update_startup_progress("Spell cache refresh skipped - system disabled", 3)
-        logger.info("🚫 Skipping spell cache refresh - spell system disabled")
-        
-        time.sleep(0.5)  # Brief pause for UI feedback
-        
-        # Step 4: Skip pricing data loading - system disabled
-        update_startup_progress("Pricing data loading skipped - system disabled", 4)
-        logger.info("🚫 Skipping pricing data loading - spell system disabled")
-        time.sleep(0.5)  # Brief pause for UI feedback
-        
-        # Step 5: Finalize and report
-        update_startup_progress("Finalizing server startup...", 5)
-        
-        # Mark startup as complete
-        startup_time = round(time.time() - startup_start_time, 2)
-        server_startup_progress.update({
-            'is_starting': False,
-            'current_step': 'Server ready! (Spell system disabled)',
-            'progress_percent': 100,
-            'startup_complete': True,
-            'startup_time': startup_time
-        })
-        
-        logger.info(f"✅ Server startup complete in {startup_time}s!")
-        logger.info(f"🚫 Spell system disabled - no spell caching performed")
-        logger.info(f"🎯 Server ready for items system and admin functionality!")
-        
-        return True
-        
-    except Exception as e:
-        # Mark startup as failed but still functional
-        server_startup_progress.update({
-            'is_starting': False,
-            'current_step': 'Startup encountered issues - using on-demand loading',
-            'progress_percent': 100,
-            'startup_complete': True,
-            'startup_time': round(time.time() - startup_start_time, 2)
-        })
-        
-        logger.warning(f"⚠️ Server startup preloading encountered issues: {e}")
-        logger.info("🔄 Server will still function with on-demand loading")
-        return False
 
-@app.route('/api/debug/cleanup-cache', methods=['POST'])
-def cleanup_cache():
-    """Debug endpoint to clean up invalid cache entries and report what was found - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
-@app.route('/api/debug/cache-integrity', methods=['GET'])
-def cache_integrity():
-    """Debug endpoint to verify cache integrity and consistency - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
 
 
 # Database configuration management
@@ -2565,10 +2230,10 @@ def get_eqemu_db_connection():
         # Add connection timeout settings to prevent hanging
         if db_type == 'mysql':
             db_config.update({
-                'connect_timeout': 5,   # 5 second connection timeout (reduced from 10)
-                'read_timeout': 15,     # 15 second read timeout (reduced from 30)
-                'write_timeout': 15,    # 15 second write timeout (reduced from 30)
-                'autocommit': True      # Enable autocommit to avoid transaction hangs
+                'connect_timeout': 10,   # 10 second connection timeout
+                'read_timeout': 60,      # 60 second read timeout for spell searches
+                'write_timeout': 30,     # 30 second write timeout
+                'autocommit': True       # Enable autocommit to avoid transaction hangs
             })
         elif db_type == 'postgresql':
             db_config.update({
@@ -2630,346 +2295,6 @@ def _safe_int(value):
         return None
 
 # Item search endpoints (EQEmu schema with discovered items join)
-@app.route('/api/items/search-duplicate', methods=['GET'])  # TEMPORARY: renamed to avoid collision
-@exempt_when_limiting
-@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Liberal limits for normal users
-def search_items_duplicate():
-    """
-    Search discovered items in the EQEmu database.
-    Only returns items that exist in both items and discovered_items tables.
-    """
-    app.logger.info("=== ITEM SEARCH START ===")
-    conn = None
-    cursor = None
-    
-    try:
-        # Get database connection using the helper function
-        app.logger.info("Getting database connection...")
-        conn, db_type, error = get_eqemu_db_connection()
-        if not conn:
-            app.logger.error(f"No connection available: {error}")
-            return jsonify({'error': error or 'Database not configured'}), 503
-        
-        app.logger.info(f"Got connection, db_type: {db_type}")
-        
-        # Validate parameters
-        validated_params = validate_item_search_params(request.args)
-        search_query = validated_params.get('q', '')
-        limit = validated_params.get('limit', 20)
-        offset = validated_params.get('offset', 0)
-        filters = validated_params.get('filters', [])
-        
-        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}, filters={len(filters)}")
-        
-        if not search_query and not filters:
-            return jsonify({'error': 'Search query or filters required'}), 400
-        
-        cursor = conn.cursor()
-        
-        # Build WHERE clause and parameters
-        where_conditions = []
-        query_params = []
-        
-        # Add search query condition if present
-        if search_query:
-            where_conditions.append("items.Name LIKE %s")
-            query_params.append(f'%{search_query}%')
-        
-        # Add filter conditions
-        for filter_item in filters:
-            field = filter_item['field']
-            operator = filter_item['operator']
-            value = filter_item.get('value')
-            
-            # Map frontend field names to database column names
-            field_mapping = {
-                'loretext': 'items.lore',
-                'price': 'items.price',
-                'weight': 'items.weight',
-                'size': 'items.size',
-                'damage': 'items.damage',
-                'delay': 'items.delay',
-                'ac': 'items.ac',
-                'hp': 'items.hp',
-                'mana': 'items.mana',
-                'str': 'items.astr',
-                'sta': 'items.asta',
-                'agi': 'items.aagi',
-                'dex': 'items.adex',
-                'wis': 'items.awis',
-                'int': 'items.aint',
-                'cha': 'items.acha',
-                'mr': 'items.mr',
-                'fr': 'items.fr',
-                'cr': 'items.cr',
-                'dr': 'items.dr',
-                'pr': 'items.pr',
-                'reqlevel': 'items.reqlevel',
-                'reclevel': 'items.reclevel',
-                'magic': 'items.magic',
-                'lore_flag': 'items.loregroup',
-                'nodrop': 'items.nodrop',
-                'norent': 'items.norent',
-                'clickeffect': 'items.clickeffect',
-                'proceffect': 'items.proceffect',
-                'worneffect': 'items.worneffect',
-                'focuseffect': 'items.focuseffect',
-                'slots': 'items.slots'
-            }
-            
-            db_field = field_mapping.get(field, f'items.{field}')
-            
-            # Build condition based on operator
-            if operator == 'contains':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'%{value}%')
-            elif operator == 'equals':
-                where_conditions.append(f"{db_field} = %s")
-                query_params.append(value)
-            elif operator == 'not equals':
-                where_conditions.append(f"{db_field} != %s")
-                query_params.append(value)
-            elif operator == 'greater than':
-                where_conditions.append(f"{db_field} > %s")
-                query_params.append(value)
-            elif operator == 'less than':
-                where_conditions.append(f"{db_field} < %s")
-                query_params.append(value)
-            elif operator == 'between':
-                if isinstance(value, list) and len(value) == 2:
-                    where_conditions.append(f"{db_field} BETWEEN %s AND %s")
-                    query_params.extend([value[0], value[1]])
-            elif operator == 'is':
-                # For boolean fields
-                if field in ['magic', 'nodrop', 'norent']:
-                    # Convert boolean to int (0 or 1)
-                    bool_value = 1 if value else 0
-                    # Note: nodrop and norent are inverted in the database (0=True, 1=False)
-                    if field in ['nodrop', 'norent']:
-                        bool_value = 0 if value else 1
-                    where_conditions.append(f"{db_field} = %s")
-                    query_params.append(bool_value)
-                elif field == 'lore_flag':
-                    # loregroup: 0 = not lore, non-zero = lore
-                    if value:
-                        where_conditions.append(f"{db_field} != 0")
-                    else:
-                        where_conditions.append(f"{db_field} = 0")
-            elif operator == 'exists':
-                # For effect fields
-                if value:
-                    where_conditions.append(f"{db_field} IS NOT NULL AND {db_field} != 0 AND {db_field} != -1")
-                else:
-                    where_conditions.append(f"({db_field} IS NULL OR {db_field} = 0 OR {db_field} = -1)")
-            elif operator == 'includes' and field == 'slots':
-                # Bitwise AND for slot checking
-                where_conditions.append(f"({db_field} & %s) != 0")
-                query_params.append(value)
-            elif operator == 'starts with':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'{value}%')
-            elif operator == 'ends with':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'%{value}')
-        
-        # Combine all WHERE conditions
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
-        
-        # Build queries with dynamic WHERE clause
-        # First get count
-        count_query = f"""
-            SELECT COUNT(*) AS total_count
-            FROM items 
-            INNER JOIN discovered_items di ON items.id = di.item_id
-            WHERE {where_clause}
-        """
-        cursor.execute(count_query, query_params)
-        result = cursor.fetchone()
-        total_count = result['total_count'] if isinstance(result, dict) else result[0]
-        
-        # Then get items
-        items_query = f"""
-            SELECT 
-                items.id,
-                items.Name,
-                items.itemtype,
-                items.ac,
-                items.hp,
-                items.mana,
-                items.astr,
-                items.asta,
-                items.aagi,
-                items.adex,
-                items.awis,
-                items.aint,
-                items.acha,
-                items.weight,
-                items.damage,
-                items.delay,
-                items.magic,
-                items.nodrop,
-                items.norent,
-                items.classes,
-                items.races,
-                items.slots,
-                items.lore,
-                items.loregroup,
-                items.reqlevel,
-                items.stackable,
-                items.stacksize,
-                items.icon,
-                items.price,
-                items.size,
-                items.mr,
-                items.fr,
-                items.cr,
-                items.dr,
-                items.pr,
-                items.reclevel,
-                items.clickeffect,
-                items.proceffect,
-                items.worneffect,
-                items.focuseffect
-            FROM items 
-            INNER JOIN discovered_items di ON items.id = di.item_id
-            WHERE {where_clause}
-            ORDER BY items.Name
-            LIMIT %s OFFSET %s
-        """
-        # Add limit and offset to params
-        items_params = query_params + [limit, offset]
-        
-        # Execute with timeout protection
-        try:
-            cursor.execute(items_query, items_params)
-        except Exception as e:
-            app.logger.error(f"Database query failed: {e}")
-            app.logger.error(f"Query: {items_query}")
-            app.logger.error(f"Params: {items_params}")
-            raise Exception("Database query failed - connection may have timed out")
-            
-        items = cursor.fetchall()
-        
-        # Convert to response format
-        items_list = []
-        for item in items:
-            if isinstance(item, dict):
-                item_dict = {
-                    'item_id': str(item['id']),
-                    'name': item['Name'],
-                    'itemtype': item['itemtype'],
-                    'ac': _safe_int(item['ac']),
-                    'hp': _safe_int(item['hp']),
-                    'mana': _safe_int(item['mana']),
-                    'str': _safe_int(item['astr']),
-                    'sta': _safe_int(item['asta']),
-                    'agi': _safe_int(item['aagi']),
-                    'dex': _safe_int(item['adex']),
-                    'wis': _safe_int(item['awis']),
-                    'int': _safe_int(item['aint']),
-                    'cha': _safe_int(item['acha']),
-                    'weight': _safe_float(item['weight']),
-                    'damage': _safe_int(item['damage']),
-                    'delay': _safe_int(item['delay']),
-                    'magic': bool(item['magic']),
-                    'nodrop': not bool(item['nodrop']),  # Inverted: 0=True, 1=False
-                    'norent': not bool(item['norent']),  # Inverted: 0=True, 1=False
-                    'lore': item['lore'],
-                    'lore_flag': bool(item['loregroup'] != 0),  # 0=not lore, non-zero=lore
-                    'classes': _safe_int(item['classes']),
-                    'races': _safe_int(item['races']),
-                    'slots': _safe_int(item['slots']),
-                    'reqlevel': _safe_int(item['reqlevel']),
-                    'stackable': bool(item['stackable']),
-                    'stacksize': _safe_int(item['stacksize']),
-                    'icon': _safe_int(item['icon']),
-                    'price': _safe_int(item['price']),
-                    'size': _safe_int(item['size']),
-                    'mr': _safe_int(item['mr']),
-                    'fr': _safe_int(item['fr']),
-                    'cr': _safe_int(item['cr']),
-                    'dr': _safe_int(item['dr']),
-                    'pr': _safe_int(item['pr']),
-                    'reclevel': _safe_int(item['reclevel']),
-                    'clickeffect': _safe_int(item['clickeffect']),
-                    'proceffect': _safe_int(item['proceffect']),
-                    'worneffect': _safe_int(item['worneffect']),
-                    'focuseffect': _safe_int(item['focuseffect'])
-                }
-            else:
-                # Handle tuple results
-                item_dict = {
-                    'item_id': str(item[0]),
-                    'name': item[1],
-                    'itemtype': item[2],
-                    'ac': _safe_int(item[3]),
-                    'hp': _safe_int(item[4]),
-                    'mana': _safe_int(item[5]),
-                    'str': _safe_int(item[6]),
-                    'sta': _safe_int(item[7]),
-                    'agi': _safe_int(item[8]),
-                    'dex': _safe_int(item[9]),
-                    'wis': _safe_int(item[10]),
-                    'int': _safe_int(item[11]),
-                    'cha': _safe_int(item[12]),
-                    'weight': _safe_float(item[13]),
-                    'damage': _safe_int(item[14]),
-                    'delay': _safe_int(item[15]),
-                    'magic': bool(item[16]),
-                    'nodrop': not bool(item[17]),  # Inverted: 0=True, 1=False
-                    'norent': not bool(item[18]),  # Inverted: 0=True, 1=False
-                    'classes': _safe_int(item[19]),
-                    'races': _safe_int(item[20]),
-                    'slots': _safe_int(item[21]),
-                    'lore': item[22],
-                    'lore_flag': bool(item[23] != 0),  # 0=not lore, non-zero=lore
-                    'reqlevel': _safe_int(item[24]),
-                    'stackable': bool(item[25]),
-                    'stacksize': _safe_int(item[26]),
-                    'icon': _safe_int(item[27]),
-                    'price': _safe_int(item[28]),
-                    'size': _safe_int(item[29]),
-                    'mr': _safe_int(item[30]),
-                    'fr': _safe_int(item[31]),
-                    'cr': _safe_int(item[32]),
-                    'dr': _safe_int(item[33]),
-                    'pr': _safe_int(item[34]),
-                    'reclevel': _safe_int(item[35]),
-                    'clickeffect': _safe_int(item[36]),
-                    'proceffect': _safe_int(item[37]),
-                    'worneffect': _safe_int(item[38]),
-                    'focuseffect': _safe_int(item[39])
-                }
-            items_list.append(item_dict)
-        
-        return jsonify({
-            'items': items_list,
-            'total_count': total_count,
-            'limit': limit,
-            'offset': offset,
-            'search_query': search_query,
-            'filters': filters
-        })
-        
-    except Exception as e:
-        app.logger.error(f"Error searching items: {e}")
-        import traceback
-        app.logger.error(f"Traceback: {traceback.format_exc()}")
-        return jsonify({'error': f'Search failed: {str(e)}'}), 500
-        
-    finally:
-        if cursor:
-            try:
-                cursor.close()
-            except:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
-
-
 @app.route('/api/items/<item_id>', methods=['GET'])
 @exempt_when_limiting
 def get_item_details(item_id):
@@ -3296,6 +2621,7 @@ if __name__ == '__main__':
     
     # Initialize database connections on startup
     # Skip heavy database initialization in dev mode or testing for faster startup
+    logger.info(f"[MAIN BLOCK] ENABLE_DEV_AUTH = {os.environ.get('ENABLE_DEV_AUTH', 'NOT SET')}")
     if os.environ.get('ENABLE_DEV_AUTH') == 'true' or os.environ.get('TESTING') == '1':
         if os.environ.get('TESTING') == '1':
             logger.info("⚡ Testing mode: Skipping database initialization for fast startup")
@@ -3305,16 +2631,19 @@ if __name__ == '__main__':
     else:
         initialize_database_connection()  # Auth database
         
-        # Initialize content database with retry logic
-        try:
-            from utils.content_db_manager import initialize_content_database
-            logger.info("Initializing content database...")
-            if initialize_content_database():
-                logger.info("✅ Content database initialized successfully")
-            else:
-                logger.warning("⚠️ Content database initialization failed - will retry on first request")
-        except Exception as e:
-            logger.error(f"Error initializing content database: {e}")
+        # Initialize content database only if configured
+        if config.get('production_database_url') or os.environ.get('EQEMU_DATABASE_URL'):
+            try:
+                from utils.content_db_manager import initialize_content_database
+                logger.info("Initializing content database...")
+                if initialize_content_database():
+                    logger.info("✅ Content database initialized successfully")
+                else:
+                    logger.warning("⚠️ Content database initialization failed - will retry on first request")
+            except Exception as e:
+                logger.error(f"Error initializing content database: {e}")
+        else:
+            logger.info("⚠️ No content database configured - skipping initialization")
     
     # Spell system disabled - skipping spell data preloading
     logger.info("🚫 Spell system disabled - skipping startup spell data preload")
@@ -3341,7 +2670,7 @@ def handle_404(error):
     
     # Determine if this looks like a disabled spell endpoint
     is_spell_endpoint = any(keyword in endpoint.lower() for keyword in [
-        'spell', 'cache', 'classes', 'scrape'
+        'spell', 'cache', 'classes'
     ])
     
     # Log with appropriate level and context
@@ -3350,19 +2679,20 @@ def handle_404(error):
     else:
         logger.warning(f"❌ Failed endpoint attempt: {method} {endpoint} (404 Not Found) | IP: {ip} | User-Agent: {user_agent[:100]}")
     
-    # Track endpoint failure metrics
-    try:
-        from routes.admin import track_endpoint_metric
-        track_endpoint_metric(
-            f"{method} {endpoint}", 
-            0,  # No response time for 404s
-            is_error=True, 
-            status_code=404,
-            error_details=f"Endpoint not found: {error_msg} | IP: {ip}",
-            stack_trace=None
-        )
-    except Exception:
-        pass  # Don't let metrics tracking break error handling
+    # Track endpoint failure metrics only if OAuth is enabled
+    if ENABLE_USER_ACCOUNTS:
+        try:
+            from routes.admin import track_endpoint_metric
+            track_endpoint_metric(
+                f"{method} {endpoint}", 
+                0,  # No response time for 404s
+                is_error=True, 
+                status_code=404,
+                error_details=f"Endpoint not found: {error_msg} | IP: {ip}",
+                stack_trace=None
+            )
+        except Exception:
+            pass  # Don't let metrics tracking break error handling
     
     # Return JSON error for API endpoints
     if endpoint.startswith('/api/'):
@@ -3410,20 +2740,21 @@ def handle_500(error):
     # Log with details
     logger.error(f"💥 Server error: {method} {endpoint} (500 Internal Server Error) | IP: {ip} | User-Agent: {user_agent[:100]} | Error: {str(error)}")
     
-    # Track endpoint failure metrics with full error details
-    try:
-        from routes.admin import track_endpoint_metric
-        import traceback
-        track_endpoint_metric(
-            f"{method} {endpoint}", 
-            0,  # No response time for server errors
-            is_error=True, 
-            status_code=500,
-            error_details=f"Internal server error: {str(error)} | IP: {ip}",
-            stack_trace=traceback.format_exc()
-        )
-    except Exception:
-        pass  # Don't let metrics tracking break error handling
+    # Track endpoint failure metrics with full error details only if OAuth is enabled
+    if ENABLE_USER_ACCOUNTS:
+        try:
+            from routes.admin import track_endpoint_metric
+            import traceback
+            track_endpoint_metric(
+                f"{method} {endpoint}", 
+                0,  # No response time for server errors
+                is_error=True, 
+                status_code=500,
+                error_details=f"Internal server error: {str(error)} | IP: {ip}",
+                stack_trace=traceback.format_exc()
+            )
+        except Exception:
+            pass  # Don't let metrics tracking break error handling
     
     return jsonify({
         'error': 'Internal server error',
@@ -3454,7 +2785,10 @@ def handle_503(error):
 # Request logging middleware
 @app.before_request
 def log_request_info():
-    """Log all incoming requests"""
+    """Log all incoming requests and set request timeout"""
+    # Store request start time for timeout handling
+    g.request_start_time = time.time()
+    
     # Skip logging for admin system endpoints to prevent spam
     excluded_paths = ['/api/admin/system/', '/api/health']
     if request.path.startswith('/api/') and not any(request.path.startswith(path) for path in excluded_paths):
@@ -3467,7 +2801,21 @@ def log_request_info():
 
 @app.after_request
 def log_response_info(response):
-    """Log response information for failed requests"""
+    """Log response information for failed requests and ensure connection cleanup"""
+    # Check request duration
+    if hasattr(g, 'request_start_time'):
+        duration = time.time() - g.request_start_time
+        if duration > 30:  # Log slow requests over 30 seconds
+            logger.warning(f"⏱️ Slow request: {request.method} {request.path} took {duration:.2f}s")
+    
+    # Force connection cleanup for any lingering connections
+    if hasattr(g, 'db_connection') and g.db_connection:
+        try:
+            g.db_connection.close()
+            g.db_connection = None
+        except:
+            pass
+    
     # Skip logging for admin system endpoints to prevent spam
     excluded_paths = ['/api/admin/system/', '/api/health']
     if (request.path.startswith('/api/') and 
@@ -3485,14 +2833,39 @@ def log_response_info(response):
         elif status >= 400:
             logger.warning(f"📤 API Response: {method} {endpoint} → {status} | IP: {ip}")
     
+    # Add connection close headers to prevent keep-alive issues
+    response.headers['Connection'] = 'close'
+    
     return response
 
 if __name__ == '__main__':
     # Use threaded Flask server to prevent hanging with multiple requests
+    # Add signal handlers for graceful shutdown
+    import signal
+    import atexit
+    
+    def signal_handler(sig, frame):
+        """Handle shutdown signals gracefully"""
+        logger.info(f"Received signal {sig}, shutting down gracefully...")
+        cleanup_resources()
+        sys.exit(0)
+    
+    # Register signal handlers (skip on Windows as it can cause issues)
+    if sys.platform != 'win32':
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Register cleanup on exit (but avoid duplicate registration)
+    # Note: Already registered above, so commenting out to prevent double registration
+    # atexit.register(cleanup_resources)
+    
+    # Run Flask app with explicit threading configuration
+    logger.info(f"Starting Flask server on port {config['backend_port']} with threading enabled")
     app.run(
-        debug=True, 
+        debug=True,  # Enable debug mode for proper module reloading
         host='0.0.0.0', 
         port=config['backend_port'],
         threaded=True,  # Enable threading to handle multiple requests
-        use_reloader=False  # Disable reloader to prevent issues with database connections
+        use_reloader=True,  # Enable reloader for development
+        processes=1  # Ensure single process with multiple threads
     ) 
