@@ -291,18 +291,13 @@
               </div>
               
               <div class="spell-detail-row">
-                <span class="detail-label">Cast Time:</span>
-                <span class="detail-value">{{ formatCastTime(spell.cast_time) }}</span>
+                <span class="detail-label">Skill:</span>
+                <span class="detail-value">{{ getSkillName(spell.skill) }}</span>
               </div>
               
               <div class="spell-detail-row">
-                <span class="detail-label">Range:</span>
-                <span class="detail-value">{{ spell.range || 'N/A' }}</span>
-              </div>
-              
-              <div class="spell-detail-row">
-                <span class="detail-label">Duration:</span>
-                <span class="detail-value">{{ formatDuration(spell.buffduration) }}</span>
+                <span class="detail-label">Target:</span>
+                <span class="detail-value">{{ getTargetType(spell.targettype) }}</span>
               </div>
             </div>
           </div>
@@ -917,19 +912,38 @@ export default {
 
     getTargetType(targetType) {
       const types = {
+        0: "Rag'Zhezum Special",
         1: 'Line of Sight',
-        2: 'AE PC v1',
-        3: 'Group v1',
-        4: 'PB AE',
+        3: 'Group V1',
+        4: 'Point Blank Area of Effect',
         5: 'Single',
         6: 'Self',
-        7: 'AE PC v2',
-        8: 'Group v2',
-        9: 'Directional',
-        10: 'Beam',
-        11: 'Ring',
-        13: 'Single in Group',
-        14: 'Directional'
+        8: 'Targeted Area of Effect',
+        9: 'Animal',
+        10: 'Undead',
+        11: 'Summoned',
+        13: 'Life Tap',
+        14: 'Pet',
+        15: 'Corpse',
+        16: 'Plant',
+        17: 'Uber Giants',
+        18: 'Uber Dragons',
+        20: 'Targeted Area of Effect Life Tap',
+        24: 'Area of Effect Undead',
+        25: 'Area of Effect Summoned',
+        32: 'Area of Effect Caster',
+        33: 'NPC Hate List',
+        34: 'Dungeon Object',
+        35: 'Muramite',
+        36: 'Area - PC Only',
+        37: 'Area - NPC Only',
+        38: 'Summoned Pet',
+        39: 'Group No Pets',
+        40: 'Area of Effect PC V2',
+        41: 'Group V2',
+        42: 'Self (Directional)',
+        43: 'Group With Pets',
+        44: 'Beam'
       }
       return types[targetType] || `Type ${targetType}`
     },
