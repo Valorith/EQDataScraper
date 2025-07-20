@@ -2062,6 +2062,15 @@ def cache_status():
         'status': 'disabled'
     }), 503
 
+@app.route('/api/classes', methods=['GET'])
+def get_classes():
+    """Get EverQuest classes list - DISABLED"""
+    return jsonify({
+        'error': 'Spell system temporarily disabled',
+        'message': 'The spell system is being redesigned and is currently unavailable.',
+        'status': 'disabled'
+    }), 503
+
 
 
 def update_startup_progress(step_name, step_number):

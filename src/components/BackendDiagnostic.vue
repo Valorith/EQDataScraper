@@ -346,6 +346,12 @@ const testAllEndpoints = async () => {
         testResult.success = true
         testResult.status = `✓ ${endpoint} - OK`
         testResult.statusClass = 'status-success'
+      } else if (response.status === 503 && (endpoint === '/api/classes' || endpoint === '/api/cache-status')) {
+        // 503 is expected for disabled spell endpoints
+        testResult.success = true
+        testResult.status = `✓ ${endpoint} - Disabled (503)`
+        testResult.statusClass = 'status-success'
+        testResult.details = 'Spell system temporarily disabled (expected)'
       } else {
         testResult.success = false
         testResult.status = `✗ ${endpoint} - ${response.status}`
