@@ -120,7 +120,18 @@
 
     <!-- Database Metrics -->
     <div class="metrics-section" v-if="databaseStats">
-      <h2>Database Performance</h2>
+      <div class="section-header">
+        <h2>Database Performance</h2>
+        <button 
+          class="reset-button"
+          @click="showResetConfirmation = true"
+          :disabled="isResetting"
+          title="Reset all database performance metrics and tracking data"
+        >
+          <i class="fas fa-undo"></i>
+          Reset Metrics
+        </button>
+      </div>
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-header">
@@ -443,6 +454,50 @@
       </div>
     </div>
   </div>
+
+  <!-- Reset Confirmation Modal -->
+  <div v-if="showResetConfirmation" class="modal-overlay" @click="showResetConfirmation = false">
+    <div class="modal-content" @click.stop>
+      <div class="modal-header">
+        <h3><i class="fas fa-exclamation-triangle"></i> Reset Database Metrics</h3>
+        <button class="close-button" @click="showResetConfirmation = false">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to reset all database performance metrics and tracking data?</p>
+        <p class="warning-text">
+          <i class="fas fa-info-circle"></i>
+          This will permanently clear:
+        </p>
+        <ul class="reset-list">
+          <li>Query execution times and history</li>
+          <li>Slow query records</li>
+          <li>Table access statistics</li>
+          <li>Query type counters</li>
+          <li>Timeline data</li>
+        </ul>
+        <p class="warning-text">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button 
+          class="cancel-button"
+          @click="showResetConfirmation = false"
+          :disabled="isResetting"
+        >
+          Cancel
+        </button>
+        <button 
+          class="confirm-button"
+          @click="resetDatabaseMetrics"
+          :disabled="isResetting"
+        >
+          <i class="fas fa-undo"></i>
+          {{ isResetting ? 'Resetting...' : 'Reset Metrics' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -503,6 +558,10 @@ const showTableModal = ref(false)
 const selectedTable = ref('')
 const tableBreakdown = ref({})
 const tableBreakdownLoading = ref(false)
+
+// Reset confirmation modal data
+const showResetConfirmation = ref(false)
+const isResetting = ref(false)
 
 // Computed
 const systemHealthClass = computed(() => {
@@ -781,13 +840,14 @@ const loadSystemStats = async () => {
     
     // Update database stats
     databaseStats.value = metricsData.database
-    console.log('Database stats updated:', databaseStats.value)
     
     // Generate table colors if we have table data
     if (databaseStats.value?.tables_accessed) {
       tableColors.value = generateTableColors(databaseStats.value.tables_accessed)
       // Draw the timeline chart
-      setTimeout(() => drawQueryTimeline(), 100)
+      setTimeout(() => {
+        drawQueryTimeline()
+      }, 100)
     }
     
     // Update response time history
@@ -1279,7 +1339,9 @@ const calculateQueryThresholds = (timelineData) => {
 
 // Draw query timeline chart
 const drawQueryTimeline = () => {
-  if (!queryTimelineChart.value) return
+  if (!queryTimelineChart.value) {
+    return
+  }
   
   const canvas = queryTimelineChart.value
   const ctx = canvas.getContext('2d')
@@ -1300,12 +1362,32 @@ const drawQueryTimeline = () => {
   
   // Get data based on selected time scale
   const timelineData = generateTimelineData()
-  if (!timelineData || timelineData.length === 0) return
+  if (!timelineData || timelineData.length === 0) {
+    // Draw empty state message
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '16px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('No query data available', width / 2, height / 2)
+    ctx.font = '12px sans-serif'
+    ctx.fillText('Data will appear as queries are executed', width / 2, height / 2 + 20)
+    return
+  }
   
   // Find max value for scaling
   const maxValue = Math.max(...timelineData.flatMap(point => 
     Object.values(point.data).reduce((sum, val) => sum + val, 0)
   )) || 1
+  
+  // If maxValue is 0 or very small, show minimal data message
+  if (maxValue <= 1) {
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '14px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Minimal query activity', width / 2, height / 2 - 10)
+    ctx.font = '12px sans-serif'
+    ctx.fillText('Chart will display meaningful data as more queries are executed', width / 2, height / 2 + 10)
+    return
+  }
   
   // Calculate intelligent thresholds
   const thresholds = calculateQueryThresholds(timelineData)
@@ -1472,41 +1554,64 @@ const generateTimelineData = () => {
   const now = new Date()
   const points = []
   
-  // Determine how many hours to include based on time scale
-  let hoursToInclude = 1
-  if (selectedTimeScale.value === '1h') hoursToInclude = 1
-  else if (selectedTimeScale.value === '6h') hoursToInclude = 6
-  else if (selectedTimeScale.value === '24h') hoursToInclude = 24
-  else if (selectedTimeScale.value === '7d') hoursToInclude = 168
+  // Determine how many entries to include based on time scale  
+  let entriesToInclude = timeline.length // Start with all available data
+  if (selectedTimeScale.value === '1h') entriesToInclude = Math.min(1, timeline.length)
+  else if (selectedTimeScale.value === '6h') entriesToInclude = Math.min(6, timeline.length)
+  else if (selectedTimeScale.value === '24h') entriesToInclude = Math.min(24, timeline.length)
+  else if (selectedTimeScale.value === '7d') entriesToInclude = timeline.length
   
   // Get the relevant timeline entries
-  const relevantEntries = timeline.slice(-hoursToInclude)
+  const relevantEntries = timeline.slice(-entriesToInclude)
+  
   
   // Aggregate data based on time scale
   if (selectedTimeScale.value === '1h') {
-    // For 1 hour, show data points every 5 minutes (interpolated)
-    for (let i = 0; i < 12; i++) {
-      const entry = relevantEntries[0] || { tables: {} }
-      const data = {}
-      Object.keys(entry.tables || {}).forEach(table => {
-        // Distribute the hourly count across 5-minute intervals
-        data[table] = Math.round((entry.tables[table] || 0) / 12)
-      })
-      points.push({ 
-        time: `-${(11 - i) * 5}m`, 
-        data 
-      })
-    }
-  } else if (selectedTimeScale.value === '6h' || selectedTimeScale.value === '24h') {
-    // Show hourly data
-    relevantEntries.forEach((entry, index) => {
-      const hoursAgo = relevantEntries.length - index - 1
+    // For 1 hour, show the latest data points that have actual table data
+    const entriesWithData = relevantEntries.filter(entry => 
+      entry.tables && Object.keys(entry.tables).length > 0
+    )
+    if (entriesWithData.length > 0) {
+      const entry = entriesWithData[entriesWithData.length - 1] // Use the most recent entry with data
       points.push({
-        time: `-${hoursAgo}h`,
+        time: 'Now',
         data: entry.tables || {}
       })
+    } else if (relevantEntries.length > 0) {
+      // If no entries have table data, show the most recent total
+      const entry = relevantEntries[relevantEntries.length - 1]
+      points.push({
+        time: 'Now',
+        data: { 'total_queries': entry.total_queries || 0 }
+      })
+    }
+  } else if (selectedTimeScale.value === '6h' || selectedTimeScale.value === '24h' || selectedTimeScale.value === '7d') {
+    // Show all available data points, but enhance empty table data with total queries
+    relevantEntries.forEach((entry, index) => {
+      let timeLabel
+      if (selectedTimeScale.value === '7d') {
+        // For 7-day view, show date
+        const date = new Date(entry.timestamp)
+        timeLabel = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+      } else {
+        // For hourly views, show relative time
+        const hoursAgo = relevantEntries.length - index - 1
+        timeLabel = hoursAgo === 0 ? 'Now' : `-${hoursAgo}h`
+      }
+      
+      let data = entry.tables || {}
+      // If no table-specific data, use total as a general metric
+      if (Object.keys(data).length === 0 && entry.total_queries > 0) {
+        data = { 'queries': entry.total_queries }
+      }
+      
+      points.push({
+        time: timeLabel,
+        data: data
+      })
     })
-  } else if (selectedTimeScale.value === '7d') {
+  } else if (selectedTimeScale.value === '7d_old') {
+    // Keep old 7d logic as backup
     // Aggregate by day
     const dailyData = {}
     relevantEntries.forEach(entry => {
@@ -1550,6 +1655,55 @@ const generateTimelineData = () => {
 watch(selectedTimeScale, () => {
   drawQueryTimeline()
 })
+
+// Reset database performance metrics
+const resetDatabaseMetrics = async () => {
+  try {
+    isResetting.value = true
+    
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+    
+    console.log('Resetting database performance metrics...')
+    
+    const response = await axios.post(`${getApiBaseUrl()}/api/admin/system/metrics/reset`, {}, { 
+      headers,
+      timeout: 10000
+    })
+    
+    if (response.data.success) {
+      console.log('Database metrics reset successfully')
+      
+      // Show success notification
+      notificationStore.addNotification({
+        type: 'success',
+        title: 'Metrics Reset',
+        message: 'Database performance metrics have been reset successfully'
+      })
+      
+      // Refresh the metrics data
+      await loadSystemStats()
+      
+    } else {
+      throw new Error(response.data.message || 'Reset failed')
+    }
+    
+  } catch (error) {
+    console.error('Error resetting database metrics:', error)
+    
+    notificationStore.addNotification({
+      type: 'error',
+      title: 'Reset Failed',
+      message: error.response?.data?.message || error.message || 'Failed to reset database metrics'
+    })
+  } finally {
+    isResetting.value = false
+    showResetConfirmation.value = false
+  }
+}
 
 // Show table breakdown modal
 const showTableBreakdown = async (tableName) => {
@@ -3071,5 +3225,120 @@ onUnmounted(() => {
 
 .modal-body::-webkit-scrollbar-thumb:hover {
   background: rgba(102, 126, 234, 0.8);
+}
+
+/* Section header styles */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+/* Reset button styles */
+.reset-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.reset-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.reset-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Reset confirmation modal styles */
+.warning-text {
+  color: #f59e0b;
+  font-weight: 500;
+  margin: 1rem 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reset-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem 1.5rem;
+}
+
+.reset-list li {
+  padding: 0.25rem 0;
+  position: relative;
+}
+
+.reset-list li::before {
+  content: '•';
+  color: #f59e0b;
+  position: absolute;
+  left: -1rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cancel-button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.confirm-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.confirm-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+}
+
+.confirm-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
