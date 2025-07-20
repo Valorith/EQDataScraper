@@ -1470,6 +1470,12 @@ const drawQueryTimeline = () => {
     })
   })
   
+  // Draw time scale indicator
+  ctx.fillStyle = '#667eea'
+  ctx.font = 'bold 14px sans-serif'
+  ctx.textAlign = 'right'
+  ctx.fillText(`${selectedTimeScale.value.toUpperCase()} (${timelineData.length} points)`, padding + chartWidth, padding - 10)
+  
   // Draw axis labels
   ctx.fillStyle = '#d1d5db'
   ctx.font = '12px sans-serif'
@@ -1490,13 +1496,19 @@ const drawQueryTimeline = () => {
   ctx.font = '11px sans-serif'
   ctx.textAlign = 'center'
   
-  const labelInterval = Math.ceil(timelineData.length / 6)
-  timelineData.forEach((point, index) => {
-    if (index % labelInterval === 0 || index === timelineData.length - 1) {
-      const x = padding + (index / (timelineData.length - 1)) * chartWidth
-      ctx.fillText(point.time, x, height - 25)
-    }
-  })
+  if (timelineData.length === 1) {
+    // Single point - center the label
+    ctx.fillText(timelineData[0].time, padding + chartWidth / 2, height - 25)
+  } else {
+    // Multiple points - distribute labels
+    const labelInterval = Math.max(1, Math.ceil(timelineData.length / 4))
+    timelineData.forEach((point, index) => {
+      if (index % labelInterval === 0 || index === timelineData.length - 1) {
+        const x = padding + (index / (timelineData.length - 1)) * chartWidth
+        ctx.fillText(point.time, x, height - 25)
+      }
+    })
+  }
   
   // Add threshold lines based on intelligent analysis
   // Only show threshold lines if they would be meaningful and visible
@@ -1560,10 +1572,15 @@ const generateTimelineData = () => {
   
   // Determine how many entries to include based on time scale  
   let entriesToInclude = timeline.length // Start with all available data
-  if (selectedTimeScale.value === '1h') entriesToInclude = Math.min(1, timeline.length)
-  else if (selectedTimeScale.value === '6h') entriesToInclude = Math.min(6, timeline.length)
-  else if (selectedTimeScale.value === '24h') entriesToInclude = Math.min(24, timeline.length)
-  else if (selectedTimeScale.value === '7d') entriesToInclude = timeline.length
+  if (selectedTimeScale.value === '1h') {
+    entriesToInclude = 1 // Always show only the most recent entry
+  } else if (selectedTimeScale.value === '6h') {
+    entriesToInclude = Math.min(3, timeline.length) // Show last 3 hours for visual difference
+  } else if (selectedTimeScale.value === '24h') {
+    entriesToInclude = Math.min(5, timeline.length) // Show last 5 entries
+  } else if (selectedTimeScale.value === '7d') {
+    entriesToInclude = timeline.length // Show all available data
+  }
   
   // Get the relevant timeline entries
   const relevantEntries = timeline.slice(-entriesToInclude)
