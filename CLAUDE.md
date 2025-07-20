@@ -37,6 +37,24 @@ python3 run.py status    # Check running services
 python3 run.py stop      # Stop all services
 ```
 
+### Testing and Debugging Mode
+When testing or debugging new features, always ensure the application runs in development mode with authentication bypass enabled:
+
+```bash
+# Set environment variables for proper testing
+export ENABLE_DEV_AUTH=true
+export ENABLE_USER_ACCOUNTS=true
+
+# Then start the services
+python3 run.py start
+```
+
+This ensures:
+- Admin routes are accessible for testing
+- Search event logging works properly
+- All debugging features are available
+- Mock data and authentication bypass are enabled for testing
+
 ### Legacy Scraper
 ```bash
 # Standalone scraper (original) - REMOVED

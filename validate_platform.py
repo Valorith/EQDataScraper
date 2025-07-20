@@ -315,8 +315,7 @@ def test_network_connectivity():
         # Test connectivity to a reliable server
         test_urls = [
             "https://www.google.com",
-            "https://github.com",
-            "https://alla.clumsysworld.com"  # The actual data source
+            "https://github.com"
         ]
         
         successful_connections = 0

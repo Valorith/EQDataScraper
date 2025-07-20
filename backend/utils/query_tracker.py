@@ -136,7 +136,7 @@ class TrackedCursor:
                         execution_time=execution_time,
                         query_type=query_type,
                         table_name=table_name,
-                        source_endpoint="Database Operation"
+                        source_endpoint=None  # Let the tracking function detect the source
                     )
                     return
             

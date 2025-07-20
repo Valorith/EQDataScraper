@@ -159,47 +159,100 @@ def database_diagnostics():
 
 @admin_minimal_bp.route('/admin/system/endpoints', methods=['GET', 'OPTIONS'])
 def system_endpoints():
-    """Return minimal endpoint metrics when OAuth is disabled."""
+    """Return empty endpoint metrics when OAuth is disabled."""
     return jsonify({
         'success': True,
         'data': {
-            'endpoints': [
-                {
-                    'endpoint': 'GET /api/health',
-                    'total_calls': 100,
-                    'avg_response_time': 50,
-                    'success_rate': 100,
-                    'last_called': datetime.now().isoformat(),
-                    'status': 'healthy'
-                },
-                {
-                    'endpoint': 'GET /api/items/search',
-                    'total_calls': 50,
-                    'avg_response_time': 200,
-                    'success_rate': 100,
-                    'last_called': datetime.now().isoformat(),
-                    'status': 'healthy'
-                }
-            ],
-            'message': 'OAuth is disabled - showing sample data only'
+            'endpoints': [],
+            'message': 'OAuth is disabled - endpoint metrics not available'
         }
     })
 
 @admin_minimal_bp.route('/admin/system/logs', methods=['GET', 'OPTIONS'])
 def system_logs():
-    """Return minimal logs when OAuth is disabled."""
-    return jsonify({
-        'success': True,
-        'data': {
-            'logs': [
+    """Return real search logs even when OAuth is disabled."""
+    print("DEBUG: admin_minimal.system_logs() called")
+    try:
+        # Access system_metrics from the Flask app context
+        from flask import current_app
+        
+        # Get system_metrics from the app's globals or blueprint
+        system_metrics = None
+        try:
+            # Try to get system_metrics from the main admin blueprint
+            import sys
+            if 'routes.admin' in sys.modules:
+                admin_module = sys.modules['routes.admin']
+                if hasattr(admin_module, 'system_metrics'):
+                    system_metrics = admin_module.system_metrics
+        except Exception as e:
+            print(f"Could not access system_metrics from admin module: {e}")
+        
+        # Get real logs from system_metrics
+        real_logs = []
+        if system_metrics and 'error_log' in system_metrics and system_metrics['error_log']:
+            for i, log_entry in enumerate(system_metrics['error_log']):
+                real_logs.append({
+                    'id': i + 1,
+                    'timestamp': log_entry['timestamp'],
+                    'level': log_entry['level'],
+                    'message': log_entry['message'],
+                    'source': log_entry['source'],
+                    'details': log_entry.get('details', {})
+                })
+        
+        # If no real logs, show a helpful message
+        if not real_logs:
+            real_logs = [
                 {
+                    'id': 1,
                     'timestamp': datetime.now().isoformat(),
-                    'level': 'INFO',
-                    'message': 'OAuth is disabled - system logs not available',
-                    'source': 'admin_minimal'
+                    'level': 'info',
+                    'message': 'No search events logged yet - try searching for items or spells',
+                    'source': 'system',
+                    'details': {}
                 }
-            ],
-            'total': 1,
-            'message': 'OAuth is disabled - system logs not available'
-        }
-    })
+            ]
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'logs': real_logs,
+                'total': len(real_logs),
+                'message': f'Search events available (OAuth disabled but monitoring active) - {len(real_logs)} events found'
+            }
+        })
+        
+    except Exception as e:
+        # Fallback to minimal logs if there's an error
+        return jsonify({
+            'success': True,
+            'data': {
+                'logs': [
+                    {
+                        'id': 1,
+                        'timestamp': datetime.now().isoformat(),
+                        'level': 'error',
+                        'message': f'Error accessing search logs: {str(e)}',
+                        'source': 'admin_minimal',
+                        'details': {}
+                    }
+                ],
+                'total': 1,
+                'message': 'OAuth is disabled - error accessing search logs'
+            }
+        })
+
+@admin_minimal_bp.route('/admin/logs', methods=['GET', 'OPTIONS'])
+def logs():
+    """Return minimal logs when OAuth is disabled (alternative endpoint)."""
+    return system_logs()
+
+@admin_minimal_bp.route('/admin/logs/clear', methods=['POST', 'OPTIONS'])
+def clear_logs():
+    """Clear logs operation when OAuth is disabled."""
+    return jsonify({
+        'success': False,
+        'message': 'Log clearing requires OAuth to be enabled',
+        'error': 'OAuth is disabled - cannot clear system logs'
+    }), 403

@@ -3,7 +3,13 @@
     <div v-if="visible" class="toast-notification" :class="type">
       <div class="toast-content">
         <i :class="iconClass"></i>
-        <span class="toast-message">{{ message }}</span>
+        <div class="toast-text">
+          <div v-if="title" class="toast-title">{{ title }}</div>
+          <div class="toast-message">{{ message }}</div>
+          <div v-if="details && details.length > 0" class="toast-details">
+            <div v-for="detail in details" :key="detail" class="toast-detail">{{ detail }}</div>
+          </div>
+        </div>
       </div>
     </div>
   </transition>
@@ -16,6 +22,14 @@ export default {
     message: {
       type: String,
       required: true
+    },
+    title: {
+      type: String,
+      default: ''
+    },
+    details: {
+      type: Array,
+      default: () => []
     },
     type: {
       type: String,
@@ -89,12 +103,26 @@ export default {
 
 .toast-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
 .toast-content i {
   font-size: 1.2rem;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-title {
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .toast-message {
@@ -102,6 +130,26 @@ export default {
   font-size: 1rem;
   font-weight: 500;
   line-height: 1.4;
+}
+
+.toast-details {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: #e2e8f0;
+}
+
+.toast-detail {
+  margin-bottom: 2px;
+  padding-left: 12px;
+  position: relative;
+  line-height: 1.3;
+}
+
+.toast-detail:before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #94a3b8;
 }
 
 /* Type-specific colors */

@@ -18,16 +18,15 @@
           <label>Action Type</label>
           <select v-model="filters.action" class="filter-select">
             <option value="">All Actions</option>
+            <option value="item_search">Item Search</option>
+            <option value="spell_search">Spell Search</option>
             <option value="login">Login</option>
             <option value="logout">Logout</option>
-            <option value="spell_search">Spell Search</option>
-            <option value="spell_view">Spell View</option>
-            <option value="cache_refresh">Cache Refresh</option>
-            <option value="cache_clear">Cache Clear</option>
-            <option value="scrape_start">Scrape Start</option>
-            <option value="scrape_complete">Scrape Complete</option>
             <option value="admin_action">Admin Action</option>
-            <option value="system_error">System Error</option>
+            <option value="logs_cleared">Logs Cleared</option>
+            <option value="system_monitoring">System Monitoring</option>
+            <option value="database_query">Database Query</option>
+            <option value="error">System Error</option>
           </select>
         </div>
         
@@ -35,18 +34,20 @@
           <label>Resource Type</label>
           <select v-model="filters.resource_type" class="filter-select">
             <option value="">All Resources</option>
+            <option value="item">Item</option>
+            <option value="spell">Spell</option>
             <option value="user">User</option>
             <option value="session">Session</option>
-            <option value="spell">Spell</option>
-            <option value="class">Class</option>
-            <option value="cache">Cache</option>
+            <option value="database">Database</option>
             <option value="system">System</option>
+            <option value="logs">Logs</option>
           </select>
         </div>
         
         <div class="filter-group">
           <label>Time Range</label>
           <select v-model="filters.timeRange" class="filter-select">
+            <option value="">All Time</option>
             <option value="1h">Last Hour</option>
             <option value="24h">Last 24 Hours</option>
             <option value="7d">Last 7 Days</option>
@@ -64,10 +65,31 @@
           >
         </div>
         
-        <button @click="refreshActivities" class="refresh-btn">
+        <button @click="refreshLogs" class="refresh-btn">
           <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
           Refresh
         </button>
+        
+        <button 
+          @click="showClearConfirmation = true" 
+          class="clear-logs-btn"
+          :disabled="!oauthEnabled"
+          :title="!oauthEnabled ? 'Log clearing requires OAuth to be enabled' : ''"
+        >
+          <i class="fas fa-trash-alt"></i>
+          Clear Logs
+        </button>
+      </div>
+    </div>
+
+    <!-- OAuth Status Warning -->
+    <div v-if="!oauthEnabled" class="oauth-warning">
+      <div class="warning-content">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div class="warning-text">
+          <h4>Limited Functionality</h4>
+          <p>OAuth is disabled. Log clearing and advanced monitoring features are not available.</p>
+        </div>
       </div>
     </div>
 
@@ -89,11 +111,14 @@
           :key="log.id"
           class="log-entry"
           :class="log.level"
+          :data-source="log.source"
         >
           <div class="log-header">
             <span class="log-time">{{ formatDateTime(log.timestamp) }}</span>
             <span class="log-level" :class="log.level">{{ log.level.toUpperCase() }}</span>
-            <span class="log-source">{{ log.source }}</span>
+            <span v-if="log.context" class="log-context">{{ log.context }}</span>
+            <span v-if="log.source" class="log-source">{{ log.source }}</span>
+            <span v-if="log.responseTime" class="response-time">{{ log.responseTime }}</span>
           </div>
           <div class="log-content">
             <div class="log-message">{{ log.message }}</div>
@@ -142,6 +167,48 @@
         <i class="fas fa-chevron-right"></i>
       </button>
     </div>
+
+    <!-- Clear Logs Confirmation Modal -->
+    <div v-if="showClearConfirmation" class="modal-overlay" @click="showClearConfirmation = false">
+      <div class="confirmation-modal" @click.stop>
+        <div class="modal-header">
+          <h3>Clear System Logs</h3>
+          <button @click="showClearConfirmation = false" class="close-btn">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-content">
+          <p>Are you sure you want to clear all system logs? This action cannot be undone.</p>
+          <p class="warning-text">This will clear:</p>
+          <ul class="clear-items-list">
+            <li>Application logs</li>
+            <li>Error logs</li>
+            <li>Monitor logs</li>
+            <li>Performance logs</li>
+          </ul>
+        </div>
+        <div class="modal-actions">
+          <button @click="showClearConfirmation = false" class="cancel-btn">
+            Cancel
+          </button>
+          <button @click="clearLogs" class="confirm-btn" :disabled="clearingLogs">
+            <i v-if="clearingLogs" class="fas fa-spinner fa-spin"></i>
+            <i v-else class="fas fa-trash-alt"></i>
+            {{ clearingLogs ? 'Clearing...' : 'Clear Logs' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <ToastNotification
+      ref="toast"
+      :title="toastConfig.title"
+      :message="toastConfig.message"
+      :details="toastConfig.details"
+      :type="toastConfig.type"
+      :duration="toastConfig.duration"
+    />
   </div>
 </template>
 
@@ -151,6 +218,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
 import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
+import ToastNotification from '../components/ToastNotification.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -158,9 +226,22 @@ const userStore = useUserStore()
 // State
 const logs = ref([])
 const loading = ref(false)
+const showClearConfirmation = ref(false)
+const clearingLogs = ref(false)
+const oauthEnabled = ref(true) // Assume enabled initially, will be detected
+const toast = ref(null)
+const toastConfig = ref({
+  title: '',
+  message: '',
+  details: [],
+  type: 'info',
+  duration: 5000
+})
 const filters = ref({
   level: '',
-  timeRange: '24h',
+  action: '',
+  resource_type: '',
+  timeRange: '',
   search: ''
 })
 const currentPage = ref(1)
@@ -170,12 +251,119 @@ const expandedLogs = ref({})
 // Computed
 const filteredLogs = computed(() => {
   return logs.value.filter(log => {
+    // Level filter
     if (filters.value.level && log.level !== filters.value.level) return false
+    
+    // Action type filter - check both source and message content
+    if (filters.value.action) {
+      const action = filters.value.action
+      const message = log.message?.toLowerCase() || ''
+      const source = log.source?.toLowerCase() || ''
+      
+      let matches = false
+      switch (action) {
+        case 'item_search':
+          matches = source === 'item_search' || message.includes('item search')
+          break
+        case 'spell_search':
+          matches = source === 'spell_search' || message.includes('spell search')
+          break
+        case 'system_monitoring':
+          matches = message.includes('system resources') || message.includes('cpu') || message.includes('memory')
+          break
+        case 'database_query':
+          matches = message.includes('query') || message.includes('database')
+          break
+        case 'logs_cleared':
+          matches = message.includes('cleared') || message.includes('reset')
+          break
+        case 'login':
+          matches = message.includes('login') || message.includes('logged in')
+          break
+        case 'logout':
+          matches = message.includes('logout') || message.includes('logged out')
+          break
+        case 'admin_action':
+          matches = message.includes('admin') || source.includes('admin')
+          break
+        case 'error':
+          matches = log.level === 'error' || message.includes('error') || message.includes('failed')
+          break
+        default:
+          matches = source === action
+      }
+      if (!matches) return false
+    }
+    
+    // Resource type filter - check message content for resource references
+    if (filters.value.resource_type) {
+      const resourceType = filters.value.resource_type
+      const message = log.message?.toLowerCase() || ''
+      
+      let matches = false
+      switch (resourceType) {
+        case 'item':
+          matches = message.includes('item')
+          break
+        case 'spell':
+          matches = message.includes('spell')
+          break
+        case 'user':
+          matches = message.includes('user') || message.includes('login') || message.includes('logout')
+          break
+        case 'session':
+          matches = message.includes('session')
+          break
+        case 'database':
+          matches = message.includes('database') || message.includes('query') || message.includes('timeline')
+          break
+        case 'system':
+          matches = message.includes('system') || message.includes('cpu') || message.includes('memory')
+          break
+        case 'logs':
+          matches = message.includes('log') || message.includes('cleared')
+          break
+        default:
+          matches = true
+      }
+      if (!matches) return false
+    }
+    
+    // Time range filter
+    if (filters.value.timeRange) {
+      const now = new Date()
+      const logTime = new Date(log.timestamp)
+      const timeDiff = now - logTime
+      
+      let maxAge = 0
+      switch (filters.value.timeRange) {
+        case '1h':
+          maxAge = 60 * 60 * 1000 // 1 hour in milliseconds
+          break
+        case '24h':
+          maxAge = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+          break
+        case '7d':
+          maxAge = 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
+          break
+        case '30d':
+          maxAge = 30 * 24 * 60 * 60 * 1000 // 30 days in milliseconds
+          break
+      }
+      
+      if (timeDiff > maxAge) return false
+    }
+    
+    // Search text filter
     if (filters.value.search) {
       const searchLower = filters.value.search.toLowerCase()
-      return log.message.toLowerCase().includes(searchLower) ||
-             log.source?.toLowerCase().includes(searchLower)
+      const matchesMessage = log.message?.toLowerCase().includes(searchLower)
+      const matchesSource = log.source?.toLowerCase().includes(searchLower)
+      const matchesContext = log.context?.toLowerCase().includes(searchLower)
+      
+      if (!matchesMessage && !matchesSource && !matchesContext) return false
     }
+    
     return true
   })
 })
@@ -191,22 +379,117 @@ const totalPages = computed(() => {
 })
 
 // Methods
+const showToast = (title, message, details = [], type = 'info', duration = 5000) => {
+  toastConfig.value = { title, message, details, type, duration }
+  if (toast.value) {
+    toast.value.show()
+  }
+}
+
+const formatCategoryMessage = (categories) => {
+  const parts = []
+  if (categories.error_logs > 0) parts.push(`${categories.error_logs} error logs`)
+  if (categories.performance_metrics > 0) parts.push(`${categories.performance_metrics} performance metrics`)
+  if (categories.system_metrics > 0) parts.push(`${categories.system_metrics} system metrics`)
+  if (categories.log_files > 0) parts.push(`${categories.log_files} log files`)
+  if (categories.monitoring_data > 0) parts.push(`${categories.monitoring_data} monitoring data sources`)
+  return parts
+}
+
 const loadLogs = async () => {
   loading.value = true
   try {
-    // For now, use mock data since the endpoint might not exist
-    logs.value = generateMockLogs()
+    // Try to load logs from the admin endpoint
+    const headers = userStore.accessToken ? 
+      { Authorization: `Bearer ${userStore.accessToken}` } : {}
     
-    // When backend endpoint is ready, use this:
-    // const response = await axios.get(`${API_BASE_URL}/api/admin/logs`, {
-    //   headers: { Authorization: `Bearer ${userStore.accessToken}` },
-    //   params: { timeRange: filters.value.timeRange }
-    // })
-    // logs.value = response.data.data
+    const response = await axios.get(`${API_BASE_URL}/api/logs`, {
+      headers,
+      params: { 
+        level: filters.value.level || 'all',
+        limit: 100
+      }
+    })
+    
+    if (response.data.success) {
+      logs.value = response.data.data.logs || []
+      // Detect if OAuth is enabled based on response
+      oauthEnabled.value = !response.data.data.message?.includes('OAuth is disabled')
+    } else {
+      console.error('Failed to load logs:', response.data.error)
+      logs.value = []
+    }
   } catch (error) {
     console.error('Error loading logs:', error)
+    
+    // Check if it's a 403 or auth error, indicating OAuth is disabled
+    if (error.response?.status === 403 || error.response?.status === 401) {
+      oauthEnabled.value = false
+      // Try to get minimal logs from admin_minimal endpoint
+      try {
+        const minimalResponse = await axios.get(`${API_BASE_URL}/api/admin/system/logs`)
+        if (minimalResponse.data.success) {
+          logs.value = minimalResponse.data.data.logs || []
+        }
+      } catch (minimalError) {
+        console.error('Failed to load minimal logs:', minimalError)
+        logs.value = []
+      }
+    } else {
+      // Other error, show empty logs
+      logs.value = []
+    }
   } finally {
     loading.value = false
+  }
+}
+
+const clearLogs = async () => {
+  if (!oauthEnabled.value) {
+    showToast('OAuth Required', 'Log clearing requires OAuth to be enabled', [], 'warning')
+    return
+  }
+  
+  clearingLogs.value = true
+  try {
+    const headers = userStore.accessToken ? 
+      { Authorization: `Bearer ${userStore.accessToken}` } : {}
+    
+    const response = await axios.post(`${API_BASE_URL}/api/logs/clear`, {}, {
+      headers
+    })
+    
+    if (response.data.success) {
+      showClearConfirmation.value = false
+      
+      // Format success message with categorized breakdown
+      const { categories, cleared_items } = response.data.data
+      const categoryDetails = formatCategoryMessage(categories)
+      
+      showToast(
+        'Logs Cleared Successfully', 
+        `Cleared ${cleared_items.length} log sources`, 
+        categoryDetails,
+        'success',
+        7000
+      )
+      
+      // Reload logs to show the new log event
+      await loadLogs()
+    } else {
+      console.error('Failed to clear logs:', response.data.error)
+      showToast('Clear Failed', response.data.error, [], 'error')
+    }
+  } catch (error) {
+    console.error('Error clearing logs:', error)
+    if (error.response?.status === 403) {
+      showToast('Authentication Error', 'Log clearing requires OAuth to be enabled', [], 'error')
+    } else {
+      const errorMsg = error.response?.data?.error || error.message
+      showToast('Clear Failed', errorMsg, [], 'error')
+    }
+  } finally {
+    clearingLogs.value = false
   }
 }
 
@@ -241,174 +524,6 @@ const formatDetailValue = (value) => {
   return value
 }
 
-// Mock data generator (remove when backend endpoint is ready)
-const generateMockLogs = () => {
-  const logTemplates = [
-    {
-      level: 'info',
-      source: 'backend/app.py',
-      message: 'Cache loaded from disk',
-      details: {
-        spellClasses: 16,
-        totalSpells: 1532,
-        pricingEntries: 1038,
-        loadTime: '2.3s',
-        cacheSize: '4.2MB'
-      }
-    },
-    {
-      level: 'info',
-      source: 'auth.py',
-      message: 'User rgagnier06@gmail.com authenticated successfully via Google OAuth from IP 192.168.1.45',
-      details: {
-        user: 'rgagnier06@gmail.com',
-        provider: 'Google OAuth',
-        ipAddress: '192.168.1.45',
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        sessionId: 'sess_2a3b4c5d6e7f8g9h',
-        isNewUser: false,
-        loginMethod: 'OAuth'
-      }
-    },
-    {
-      level: 'warning',
-      source: 'scraper.py',
-      message: 'Necromancer spell scraping completed with 4 failures (380/384 successful) in 45.2s - 98.96% success rate',
-      details: {
-        class: 'Necromancer',
-        totalSpells: 384,
-        successfulScrapes: 380,
-        failedScrapes: 4,
-        failedSpellIds: [2756, 3891, 4102, 5234],
-        duration: '45.2s',
-        retryAttempts: 3,
-        successRate: '98.96%'
-      }
-    },
-    {
-      level: 'warning',
-      source: 'backend/app.py',
-      message: 'Rate limit exceeded for IP 45.23.178.92 on /api/spell-details/:id - 156 requests in 1 minute (limit: 100) - blocked for 5 minutes',
-      details: {
-        ipAddress: '45.23.178.92',
-        endpoint: '/api/spell-details/:id',
-        requestCount: 156,
-        timeWindow: '1 minute',
-        limit: 100,
-        blockDuration: '5 minutes',
-        userAgent: 'Python/3.8 requests/2.25.1',
-        user: null
-      }
-    },
-    {
-      level: 'debug',
-      source: 'backend/app.py',
-      message: 'Database connection established',
-      details: {
-        host: 'shuttle.proxy.rlwy.net',
-        port: 56963,
-        database: 'railway',
-        sslEnabled: true,
-        poolSize: 20,
-        connectionTime: '132ms'
-      }
-    },
-    {
-      level: 'info',
-      source: 'cache.py',
-      message: 'Cache refresh triggered by automatic expiry check for Cleric and Wizard - cache was 26.5 hours old (expires at 24 hours)',
-      details: {
-        triggeredBy: 'Automatic expiry check',
-        classes: ['Cleric', 'Wizard'],
-        previousCacheAge: '26.5 hours',
-        expiryThreshold: '24 hours'
-      }
-    },
-    {
-      level: 'debug',
-      source: 'backend/app.py',
-      message: 'API endpoint accessed',
-      details: null // Some logs don't have details
-    },
-    {
-      level: 'info',
-      source: 'scraper.py',
-      message: 'Background task started',
-      details: {
-        taskType: 'Full spell refresh',
-        scheduledBy: 'System',
-        estimatedDuration: '10-15 minutes',
-        priority: 'low'
-      }
-    },
-    {
-      level: 'error',
-      source: 'scraper.py',
-      message: 'Failed to scrape Druid spell "Harvest" (ID: 3456) from alla.clumsysworld.com - HTTP 503 after 3 retries over 15.3s',
-      details: {
-        spellId: 3456,
-        spellName: 'Harvest',
-        spellClass: 'Druid',
-        error: 'HTTP 503 Service Unavailable',
-        url: 'https://alla.clumsysworld.com/spell.php?id=3456',
-        retryCount: 3,
-        lastAttempt: new Date().toISOString(),
-        totalDuration: '15.3s'
-      }
-    },
-    {
-      level: 'warning',
-      source: 'backend/app.py',
-      message: 'Slow API response: GET /api/spells/wizard took 850ms (threshold: 500ms) - returned 384 items for user rgagnier06@gmail.com from IP 192.168.1.45',
-      details: {
-        endpoint: 'GET /api/spells/wizard',
-        responseTime: '850ms',
-        threshold: '500ms',
-        itemsReturned: 384,
-        cacheHit: false,
-        user: 'rgagnier06@gmail.com',
-        ipAddress: '192.168.1.45'
-      }
-    },
-    {
-      level: 'info',
-      source: 'backend/app.py',
-      message: 'Database backup completed',
-      details: {
-        tablesBackedUp: ['spell_cache', 'pricing_cache', 'spell_details_cache', 'users', 'sessions'],
-        totalRecords: 15243,
-        backupSize: '45.2MB',
-        duration: '3.2s',
-        location: 's3://eq-backups/2025-07-05/backup-1720123456.sql.gz'
-      }
-    },
-    {
-      level: 'error',
-      source: 'auth.py',
-      message: 'OAuth authentication failed for user@example.com from IP 192.168.1.100 - Google provider error: Invalid client_id',
-      details: {
-        provider: 'Google',
-        error: 'Invalid client_id',
-        ipAddress: '192.168.1.100',
-        attemptedEmail: 'user@example.com'
-      }
-    }
-  ]
-  
-  return Array.from({ length: 50 }, (_, i) => {
-    const template = logTemplates[Math.floor(Math.random() * logTemplates.length)]
-    const hasDetails = template.details !== null && Math.random() > 0.3 // 70% chance of having details
-    
-    return {
-      id: i + 1,
-      timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-      level: template.level,
-      source: template.source,
-      message: template.message,
-      details: hasDetails ? template.details : null
-    }
-  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-}
 
 // Lifecycle
 onMounted(() => {
@@ -540,6 +655,194 @@ onMounted(() => {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
+.clear-logs-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clear-logs-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+.clear-logs-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.oauth-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.warning-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.oauth-warning i {
+  color: #f59e0b;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.warning-text h4 {
+  color: #f59e0b;
+  margin: 0 0 4px 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.warning-text p {
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.confirmation-modal {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px 0;
+  margin-bottom: 16px;
+}
+
+.modal-header h3 {
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.modal-content {
+  padding: 0 24px 20px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+}
+
+.warning-text {
+  color: #f59e0b;
+  font-weight: 500;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.clear-items-list {
+  margin: 0;
+  padding-left: 20px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.clear-items-list li {
+  margin-bottom: 4px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cancel-btn {
+  padding: 10px 20px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.confirm-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.confirm-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .logs-container {
   background: linear-gradient(135deg, rgba(26, 32, 44, 0.85) 0%, rgba(45, 55, 72, 0.85) 100%);
   backdrop-filter: blur(20px);
@@ -620,6 +923,24 @@ onMounted(() => {
   background: rgba(107, 114, 128, 0.15);
 }
 
+/* Search event specific styling */
+.log-entry[data-source*="search"] {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.log-entry[data-source*="search"]:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.log-entry[data-source="item_search"] .log-source::before {
+  content: "🔍 ";
+}
+
+.log-entry[data-source="spell_search"] .log-source::before {
+  content: "✨ ";
+}
+
 .log-header {
   display: flex;
   gap: 15px;
@@ -660,10 +981,29 @@ onMounted(() => {
   color: white;
 }
 
+.log-context {
+  color: #667eea;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
 .log-source {
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.85rem;
   font-family: monospace;
+}
+
+.response-time {
+  color: #f59e0b;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .log-content {

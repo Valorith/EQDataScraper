@@ -114,7 +114,6 @@ class AppRunner:
             'backend_port': 5001,
             'frontend_port': 3000,
             'cache_expiry_hours': 24,
-            'min_scrape_interval_minutes': 5
         }
         
         try:
@@ -862,13 +861,13 @@ class AppRunner:
             return False
     
     def _check_network_connectivity(self) -> bool:
-        """Check if we can reach the spell data source"""
+        """Check basic network connectivity"""
         try:
             import urllib.request
             import urllib.error
             
-            # Test connectivity to the spell data source
-            test_url = "https://alla.clumsysworld.com/"
+            # Test basic network connectivity
+            test_url = "https://www.google.com/"
             request = urllib.request.Request(test_url)
             request.add_header('User-Agent', 'EQDataScraper/1.0')
             
