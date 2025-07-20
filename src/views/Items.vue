@@ -244,6 +244,7 @@
       :visible="loadingDropSources"
       text="Loading drop sources..."
       :randomClassIcon="true"
+      :fullScreen="true"
     />
 
     <!-- Search Results Section -->
