@@ -239,6 +239,12 @@
       :visible="paginating"
       text="Loading"
     />
+    <!-- Drop Sources Loading Modal -->
+    <LoadingModal 
+      :visible="loadingDropSources"
+      text="Loading drop sources..."
+      :randomClassIcon="true"
+    />
 
     <!-- Search Results Section -->
     <div v-if="searching || searchPerformed" class="results-section">
@@ -735,12 +741,12 @@
               <div class="drop-sources-header">
                 <h4>Where does this drop?</h4>
                 <button 
+                  v-if="!dropSourcesRequested"
                   @click="loadDropSources" 
-                  :disabled="loadingDropSources"
                   class="drop-sources-button"
                 >
-                  <i :class="loadingDropSources ? 'fas fa-spinner fa-spin' : 'fas fa-map-marked-alt'"></i>
-                  <span>{{ loadingDropSources ? 'Loading...' : 'Show Drop Sources' }}</span>
+                  <i class="fas fa-map-marked-alt"></i>
+                  <span>Show Drop Sources</span>
                 </button>
               </div>
               
@@ -809,6 +815,7 @@ const searchStartTime = ref(null) // Track when search started
 // Drop sources state
 const dropSources = ref(null)
 const loadingDropSources = ref(false)
+const dropSourcesRequested = ref(false)
 
 // Advanced filtering state
 const showFilterDropdown = ref(false)
@@ -1163,13 +1170,20 @@ const closeItemModal = () => {
   // Clear drop sources when closing modal
   dropSources.value = null
   loadingDropSources.value = false
+  dropSourcesRequested.value = false
 }
 
 const loadDropSources = async () => {
   if (!selectedItemDetail.value?.item_id) return
   
+  // Set flags immediately to hide button and show loading
+  dropSourcesRequested.value = true
+  loadingDropSources.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
   try {
-    loadingDropSources.value = true
     const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
     
     if (!response.ok) {
@@ -1179,11 +1193,21 @@ const loadDropSources = async () => {
     
     const data = await response.json()
     dropSources.value = data.zones || []
+    
   } catch (error) {
     console.error('Error loading drop sources:', error)
     alert('Error loading drop sources: ' + error.message)
     dropSources.value = []
   } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
     loadingDropSources.value = false
   }
 }
