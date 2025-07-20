@@ -2588,10 +2588,21 @@ def get_item_drop_sources(item_id):
     Optimized version of the legacy PHP query with proper JOINs and indexing.
     """
     try:
-        with get_content_connection() as content_conn:
-            cursor = content_conn.cursor(dictionary=True)
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'lootdrop_entries'")
+            if not cursor.fetchone():
+                app.logger.warning("Loot tables not available in this database")
+                return jsonify({'zones': [], 'message': 'Drop source data not available in this database'})
             
-            # First check if item has any drops (optimized pre-check)
+            # Check if item has any drops (optimized pre-check)
             cursor.execute("""
                 SELECT 1 FROM lootdrop_entries 
                 WHERE item_id = %s LIMIT 1
@@ -2601,6 +2612,7 @@ def get_item_drop_sources(item_id):
                 return jsonify({'zones': []})
             
             # Optimized query using explicit JOINs and proper indexing
+            # Use standard EQEmu table names
             query = """
                 SELECT DISTINCT
                     nt.id as npc_id,
@@ -2611,9 +2623,9 @@ def get_item_drop_sources(item_id):
                     lte.probability,
                     lde.chance
                 FROM npc_types nt
-                INNER JOIN spawn_entry se ON nt.id = se.npcID
+                INNER JOIN spawnentry se ON nt.id = se.npcID
                 INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
-                INNER JOIN zones z ON s2.zone = z.short_name
+                INNER JOIN zone z ON s2.zone = z.short_name
                 INNER JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
                 INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
                 LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
@@ -2635,8 +2647,15 @@ def get_item_drop_sources(item_id):
             # Organize results by zone
             zones_data = {}
             for row in results:
-                zone_short = row['zone']
-                zone_name = row['zone_name']
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    npc_id, npc_name, zone_short, zone_name, multiplier, probability, chance = (
+                        row['npc_id'], row['npc_name'], row['zone'], row['zone_name'],
+                        row['multiplier'], row['probability'], row['chance']
+                    )
+                else:
+                    # Tuple format: npc_id, npc_name, zone, zone_name, multiplier, probability, chance
+                    npc_id, npc_name, zone_short, zone_name, multiplier, probability, chance = row
                 
                 if zone_short not in zones_data:
                     zones_data[zone_short] = {
@@ -2646,14 +2665,14 @@ def get_item_drop_sources(item_id):
                     }
                 
                 # Calculate drop chance (chance * probability / 100)
-                drop_chance = round((row['chance'] * row['probability'] / 100), 2)
+                drop_chance = round((chance * probability / 100), 2)
                 
                 zones_data[zone_short]['npcs'].append({
-                    'npc_id': row['npc_id'],
-                    'npc_name': row['npc_name'].replace('_', ' '),
-                    'chance': row['chance'],
-                    'probability': row['probability'],
-                    'multiplier': row['multiplier'],
+                    'npc_id': npc_id,
+                    'npc_name': npc_name.replace('_', ' '),
+                    'chance': chance,
+                    'probability': probability,
+                    'multiplier': multiplier,
                     'drop_chance': drop_chance
                 })
             
@@ -2662,6 +2681,10 @@ def get_item_drop_sources(item_id):
             zones_list.sort(key=lambda x: x['zone_name'])
             
             return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         app.logger.error(f"Error getting item drop sources for item {item_id}: {e}")
