@@ -2044,6 +2044,15 @@ def save_cache():
         'status': 'disabled'
     }), 503
 
+@app.route('/api/classes', methods=['GET'])
+def get_classes():
+    """Get EverQuest classes list - DISABLED"""
+    return jsonify({
+        'error': 'Spell system temporarily disabled',
+        'message': 'The spell system is being redesigned and is currently unavailable.',
+        'status': 'disabled'
+    }), 503
+
 @app.route('/api/cache/clear', methods=['POST'])
 def clear_cache():
     """Clear all cached data - DISABLED"""
@@ -2056,15 +2065,6 @@ def clear_cache():
 @app.route('/api/cache/status', methods=['GET'])
 def cache_status():
     """Get detailed cache status - DISABLED"""
-    return jsonify({
-        'error': 'Spell system temporarily disabled',
-        'message': 'The spell system is being redesigned and is currently unavailable.',
-        'status': 'disabled'
-    }), 503
-
-@app.route('/api/classes', methods=['GET'])
-def get_classes():
-    """Get EverQuest classes list - DISABLED"""
     return jsonify({
         'error': 'Spell system temporarily disabled',
         'message': 'The spell system is being redesigned and is currently unavailable.',
