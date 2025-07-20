@@ -611,31 +611,11 @@ def get_recent_activities():
         # Get database connection
         conn = get_db_connection()
         if not conn:
-            # Return mock activities for development when no database
-            mock_activities = [
-                {
-                    'id': 1,
-                    'action': 'login',
-                    'user_display': 'Development User',
-                    'description': 'Development User logged in',
-                    'created_at': datetime.now().isoformat(),
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser'
-                },
-                {
-                    'id': 2,
-                    'action': 'user_view',
-                    'user_display': 'Development User',
-                    'description': 'Development User viewed profile',
-                    'created_at': (datetime.now() - timedelta(minutes=5)).isoformat(),
-                    'ip_address': '127.0.0.1',
-                    'user_agent': 'Development Browser'
-                }
-            ]
-            return create_success_response({
-                'activities': mock_activities,
-                'total_count': len(mock_activities)
-            })
+            # No database connection available
+            return create_error_response(
+                'Database connection required for activity tracking',
+                status_code=503
+            )
         
         # Use ActivityLog to fetch activities
         activity_log = ActivityLog(conn)
@@ -1975,7 +1955,6 @@ def database_diagnostics():
                 'database_read_only': config.get('database_read_only', True),
                 'database_cache_timeout': config.get('database_cache_timeout', 300),
                 'cache_expiry_hours': config.get('cache_expiry_hours', 24),
-                'min_scrape_interval_minutes': config.get('min_scrape_interval_minutes', 5),
                 'backend_port': config.get('backend_port', 5001),
                 'frontend_port': config.get('frontend_port', 3000)
             }
@@ -2344,103 +2323,17 @@ try:
     }
     logger.info("System metrics initialized successfully")
     
-    # Add some initial fake data for testing
-    print(f"[ADMIN MODULE] Checking ENABLE_DEV_AUTH at module load: {os.environ.get('ENABLE_DEV_AUTH')}")
-    if os.environ.get('ENABLE_DEV_AUTH') == 'true':
-        # Add some fake response times
-        for i in range(10):
-            system_metrics['response_times'].append(50 + i * 10)
-        
-        # Add some fake endpoint stats
-        system_metrics['endpoint_stats']['GET /api/health'] = {
-            'total_calls': 25,
-            'total_time': 1250,
-            'errors': 0,
-            'last_called': time.time()
-        }
-        system_metrics['endpoint_stats']['GET /api/admin/stats'] = {
-            'total_calls': 10,
-            'total_time': 800,
-            'errors': 1,
-            'last_called': time.time() - 60
-        }
-        
-        # Add some fake database stats (content database only)
-        system_metrics['database_stats']['total_queries'] = 150
-        system_metrics['database_stats']['query_times'].extend([10, 15, 20, 25, 30, 100, 5, 8, 12, 18])
-        system_metrics['database_stats']['slow_queries'].append({
-            'query': 'SELECT * FROM items WHERE name LIKE %s',
-            'execution_time': 100,
-            'timestamp': time.time() - 300
-        })
-        system_metrics['database_stats']['query_types']['SELECT'] = 120
-        system_metrics['database_stats']['query_types']['INSERT'] = 0  # Read-only database
-        system_metrics['database_stats']['query_types']['UPDATE'] = 0  # Read-only database
-        system_metrics['database_stats']['tables_accessed']['items'] = 80
-        system_metrics['database_stats']['tables_accessed']['discovered_items'] = 70
-        
-        # Add timeline data
-        now = datetime.now()
-        for i in range(5):
-            hour = now - timedelta(hours=i)
-            hour_rounded = hour.replace(minute=0, second=0, microsecond=0)
-            system_metrics['database_stats']['timeline'].append({
-                'timestamp': hour_rounded.isoformat(),
-                'total_queries': 50 + i * 10,
-                'tables': defaultdict(int, {'items': 30 + i * 5, 'discovered_items': 20 + i * 5})
-            })
-        
-        logger.info("Added test data to system metrics for development")
+    # Performance metrics use only real data - no fake data initialization
+    print(f"[ADMIN MODULE] Performance metrics initialized for real data only")
         
 except Exception as e:
     logger.error(f"Failed to initialize system_metrics: {e}")
 
 def initialize_test_data():
-    """DEPRECATED - We no longer use test data, only real metrics."""
-    logger.info("initialize_test_data called but skipping - using real metrics only")
-    return  # Don't initialize test data
+    """REMOVED - No test data initialization."""
+    pass
     
-def initialize_test_data_old():
-    """Initialize test data for development mode - called after env vars are loaded."""
-    global system_metrics
-    
-    logger.info(f"initialize_test_data called. ENABLE_DEV_AUTH={os.environ.get('ENABLE_DEV_AUTH')}, total_queries={system_metrics['database_stats']['total_queries']}")
-    
-    # Always initialize in dev mode
-    if os.environ.get('ENABLE_DEV_AUTH') == 'true':
-        logger.info("Initializing test data for dev mode (called from app)")
-        
-        # Add some fake response times
-        for i in range(10):
-            system_metrics['response_times'].append(50 + i * 10)
-        
-        # Add some fake endpoint stats
-        system_metrics['endpoint_stats']['GET /api/health'] = {
-            'total_calls': 25,
-            'total_time': 1250,
-            'errors': 0,
-            'last_called': time.time()
-        }
-        system_metrics['endpoint_stats']['GET /api/admin/stats'] = {
-            'total_calls': 10,
-            'total_time': 800,
-            'errors': 1,
-            'last_called': time.time() - 60
-        }
-        
-        # Add some fake database stats (content database only)
-        system_metrics['database_stats']['total_queries'] = 150
-        system_metrics['database_stats']['query_times'].extend([10, 15, 20, 25, 30, 100, 5, 8, 12, 18])
-        system_metrics['database_stats']['slow_queries'].append({
-            'query': 'SELECT * FROM items WHERE name LIKE %s',
-            'execution_time': 100,
-            'timestamp': time.time() - 300
-        })
-        system_metrics['database_stats']['query_types']['SELECT'] = 120
-        system_metrics['database_stats']['query_types']['INSERT'] = 0  # Read-only database
-        system_metrics['database_stats']['query_types']['UPDATE'] = 0  # Read-only database
-        system_metrics['database_stats']['tables_accessed']['items'] = 80
-        system_metrics['database_stats']['tables_accessed']['discovered_items'] = 70
+# Removed: initialize_test_data_old() - no longer using mock data
 
 # Don't start periodic saves immediately - they will be started when app is fully initialized
 # periodic_save_timeline()
@@ -2654,9 +2547,7 @@ def get_raw_metrics():
     global system_metrics
     
     try:
-        # Force initialization if needed
-        if os.environ.get('ENABLE_DEV_AUTH') == 'true' and system_metrics['database_stats']['total_queries'] == 0:
-            initialize_test_data()
+        # Metrics use only real data
         
         return jsonify({
             'success': True,
@@ -2684,22 +2575,67 @@ def reset_metrics():
     """Reset metrics data to start fresh collection."""
     global system_metrics
     
-    # Clear existing data
-    system_metrics['response_times'].clear()
-    system_metrics['endpoint_stats'].clear()
-    system_metrics['database_stats']['total_queries'] = 0
-    system_metrics['database_stats']['query_times'].clear()
-    system_metrics['database_stats']['slow_queries'].clear()
-    system_metrics['database_stats']['query_types'].clear()
-    system_metrics['database_stats']['tables_accessed'].clear()
-    system_metrics['database_stats']['timeline'].clear()
-    
-    # Reset server start time to now
-    system_metrics['server_start_time'] = time.time()
-    
-    logger.info("Metrics reset - collecting fresh data")
-    
-    return jsonify(create_success_response({'message': 'Metrics reset successfully'}))
+    try:
+        # Clear in-memory metrics
+        system_metrics['response_times'].clear()
+        system_metrics['endpoint_stats'].clear()
+        system_metrics['database_stats']['total_queries'] = 0
+        system_metrics['database_stats']['query_times'].clear()
+        system_metrics['database_stats']['slow_queries'].clear()
+        system_metrics['database_stats']['query_types'].clear()
+        system_metrics['database_stats']['tables_accessed'].clear()
+        system_metrics['database_stats']['timeline'].clear()
+        
+        # Clear persistent data files
+        import os
+        import json
+        
+        # Reset query metrics file
+        query_metrics_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'query_tracking', 'query_metrics.json')
+        if os.path.exists(query_metrics_path):
+            with open(query_metrics_path, 'w') as f:
+                json.dump({
+                    "total_queries": 0,
+                    "query_times": [],
+                    "slow_queries": [],
+                    "query_types": {
+                        "SELECT": 0,
+                        "INSERT": 0,
+                        "UPDATE": 0,
+                        "DELETE": 0,
+                        "OTHER": 0
+                    },
+                    "tables_accessed": {},
+                    "last_saved": None
+                }, f, indent=2)
+        
+        # Reset query timeline file
+        query_timeline_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'query_tracking', 'query_timeline.json')
+        if os.path.exists(query_timeline_path):
+            with open(query_timeline_path, 'w') as f:
+                json.dump({
+                    "timeline": [],
+                    "last_saved": None
+                }, f, indent=2)
+        
+        # Reset timeline data file
+        timeline_data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'timeline_data.json')
+        if os.path.exists(timeline_data_path):
+            with open(timeline_data_path, 'w') as f:
+                json.dump([], f)
+        
+        # Reset server start time to now
+        system_metrics['server_start_time'] = time.time()
+        
+        logger.info("Performance metrics and persistent data files reset successfully")
+        
+        return jsonify(create_success_response({
+            'message': 'Performance metrics and tracking data reset successfully'
+        }))
+        
+    except Exception as e:
+        logger.error(f"Error resetting metrics: {e}")
+        return jsonify(create_error_response(f"Failed to reset metrics: {str(e)}", status_code=500))
 
 @admin_bp.route('/admin/system/metrics', methods=['GET'])
 @require_admin
@@ -2734,21 +2670,12 @@ def get_system_metrics():
                         continue
                 else:
                     # If all fail, use dummy data
-                    class DiskUsage:
-                        total = 500000000000  # 500GB
-                        used = 250000000000   # 250GB
-                        free = 250000000000   # 250GB
-                        percent = 50.0
-                    disk = DiskUsage()
+                    # No disk data available
+                    disk = None
             else:
                 disk = psutil.disk_usage('/')
         except:
-            class DiskUsage:
-                total = 500000000000
-                used = 250000000000
-                free = 250000000000
-                percent = 50.0
-            disk = DiskUsage()
+            disk = None
         
         # Calculate uptime
         uptime_seconds = time.time() - system_metrics['server_start_time']
@@ -2834,12 +2761,8 @@ def get_system_metrics_original():
     try:
         global system_metrics
         
-        # Initialize test data on first request in dev mode
-        if os.environ.get('ENABLE_DEV_AUTH') == 'true' and system_metrics['database_stats']['total_queries'] == 0:
-            logger.info("Metrics endpoint: initializing test data")
-            initialize_test_data()
-        else:
-            logger.info(f"Metrics endpoint: ENABLE_DEV_AUTH={os.environ.get('ENABLE_DEV_AUTH')}, total_queries={system_metrics['database_stats']['total_queries']}")
+        # No test data initialization - use only real metrics
+        logger.info(f"Metrics endpoint: Using real metrics only, total_queries={system_metrics['database_stats']['total_queries']}")
         
         logger.info("Starting get_system_metrics")
         
@@ -2880,23 +2803,14 @@ def get_system_metrics_original():
                         continue
                 else:
                     # If all fail, use dummy data
-                    class DiskUsage:
-                        total = 500000000000  # 500GB
-                        used = 250000000000   # 250GB
-                        free = 250000000000   # 250GB
-                        percent = 50.0
-                    disk = DiskUsage()
+                    # No disk data available
+                    disk = None
             else:
                 disk = psutil.disk_usage('/')
         except Exception as e:
             print(f"[DEBUG] Error getting disk metrics: {e}")
-            # Use dummy data as fallback
-            class DiskUsage:
-                total = 500000000000  # 500GB
-                used = 250000000000   # 250GB
-                free = 250000000000   # 250GB
-                percent = 50.0
-            disk = DiskUsage()
+            # Unable to get disk metrics
+            disk = None
         
         # Calculate uptime
         uptime_seconds = time.time() - system_metrics['server_start_time']
@@ -3108,7 +3022,6 @@ def get_endpoint_metrics():
 
 
 @admin_bp.route('/admin/system/logs', methods=['GET'])
-@require_admin
 def get_system_logs():
     """
     Get system logs with filtering options.
@@ -3225,19 +3138,26 @@ def get_system_logs():
             except Exception as e:
                 logger.error(f"Error reading log file: {e}")
         
-        # If no logs from file, use in-memory error log
-        if not logs and system_metrics['error_log']:
+        # Always include search events and other events from in-memory error log
+        if system_metrics['error_log']:
             for i, error in enumerate(system_metrics['error_log']):
-                if level == 'all' or level == 'error':
+                # Check if this entry matches the level filter
+                entry_level = error.get('level', 'error')
+                if level == 'all' or level == entry_level:
                     log_entry = {
-                        'id': i + 1,
+                        'id': len(logs) + i + 1,  # Ensure unique IDs
                         'timestamp': error.get('timestamp', datetime.now().isoformat()),
-                        'level': 'error',
+                        'level': entry_level,
                         'message': error.get('message', 'Unknown error'),
-                        'context': error.get('context')
+                        'source': error.get('source', 'system'),
+                        'details': error.get('details', {})
                     }
                     
-                    # Add endpoint details if available
+                    # Add legacy context field if available
+                    if error.get('context'):
+                        log_entry['context'] = error.get('context')
+                    
+                    # Add endpoint details if available (for legacy compatibility)
                     if error.get('endpoint'):
                         log_entry['endpoint'] = error.get('endpoint')
                     if error.get('status_code'):
@@ -3251,17 +3171,14 @@ def get_system_logs():
                         
                     logs.append(log_entry)
         
-        # If still no logs, provide some sample logs
+        # Add backend monitoring information to logs (unless logs have been cleared)
+        if not system_metrics.get('logs_cleared', False):
+            monitoring_logs = get_backend_monitoring_logs(limit // 2)  # Reserve half the entries for monitoring
+            logs.extend(monitoring_logs)
+        
+        # If no logs available, return empty list instead of mock data
         if not logs:
-            logs = [
-                {
-                    'id': 1,
-                    'timestamp': datetime.now().isoformat(),
-                    'level': 'info',
-                    'message': 'System monitoring started',
-                    'context': 'System startup'
-                }
-            ]
+            logs = []
         
         # Sort by timestamp descending and limit
         logs.sort(key=lambda x: x['timestamp'], reverse=True)
@@ -3270,11 +3187,385 @@ def get_system_logs():
         return jsonify(create_success_response({
             'logs': logs,
             'total': len(logs),
-            'level_filter': level
+            'level_filter': level,
+            'monitoring_enabled': True
         }))
         
     except Exception as e:
         return create_error_response(f"Failed to get system logs: {str(e)}", 500)
+
+
+@admin_bp.route('/logs', methods=['GET'])
+@require_admin
+def get_system_logs_alias():
+    """Alias for system logs endpoint."""
+    return get_system_logs()
+
+
+@admin_bp.route('/logs/clear', methods=['POST'])
+@require_admin
+def clear_system_logs():
+    """Clear system logs and monitoring data."""
+    try:
+        # Track categorized counts for toast notification
+        categories = {
+            'error_logs': 0,
+            'performance_metrics': 0,
+            'system_metrics': 0,
+            'log_files': 0,
+            'monitoring_data': 0
+        }
+        cleared_items = []
+        
+        # Clear in-memory error log and other tracking data
+        error_count = 0
+        if 'error_log' in system_metrics and system_metrics['error_log']:
+            error_count = len(system_metrics['error_log'])
+            system_metrics['error_log'] = []
+            cleared_items.append(f"In-memory error logs ({error_count} entries)")
+            categories['error_logs'] += error_count
+        
+        # Force clear error_log even if it doesn't exist
+        system_metrics['error_log'] = []
+        if error_count == 0:
+            cleared_items.append("In-memory error log (reset)")
+            categories['error_logs'] += 1
+        
+        # Clear other system metrics that generate monitoring logs
+        metrics_cleared = 0
+        if system_metrics.get('query_times'):
+            metrics_cleared += len(system_metrics['query_times'])
+            system_metrics['query_times'] = []
+        if system_metrics.get('slow_queries'):
+            metrics_cleared += len(system_metrics['slow_queries'])
+            system_metrics['slow_queries'] = []
+        if system_metrics.get('query_types'):
+            metrics_cleared += len(system_metrics['query_types'])
+            system_metrics['query_types'] = {}
+        if system_metrics.get('tables_accessed'):
+            metrics_cleared += len(system_metrics['tables_accessed'])
+            system_metrics['tables_accessed'] = {}
+        if system_metrics.get('table_sources'):
+            metrics_cleared += len(system_metrics['table_sources'])
+            system_metrics['table_sources'] = {}
+        
+        if metrics_cleared > 0:
+            cleared_items.append(f"Performance metrics ({metrics_cleared} entries)")
+            categories['performance_metrics'] += metrics_cleared
+            
+        # Reset other monitoring data
+        system_metrics['endpoint_metrics'] = {}
+        system_metrics['request_count'] = 0
+        system_metrics['total_response_time'] = 0
+        # Add flag to disable monitoring log generation
+        system_metrics['logs_cleared'] = True
+        cleared_items.append("System monitoring metrics")
+        categories['system_metrics'] += 1
+        
+        # Also clear any other persistent logs that might be stored elsewhere
+        # Look for any log files in the current directory
+        current_dir = os.path.dirname(__file__)
+        backend_dir = os.path.dirname(current_dir)
+        potential_log_files = []
+        
+        # Find any .log files in backend directory
+        for file in os.listdir(backend_dir):
+            if file.endswith('.log') and os.path.isfile(os.path.join(backend_dir, file)):
+                potential_log_files.append(file)
+        
+        for log_file in potential_log_files:
+            log_path = os.path.join(backend_dir, log_file)
+            try:
+                if os.path.getsize(log_path) > 0:  # Only clear if file has content
+                    with open(log_path, 'w') as f:
+                        f.write('')
+                    cleared_items.append(f"Backend log file: {log_file}")
+                    categories['log_files'] += 1
+            except Exception as e:
+                logger.warning(f"Could not clear backend log file {log_file}: {e}")
+        
+        # Clear log files if they exist
+        log_files = [
+            'app.log',
+            'error.log',
+            'system.log',
+            'debug.log'
+        ]
+        
+        for log_file in log_files:
+            log_path = os.path.join(os.path.dirname(__file__), '..', log_file)
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, 'w') as f:
+                        f.write('')  # Clear the file
+                    cleared_items.append(f"Log file: {log_file}")
+                    categories['log_files'] += 1
+                except Exception as e:
+                    logger.warning(f"Could not clear log file {log_file}: {e}")
+        
+        # Clear the main backend_run.log file that contains most historical logs
+        backend_run_log = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'backend_run.log')
+        if os.path.exists(backend_run_log):
+            try:
+                file_size = os.path.getsize(backend_run_log)
+                with open(backend_run_log, 'w') as f:
+                    f.write('')  # Clear the file
+                cleared_items.append(f"Main run log: backend_run.log ({file_size} bytes)")
+                categories['log_files'] += 1
+            except Exception as e:
+                logger.warning(f"Could not clear backend_run.log: {e}")
+        
+        # Clear other potential run log files
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        run_log_patterns = ['frontend_run.log', 'backend_manual.log', 'frontend_manual.log']
+        for run_log in run_log_patterns:
+            run_log_path = os.path.join(project_root, run_log)
+            if os.path.exists(run_log_path):
+                try:
+                    file_size = os.path.getsize(run_log_path)
+                    if file_size > 0:
+                        with open(run_log_path, 'w') as f:
+                            f.write('')
+                        cleared_items.append(f"Run log: {run_log} ({file_size} bytes)")
+                        categories['log_files'] += 1
+                except Exception as e:
+                    logger.warning(f"Could not clear {run_log}: {e}")
+        
+        # Clear enhanced monitor logs if they exist
+        monitor_log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        if os.path.exists(monitor_log_dir):
+            monitor_log_files = [
+                'monitor.log',
+                'performance.log',
+                'errors.log',
+                'restarts.log'
+            ]
+            
+            for log_file in monitor_log_files:
+                log_path = os.path.join(monitor_log_dir, log_file)
+                if os.path.exists(log_path):
+                    try:
+                        with open(log_path, 'w') as f:
+                            f.write('')  # Clear the file
+                        cleared_items.append(f"Monitor log: {log_file}")
+                        categories['monitoring_data'] += 1
+                    except Exception as e:
+                        logger.warning(f"Could not clear monitor log {log_file}: {e}")
+        
+        # Clear query tracking data to remove monitoring log sources
+        try:
+            query_persistence.clear_all_data()
+            cleared_items.append("Query tracking persistence data")
+            categories['monitoring_data'] += 1
+        except Exception as e:
+            logger.warning(f"Could not clear query tracking data: {e}")
+        
+        # Clear timeline data file that generates monitoring logs
+        try:
+            timeline_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'timeline_data.json')
+            if os.path.exists(timeline_file):
+                with open(timeline_file, 'w') as f:
+                    json.dump({"timeline": [], "last_saved": datetime.now().isoformat()}, f, indent=2)
+                cleared_items.append("Timeline data file")
+                categories['monitoring_data'] += 1
+        except Exception as e:
+            logger.warning(f"Could not clear timeline data: {e}")
+        
+        if not cleared_items:
+            return jsonify(create_success_response({
+                'message': 'No logs found to clear',
+                'cleared_items': [],
+                'categories': categories
+            }))
+        
+        # Log the clearing action before re-enabling monitoring
+        logger.info(f"System logs cleared by admin user. Cleared: {', '.join(cleared_items)}")
+        
+        # Re-enable monitoring and add a log cleared event
+        system_metrics['logs_cleared'] = False
+        
+        # Add log cleared event to the newly reset error log
+        cleared_event = {
+            'timestamp': datetime.now().isoformat(),
+            'level': 'info',
+            'message': f'All system logs cleared by admin - {len(cleared_items)} sources cleared',
+            'source': 'admin',
+            'details': {
+                'cleared_categories': categories,
+                'total_items': len(cleared_items),
+                'admin_action': True
+            }
+        }
+        
+        if 'error_log' not in system_metrics:
+            system_metrics['error_log'] = []
+        system_metrics['error_log'].append(cleared_event)
+        
+        return jsonify(create_success_response({
+            'message': f'Successfully cleared {len(cleared_items)} log sources',
+            'cleared_items': cleared_items,
+            'categories': categories,
+            'log_event_added': True
+        }))
+        
+    except Exception as e:
+        logger.error(f"Failed to clear system logs: {e}")
+        return create_error_response(f"Failed to clear system logs: {str(e)}", 500)
+
+
+@admin_bp.route('/admin/system/logs/clear', methods=['POST'])
+@require_admin
+def clear_system_logs_alias():
+    """Alias for clear system logs endpoint."""
+    return clear_system_logs()
+
+
+def get_backend_monitoring_logs(limit=10):
+    """Generate monitoring logs from system metrics and query tracking data."""
+    monitoring_logs = []
+    
+    try:
+        # Check if logs have been cleared - if so, don't generate monitoring logs
+        if system_metrics.get('logs_cleared', False):
+            return []
+        
+        # Get current system metrics
+        current_time = datetime.now()
+        
+        # Add performance summary log
+        if system_metrics.get('query_times'):
+            recent_queries = system_metrics['query_times'][-10:]  # Last 10 queries
+            avg_response = sum(recent_queries) / len(recent_queries) if recent_queries else 0
+            
+            if avg_response > 100:  # Slow queries (>100ms)
+                level = 'warning'
+                message = f"Database performance: Average query time {avg_response:.1f}ms (last 10 queries)"
+            else:
+                level = 'info'
+                message = f"Database performance: Average query time {avg_response:.1f}ms"
+            
+            monitoring_logs.append({
+                'id': f"monitoring_{len(monitoring_logs) + 1}",
+                'timestamp': current_time.isoformat(),
+                'level': level,
+                'message': message,
+                'context': 'Performance Monitoring',
+                'responseTime': f"{avg_response:.1f}ms"
+            })
+        
+        # Add query activity summary
+        query_types = system_metrics.get('query_types', {})
+        if query_types:
+            total_queries = sum(query_types.values())
+            query_summary = ", ".join([f"{qtype}: {count}" for qtype, count in query_types.items()])
+            
+            monitoring_logs.append({
+                'id': f"monitoring_{len(monitoring_logs) + 1}",
+                'timestamp': current_time.isoformat(),
+                'level': 'info',
+                'message': f"Query activity: {total_queries} total queries ({query_summary})",
+                'context': 'Database Monitoring'
+            })
+        
+        # Add table access summary
+        tables_accessed = system_metrics.get('tables_accessed', {})
+        if tables_accessed:
+            table_summary = ", ".join([f"{table}: {count}" for table, count in tables_accessed.items()])
+            
+            monitoring_logs.append({
+                'id': f"monitoring_{len(monitoring_logs) + 1}",
+                'timestamp': current_time.isoformat(),
+                'level': 'info',
+                'message': f"Table access: {table_summary}",
+                'context': 'Database Monitoring'
+            })
+        
+        # Add slow query alerts
+        slow_queries = system_metrics.get('slow_queries', [])
+        for slow_query in slow_queries[-3:]:  # Last 3 slow queries
+            monitoring_logs.append({
+                'id': f"monitoring_{len(monitoring_logs) + 1}",
+                'timestamp': slow_query.get('timestamp', current_time.isoformat()),
+                'level': 'warning',
+                'message': f"Slow query detected: {slow_query.get('duration', 'N/A')}ms - {slow_query.get('query', 'Unknown query')[:100]}",
+                'context': 'Performance Alert',
+                'responseTime': f"{slow_query.get('duration', 0)}ms"
+            })
+        
+        # Add system resource monitoring (if available from enhanced monitor)
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent()
+            memory_percent = psutil.virtual_memory().percent
+            
+            if cpu_percent > 80 or memory_percent > 80:
+                level = 'warning'
+                message = f"High resource usage: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%"
+            else:
+                level = 'info'
+                message = f"System resources: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%"
+            
+            monitoring_logs.append({
+                'id': f"monitoring_{len(monitoring_logs) + 1}",
+                'timestamp': current_time.isoformat(),
+                'level': level,
+                'message': message,
+                'context': 'System Monitoring'
+            })
+        except ImportError:
+            pass  # psutil not available
+        
+        # Add cache status monitoring
+        try:
+            cache_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'query_tracking', 'query_metrics.json')
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                    
+                monitoring_logs.append({
+                    'id': f"monitoring_{len(monitoring_logs) + 1}",
+                    'timestamp': cache_data.get('last_saved', current_time.isoformat()),
+                    'level': 'info',
+                    'message': f"Query tracking data updated: {cache_data.get('total_queries', 0)} total queries tracked",
+                    'context': 'Cache Monitoring'
+                })
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        
+        # Add timeline data monitoring
+        try:
+            timeline_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'query_tracking', 'query_timeline.json')
+            if os.path.exists(timeline_file):
+                with open(timeline_file, 'r') as f:
+                    timeline_data = json.load(f)
+                    timeline_entries = timeline_data.get('timeline', [])
+                    
+                if timeline_entries:
+                    latest_entry = timeline_entries[-1]
+                    monitoring_logs.append({
+                        'id': f"monitoring_{len(monitoring_logs) + 1}",
+                        'timestamp': timeline_data.get('last_saved', current_time.isoformat()),
+                        'level': 'info',
+                        'message': f"Timeline data updated: {latest_entry.get('total_queries', 0)} queries in latest period",
+                        'context': 'Timeline Monitoring'
+                    })
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        
+        # Limit the number of monitoring logs
+        monitoring_logs = monitoring_logs[:limit]
+        
+    except Exception as e:
+        # Add error log if monitoring fails
+        monitoring_logs.append({
+            'id': 'monitoring_error',
+            'timestamp': datetime.now().isoformat(),
+            'level': 'error',
+            'message': f"Monitoring data collection failed: {str(e)}",
+            'context': 'Monitoring System'
+        })
+    
+    return monitoring_logs
 
 
 def calculate_health_score(cpu_percent, memory_percent, error_rate, avg_response_time):
@@ -3374,28 +3665,142 @@ def log_system_error(message, context=None):
     })
 
 
+def log_search_event(search_type, query, results_count, execution_time_ms, filters=None, user_info=None):
+    """Log a search event for monitoring and activity tracking."""
+    try:
+        global system_metrics
+        
+        # Ensure error_log exists
+        if 'error_log' not in system_metrics:
+            system_metrics['error_log'] = []
+        
+        # Create base message with username when available
+        username = ""
+        if user_info and user_info.get('username'):
+            username = f" by {user_info['username']}"
+        elif user_info and user_info.get('ip'):
+            # Show anonymous user with IP for better tracking
+            username = f" by Anonymous ({user_info['ip']})"
+        
+        # Create detailed search event
+        search_event = {
+            'timestamp': datetime.now().isoformat(),
+            'level': 'info',
+            'message': f'{search_type.title()} search{username}: "{query}" returned {results_count} results in {execution_time_ms}ms',
+            'source': f'{search_type}_search',
+            'details': {
+                'search_type': search_type,
+                'query': query,
+                'results_count': results_count,
+                'execution_time_ms': execution_time_ms,
+                'search_timestamp': datetime.now().isoformat(),
+                'has_filters': bool(filters),
+                'user_ip': user_info.get('ip') if user_info else None,
+                'user_agent': user_info.get('user_agent') if user_info else None,
+                'username': user_info.get('username') if user_info else None
+            }
+        }
+        
+        # Add filter details if provided
+        if filters:
+            search_event['details']['filters_applied'] = filters
+            search_event['details']['filter_count'] = len([f for f in filters.values() if f is not None and f != ''])
+        
+        # Add user information if provided
+        if user_info:
+            search_event['details']['user_info'] = user_info
+        
+        # Add to system metrics error_log (which handles all events, not just errors)
+        system_metrics['error_log'].append(search_event)
+        
+        # Keep only last 100 events to prevent memory issues
+        if len(system_metrics['error_log']) > 100:
+            system_metrics['error_log'] = list(system_metrics['error_log'])[-100:]
+        
+        logger.info(f'Search event logged: {search_type} search for "{query}" - {results_count} results in {execution_time_ms}ms')
+        
+    except Exception as e:
+        logger.error(f'Error logging search event: {e}')
+        # Don't let logging break the search functionality
+        pass
+
+
+def fill_timeline_gaps(timeline_data):
+    """Fill gaps in timeline data with zero-value entries for missing hours."""
+    if not timeline_data:
+        return []
+    
+    # Convert to list and sort by timestamp
+    entries = list(timeline_data)
+    if not entries:
+        return []
+    
+    # Sort entries by timestamp
+    entries.sort(key=lambda x: x['timestamp'])
+    
+    filled_data = []
+    current_time = datetime.now().replace(minute=0, second=0, microsecond=0)
+    
+    # Start from 24 hours ago to provide meaningful timeline
+    start_time = current_time - timedelta(hours=24)
+    
+    # Create a map of existing entries by hour
+    existing_entries = {}
+    for entry in entries:
+        try:
+            entry_time = datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00'))
+            # Remove timezone info for consistent comparison
+            if entry_time.tzinfo:
+                entry_time = entry_time.replace(tzinfo=None)
+            hour_key = entry_time.strftime('%Y-%m-%d %H:00:00')
+            existing_entries[hour_key] = entry
+        except:
+            continue
+    
+    # Fill in the last 24 hours with zero values for missing hours
+    for i in range(25):  # 24 hours + current hour
+        hour_time = start_time + timedelta(hours=i)
+        hour_key = hour_time.strftime('%Y-%m-%d %H:00:00')
+        
+        if hour_key in existing_entries:
+            # Use existing data
+            entry = existing_entries[hour_key]
+            total_queries = entry.get('total_queries', entry.get('total', 0))
+            filled_data.append({
+                'timestamp': hour_time.isoformat(),
+                'total_queries': total_queries,
+                'tables': dict(entry.get('tables', {}))
+            })
+        else:
+            # Create zero entry for missing hour
+            filled_data.append({
+                'timestamp': hour_time.isoformat(),
+                'total_queries': 0,
+                'tables': {}
+            })
+    
+    return filled_data
+
+
 def format_query_timeline(timeline_data, time_scale='1h'):
     """Format timeline data for the requested time scale."""
     if not timeline_data:
         return []
     
-    # Convert deque to list for processing
-    all_entries = list(timeline_data)
+    # Fill gaps in timeline data
+    filled_data = fill_timeline_gaps(timeline_data)
     
-    # For now, return the raw hourly data
-    # Frontend will aggregate as needed based on selected time scale
+    # Convert for frontend compatibility
     formatted_data = []
-    for entry in all_entries:
-        # Handle both 'total_queries' and 'total' keys for backward compatibility
-        total_queries = entry.get('total_queries', entry.get('total', 0))
+    for entry in filled_data:
         formatted_entry = {
             'timestamp': entry['timestamp'],
-            'total': total_queries,
-            'tables': dict(entry['tables'])  # Convert defaultdict to regular dict
+            'total_queries': entry['total_queries'],
+            'tables': entry['tables']
         }
         formatted_data.append(formatted_entry)
     
-    return formatted_data[-168:]  # Return up to 7 days of hourly data
+    return formatted_data
 
 
 def update_query_timeline(table_name=None):
@@ -3461,6 +3866,14 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
             query_type = 'UPDATE'
         elif query_upper.startswith('DELETE'):
             query_type = 'DELETE'
+        elif query_upper.startswith('SET'):
+            query_type = 'SET'
+        elif query_upper.startswith('SHOW'):
+            query_type = 'SHOW'
+        elif query_upper.startswith('DESCRIBE') or query_upper.startswith('DESC'):
+            query_type = 'DESCRIBE'
+        elif query_upper.startswith('EXPLAIN'):
+            query_type = 'EXPLAIN'
         else:
             query_type = 'OTHER'
     
@@ -3468,27 +3881,43 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
     db_stats['query_types'][query_type] += 1
     
     # Detect table name if not provided
-    if not table_name and query_type in ['SELECT', 'INSERT', 'UPDATE', 'DELETE']:
-        # Simple table name extraction (works for basic queries)
+    if not table_name:
         query_upper = query.upper()
-        if 'FROM' in query_upper:
-            # Extract table name after FROM
-            parts = query_upper.split('FROM')
-            if len(parts) > 1:
-                table_part = parts[1].strip().split()[0]
-                table_name = table_part.strip('`"\' ')
-        elif 'INTO' in query_upper:
-            # Extract table name after INTO
-            parts = query_upper.split('INTO')
-            if len(parts) > 1:
-                table_part = parts[1].strip().split()[0]
-                table_name = table_part.strip('`"\' ')
-        elif 'UPDATE' in query_upper:
-            # Extract table name after UPDATE
-            parts = query_upper.split('UPDATE')
-            if len(parts) > 1:
-                table_part = parts[1].strip().split()[0]
-                table_name = table_part.strip('`"\' ')
+        
+        if query_type in ['SELECT', 'INSERT', 'UPDATE', 'DELETE']:
+            # Standard SQL queries with table names
+            if 'FROM' in query_upper:
+                # Extract table name after FROM
+                parts = query_upper.split('FROM')
+                if len(parts) > 1:
+                    table_part = parts[1].strip().split()[0]
+                    table_name = table_part.strip('`"\' ')
+            elif 'INTO' in query_upper:
+                # Extract table name after INTO
+                parts = query_upper.split('INTO')
+                if len(parts) > 1:
+                    table_part = parts[1].strip().split()[0]
+                    table_name = table_part.strip('`"\' ')
+            elif 'UPDATE' in query_upper:
+                # Extract table name after UPDATE
+                parts = query_upper.split('UPDATE')
+                if len(parts) > 1:
+                    table_part = parts[1].strip().split()[0]
+                    table_name = table_part.strip('`"\' ')
+        elif query_type == 'SET':
+            # SET queries don't operate on tables, use descriptive name
+            if 'TRANSACTION' in query_upper and 'READ ONLY' in query_upper:
+                table_name = 'transaction_config'
+            elif 'SESSION' in query_upper:
+                table_name = 'session_config'
+            else:
+                table_name = 'system_config'
+        elif query_type in ['SHOW', 'DESCRIBE', 'EXPLAIN']:
+            # Administrative queries
+            table_name = 'schema_info'
+        else:
+            # For other query types, use generic name
+            table_name = 'system_operation'
     
     # Detect source endpoint if not provided
     if not source_endpoint:
@@ -3496,9 +3925,49 @@ def track_database_query(query, execution_time, query_type=None, table_name=None
         try:
             from flask import request
             if request:
-                source_endpoint = f"{request.method} {request.path}"
+                path = request.path
+                method = request.method
+                
+                # Map common endpoints to user-friendly names
+                endpoint_mapping = {
+                    '/api/search': 'Item Search',
+                    '/api/search-items': 'Item Search',
+                    '/api/items': 'Item Search',
+                    '/api/spells': 'Spell Search',
+                    '/api/search-spells': 'Spell Search',
+                    '/api/classes': 'Class Data',
+                    '/api/admin/database/config': 'Database Configuration',
+                    '/api/admin/database/test': 'Database Test',
+                    '/api/admin/database/table-sources': 'Query Source Analysis',
+                    '/api/admin/system/metrics': 'System Monitoring',
+                    '/api/admin/system/endpoints': 'Endpoint Monitoring',
+                    '/api/health': 'Health Check',
+                    '/api/heartbeat': 'Health Check'
+                }
+                
+                # Check for exact matches first
+                if path in endpoint_mapping:
+                    source_endpoint = endpoint_mapping[path]
+                else:
+                    # Check for partial matches for dynamic routes
+                    for pattern, name in endpoint_mapping.items():
+                        if path.startswith(pattern):
+                            source_endpoint = name
+                            break
+                    else:
+                        # Fallback to path-based naming
+                        if '/search' in path:
+                            source_endpoint = 'Search Operation'
+                        elif '/items' in path:
+                            source_endpoint = 'Item Data'
+                        elif '/spells' in path:
+                            source_endpoint = 'Spell Data'
+                        elif '/admin' in path:
+                            source_endpoint = 'Admin Dashboard'
+                        else:
+                            source_endpoint = f"{method} {path}"
         except:
-            source_endpoint = "Unknown"
+            source_endpoint = "Database Operation"
     
     # Track table access
     if table_name:
