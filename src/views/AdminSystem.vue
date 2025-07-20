@@ -1568,79 +1568,33 @@ const generateTimelineData = () => {
   // Get the relevant timeline entries
   const relevantEntries = timeline.slice(-entriesToInclude)
   
-  
-  // Aggregate data based on time scale
-  if (selectedTimeScale.value === '1h') {
-    // For 1 hour, show the latest data points that have actual table data
-    const entriesWithData = relevantEntries.filter(entry => 
-      entry.tables && Object.keys(entry.tables).length > 0
-    )
-    if (entriesWithData.length > 0) {
-      const entry = entriesWithData[entriesWithData.length - 1] // Use the most recent entry with data
-      points.push({
-        time: 'Now',
-        data: entry.tables || {}
-      })
-    } else if (relevantEntries.length > 0) {
-      // If no entries have table data, show the most recent total
-      const entry = relevantEntries[relevantEntries.length - 1]
-      points.push({
-        time: 'Now',
-        data: { 'total_queries': entry.total_queries || 0 }
-      })
-    }
-  } else if (selectedTimeScale.value === '6h' || selectedTimeScale.value === '24h' || selectedTimeScale.value === '7d') {
-    // Show all available data points, but enhance empty table data with total queries
-    relevantEntries.forEach((entry, index) => {
-      let timeLabel
-      if (selectedTimeScale.value === '7d') {
-        // For 7-day view, show date
-        const date = new Date(entry.timestamp)
-        timeLabel = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-      } else {
-        // For hourly views, show relative time
-        const hoursAgo = relevantEntries.length - index - 1
-        timeLabel = hoursAgo === 0 ? 'Now' : `-${hoursAgo}h`
-      }
-      
-      let data = entry.tables || {}
-      // If no table-specific data, use total as a general metric
-      if (Object.keys(data).length === 0 && entry.total_queries > 0) {
-        data = { 'queries': entry.total_queries }
-      }
-      
-      points.push({
-        time: timeLabel,
-        data: data
-      })
-    })
-  } else if (selectedTimeScale.value === '7d_old') {
-    // Keep old 7d logic as backup
-    // Aggregate by day
-    const dailyData = {}
-    relevantEntries.forEach(entry => {
-      const date = new Date(entry.timestamp)
-      const dayKey = date.toISOString().split('T')[0]
-      
-      if (!dailyData[dayKey]) {
-        dailyData[dayKey] = {}
-      }
-      
-      Object.entries(entry.tables || {}).forEach(([table, count]) => {
-        dailyData[dayKey][table] = (dailyData[dayKey][table] || 0) + count
-      })
-    })
+  // Process entries based on time scale
+  relevantEntries.forEach((entry, index) => {
+    let timeLabel
     
-    // Convert to points
-    const days = Object.keys(dailyData).sort()
-    days.forEach((day, index) => {
-      const daysAgo = days.length - index - 1
-      points.push({
-        time: `-${daysAgo}d`,
-        data: dailyData[day]
-      })
+    if (selectedTimeScale.value === '1h') {
+      timeLabel = 'Now'
+    } else if (selectedTimeScale.value === '7d') {
+      // For 7-day view, show date
+      const date = new Date(entry.timestamp)
+      timeLabel = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    } else {
+      // For hourly views (6h, 24h), show relative time
+      const hoursAgo = relevantEntries.length - index - 1
+      timeLabel = hoursAgo === 0 ? 'Now' : `-${hoursAgo}h`
+    }
+    
+    let data = entry.tables || {}
+    // If no table-specific data, use total as a general metric
+    if (Object.keys(data).length === 0 && entry.total_queries > 0) {
+      data = { 'queries': entry.total_queries }
+    }
+    
+    points.push({
+      time: timeLabel,
+      data: data
     })
-  }
+  })
   
   // Ensure we have data for all accessed tables
   const allTables = Object.keys(databaseStats.value?.tables_accessed || {})
