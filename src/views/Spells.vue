@@ -1139,6 +1139,17 @@ export default {
       
       // Use the regular search method
       await this.performSearch(1)
+      
+      // Scroll to results section after search completes
+      this.$nextTick(() => {
+        const resultsSection = document.querySelector('.results-section')
+        if (resultsSection) {
+          resultsSection.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'start'
+          })
+        }
+      })
     },
 
     // Matrix level drag selection methods
