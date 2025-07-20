@@ -123,6 +123,14 @@ def exempt_when_limiting(f):
         return limiter.exempt(f)
     return f
 
+# Import search logging function regardless of OAuth status
+try:
+    from routes.admin import log_search_event
+    SEARCH_LOGGING_AVAILABLE = True
+except ImportError:
+    SEARCH_LOGGING_AVAILABLE = False
+    app.logger.warning("Search event logging not available - admin module not found")
+
 # Import OAuth components only if enabled
 if ENABLE_USER_ACCOUNTS:
     try:
@@ -330,7 +338,6 @@ def load_config():
         'frontend_port': 3000,
         'cache_expiry_hours': 24,
         'pricing_cache_expiry_hours': 168,  # 1 week
-        'min_scrape_interval_minutes': 5,
         'use_production_database': False,
         'production_database_url': ''
     }
@@ -350,7 +357,6 @@ def load_config():
     config['frontend_port'] = int(os.getenv('FRONTEND_PORT', config['frontend_port']))
     config['cache_expiry_hours'] = int(os.getenv('CACHE_EXPIRY_HOURS', config['cache_expiry_hours']))
     config['pricing_cache_expiry_hours'] = int(os.getenv('PRICING_CACHE_EXPIRY_HOURS', config['pricing_cache_expiry_hours']))
-    config['min_scrape_interval_minutes'] = int(os.getenv('MIN_SCRAPE_INTERVAL_MINUTES', config['min_scrape_interval_minutes']))
     
     return config
 
@@ -929,7 +935,11 @@ def search_items():
         
         # Execute with timeout protection
         try:
+            app.logger.info(f"Executing item search query")
+            start_time = time.time()
             cursor.execute(items_query, items_params)
+            query_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+            app.logger.info(f"Item search query completed in {query_time:.2f}ms")
         except Exception as e:
             app.logger.error(f"Database query failed: {e}")
             app.logger.error(f"Query: {items_query}")
@@ -1029,6 +1039,77 @@ def search_items():
                     'focuseffect': _safe_int(item[39])
                 }
             items_list.append(item_dict)
+        
+        # Log search event for monitoring
+        try:
+            # Gather user information including username when available
+            user_info = {
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent', '')
+            }
+            
+            # Try to get authenticated user information
+            current_user = None
+            try:
+                from utils.jwt_utils import get_current_user
+                current_user = get_current_user()
+                if current_user:
+                    user_info['user_id'] = current_user.get('id')
+                    user_info['user_email'] = current_user.get('email')
+                    
+                    # Get full user details for display name
+                    if current_user.get('id') and ENABLE_USER_ACCOUNTS:
+                        try:
+                            from models.user import User
+                            from utils.oauth import get_oauth_db_connection
+                            oauth_conn = get_oauth_db_connection()
+                            if oauth_conn:
+                                user_model = User(oauth_conn)
+                                user_details = user_model.get_user_by_id(current_user['id'])
+                                if user_details:
+                                    # Use display_name if available, otherwise first_name + last_name
+                                    display_name = user_details.get('display_name')
+                                    if not display_name:
+                                        first_name = user_details.get('first_name', '')
+                                        last_name = user_details.get('last_name', '')
+                                        if first_name or last_name:
+                                            display_name = f"{first_name} {last_name}".strip()
+                                    
+                                    if display_name:
+                                        user_info['username'] = display_name
+                                    else:
+                                        user_info['username'] = current_user.get('email', 'Unknown User')
+                        except Exception as e:
+                            # Don't let user lookup break logging
+                            pass
+            except Exception as e:
+                # Don't let auth check break logging
+                pass
+            
+            # Gather filter information (handle both dict and list formats)
+            applied_filters = {}
+            if isinstance(filters, dict):
+                applied_filters = {k: v for k, v in filters.items() if v is not None and v != ''}
+            elif isinstance(filters, list):
+                # Convert list of filters to a dict representation
+                applied_filters = {'filter_count': len(filters), 'filters': filters} if filters else {}
+            
+            # Log the search event (always log search events for monitoring)
+            if SEARCH_LOGGING_AVAILABLE:
+                try:
+                    log_search_event(
+                        search_type='item',
+                        query=search_query,
+                        results_count=len(items_list),
+                        execution_time_ms=round(query_time, 2),
+                        filters=applied_filters if applied_filters else None,
+                        user_info=user_info
+                    )
+                except Exception as log_error:
+                    app.logger.error(f"Failed to log item search event: {log_error}")
+        except Exception as e:
+            # Don't let logging break the search
+            app.logger.error(f"Error gathering search event data: {e}")
         
         return jsonify({
             'items': items_list,
@@ -1200,6 +1281,35 @@ def search_spells():
                 where_conditions.append(f"{db_field} LIKE %s")
                 query_params.append(f'%{value}')
         
+        # Detect if a specific class level filter is being used for sorting
+        class_field_for_sorting = None
+        class_to_column_map = {
+            'warrior_level': 'classes1',
+            'cleric_level': 'classes2', 
+            'paladin_level': 'classes3',
+            'ranger_level': 'classes4',
+            'shadowknight_level': 'classes5',
+            'druid_level': 'classes6',
+            'monk_level': 'classes7',
+            'bard_level': 'classes8',
+            'rogue_level': 'classes9',
+            'shaman_level': 'classes10',
+            'necromancer_level': 'classes11',
+            'wizard_level': 'classes12',
+            'magician_level': 'classes13',
+            'enchanter_level': 'classes14',
+            'beastlord_level': 'classes15',
+            'berserker_level': 'classes16'
+        }
+        
+        # Look for class level filters to determine sorting column
+        for filter_item in filters:
+            field = filter_item['field']
+            if field in class_to_column_map:
+                class_field_for_sorting = class_to_column_map[field]
+                app.logger.info(f"Using {field} ({class_field_for_sorting}) for sorting")
+                break
+        
         # Combine all WHERE conditions
         where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
         
@@ -1227,6 +1337,29 @@ def search_spells():
             # If count fails, just set a high number and continue
             total_count = 9999
         
+        # Determine sorting column - use specific class if filtered, otherwise minimum level
+        if class_field_for_sorting:
+            sort_column = f"CASE WHEN {class_field_for_sorting} = 255 THEN 999 ELSE {class_field_for_sorting} END"
+        else:
+            sort_column = """LEAST(
+                CASE WHEN classes1 = 255 THEN 999 ELSE classes1 END,
+                CASE WHEN classes2 = 255 THEN 999 ELSE classes2 END,
+                CASE WHEN classes3 = 255 THEN 999 ELSE classes3 END,
+                CASE WHEN classes4 = 255 THEN 999 ELSE classes4 END,
+                CASE WHEN classes5 = 255 THEN 999 ELSE classes5 END,
+                CASE WHEN classes6 = 255 THEN 999 ELSE classes6 END,
+                CASE WHEN classes7 = 255 THEN 999 ELSE classes7 END,
+                CASE WHEN classes8 = 255 THEN 999 ELSE classes8 END,
+                CASE WHEN classes9 = 255 THEN 999 ELSE classes9 END,
+                CASE WHEN classes10 = 255 THEN 999 ELSE classes10 END,
+                CASE WHEN classes11 = 255 THEN 999 ELSE classes11 END,
+                CASE WHEN classes12 = 255 THEN 999 ELSE classes12 END,
+                CASE WHEN classes13 = 255 THEN 999 ELSE classes13 END,
+                CASE WHEN classes14 = 255 THEN 999 ELSE classes14 END,
+                CASE WHEN classes15 = 255 THEN 999 ELSE classes15 END,
+                CASE WHEN classes16 = 255 THEN 999 ELSE classes16 END
+            )"""
+        
         # Then get spells - reduce columns for better performance
         spells_query = f"""
             SELECT 
@@ -1240,10 +1373,11 @@ def search_spells():
                 classes1, classes2, classes3, classes4, classes5, classes6,
                 classes7, classes8, classes9, classes10, classes11, classes12,
                 classes13, classes14, classes15, classes16,
-                icon, new_icon
+                icon, new_icon,
+                {sort_column} AS sort_level
             FROM spells_new
             WHERE {where_clause}
-            ORDER BY id
+            ORDER BY sort_level ASC, name ASC
             LIMIT %s OFFSET %s
         """
         # Add limit and offset to params
@@ -1343,6 +1477,77 @@ def search_spells():
                 }
             spells_list.append(spell_dict)
         
+        # Log search event for monitoring
+        try:
+            # Gather user information including username when available
+            user_info = {
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent', '')
+            }
+            
+            # Try to get authenticated user information
+            current_user = None
+            try:
+                from utils.jwt_utils import get_current_user
+                current_user = get_current_user()
+                if current_user:
+                    user_info['user_id'] = current_user.get('id')
+                    user_info['user_email'] = current_user.get('email')
+                    
+                    # Get full user details for display name
+                    if current_user.get('id') and ENABLE_USER_ACCOUNTS:
+                        try:
+                            from models.user import User
+                            from utils.oauth import get_oauth_db_connection
+                            oauth_conn = get_oauth_db_connection()
+                            if oauth_conn:
+                                user_model = User(oauth_conn)
+                                user_details = user_model.get_user_by_id(current_user['id'])
+                                if user_details:
+                                    # Use display_name if available, otherwise first_name + last_name
+                                    display_name = user_details.get('display_name')
+                                    if not display_name:
+                                        first_name = user_details.get('first_name', '')
+                                        last_name = user_details.get('last_name', '')
+                                        if first_name or last_name:
+                                            display_name = f"{first_name} {last_name}".strip()
+                                    
+                                    if display_name:
+                                        user_info['username'] = display_name
+                                    else:
+                                        user_info['username'] = current_user.get('email', 'Unknown User')
+                        except Exception as e:
+                            # Don't let user lookup break logging
+                            pass
+            except Exception as e:
+                # Don't let auth check break logging
+                pass
+            
+            # Gather filter information (handle both dict and list formats)
+            applied_filters = {}
+            if isinstance(filters, dict):
+                applied_filters = {k: v for k, v in filters.items() if v is not None and v != ''}
+            elif isinstance(filters, list):
+                # Convert list of filters to a dict representation
+                applied_filters = {'filter_count': len(filters), 'filters': filters} if filters else {}
+            
+            # Log the search event (always log search events for monitoring)
+            try:
+                from routes.admin import log_search_event
+                log_search_event(
+                    search_type='spell',
+                    query=search_query,
+                    results_count=len(spells_list),
+                    execution_time_ms=round(query_time, 2),
+                    filters=applied_filters if applied_filters else None,
+                    user_info=user_info
+                )
+            except Exception as log_error:
+                app.logger.error(f"Failed to log spell search event: {log_error}")
+        except Exception as e:
+            # Don't let logging break the search
+            app.logger.error(f"Error gathering search event data: {e}")
+        
         return jsonify({
             'spells': spells_list,
             'total_count': total_count,
@@ -1370,6 +1575,322 @@ def search_spells():
             except:
                 pass
 
+
+@app.route('/api/spells/<spell_id>/details', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=120, requests_per_hour=1200)  # Higher limits for single spell lookup
+def get_spell_details(spell_id):
+    """
+    Get detailed information for a specific spell by ID.
+    Returns all available spell data from the spells_new table.
+    """
+    app.logger.info(f"=== SPELL DETAILS START for ID: {spell_id} ===")
+    conn = None
+    cursor = None
+    
+    try:
+        # Validate spell_id
+        try:
+            spell_id_int = int(spell_id)
+        except ValueError:
+            return jsonify({'error': 'Invalid spell ID'}), 400
+        
+        # Get database connection
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"No connection available: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        app.logger.info(f"Got connection, db_type: {db_type}")
+        cursor = conn.cursor()
+        
+        # Query for detailed spell information
+        spell_query = """
+            SELECT 
+                id,
+                name,
+                player_1,
+                teleport_zone,
+                you_cast,
+                other_casts,
+                cast_on_you,
+                cast_on_other,
+                spell_fades,
+                `range`,
+                aoerange,
+                pushback,
+                pushup,
+                cast_time,
+                recovery_time,
+                recast_time,
+                buffdurationformula,
+                buffduration,
+                AEDuration,
+                mana,
+                effect_base_value1, effect_base_value2, effect_base_value3, effect_base_value4,
+                effect_base_value5, effect_base_value6, effect_base_value7, effect_base_value8,
+                effect_base_value9, effect_base_value10, effect_base_value11, effect_base_value12,
+                effect_limit_value1, effect_limit_value2, effect_limit_value3, effect_limit_value4,
+                effect_limit_value5, effect_limit_value6, effect_limit_value7, effect_limit_value8,
+                effect_limit_value9, effect_limit_value10, effect_limit_value11, effect_limit_value12,
+                max1, max2, max3, max4, max5, max6, max7, max8, max9, max10, max11, max12,
+                icon,
+                new_icon,
+                spell_icon,
+                memicon,
+                components1, components2, components3, components4,
+                component_counts1, component_counts2, component_counts3, component_counts4,
+                NoexpendReagent1, NoexpendReagent2, NoexpendReagent3, NoexpendReagent4,
+                formula1, formula2, formula3, formula4, formula5, formula6,
+                formula7, formula8, formula9, formula10, formula11, formula12,
+                LightType,
+                goodEffect,
+                Activated,
+                resisttype,
+                effectid1, effectid2, effectid3, effectid4, effectid5, effectid6,
+                effectid7, effectid8, effectid9, effectid10, effectid11, effectid12,
+                targettype,
+                basediff,
+                skill,
+                zonetype,
+                EnvironmentType,
+                TimeOfDay,
+                classes1, classes2, classes3, classes4, classes5, classes6,
+                classes7, classes8, classes9, classes10, classes11, classes12,
+                classes13, classes14, classes15, classes16,
+                CastingAnim,
+                TargetAnim,
+                TravelType,
+                SpellAffectIndex,
+                disallow_sit,
+                deities,
+                field142,
+                field143,
+                new_icon,
+                spellanim,
+                uninterruptable,
+                ResistDiff,
+                dot_stacking_exempt,
+                deleteable,
+                RecourseLink,
+                no_partial_resist,
+                field152,
+                field153,
+                short_buff_box,
+                descnum,
+                typedescnum,
+                effectdescnum,
+                effectdescnum2,
+                npc_no_los,
+                field160,
+                reflectable,
+                bonushate,
+                field163,
+                field164,
+                ldon_trap,
+                EndurCost,
+                EndurTimerID,
+                IsDiscipline,
+                field169,
+                field170,
+                field171,
+                HateAdded,
+                EndurUpkeep,
+                numhits,
+                pvpresistbase,
+                pvpresistcalc,
+                pvpresistcap,
+                spell_category,
+                pvp_duration,
+                pvp_duration_cap,
+                pcnpc_only_flag,
+                cast_not_standing,
+                can_mgb,
+                nodispell,
+                npc_category,
+                npc_usefulness,
+                MinResist,
+                MaxResist,
+                viral_targets,
+                viral_timer,
+                nimbuseffect,
+                ConeStartAngle,
+                ConeStopAngle,
+                sneaking,
+                not_extendable,
+                field198,
+                field199,
+                suspendable,
+                viral_range,
+                songcap,
+                field203,
+                field204,
+                no_block,
+                field206,
+                spellgroup,
+                rank,
+                field209,
+                field210,
+                CastRestriction,
+                allowrest,
+                InCombat,
+                OutofCombat,
+                field215,
+                field216,
+                field217,
+                aemaxtargets,
+                maxtargets,
+                field220,
+                field221,
+                field222,
+                field223,
+                persistdeath,
+                field225,
+                field226,
+                min_dist,
+                min_dist_mod,
+                max_dist,
+                max_dist_mod,
+                min_range,
+                field232,
+                field233,
+                field234,
+                field235,
+                field236
+            FROM spells_new
+            WHERE id = %s
+        """
+        
+        app.logger.info(f"Executing spell details query for ID: {spell_id_int}")
+        cursor.execute(spell_query, (spell_id_int,))
+        
+        spell = cursor.fetchone()
+        if not spell:
+            return jsonify({'error': 'Spell not found'}), 404
+        
+        # Convert to dict if it's a tuple
+        if isinstance(spell, dict):
+            spell_dict = spell
+        else:
+            # Handle tuple results - map to expected field names
+            fields = [
+                'id', 'name', 'player_1', 'teleport_zone', 'you_cast', 'other_casts',
+                'cast_on_you', 'cast_on_other', 'spell_fades', 'range', 'aoerange',
+                'pushback', 'pushup', 'cast_time', 'recovery_time', 'recast_time',
+                'buffdurationformula', 'buffduration', 'AEDuration', 'mana',
+                'effect_base_value1', 'effect_base_value2', 'effect_base_value3', 'effect_base_value4',
+                'effect_base_value5', 'effect_base_value6', 'effect_base_value7', 'effect_base_value8',
+                'effect_base_value9', 'effect_base_value10', 'effect_base_value11', 'effect_base_value12',
+                'effect_limit_value1', 'effect_limit_value2', 'effect_limit_value3', 'effect_limit_value4',
+                'effect_limit_value5', 'effect_limit_value6', 'effect_limit_value7', 'effect_limit_value8',
+                'effect_limit_value9', 'effect_limit_value10', 'effect_limit_value11', 'effect_limit_value12',
+                'max1', 'max2', 'max3', 'max4', 'max5', 'max6', 'max7', 'max8', 'max9', 'max10', 'max11', 'max12',
+                'icon', 'new_icon', 'spell_icon', 'memicon',
+                'components1', 'components2', 'components3', 'components4',
+                'component_counts1', 'component_counts2', 'component_counts3', 'component_counts4',
+                'NoexpendReagent1', 'NoexpendReagent2', 'NoexpendReagent3', 'NoexpendReagent4',
+                'formula1', 'formula2', 'formula3', 'formula4', 'formula5', 'formula6',
+                'formula7', 'formula8', 'formula9', 'formula10', 'formula11', 'formula12',
+                'LightType', 'goodEffect', 'Activated', 'resisttype',
+                'effectid1', 'effectid2', 'effectid3', 'effectid4', 'effectid5', 'effectid6',
+                'effectid7', 'effectid8', 'effectid9', 'effectid10', 'effectid11', 'effectid12',
+                'targettype', 'basediff', 'skill', 'zonetype', 'EnvironmentType', 'TimeOfDay',
+                'classes1', 'classes2', 'classes3', 'classes4', 'classes5', 'classes6',
+                'classes7', 'classes8', 'classes9', 'classes10', 'classes11', 'classes12',
+                'classes13', 'classes14', 'classes15', 'classes16'
+            ] + ['field' + str(i) for i in range(142, 237)]  # Add remaining fields
+            
+            spell_dict = {field: spell[i] if i < len(spell) else None for i, field in enumerate(fields)}
+        
+        # Build detailed response
+        detailed_spell = {
+            'spell_id': str(spell_dict['id']),
+            'name': spell_dict['name'],
+            'mana': _safe_int(spell_dict['mana']),
+            'cast_time': _safe_int(spell_dict['cast_time']),
+            'recovery_time': _safe_int(spell_dict['recovery_time']),
+            'recast_time': _safe_int(spell_dict['recast_time']),
+            'range': _safe_int(spell_dict['range']),
+            'aoerange': _safe_int(spell_dict['aoerange']),
+            'buffduration': _safe_int(spell_dict['buffduration']),
+            'targettype': _safe_int(spell_dict['targettype']),
+            'skill': _safe_int(spell_dict['skill']),
+            'resisttype': _safe_int(spell_dict['resisttype']),
+            'spell_category': _safe_int(spell_dict.get('spell_category', 0)),
+            'class_levels': {
+                'warrior': _safe_int(spell_dict['classes1']),
+                'cleric': _safe_int(spell_dict['classes2']),
+                'paladin': _safe_int(spell_dict['classes3']),
+                'ranger': _safe_int(spell_dict['classes4']),
+                'shadowknight': _safe_int(spell_dict['classes5']),
+                'druid': _safe_int(spell_dict['classes6']),
+                'monk': _safe_int(spell_dict['classes7']),
+                'bard': _safe_int(spell_dict['classes8']),
+                'rogue': _safe_int(spell_dict['classes9']),
+                'shaman': _safe_int(spell_dict['classes10']),
+                'necromancer': _safe_int(spell_dict['classes11']),
+                'wizard': _safe_int(spell_dict['classes12']),
+                'magician': _safe_int(spell_dict['classes13']),
+                'enchanter': _safe_int(spell_dict['classes14']),
+                'beastlord': _safe_int(spell_dict['classes15']),
+                'berserker': _safe_int(spell_dict['classes16'])
+            },
+            'effects': [
+                _safe_int(spell_dict.get('effectid1', 0)),
+                _safe_int(spell_dict.get('effectid2', 0)),
+                _safe_int(spell_dict.get('effectid3', 0)),
+                _safe_int(spell_dict.get('effectid4', 0)),
+                _safe_int(spell_dict.get('effectid5', 0)),
+                _safe_int(spell_dict.get('effectid6', 0)),
+                _safe_int(spell_dict.get('effectid7', 0)),
+                _safe_int(spell_dict.get('effectid8', 0)),
+                _safe_int(spell_dict.get('effectid9', 0)),
+                _safe_int(spell_dict.get('effectid10', 0)),
+                _safe_int(spell_dict.get('effectid11', 0)),
+                _safe_int(spell_dict.get('effectid12', 0))
+            ],
+            'components': [
+                _safe_int(spell_dict.get('components1', 0)),
+                _safe_int(spell_dict.get('components2', 0)),
+                _safe_int(spell_dict.get('components3', 0)),
+                _safe_int(spell_dict.get('components4', 0))
+            ],
+            'icon': _safe_int(spell_dict['icon']),
+            'new_icon': _safe_int(spell_dict['new_icon']),
+            'spell_icon': _safe_int(spell_dict.get('spell_icon', 0)),
+            'you_cast': spell_dict.get('you_cast', ''),
+            'other_casts': spell_dict.get('other_casts', ''),
+            'cast_on_you': spell_dict.get('cast_on_you', ''),
+            'cast_on_other': spell_dict.get('cast_on_other', ''),
+            'spell_fades': spell_dict.get('spell_fades', ''),
+            'pushback': _safe_int(spell_dict.get('pushback', 0)),
+            'pushup': _safe_int(spell_dict.get('pushup', 0)),
+            'goodEffect': _safe_int(spell_dict.get('goodEffect', 0)),
+            'deities': _safe_int(spell_dict.get('deities', 0))
+        }
+        
+        app.logger.info(f"Spell details retrieved successfully for ID: {spell_id_int}")
+        
+        return jsonify(detailed_spell)
+        
+    except Exception as e:
+        app.logger.error(f"Error getting spell details: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Failed to get spell details: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 
 def load_cache_from_storage():
@@ -1765,346 +2286,6 @@ def _safe_int(value):
         return None
 
 # Item search endpoints (EQEmu schema with discovered items join)
-@app.route('/api/items/search-duplicate', methods=['GET'])  # TEMPORARY: renamed to avoid collision
-@exempt_when_limiting
-@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)  # Liberal limits for normal users
-def search_items_duplicate():
-    """
-    Search discovered items in the EQEmu database.
-    Only returns items that exist in both items and discovered_items tables.
-    """
-    app.logger.info("=== ITEM SEARCH START ===")
-    conn = None
-    cursor = None
-    
-    try:
-        # Get database connection using the helper function
-        app.logger.info("Getting database connection...")
-        conn, db_type, error = get_eqemu_db_connection()
-        if not conn:
-            app.logger.error(f"No connection available: {error}")
-            return jsonify({'error': error or 'Database not configured'}), 503
-        
-        app.logger.info(f"Got connection, db_type: {db_type}")
-        
-        # Validate parameters
-        validated_params = validate_item_search_params(request.args)
-        search_query = validated_params.get('q', '')
-        limit = validated_params.get('limit', 20)
-        offset = validated_params.get('offset', 0)
-        filters = validated_params.get('filters', [])
-        
-        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}, filters={len(filters)}")
-        
-        if not search_query and not filters:
-            return jsonify({'error': 'Search query or filters required'}), 400
-        
-        cursor = conn.cursor()
-        
-        # Build WHERE clause and parameters
-        where_conditions = []
-        query_params = []
-        
-        # Add search query condition if present
-        if search_query:
-            where_conditions.append("items.Name LIKE %s")
-            query_params.append(f'%{search_query}%')
-        
-        # Add filter conditions
-        for filter_item in filters:
-            field = filter_item['field']
-            operator = filter_item['operator']
-            value = filter_item.get('value')
-            
-            # Map frontend field names to database column names
-            field_mapping = {
-                'loretext': 'items.lore',
-                'price': 'items.price',
-                'weight': 'items.weight',
-                'size': 'items.size',
-                'damage': 'items.damage',
-                'delay': 'items.delay',
-                'ac': 'items.ac',
-                'hp': 'items.hp',
-                'mana': 'items.mana',
-                'str': 'items.astr',
-                'sta': 'items.asta',
-                'agi': 'items.aagi',
-                'dex': 'items.adex',
-                'wis': 'items.awis',
-                'int': 'items.aint',
-                'cha': 'items.acha',
-                'mr': 'items.mr',
-                'fr': 'items.fr',
-                'cr': 'items.cr',
-                'dr': 'items.dr',
-                'pr': 'items.pr',
-                'reqlevel': 'items.reqlevel',
-                'reclevel': 'items.reclevel',
-                'magic': 'items.magic',
-                'lore_flag': 'items.loregroup',
-                'nodrop': 'items.nodrop',
-                'norent': 'items.norent',
-                'clickeffect': 'items.clickeffect',
-                'proceffect': 'items.proceffect',
-                'worneffect': 'items.worneffect',
-                'focuseffect': 'items.focuseffect',
-                'slots': 'items.slots'
-            }
-            
-            db_field = field_mapping.get(field, f'items.{field}')
-            
-            # Build condition based on operator
-            if operator == 'contains':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'%{value}%')
-            elif operator == 'equals':
-                where_conditions.append(f"{db_field} = %s")
-                query_params.append(value)
-            elif operator == 'not equals':
-                where_conditions.append(f"{db_field} != %s")
-                query_params.append(value)
-            elif operator == 'greater than':
-                where_conditions.append(f"{db_field} > %s")
-                query_params.append(value)
-            elif operator == 'less than':
-                where_conditions.append(f"{db_field} < %s")
-                query_params.append(value)
-            elif operator == 'between':
-                if isinstance(value, list) and len(value) == 2:
-                    where_conditions.append(f"{db_field} BETWEEN %s AND %s")
-                    query_params.extend([value[0], value[1]])
-            elif operator == 'is':
-                # For boolean fields
-                if field in ['magic', 'nodrop', 'norent']:
-                    # Convert boolean to int (0 or 1)
-                    bool_value = 1 if value else 0
-                    # Note: nodrop and norent are inverted in the database (0=True, 1=False)
-                    if field in ['nodrop', 'norent']:
-                        bool_value = 0 if value else 1
-                    where_conditions.append(f"{db_field} = %s")
-                    query_params.append(bool_value)
-                elif field == 'lore_flag':
-                    # loregroup: 0 = not lore, non-zero = lore
-                    if value:
-                        where_conditions.append(f"{db_field} != 0")
-                    else:
-                        where_conditions.append(f"{db_field} = 0")
-            elif operator == 'exists':
-                # For effect fields
-                if value:
-                    where_conditions.append(f"{db_field} IS NOT NULL AND {db_field} != 0 AND {db_field} != -1")
-                else:
-                    where_conditions.append(f"({db_field} IS NULL OR {db_field} = 0 OR {db_field} = -1)")
-            elif operator == 'includes' and field == 'slots':
-                # Bitwise AND for slot checking
-                where_conditions.append(f"({db_field} & %s) != 0")
-                query_params.append(value)
-            elif operator == 'starts with':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'{value}%')
-            elif operator == 'ends with':
-                where_conditions.append(f"{db_field} LIKE %s")
-                query_params.append(f'%{value}')
-        
-        # Combine all WHERE conditions
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
-        
-        # Build queries with dynamic WHERE clause
-        # First get count
-        count_query = f"""
-            SELECT COUNT(*) AS total_count
-            FROM items 
-            INNER JOIN discovered_items di ON items.id = di.item_id
-            WHERE {where_clause}
-        """
-        cursor.execute(count_query, query_params)
-        result = cursor.fetchone()
-        total_count = result['total_count'] if isinstance(result, dict) else result[0]
-        
-        # Then get items
-        items_query = f"""
-            SELECT 
-                items.id,
-                items.Name,
-                items.itemtype,
-                items.ac,
-                items.hp,
-                items.mana,
-                items.astr,
-                items.asta,
-                items.aagi,
-                items.adex,
-                items.awis,
-                items.aint,
-                items.acha,
-                items.weight,
-                items.damage,
-                items.delay,
-                items.magic,
-                items.nodrop,
-                items.norent,
-                items.classes,
-                items.races,
-                items.slots,
-                items.lore,
-                items.loregroup,
-                items.reqlevel,
-                items.stackable,
-                items.stacksize,
-                items.icon,
-                items.price,
-                items.size,
-                items.mr,
-                items.fr,
-                items.cr,
-                items.dr,
-                items.pr,
-                items.reclevel,
-                items.clickeffect,
-                items.proceffect,
-                items.worneffect,
-                items.focuseffect
-            FROM items 
-            INNER JOIN discovered_items di ON items.id = di.item_id
-            WHERE {where_clause}
-            ORDER BY items.Name
-            LIMIT %s OFFSET %s
-        """
-        # Add limit and offset to params
-        items_params = query_params + [limit, offset]
-        
-        # Execute with timeout protection
-        try:
-            cursor.execute(items_query, items_params)
-        except Exception as e:
-            app.logger.error(f"Database query failed: {e}")
-            app.logger.error(f"Query: {items_query}")
-            app.logger.error(f"Params: {items_params}")
-            raise Exception("Database query failed - connection may have timed out")
-            
-        items = cursor.fetchall()
-        
-        # Convert to response format
-        items_list = []
-        for item in items:
-            if isinstance(item, dict):
-                item_dict = {
-                    'item_id': str(item['id']),
-                    'name': item['Name'],
-                    'itemtype': item['itemtype'],
-                    'ac': _safe_int(item['ac']),
-                    'hp': _safe_int(item['hp']),
-                    'mana': _safe_int(item['mana']),
-                    'str': _safe_int(item['astr']),
-                    'sta': _safe_int(item['asta']),
-                    'agi': _safe_int(item['aagi']),
-                    'dex': _safe_int(item['adex']),
-                    'wis': _safe_int(item['awis']),
-                    'int': _safe_int(item['aint']),
-                    'cha': _safe_int(item['acha']),
-                    'weight': _safe_float(item['weight']),
-                    'damage': _safe_int(item['damage']),
-                    'delay': _safe_int(item['delay']),
-                    'magic': bool(item['magic']),
-                    'nodrop': not bool(item['nodrop']),  # Inverted: 0=True, 1=False
-                    'norent': not bool(item['norent']),  # Inverted: 0=True, 1=False
-                    'lore': item['lore'],
-                    'lore_flag': bool(item['loregroup'] != 0),  # 0=not lore, non-zero=lore
-                    'classes': _safe_int(item['classes']),
-                    'races': _safe_int(item['races']),
-                    'slots': _safe_int(item['slots']),
-                    'reqlevel': _safe_int(item['reqlevel']),
-                    'stackable': bool(item['stackable']),
-                    'stacksize': _safe_int(item['stacksize']),
-                    'icon': _safe_int(item['icon']),
-                    'price': _safe_int(item['price']),
-                    'size': _safe_int(item['size']),
-                    'mr': _safe_int(item['mr']),
-                    'fr': _safe_int(item['fr']),
-                    'cr': _safe_int(item['cr']),
-                    'dr': _safe_int(item['dr']),
-                    'pr': _safe_int(item['pr']),
-                    'reclevel': _safe_int(item['reclevel']),
-                    'clickeffect': _safe_int(item['clickeffect']),
-                    'proceffect': _safe_int(item['proceffect']),
-                    'worneffect': _safe_int(item['worneffect']),
-                    'focuseffect': _safe_int(item['focuseffect'])
-                }
-            else:
-                # Handle tuple results
-                item_dict = {
-                    'item_id': str(item[0]),
-                    'name': item[1],
-                    'itemtype': item[2],
-                    'ac': _safe_int(item[3]),
-                    'hp': _safe_int(item[4]),
-                    'mana': _safe_int(item[5]),
-                    'str': _safe_int(item[6]),
-                    'sta': _safe_int(item[7]),
-                    'agi': _safe_int(item[8]),
-                    'dex': _safe_int(item[9]),
-                    'wis': _safe_int(item[10]),
-                    'int': _safe_int(item[11]),
-                    'cha': _safe_int(item[12]),
-                    'weight': _safe_float(item[13]),
-                    'damage': _safe_int(item[14]),
-                    'delay': _safe_int(item[15]),
-                    'magic': bool(item[16]),
-                    'nodrop': not bool(item[17]),  # Inverted: 0=True, 1=False
-                    'norent': not bool(item[18]),  # Inverted: 0=True, 1=False
-                    'classes': _safe_int(item[19]),
-                    'races': _safe_int(item[20]),
-                    'slots': _safe_int(item[21]),
-                    'lore': item[22],
-                    'lore_flag': bool(item[23] != 0),  # 0=not lore, non-zero=lore
-                    'reqlevel': _safe_int(item[24]),
-                    'stackable': bool(item[25]),
-                    'stacksize': _safe_int(item[26]),
-                    'icon': _safe_int(item[27]),
-                    'price': _safe_int(item[28]),
-                    'size': _safe_int(item[29]),
-                    'mr': _safe_int(item[30]),
-                    'fr': _safe_int(item[31]),
-                    'cr': _safe_int(item[32]),
-                    'dr': _safe_int(item[33]),
-                    'pr': _safe_int(item[34]),
-                    'reclevel': _safe_int(item[35]),
-                    'clickeffect': _safe_int(item[36]),
-                    'proceffect': _safe_int(item[37]),
-                    'worneffect': _safe_int(item[38]),
-                    'focuseffect': _safe_int(item[39])
-                }
-            items_list.append(item_dict)
-        
-        return jsonify({
-            'items': items_list,
-            'total_count': total_count,
-            'limit': limit,
-            'offset': offset,
-            'search_query': search_query,
-            'filters': filters
-        })
-        
-    except Exception as e:
-        app.logger.error(f"Error searching items: {e}")
-        import traceback
-        app.logger.error(f"Traceback: {traceback.format_exc()}")
-        return jsonify({'error': f'Search failed: {str(e)}'}), 500
-        
-    finally:
-        if cursor:
-            try:
-                cursor.close()
-            except:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
-
-
 @app.route('/api/items/<item_id>', methods=['GET'])
 @exempt_when_limiting
 def get_item_details(item_id):
@@ -2480,7 +2661,7 @@ def handle_404(error):
     
     # Determine if this looks like a disabled spell endpoint
     is_spell_endpoint = any(keyword in endpoint.lower() for keyword in [
-        'spell', 'cache', 'classes', 'scrape'
+        'spell', 'cache', 'classes'
     ])
     
     # Log with appropriate level and context
