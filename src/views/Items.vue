@@ -812,7 +812,7 @@
             <!-- Drop Sources Section -->
             <div v-if="shouldShowDropSources" class="detail-section drop-sources-section">
               <div class="drop-sources-header">
-                <h4>Where does this drop?<span v-if="itemDataAvailability && itemDataAvailability.drop_sources > 0"> ({{ itemDataAvailability.drop_sources }} NPCs)</span></h4>
+                <h4>Where does this drop?</h4>
                 <button 
                   v-if="!dropSourcesRequested"
                   @click="loadDropSources" 
@@ -868,7 +868,7 @@
             <!-- Merchant Sources Section -->
             <div v-if="shouldShowMerchantSources" class="detail-section merchant-sources-section">
               <div class="merchant-sources-header">
-                <h4>Where can this be bought?<span v-if="itemDataAvailability && itemDataAvailability.merchant_sources > 0"> ({{ itemDataAvailability.merchant_sources }} merchants)</span></h4>
+                <h4>Where can this be bought?</h4>
                 <button 
                   v-if="!merchantSourcesRequested"
                   @click="loadMerchantSources" 
@@ -934,7 +934,7 @@
               <div class="ground-spawns-header">
                 <h4>
                   <i class="fas fa-map-marker-alt"></i>
-                  Ground Spawns<span v-if="itemDataAvailability && itemDataAvailability.ground_spawns > 0"> ({{ itemDataAvailability.ground_spawns }} locations)</span>
+                  Ground Spawns
                 </h4>
                 <button 
                   v-if="!groundSpawns && !loadingGroundSpawns"
@@ -978,7 +978,7 @@
               <div class="forage-sources-header">
                 <h4>
                   <i class="fas fa-leaf"></i>
-                  Forage Sources<span v-if="itemDataAvailability && itemDataAvailability.forage_sources > 0"> ({{ itemDataAvailability.forage_sources }} zones)</span>
+                  Forage Sources
                 </h4>
                 <button 
                   v-if="!forageSources && !loadingForageSources"
@@ -1022,7 +1022,7 @@
               <div class="tradeskill-recipes-header">
                 <h4>
                   <i class="fas fa-hammer"></i>
-                  Tradeskill Recipes<span v-if="itemDataAvailability && itemDataAvailability.tradeskill_recipes > 0"> ({{ itemDataAvailability.tradeskill_recipes }} recipes)</span>
+                  Tradeskill Recipes
                 </h4>
                 <button 
                   v-if="!tradeskillRecipes && !loadingTradeskillRecipes"
@@ -1066,7 +1066,7 @@
               <div class="created-by-recipes-header">
                 <h4>
                   <i class="fas fa-cog"></i>
-                  Created by Recipes<span v-if="itemDataAvailability && itemDataAvailability.created_by_recipes > 0"> ({{ itemDataAvailability.created_by_recipes }} recipes)</span>
+                  Created by Recipes
                 </h4>
                 <button 
                   v-if="!createdByRecipes && !loadingCreatedByRecipes"
