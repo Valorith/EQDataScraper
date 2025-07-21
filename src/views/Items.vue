@@ -855,7 +855,12 @@
                     </div>
                     
                     <div class="npcs-list">
-                      <div v-for="npc in zone.npcs" :key="npc.npc_id" class="npc-item">
+                      <div 
+                        v-for="npc in zone.npcs" 
+                        :key="npc.npc_id" 
+                        class="npc-item clickable"
+                        @click="openNPCModal(npc.npc_id, npc.npc_name)"
+                      >
                         <span class="npc-name">{{ npc.npc_name }}</span>
                         <span class="drop-chance">{{ npc.drop_chance }}%</span>
                       </div>
@@ -1263,7 +1268,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { API_BASE_URL } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
 import { toastService } from '../services/toastService'
@@ -2404,8 +2409,19 @@ const getTopStatsDisplay = (item) => {
   return topStats
 }
 
-// Get route for query parameter checking
+// Navigation to NPC modal
+const openNPCModal = (npcId, npcName) => {
+  // Navigate to the NPCs page with the NPC modal opened
+  // We'll pass the NPC ID as a query parameter for the NPC modal to open
+  router.push({
+    name: 'NPCs',
+    query: { npc: npcId }
+  })
+}
+
+// Get route and router for navigation
 const route = useRoute()
+const router = useRouter()
 
 // Lifecycle
 onMounted(() => {
@@ -4377,10 +4393,20 @@ const handleClickOutside = (event) => {
   margin: 4px 0;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.npc-item:hover {
+.npc-item.clickable {
+  cursor: pointer;
+}
+
+.npc-item.clickable:hover {
+  background: rgba(102, 126, 234, 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.npc-item:not(.clickable):hover {
   background: rgba(255, 255, 255, 0.1);
 }
 

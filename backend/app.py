@@ -4090,6 +4090,77 @@ def search_npcs():
                 pass
 
 
+def parse_special_abilities(special_abilities_str):
+    """
+    Parse EQEmu special_abilities field into a list of readable special attacks.
+    
+    EQEmu special_abilities format is typically comma-separated values with codes:
+    Example: "1,1^2,1^3,1^35,1" 
+    
+    Common special ability codes:
+    1 = Summon, 2 = Enrage, 3 = Rampage, 4 = Area Rampage, 5 = Flurry, 
+    6 = Triple, 7 = Quad, 8 = Dual Wield, 9 = Bane Attack, 10 = Magical Attack,
+    11 = Ranged Attack, 12 = Unslowable, 13 = Unmezzable, 14 = Uncharmable,
+    15 = Unstunable, 16 = Unsnareable, 17 = Unfearable, 18 = Undispellable,
+    19 = Immune to Fleeing, 20 = Destructible Object, 21 = No Harm from Players,
+    22 = Always Flee, 23 = Flee Percent, 24 = Allow Beneficial, 25 = Disable Melee,
+    26 = NPC Chase Distance, 27 = Allow Tank, 28 = Ignore Root Aggro,
+    29 = Casting Resist Diff, 30 = Counter Avoid Damage, 31 = Prox Aggro,
+    32 = Immune to Aggro, 33 = Resist Ranged Spells, 34 = See Invis,
+    35 = See Invis vs Undead, 36 = See Hide, 37 = See Improved Hide,
+    38 = Innate Dual Wield, 39 = Innate Berserk, 40 = Findable, 41 = Track
+    """
+    
+    if not special_abilities_str or special_abilities_str.strip() == '':
+        return []
+    
+    # Map of ability codes to readable names
+    ability_names = {
+        1: "Summon", 2: "Enrage", 3: "Rampage", 4: "Area Rampage", 5: "Flurry",
+        6: "Triple Attack", 7: "Quad Attack", 8: "Dual Wield", 9: "Bane Attack", 
+        10: "Magical Attack", 11: "Ranged Attack", 12: "Unslowable", 13: "Unmezzable",
+        14: "Uncharmable", 15: "Unstunable", 16: "Unsnareable", 17: "Unfearable",
+        18: "Undispellable", 19: "Immune to Fleeing", 20: "Destructible Object",
+        21: "No Harm from Players", 22: "Always Flee", 23: "Flee Percent",
+        24: "Allow Beneficial", 25: "Disable Melee", 26: "NPC Chase Distance",
+        27: "Allow Tank", 28: "Ignore Root Aggro", 29: "Casting Resist Diff",
+        30: "Counter Avoid Damage", 31: "Prox Aggro", 32: "Immune to Aggro",
+        33: "Resist Ranged Spells", 34: "See Invisible", 35: "See Invisible vs Undead",
+        36: "See Hide", 37: "See Improved Hide", 38: "Innate Dual Wield",
+        39: "Innate Berserk", 40: "Findable", 41: "Track"
+    }
+    
+    special_attacks = []
+    
+    try:
+        # Parse the special_abilities string - typically format like "1,1^2,1^3,1"
+        # Each ability is separated by ^ and has format "code,value"
+        abilities = special_abilities_str.split('^')
+        
+        for ability in abilities:
+            if ',' in ability:
+                parts = ability.split(',')
+                if len(parts) >= 2:
+                    try:
+                        ability_code = int(parts[0])
+                        ability_value = int(parts[1])
+                        
+                        # Only include active abilities (value > 0)
+                        if ability_value > 0 and ability_code in ability_names:
+                            special_attacks.append(ability_names[ability_code])
+                    except (ValueError, IndexError):
+                        continue
+        
+        # Remove duplicates and sort
+        special_attacks = sorted(list(set(special_attacks)))
+        
+    except Exception as e:
+        app.logger.warning(f"Error parsing special abilities '{special_abilities_str}': {e}")
+        return []
+    
+    return special_attacks
+
+
 @app.route('/api/npcs/<npc_id>/details', methods=['GET'])
 @rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
 def get_npc_details(npc_id):
@@ -4245,51 +4316,89 @@ def get_npc_details(npc_id):
                         'price': item_data.get('price', 0)
                     })
 
-            # Get loot drops (only discovered items) with enhanced probability calculation
+            # Get loot drops with hierarchical structure (loot drops containing items)
             loot_drops = []
             if npc_data.get('loottable_id'):
-                loot_query = """
+                # First, get all unique loot drops for this NPC's loot table
+                loot_groups_query = """
                     SELECT DISTINCT
-                        i.id as item_id,
-                        i.name as item_name,
-                        i.icon,
-                        i.itemtype,
-                        lde.chance as drop_chance,
+                        lte.lootdrop_id,
                         lte.probability as table_probability,
-                        ROUND(
-                            (COALESCE(lde.chance, 1) / 100.0) * 
-                            (COALESCE(lte.probability, 100) / 100.0) * 
-                            100, 2
-                        ) as calculated_probability
+                        lte.multiplier,
+                        lte.droplimit,
+                        lte.mindrop
                     FROM loottable_entries lte
-                    INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
-                    INNER JOIN items i ON lde.item_id = i.id
-                    INNER JOIN discovered_items di ON i.id = di.item_id
                     WHERE lte.loottable_id = %s
-                    AND lde.item_id > 0
-                    ORDER BY calculated_probability DESC, i.name
-                    LIMIT 50
+                    ORDER BY lte.probability DESC, lte.lootdrop_id
                 """
                 
-                cursor.execute(loot_query, (npc_data['loottable_id'],))
-                loot_results = cursor.fetchall()
+                cursor.execute(loot_groups_query, (npc_data['loottable_id'],))
+                loot_groups = cursor.fetchall()
                 
-                for loot in loot_results:
-                    if isinstance(loot, dict):
-                        loot_data = dict(loot)
+                for group in loot_groups:
+                    if isinstance(group, dict):
+                        group_data = dict(group)
                     else:
                         columns = [desc[0] for desc in cursor.description]
-                        loot_data = dict(zip(columns, loot))
+                        group_data = dict(zip(columns, group))
                     
-                    loot_drops.append({
-                        'item_id': loot_data['item_id'],
-                        'item_name': loot_data['item_name'].replace('_', ' ') if loot_data['item_name'] else 'Unknown Item',
-                        'icon': loot_data.get('icon', 0),
-                        'itemtype': loot_data.get('itemtype', 0),
-                        'drop_chance': loot_data.get('drop_chance', 1),
-                        'table_probability': loot_data.get('table_probability', 100),
-                        'probability': max(0.01, loot_data.get('calculated_probability', 0))
-                    })
+                    loot_drop_id = group_data['lootdrop_id']
+                    table_probability = group_data.get('probability', 100)
+                    multiplier = group_data.get('multiplier', 1)
+                    droplimit = group_data.get('droplimit', 0)
+                    mindrop = group_data.get('mindrop', 0)
+                    
+                    # Get items for this specific loot drop group
+                    items_query = """
+                        SELECT DISTINCT
+                            i.id as item_id,
+                            i.name as item_name,
+                            i.icon,
+                            i.itemtype,
+                            lde.chance as item_chance
+                        FROM lootdrop_entries lde
+                        INNER JOIN items i ON lde.item_id = i.id
+                        INNER JOIN discovered_items di ON i.id = di.item_id
+                        WHERE lde.lootdrop_id = %s
+                        AND lde.item_id > 0
+                        ORDER BY lde.chance DESC, i.name
+                        LIMIT 20
+                    """
+                    
+                    cursor.execute(items_query, (loot_drop_id,))
+                    item_results = cursor.fetchall()
+                    
+                    items = []
+                    for item in item_results:
+                        if isinstance(item, dict):
+                            item_data = dict(item)
+                        else:
+                            columns = [desc[0] for desc in cursor.description]
+                            item_data = dict(zip(columns, item))
+                        
+                        # Calculate overall probability (table_probability * item_chance)
+                        item_chance = item_data.get('item_chance', 1)
+                        overall_probability = round((table_probability / 100.0) * (item_chance / 100.0) * 100, 2)
+                        
+                        items.append({
+                            'item_id': item_data['item_id'],
+                            'item_name': item_data['item_name'].replace('_', ' ') if item_data['item_name'] else 'Unknown Item',
+                            'icon': item_data.get('icon', 0),
+                            'itemtype': item_data.get('itemtype', 0),
+                            'item_chance': item_chance,
+                            'overall_probability': max(0.01, overall_probability)
+                        })
+                    
+                    # Only add loot drop groups that have items
+                    if items:
+                        loot_drops.append({
+                            'loot_drop_id': loot_drop_id,
+                            'table_probability': table_probability,
+                            'multiplier': multiplier,
+                            'droplimit': droplimit,
+                            'mindrop': mindrop,
+                            'items': items
+                        })
             
             # Format response with comprehensive NPC data matching EQ Alla clone
             detailed_npc = {
@@ -4327,6 +4436,9 @@ def get_npc_details(npc_id):
                 'merchant_id': npc_data.get('merchant_id', 0),
                 'npc_spells_id': npc_data.get('npc_spells_id', 0),
                 'npc_faction_id': npc_data.get('npc_faction_id', 0),
+                
+                # Special attacks
+                'special_attacks': parse_special_abilities(npc_data.get('special_abilities', '')),
                 
                 # Associated data
                 'spawn_locations': spawn_locations,
