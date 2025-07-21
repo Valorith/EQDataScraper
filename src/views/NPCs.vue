@@ -131,7 +131,16 @@
                   <span class="npc-separator">•</span>
                   <span class="npc-race">{{ getRaceName(npc.race) }}</span>
                   <span class="npc-separator">•</span>
-                  <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                  <div class="npc-class-with-icon">
+                    <img 
+                      v-if="getClassIcon(npc.class)" 
+                      :src="getClassIcon(npc.class)" 
+                      :alt="getClassName(npc.class)"
+                      class="npc-class-icon"
+                      @error="handleIconError"
+                    />
+                    <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -156,7 +165,16 @@
             <div class="npc-card-body">
               <div class="npc-info">
                 <span class="npc-race">{{ getRaceName(npc.race) }}</span>
-                <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                <div class="npc-class-with-icon">
+                  <img 
+                    v-if="getClassIcon(npc.class)" 
+                    :src="getClassIcon(npc.class)" 
+                    :alt="getClassName(npc.class)"
+                    class="npc-class-icon"
+                    @error="handleIconError"
+                  />
+                  <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                </div>
               </div>
               <div class="npc-stats">
                 <span class="npc-hp">{{ npc.hp?.toLocaleString() }} HP</span>
@@ -480,11 +498,58 @@ export default {
       // Toast notifications
       toasts: [],
       
-      // EverQuest data mappings
+      // EverQuest race mappings (comprehensive list from EQEmu docs)
       raceNames: {
         1: 'Human', 2: 'Barbarian', 3: 'Erudite', 4: 'Wood Elf', 5: 'High Elf', 6: 'Dark Elf',
         7: 'Half Elf', 8: 'Dwarf', 9: 'Troll', 10: 'Ogre', 11: 'Halfling', 12: 'Gnome',
-        128: 'Iksar', 130: 'Vah Shir', 330: 'Froglok', 522: 'Drakkin'
+        13: 'Aviak', 14: 'Werewolf', 15: 'Brownie', 16: 'Centaur', 17: 'Golem', 18: 'Giant',
+        19: 'Trakanon', 20: 'Venril Sathir', 21: 'Evil Eye', 22: 'Beetle', 23: 'Kerra',
+        24: 'Fish', 25: 'Fairy', 26: 'Old Froglok', 27: 'Kedge', 28: 'Leech', 29: 'Spider',
+        30: 'Drachnid', 31: 'Corpse', 32: 'Quadruped', 33: 'Fly', 34: 'Black Bear',
+        35: 'Brown Bear', 36: 'Polar Bear', 37: 'Giant Clan Dwarf', 38: 'Clockwork Gnome',
+        39: 'Clockwork Boar', 40: 'Clockwork Bug', 41: 'Wisp', 42: 'Halfling', 43: 'Efreeti',
+        44: 'Vampire', 45: 'Amygdalan', 46: 'Dervish', 47: 'Sphinx', 48: 'Armadillo',
+        49: 'Clockwork Rat', 50: 'Scarecrow', 51: 'Skunk', 52: 'Snake', 53: 'Giant Rat',
+        54: 'Ratman', 55: 'Kobold', 56: 'Giant Spider', 57: 'Gnoll', 58: 'Minotaur',
+        59: 'Zombie', 60: 'Skeleton', 61: 'Barracuda', 62: 'Tunare', 63: 'Tiger',
+        64: 'Treant', 65: 'Vampire Bat', 66: 'Alligator', 67: 'Alligator2', 68: 'Avocet',
+        69: 'Bear Cub', 70: 'Caiman', 71: 'Crocodile', 72: 'Elemental', 73: 'Hippo',
+        74: 'Lizardman', 75: 'Lion', 76: 'Mammoth', 77: 'Raptor', 78: 'Rhino',
+        79: 'Sabertooth Cat', 80: 'Shark', 81: 'Terrorbird', 82: 'Rhino Beetle',
+        83: 'Unicorn', 84: 'Pegasus', 85: 'Djinn', 86: 'Invisible Man', 87: 'Iksar',
+        88: 'Scorpion', 89: 'Vah Shir', 90: 'Sarnak', 91: 'Draglock', 92: 'Lycanthrope',
+        93: 'Mosquito', 94: 'Rhinoceros', 95: 'Xalgoz', 96: 'Kunark Goblin', 97: 'Yak Man',
+        98: 'Faun', 99: 'Coldain', 100: 'Velious Dragon', 101: 'Hag', 102: 'Hippogriff',
+        103: 'Siren', 104: 'Frost Giant', 105: 'Storm Giant', 106: 'Ottermen',
+        107: 'Walrus', 108: 'Geonid', 109: 'Yakman', 110: 'Scythe Cat', 111: 'Shadel',
+        112: 'Shik Nar', 113: 'Rockhopper', 114: 'Underbulk', 115: 'Grimling',
+        116: 'Wyvern', 117: 'Wurm', 118: 'Devourer', 119: 'Iksar Citizen', 120: 'Forest Giant',
+        121: 'Boat', 122: 'Minor Illusion', 123: 'Tree', 124: 'Burynai', 125: 'Goo',
+        126: 'Spectral Sarnak', 127: 'Spectral Iksar', 128: 'Kunark Fish', 129: 'Iksar Scorpion',
+        130: 'Erollisi', 131: 'Tribunal', 132: 'Bertoxxulous', 133: 'Bristlebane',
+        134: 'Fay Drake', 135: 'Undead Sarnak', 136: 'Ratman', 137: 'Wyvern',
+        138: 'Necromancer', 139: 'Shadowman', 140: 'Khati Sha', 141: 'Skeletal Horse',
+        142: 'Chimera', 143: 'Kly', 144: 'Sludge', 145: 'Combination', 146: 'Bixie',
+        147: 'Centaur', 148: 'Drakkin', 149: 'Giant', 150: 'Werewolf', 151: 'Barbarian',
+        152: 'Vah Shir', 153: 'Alaran', 154: 'Sarnak', 155: 'Vampire', 156: 'Ayonae Ro',
+        157: 'Sullon Zek', 158: 'Banner', 159: 'Flag', 160: 'Rowboat', 161: 'Bear Trap',
+        162: 'Clockwork Rat', 163: 'Clockwork Spider', 164: 'Clockwork Gnome',
+        165: 'Wisp', 166: 'Ground Spawn', 167: 'Weaponrack', 168: 'Coffin', 169: 'Bones',
+        170: 'Jokester', 171: 'Nihil', 172: 'Troll', 173: 'Sarnak Spirit',
+        174: 'Iksar Spirit', 175: 'Fish', 176: 'Scorpion', 177: 'Erollisi Marr',
+        178: 'Tunare', 179: 'Bertoxxulous', 180: 'Tribunal', 181: 'Bristlebane',
+        182: 'Undead Froglok', 183: 'Knight of Pestilence', 184: 'Leech',
+        185: 'Swordfish', 186: 'Felguard', 187: 'Mammoth', 188: 'Eye', 189: 'Wasp',
+        190: 'Mermaid', 191: 'Harpie', 192: 'Fayguard', 193: 'Drixie', 194: 'Ghost Ship',
+        195: 'Clam', 196: 'Seahorse', 197: 'Dwarf Ghost', 198: 'Erudite Ghost',
+        199: 'Sabertooth Cat Spirit', 200: 'Wolf Elemental', 201: 'Gorgon',
+        202: 'Dragon Skeleton', 203: 'Innoruuk', 204: 'Unicorn', 205: 'Pegasus',
+        206: 'Djinn', 207: 'Invisible Man', 208: 'Iksar', 209: 'Scorpion',
+        210: 'Vah Shir', 211: 'Sarnak', 212: 'Draglock', 213: 'Drolvarg', 214: 'Mosquito',
+        215: 'Rhinoceros', 216: 'Xalgoz', 217: 'Kunark Goblin', 218: 'Yak Man',
+        219: 'Faun', 220: 'Coldain', 221: 'Velious Dragon', 222: 'Hag', 223: 'Hippogriff',
+        224: 'Siren', 225: 'Frost Giant', 226: 'Storm Giant', 227: 'Ottermen',
+        228: 'Walrus', 229: 'Geonid', 230: 'Yakman', 330: 'Froglok', 522: 'Drakkin'
       },
       
       classNames: {
@@ -619,6 +684,31 @@ export default {
 
     getClassName(classId) {
       return this.classNames[classId] || `Class ${classId}`
+    },
+
+    getClassIcon(classId) {
+      // Map class IDs to their icon file names (same as in spell pages)
+      const classIconMap = {
+        1: 'warrior',      // Warrior
+        2: 'cleric',       // Cleric
+        3: 'paladin',      // Paladin
+        4: 'ranger',       // Ranger
+        5: 'shadowknight', // Shadow Knight
+        6: 'druid',        // Druid
+        7: 'monk',         // Monk
+        8: 'bard',         // Bard
+        9: 'rogue',        // Rogue
+        10: 'shaman',      // Shaman
+        11: 'necromancer', // Necromancer
+        12: 'wizard',      // Wizard
+        13: 'magician',    // Magician
+        14: 'enchanter',   // Enchanter
+        15: 'beastlord',   // Beastlord
+        16: 'berserker'    // Berserker
+      }
+      
+      const iconName = classIconMap[classId]
+      return iconName ? `/icons/${iconName}.gif` : null
     },
 
     getFormattedZoneName(npc) {
@@ -1000,6 +1090,19 @@ export default {
   color: #94a3b8;
   font-weight: 600;
   font-size: 0.88rem;
+}
+
+.npc-class-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.npc-class-icon {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 
 .npc-class {
