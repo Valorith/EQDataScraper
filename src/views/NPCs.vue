@@ -124,7 +124,7 @@
             class="npc-row"
           >
             <div class="npc-main-info">
-              <div class="npc-name-section">
+              <div class="npc-name-and-details">
                 <h3 class="npc-name">{{ npc.name }}</h3>
                 <div class="npc-details">
                   <span class="npc-level">Level {{ npc.level }}</span>
@@ -998,16 +998,16 @@ export default {
   backdrop-filter: blur(15px);
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 16px;
-  padding: 28px 36px;
+  padding: 32px 40px;
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 32px;
+  gap: 40px;
   position: relative;
   overflow: hidden;
-  min-height: 76px;
+  min-height: 96px;
 }
 
 .npc-row::before {
@@ -1042,70 +1042,76 @@ export default {
   z-index: 1;
 }
 
-.npc-name-section {
+.npc-name-and-details {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  gap: 24px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .npc-row .npc-name {
   color: #f8fafc;
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.6rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.2;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
 
 .npc-details {
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 1rem;
+  gap: 18px;
+  font-size: 1.1rem;
+  flex-wrap: wrap;
 }
 
 .npc-level {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 6px 16px;
-  border-radius: 16px;
-  font-size: 0.9rem;
+  padding: 8px 20px;
+  border-radius: 18px;
+  font-size: 1rem;
   font-weight: 700;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 3px 8px rgba(102, 126, 234, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .npc-separator {
   color: #64748b;
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
+  margin: 0 2px;
 }
 
 .npc-race {
   color: #94a3b8;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .npc-class-with-icon {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .npc-class-icon {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   image-rendering: pixelated;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
 }
 
 .npc-class {
   color: #cbd5e1;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .npc-zone-display {
@@ -1705,23 +1711,34 @@ export default {
   .npc-row {
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
-    padding: 24px 26px;
+    gap: 20px;
+    padding: 26px 28px;
     min-height: auto;
   }
   
+  .npc-name-and-details {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  
   .npc-row .npc-name {
-    font-size: 1.2rem;
+    font-size: 1.35rem;
   }
   
   .npc-details {
-    gap: 12px;
-    font-size: 0.9rem;
+    gap: 14px;
+    font-size: 1rem;
   }
   
   .npc-class-icon {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
+  }
+  
+  .npc-level {
+    padding: 6px 16px;
+    font-size: 0.9rem;
   }
   
   .npc-zone-display {
