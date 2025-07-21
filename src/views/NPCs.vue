@@ -136,7 +136,6 @@
               </div>
             </div>
             <div v-if="npc.zone_short_name" class="npc-zone-display">
-              <span class="zone-label">Zone:</span>
               <span class="zone-name">{{ getFormattedZoneName(npc) }}</span>
             </div>
           </div>
@@ -902,98 +901,133 @@ export default {
 .npc-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 30px;
 }
 
 .npc-row {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  padding: 18px 24px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.12) 0%, 
+    rgba(255, 255, 255, 0.08) 100%);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 20px 26px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.npc-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, 
+    rgba(102, 126, 234, 0.05) 0%, 
+    rgba(118, 75, 162, 0.05) 100%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
 
 .npc-row:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  border-color: rgba(102, 126, 234, 0.5);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+.npc-row:hover::before {
+  opacity: 1;
 }
 
 .npc-main-info {
   flex: 1;
-  min-width: 0; /* Allow text to truncate if needed */
+  min-width: 0;
+  z-index: 1;
 }
 
 .npc-name-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .npc-row .npc-name {
-  color: white;
+  color: #f8fafc;
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1.15rem;
+  font-weight: 700;
   line-height: 1.2;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.2px;
 }
 
 .npc-details {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #ccc;
+  gap: 10px;
   font-size: 0.9rem;
 }
 
 .npc-level {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 3px 10px;
-  border-radius: 12px;
+  padding: 4px 12px;
+  border-radius: 14px;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .npc-separator {
-  color: #666;
-  font-weight: bold;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.7rem;
 }
 
-.npc-race, .npc-class {
-  color: #ccc;
-  font-weight: 500;
+.npc-race {
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.npc-class {
+  color: #cbd5e1;
+  font-weight: 600;
+  font-size: 0.88rem;
 }
 
 .npc-zone-display {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 120px;
-  text-align: right;
-}
-
-.zone-label {
-  color: #888;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 140px;
+  z-index: 1;
 }
 
 .zone-name {
-  color: #e5e7eb;
-  font-size: 0.9rem;
-  font-weight: 500;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: right;
   line-height: 1.3;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  padding: 6px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
 }
 
 /* NPC Grid View */
@@ -1500,15 +1534,18 @@ export default {
   .npc-row {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
-    padding: 16px 20px;
+    gap: 14px;
+    padding: 18px 22px;
   }
   
   .npc-zone-display {
     align-self: stretch;
-    align-items: flex-start;
-    text-align: left;
+    justify-content: flex-start;
     min-width: auto;
+  }
+  
+  .zone-name {
+    text-align: left;
   }
   
   .modal-overlay {
