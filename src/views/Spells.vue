@@ -102,7 +102,10 @@
     <div v-if="!searching" class="spell-matrix-section">
       <div class="matrix-header">
         <h3>Spell Matrix</h3>
-        <p class="matrix-subtitle">Select a class to view spells by level</p>
+        <p class="matrix-subtitle">
+          <span v-if="matrixMode === 'classes'">Select a class to view spells by level</span>
+          <span v-else>Click and drag across a level range or click a single level.</span>
+        </p>
         <button 
           v-if="matrixMode === 'levels'" 
           @click="resetMatrix" 
@@ -189,11 +192,15 @@
     <LoadingModal 
       :visible="searching && !paginating"
       text="Searching"
+      :timeoutMs="45000"
+      @timeout="onSearchTimeout"
     />
     <!-- Pagination Loading Modal -->
     <LoadingModal 
       :visible="paginating"
       text="Loading"
+      :timeoutMs="30000"
+      @timeout="onPaginationTimeout"
     />
 
     <!-- Search Results Section -->
@@ -263,89 +270,212 @@
       </div>
 
       <!-- Spell Results -->
-      <div v-if="searchResults.length > 0" :class="['spell-results', viewMode]">
-        <div v-for="spell in searchResults" :key="spell.spell_id" class="spell-card" @click="openSpellModal(spell)">
-          <div class="spell-main-content">
-            <div class="spell-header">
-              <div class="spell-icon-container">
-                <img 
-                  v-if="hasSpellIcon(spell)"
-                  :src="getSpellIconUrl(spell)"
-                  :alt="`${spell.name} icon`"
-                  class="spell-icon"
-                  @error="handleSpellIconError"
-                />
-                <div v-else class="spell-icon-placeholder">
-                  <i class="fas fa-magic"></i>
+      <div v-if="searchResults.length > 0">
+        <!-- Matrix Search Results - Grouped by Level -->
+        <div v-if="isMatrixSearch && spellsByLevel.length > 0" class="matrix-spell-results">
+          <div v-for="levelGroup in spellsByLevel" :key="levelGroup.level" class="level-group">
+            <!-- Level Separator -->
+            <div class="level-separator">
+              <div class="level-separator-line"></div>
+              <div class="level-separator-content">
+                <div class="level-separator-info">
+                  <span class="level-separator-text">Level {{ levelGroup.level }}</span>
+                  <span class="level-separator-count">({{ levelGroup.spells.length }} spell{{ levelGroup.spells.length !== 1 ? 's' : '' }})</span>
                 </div>
+                <button @click="scrollToTopOfResults" class="level-separator-to-top" title="Scroll to top of search results">
+                  <i class="fas fa-arrow-up"></i>
+                  <span class="to-top-text">To Top</span>
+                </button>
               </div>
-              <div class="spell-header-text">
-                <h3 class="spell-name">{{ spell.name }}</h3>
-              </div>
+              <div class="level-separator-line"></div>
             </div>
             
-            <div class="spell-details">
-              <div class="spell-detail-row">
-                <span class="detail-label">Mana:</span>
-                <span class="detail-value">{{ spell.mana || 'N/A' }}</span>
-              </div>
-              
-              <div class="spell-detail-row">
-                <span class="detail-label">Skill:</span>
-                <span class="detail-value">{{ getSkillName(spell.skill) }}</span>
-              </div>
-              
-              <div class="spell-detail-row">
-                <span class="detail-label">Target:</span>
-                <span class="detail-value">{{ getTargetType(spell.targettype) }}</span>
+            <!-- Spells for this level -->
+            <div :class="['spell-results', viewMode]">
+              <div v-for="spell in levelGroup.spells" :key="spell.spell_id" class="spell-card" @click="openSpellModal(spell)">
+                <div class="spell-main-content">
+                  <div class="spell-header">
+                    <div class="spell-icon-container">
+                      <img 
+                        v-if="hasSpellIcon(spell)"
+                        :src="getSpellIconUrl(spell)"
+                        :alt="`${spell.name} icon`"
+                        class="spell-icon"
+                        @error="handleSpellIconError"
+                      />
+                      <div v-else class="spell-icon-placeholder">
+                        <i class="fas fa-magic"></i>
+                      </div>
+                    </div>
+                    <div class="spell-header-text">
+                      <h3 class="spell-name">{{ spell.name }}</h3>
+                    </div>
+                  </div>
+                  
+                  <div class="spell-details">
+                    <div class="spell-detail-row">
+                      <span class="detail-label">Mana:</span>
+                      <span class="detail-value">{{ spell.mana || 'N/A' }}</span>
+                    </div>
+                    
+                    <div class="spell-detail-row">
+                      <span class="detail-label">Skill:</span>
+                      <span class="detail-value">{{ getSkillName(spell.skill) }}</span>
+                    </div>
+                    
+                    <div class="spell-detail-row">
+                      <span class="detail-label">Target:</span>
+                      <span class="detail-value">{{ getTargetType(spell.targettype) }}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Class Level Requirements -->
+                <div class="spell-class-levels">
+                  <div class="class-levels-container">
+                    <button 
+                      v-if="getValidClasses(spell).length > 3"
+                      @click.stop="scrollClassCards(spell.spell_id, 'left')"
+                      class="class-scroll-arrow class-scroll-left"
+                      :style="{ opacity: canScrollLeft(spell.spell_id) ? 1 : 0.3 }"
+                    >
+                      <i class="fas fa-chevron-left"></i>
+                    </button>
+                    
+                    <div 
+                      class="class-levels-grid" 
+                      :ref="`classGrid${spell.spell_id}`" 
+                      @scroll="updateScrollState(spell.spell_id)"
+                      @wheel="handleWheelScroll($event, spell.spell_id)"
+                    >
+                      <template v-for="(level, className) in getOrderedClassLevels(spell)" :key="className">
+                        <div 
+                          v-if="level && level !== 255"
+                          :class="[
+                            'class-level', 
+                            'available',
+                            { 'selected-class': className === (selectedClass || selectedMatrixClass) }
+                          ]"
+                          :style="getClassCardWidthStyle(spell)"
+                          :title="`${getClassAbbreviation(className)}: Level ${level}`"
+                        >
+                          <img 
+                            :src="`/icons/${className}.gif`" 
+                            :alt="`${className} icon`"
+                            class="class-icon"
+                            @error="handleIconError"
+                          />
+                          <span class="class-abbrev">{{ getClassAbbreviation(className) }}</span>
+                          <span class="class-level-value">lvl {{ level }}</span>
+                        </div>
+                      </template>
+                    </div>
+                    
+                    <button 
+                      v-if="getValidClasses(spell).length > 3"
+                      @click.stop="scrollClassCards(spell.spell_id, 'right')"
+                      class="class-scroll-arrow class-scroll-right"
+                      :style="{ opacity: canScrollRight(spell.spell_id) ? 1 : 0.3 }"
+                    >
+                      <i class="fas fa-chevron-right"></i>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          
-          <!-- Class Level Requirements -->
-          <div class="spell-class-levels">
-            <div class="class-levels-container">
-              <button 
-                v-if="getValidClasses(spell).length > 3"
-                @click.stop="scrollClassCards(spell.spell_id, 'left')"
-                class="class-scroll-arrow class-scroll-left"
-                :style="{ opacity: canScrollLeft(spell.spell_id) ? 1 : 0.3 }"
-              >
-                <i class="fas fa-chevron-left"></i>
-              </button>
-              
-              <div 
-                class="class-levels-grid" 
-                :ref="`classGrid${spell.spell_id}`" 
-                @scroll="updateScrollState(spell.spell_id)"
-                @wheel="handleWheelScroll($event, spell.spell_id)"
-              >
-                <template v-for="(level, className) in spell.class_levels" :key="className">
-                  <div 
-                    v-if="level && level !== 255"
-                    class="class-level available"
-                    :title="`${getClassAbbreviation(className)}: Level ${level}`"
-                  >
-                    <img 
-                      :src="`/icons/${className}.gif`" 
-                      :alt="`${className} icon`"
-                      class="class-icon"
-                      @error="handleIconError"
-                    />
-                    <span class="class-abbrev">{{ getClassAbbreviation(className) }}</span>
-                    <span class="class-level-value">lvl {{ level }}</span>
+        </div>
+        
+        <!-- Regular Search Results - Normal Display -->
+        <div v-else :class="['spell-results', viewMode]">
+          <div v-for="spell in searchResults" :key="spell.spell_id" class="spell-card" @click="openSpellModal(spell)">
+            <div class="spell-main-content">
+              <div class="spell-header">
+                <div class="spell-icon-container">
+                  <img 
+                    v-if="hasSpellIcon(spell)"
+                    :src="getSpellIconUrl(spell)"
+                    :alt="`${spell.name} icon`"
+                    class="spell-icon"
+                    @error="handleSpellIconError"
+                  />
+                  <div v-else class="spell-icon-placeholder">
+                    <i class="fas fa-magic"></i>
                   </div>
-                </template>
+                </div>
+                <div class="spell-header-text">
+                  <h3 class="spell-name">{{ spell.name }}</h3>
+                </div>
               </div>
               
-              <button 
-                v-if="getValidClasses(spell).length > 3"
-                @click.stop="scrollClassCards(spell.spell_id, 'right')"
-                class="class-scroll-arrow class-scroll-right"
-                :style="{ opacity: canScrollRight(spell.spell_id) ? 1 : 0.3 }"
-              >
-                <i class="fas fa-chevron-right"></i>
-              </button>
+              <div class="spell-details">
+                <div class="spell-detail-row">
+                  <span class="detail-label">Mana:</span>
+                  <span class="detail-value">{{ spell.mana || 'N/A' }}</span>
+                </div>
+                
+                <div class="spell-detail-row">
+                  <span class="detail-label">Skill:</span>
+                  <span class="detail-value">{{ getSkillName(spell.skill) }}</span>
+                </div>
+                
+                <div class="spell-detail-row">
+                  <span class="detail-label">Target:</span>
+                  <span class="detail-value">{{ getTargetType(spell.targettype) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Class Level Requirements -->
+            <div class="spell-class-levels">
+              <div class="class-levels-container">
+                <button 
+                  v-if="getValidClasses(spell).length > 3"
+                  @click.stop="scrollClassCards(spell.spell_id, 'left')"
+                  class="class-scroll-arrow class-scroll-left"
+                  :style="{ opacity: canScrollLeft(spell.spell_id) ? 1 : 0.3 }"
+                >
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div 
+                  class="class-levels-grid" 
+                  :ref="`classGrid${spell.spell_id}`" 
+                  @scroll="updateScrollState(spell.spell_id)"
+                  @wheel="handleWheelScroll($event, spell.spell_id)"
+                >
+                  <template v-for="(level, className) in getOrderedClassLevels(spell)" :key="className">
+                    <div 
+                      v-if="level && level !== 255"
+                      :class="[
+                        'class-level', 
+                        'available',
+                        { 'selected-class': className === (selectedClass || selectedMatrixClass) }
+                      ]"
+                      :style="getClassCardWidthStyle(spell)"
+                      :title="`${getClassAbbreviation(className)}: Level ${level}`"
+                    >
+                      <img 
+                        :src="`/icons/${className}.gif`" 
+                        :alt="`${className} icon`"
+                        class="class-icon"
+                        @error="handleIconError"
+                      />
+                      <span class="class-abbrev">{{ getClassAbbreviation(className) }}</span>
+                      <span class="class-level-value">lvl {{ level }}</span>
+                    </div>
+                  </template>
+                </div>
+                
+                <button 
+                  v-if="getValidClasses(spell).length > 3"
+                  @click.stop="scrollClassCards(spell.spell_id, 'right')"
+                  class="class-scroll-arrow class-scroll-right"
+                  :style="{ opacity: canScrollRight(spell.spell_id) ? 1 : 0.3 }"
+                >
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -542,6 +672,7 @@
 import axios from 'axios'
 import { API_BASE_URL } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
+import { toastService } from '../services/toastService'
 
 export default {
   name: 'Spells',
@@ -581,6 +712,7 @@ export default {
       matrixLevels: [],
       selectedLevel: null,
       selectedLevelRange: null,
+      isMatrixSearch: false, // Flag to track if search came from matrix selector
       
       // Drag selection state
       isDragging: false,
@@ -606,6 +738,31 @@ export default {
         'necromancer', 'wizard', 'magician', 'enchanter', 
         'beastlord', 'berserker'
       ]
+    },
+    
+    // Group spells by level for matrix search display
+    spellsByLevel() {
+      if (!this.isMatrixSearch || !this.selectedMatrixClass || !this.searchResults.length) {
+        return []
+      }
+      
+      const groups = new Map()
+      
+      this.searchResults.forEach(spell => {
+        // Find the level for the selected matrix class
+        const classLevel = this.getSpellLevelForClass(spell, this.selectedMatrixClass)
+        if (classLevel !== null) {
+          if (!groups.has(classLevel)) {
+            groups.set(classLevel, [])
+          }
+          groups.get(classLevel).push(spell)
+        }
+      })
+      
+      // Convert to sorted array of level groups
+      return Array.from(groups.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([level, spells]) => ({ level, spells }))
     }
   },
   
@@ -614,6 +771,13 @@ export default {
       if (!this.searchQuery.trim() && !this.hasActiveFilters()) {
         this.showToast('Search Required', 'Please enter a search term or apply filters', 'warning')
         return
+      }
+      
+      // Clear matrix search flag only if this is NOT a matrix search
+      // (isMatrixSearch will already be set to true by searchByClassLevel before calling performSearch)
+      if (page === 1 && !this.isMatrixSearch) {
+        // Only reset flag for regular searches, not matrix searches
+        this.isMatrixSearch = false
       }
       
       this.searching = true
@@ -747,6 +911,10 @@ export default {
       this.maxLevel = ''
       this.selectedSkill = ''
       this.currentPage = 1
+      this.isMatrixSearch = false
+      
+      // Reset spell matrix to class selection
+      this.resetMatrix()
       
       // Perform search again if we had results
       if (this.searchQuery.trim()) {
@@ -975,6 +1143,26 @@ export default {
       }
       return fullNames[className.toLowerCase()] || className
     },
+    
+    getSpellLevelForClass(spell, className) {
+      // Find the level for a specific class in the spell's class levels
+      const classKey = `${className}_level`
+      
+      // Also check the class_levels object if it exists
+      if (spell.class_levels && spell.class_levels[className]) {
+        const level = spell.class_levels[className]
+        if (level > 0 && level <= 255) {
+          return level
+        }
+      }
+      
+      // Fallback to the direct property approach
+      if (spell[classKey] && spell[classKey] > 0 && spell[classKey] <= 255) {
+        return spell[classKey]
+      }
+      
+      return null
+    },
 
     getTargetType(targetType) {
       const types = {
@@ -1048,6 +1236,46 @@ export default {
         }
       })
       return validClasses
+    },
+
+    getOrderedClassLevels(spell) {
+      if (!spell || !spell.class_levels) return {}
+      
+      const classLevels = { ...spell.class_levels }
+      const selectedClass = this.selectedClass || this.selectedMatrixClass
+      
+      if (!selectedClass) {
+        // No selected class, return original order
+        return classLevels
+      }
+      
+      // Create ordered object with selected class first
+      const orderedLevels = {}
+      
+      // Add selected class first if it exists and has a valid level
+      if (classLevels[selectedClass] && classLevels[selectedClass] !== 255) {
+        orderedLevels[selectedClass] = classLevels[selectedClass]
+      }
+      
+      // Add all other classes in their original order
+      Object.entries(classLevels).forEach(([className, level]) => {
+        if (className !== selectedClass && level && level !== 255) {
+          orderedLevels[className] = level
+        }
+      })
+      
+      return orderedLevels
+    },
+
+    getClassCardWidthStyle(spell) {
+      // Return consistent sizing for all class cards - no dynamic resizing
+      // This maintains the proportions seen in "Minor Healing" spell
+      return {
+        minWidth: '110px',
+        width: '110px',
+        maxWidth: '110px',
+        flex: '0 0 110px'
+      }
     },
 
     scrollClassCards(spellId, direction) {
@@ -1189,6 +1417,7 @@ export default {
       this.isDragging = false
       this.dragStartLevel = null
       this.dragCurrentLevel = null
+      this.isMatrixSearch = false
     },
 
     generateLevelMatrix() {
@@ -1198,6 +1427,17 @@ export default {
         levels.push(i)
       }
       this.matrixLevels = levels
+    },
+
+    scrollToTopOfResults() {
+      // Scroll to the top of the search results section
+      const resultsSection = document.querySelector('.results-section')
+      if (resultsSection) {
+        resultsSection.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'start'
+        })
+      }
     },
 
     async searchByClassLevel(className, minLevel, maxLevel = null) {
@@ -1216,6 +1456,9 @@ export default {
         this.selectedLevel = minLevel
         this.selectedLevelRange = null
       }
+      
+      // Mark this as a matrix search
+      this.isMatrixSearch = true
       
       // Use the regular search method
       await this.performSearch(1)
@@ -1348,6 +1591,21 @@ export default {
         case 'info': return 'fa-info-circle'
         default: return 'fa-info-circle'
       }
+    },
+
+    // Timeout handlers for loading modals
+    onSearchTimeout() {
+      console.warn('Spell search request timed out')
+      this.searching = false
+      this.searchPerformed = true
+      this.searchResults = []
+      toastService.warning('Search request timed out. Please try again with different criteria.')
+    },
+
+    onPaginationTimeout() {
+      console.warn('Spell pagination request timed out')
+      this.paginating = false
+      toastService.warning('Pagination request timed out. Please try again.')
     }
   },
 
@@ -2300,8 +2558,9 @@ export default {
   border-left: 1px solid rgba(102, 126, 234, 0.2);
   padding-left: 20px;
   position: relative;
-  flex-shrink: 0;
-  width: 400px;
+  flex: 1;
+  min-width: 400px;
+  max-width: 600px;
   overflow: hidden;
 }
 
@@ -2336,7 +2595,7 @@ export default {
   -ms-overflow-style: none;
   flex: 1;
   padding: 4px 0;
-  width: 320px;
+  min-width: 320px;
 }
 
 .class-levels-grid::-webkit-scrollbar {
@@ -2392,14 +2651,12 @@ export default {
   border: 1px solid rgba(102, 126, 234, 0.3);
   font-size: 1em;
   transition: all 0.3s ease;
-  min-width: 110px;
-  width: 110px;
   min-height: 120px;
   position: relative;
   overflow: hidden;
   backdrop-filter: blur(10px);
   justify-content: center;
-  flex-shrink: 0;
+  /* Dynamic sizing will be controlled via inline styles */
 }
 
 .class-level.available {
@@ -2430,6 +2687,54 @@ export default {
 
 .class-level:hover.available::before {
   opacity: 1;
+}
+
+/* Selected class highlighting */
+.class-level.selected-class {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25) 0%, rgba(255, 165, 0, 0.25) 100%) !important;
+  border: 2px solid rgba(255, 215, 0, 0.6) !important;
+  box-shadow: 0 4px 16px rgba(255, 215, 0, 0.4), 
+              0 0 0 1px rgba(255, 215, 0, 0.2) inset !important;
+  transform: scale(1.05);
+  z-index: 10;
+  position: relative;
+}
+
+.class-level.selected-class::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 165, 0, 0.3) 100%);
+  border-radius: 18px;
+  z-index: -1;
+  animation: selectedClassGlow 2s ease-in-out infinite alternate;
+}
+
+.class-level.selected-class .class-abbrev,
+.class-level.selected-class .class-level-value {
+  color: #fff !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  font-weight: 700;
+}
+
+.class-level.selected-class:hover {
+  transform: scale(1.08) translateY(-2px) !important;
+  box-shadow: 0 8px 24px rgba(255, 215, 0, 0.5), 
+              0 0 0 1px rgba(255, 215, 0, 0.3) inset !important;
+}
+
+@keyframes selectedClassGlow {
+  0% {
+    opacity: 0.6;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  }
+  100% {
+    opacity: 0.8;
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+  }
 }
 
 .class-icon {
@@ -2537,11 +2842,181 @@ export default {
   text-align: center;
 }
 
+/* Level Separator Styles for Matrix Search */
+.matrix-spell-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.level-group {
+  margin-bottom: 20px;
+}
+
+.level-separator {
+  display: flex;
+  align-items: center;
+  margin: 30px 0 20px 0;
+  gap: 20px;
+}
+
+.level-separator-line {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(102, 126, 234, 0.6) 25%, 
+    rgba(102, 126, 234, 0.8) 50%, 
+    rgba(102, 126, 234, 0.6) 75%, 
+    transparent 100%);
+  position: relative;
+}
+
+.level-separator-line::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.3) 25%, 
+    rgba(255, 255, 255, 0.5) 50%, 
+    rgba(255, 255, 255, 0.3) 75%, 
+    transparent 100%);
+}
+
+.level-separator-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  padding: 12px 24px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  position: relative;
+  min-width: 200px;
+  gap: 16px;
+}
+
+.level-separator-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+  border-radius: 16px 16px 0 0;
+}
+
+.level-separator-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.level-separator-text {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f7fafc;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  line-height: 1.2;
+}
+
+.level-separator-count {
+  font-size: 0.85rem;
+  color: #a0aec0;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.level-separator-to-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+  border: 1px solid rgba(102, 126, 234, 0.4);
+  border-radius: 12px;
+  padding: 8px 12px;
+  color: #f7fafc;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.level-separator-to-top:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.35) 0%, rgba(118, 75, 162, 0.35) 100%);
+  border-color: rgba(102, 126, 234, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.level-separator-to-top:active {
+  transform: translateY(0);
+}
+
+.level-separator-to-top i {
+  font-size: 0.9rem;
+}
+
+.to-top-text {
+  white-space: nowrap;
+}
+
 
 /* Responsive design */
 @media (max-width: 1024px) {
   .spell-results.list .spell-details {
     grid-template-columns: 1fr 1fr;
+  }
+  
+  .spell-class-levels {
+    min-width: 350px;
+    max-width: 500px;
+  }
+  
+  /* Responsive level separators */
+  .level-separator {
+    margin: 20px 0 15px 0;
+    gap: 15px;
+  }
+  
+  .level-separator-content {
+    padding: 10px 20px;
+    min-width: 180px;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .level-separator-text {
+    font-size: 1rem;
+  }
+  
+  .level-separator-count {
+    font-size: 0.8rem;
+  }
+  
+  .level-separator-to-top {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+  
+  .to-top-text {
+    display: none;
+  }
+  
+  .level-separator-to-top i {
+    font-size: 0.85rem;
   }
 }
 
@@ -2594,6 +3069,16 @@ export default {
   .spell-results.list .spell-card {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .spell-class-levels {
+    min-width: 280px;
+    max-width: 100%;
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid rgba(102, 126, 234, 0.2);
+    padding-top: 20px;
+    margin-top: 20px;
   }
   
   .results-header {

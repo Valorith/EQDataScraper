@@ -233,11 +233,15 @@
     <LoadingModal 
       :visible="searching && !paginating"
       text="Searching"
+      :timeoutMs="15000"
+      @timeout="onSearchTimeout"
     />
     <!-- Pagination Loading Modal -->
     <LoadingModal 
       :visible="paginating"
       text="Loading"
+      :timeoutMs="10000"
+      @timeout="onPaginationTimeout"
     />
     <!-- Drop Sources Loading Modal -->
     <LoadingModal 
@@ -245,6 +249,8 @@
       text="Loading drop sources..."
       :randomClassIcon="true"
       :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onDropSourcesTimeout"
     />
     <!-- Merchant Sources Loading Modal -->
     <LoadingModal 
@@ -252,6 +258,65 @@
       text="Loading merchant sources..."
       :randomClassIcon="true"
       :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onMerchantSourcesTimeout"
+    />
+    
+    <LoadingModal 
+      :visible="loadingGroundSpawns"
+      text="Loading ground spawns..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onGroundSpawnsTimeout"
+    />
+    
+    <LoadingModal 
+      :visible="loadingForageSources"
+      text="Loading forage sources..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onForageSourcesTimeout"
+    />
+    
+    <LoadingModal 
+      :visible="loadingTradeskillRecipes"
+      text="Loading tradeskill recipes..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onTradeskillRecipesTimeout"
+    />
+
+    <!-- Created By Recipes Loading Modal -->
+    <LoadingModal 
+      :visible="loadingCreatedByRecipes"
+      text="Loading creation recipes..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onCreatedByRecipesTimeout"
+    />
+
+    <!-- Recipe Details Loading Modal -->
+    <LoadingModal 
+      :visible="loadingRecipeDetails"
+      text="Loading recipe details..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onRecipeDetailsTimeout"
+    />
+
+    <!-- Item Modal Loading Modal -->
+    <LoadingModal 
+      :visible="loadingItemModal"
+      text="Loading item details..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onItemModalTimeout"
     />
 
     <!-- Search Results Section -->
@@ -562,7 +627,7 @@
     </div>
 
     <!-- Item Details Modal -->
-    <div v-if="selectedItemDetail" class="modal-overlay" @click="closeItemModal">
+    <div v-if="selectedItemDetail && !loadingItemModal" class="modal-overlay" @click="closeItemModal">
       <div class="modal-content item-modal" @click.stop>
         <div class="modal-header">
           <div class="modal-header-content">
@@ -745,9 +810,9 @@
             </div>
             
             <!-- Drop Sources Section -->
-            <div class="detail-section drop-sources-section">
+            <div v-if="shouldShowDropSources" class="detail-section drop-sources-section">
               <div class="drop-sources-header">
-                <h4>Where does this drop?</h4>
+                <h4>Where does this drop?<span v-if="itemDataAvailability && itemDataAvailability.drop_sources > 0"> ({{ itemDataAvailability.drop_sources }} NPCs)</span></h4>
                 <button 
                   v-if="!dropSourcesRequested"
                   @click="loadDropSources" 
@@ -762,7 +827,23 @@
               <div v-if="dropSources && !loadingDropSources" class="drop-sources-results">
                 <div v-if="dropSources.length === 0" class="no-drop-sources">
                   <i class="fas fa-exclamation-circle"></i>
-                  <span>No drop sources found for this item</span>
+                  <div class="no-sources-content">
+                    <span v-if="itemDataAvailability && itemDataAvailability.drop_sources > 0">
+                      Drop sources may be temporarily unavailable. Please try again later.
+                    </span>
+                    <span v-else>
+                      No drop sources found for this item
+                    </span>
+                    <button 
+                      v-if="itemDataAvailability && itemDataAvailability.drop_sources > 0"
+                      @click="retryDropSources"
+                      class="retry-button"
+                      title="Try loading drop sources again"
+                    >
+                      <i class="fas fa-redo"></i>
+                      Retry
+                    </button>
+                  </div>
                 </div>
                 
                 <div v-else class="zones-list">
@@ -785,9 +866,9 @@
             </div>
             
             <!-- Merchant Sources Section -->
-            <div class="detail-section merchant-sources-section">
+            <div v-if="shouldShowMerchantSources" class="detail-section merchant-sources-section">
               <div class="merchant-sources-header">
-                <h4>Where can this be bought?</h4>
+                <h4>Where can this be bought?<span v-if="itemDataAvailability && itemDataAvailability.merchant_sources > 0"> ({{ itemDataAvailability.merchant_sources }} merchants)</span></h4>
                 <button 
                   v-if="!merchantSourcesRequested"
                   @click="loadMerchantSources" 
@@ -816,8 +897,204 @@
                     <div class="merchants-list">
                       <div v-for="merchant in zone.merchants" :key="merchant.npc_id" class="merchant-item">
                         <span class="merchant-name">{{ merchant.npc_name }}</span>
-                        <span v-if="merchant.pricing_info" class="merchant-pricing">{{ merchant.pricing_info }}</span>
-                        <span v-else class="merchant-type">{{ merchant.merchant_type }}</span>
+                        <div class="merchant-pricing">
+                          <span v-if="merchant.merchant_type === 'ldon_merchant'" class="adventure-points">
+                            {{ merchant.pricing_info }}
+                          </span>
+                          <div v-else-if="merchant.price_coins" class="coin-display">
+                            <span v-if="merchant.price_coins.platinum > 0" class="coin platinum">
+                              <img src="/icons/coins/platinum.svg" alt="Platinum" class="coin-icon">
+                              {{ merchant.price_coins.platinum }}
+                            </span>
+                            <span v-if="merchant.price_coins.gold > 0" class="coin gold">
+                              <img src="/icons/coins/gold.svg" alt="Gold" class="coin-icon">
+                              {{ merchant.price_coins.gold }}
+                            </span>
+                            <span v-if="merchant.price_coins.silver > 0" class="coin silver">
+                              <img src="/icons/coins/silver.svg" alt="Silver" class="coin-icon">
+                              {{ merchant.price_coins.silver }}
+                            </span>
+                            <span v-if="merchant.price_coins.bronze > 0" class="coin bronze">
+                              <img src="/icons/coins/bronze.svg" alt="Bronze" class="coin-icon">
+                              {{ merchant.price_coins.bronze }}
+                            </span>
+                            <span v-if="merchant.price_copper === 0" class="free-item">Free</span>
+                          </div>
+                          <span v-else class="merchant-type">{{ merchant.merchant_type }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Ground Spawns Section -->
+            <div v-if="shouldShowGroundSpawns" class="detail-section ground-spawns-section">
+              <div class="ground-spawns-header">
+                <h4>
+                  <i class="fas fa-map-marker-alt"></i>
+                  Ground Spawns<span v-if="itemDataAvailability && itemDataAvailability.ground_spawns > 0"> ({{ itemDataAvailability.ground_spawns }} locations)</span>
+                </h4>
+                <button 
+                  v-if="!groundSpawns && !loadingGroundSpawns"
+                  @click="loadGroundSpawns" 
+                  class="ground-spawns-button"
+                  :disabled="loadingGroundSpawns"
+                >
+                  <i class="fas fa-search"></i>
+                  Show ground spawns
+                </button>
+              </div>
+              
+              <!-- Ground Spawns Results -->
+              <div v-if="groundSpawns && !loadingGroundSpawns" class="ground-spawns-results">
+                <div v-if="groundSpawns.length === 0" class="no-ground-spawns">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No ground spawns found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in groundSpawns" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="spawn-count">({{ zone.spawn_points.length }} locations)</span>
+                    </div>
+                    
+                    <div class="spawn-points-list">
+                      <div v-for="spawn in zone.spawn_points" :key="spawn.spawn_id" class="spawn-point-item">
+                        <span class="spawn-location">Ground spawn location</span>
+                        <span v-if="spawn.respawn_timer" class="respawn-timer">{{ spawn.respawn_timer }}s respawn</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Forage Sources Section -->
+            <div v-if="shouldShowForageSources" class="detail-section forage-sources-section">
+              <div class="forage-sources-header">
+                <h4>
+                  <i class="fas fa-leaf"></i>
+                  Forage Sources<span v-if="itemDataAvailability && itemDataAvailability.forage_sources > 0"> ({{ itemDataAvailability.forage_sources }} zones)</span>
+                </h4>
+                <button 
+                  v-if="!forageSources && !loadingForageSources"
+                  @click="loadForageSources" 
+                  class="forage-sources-button"
+                  :disabled="loadingForageSources"
+                >
+                  <i class="fas fa-search"></i>
+                  Show forage sources
+                </button>
+              </div>
+              
+              <!-- Forage Sources Results -->
+              <div v-if="forageSources && !loadingForageSources" class="forage-sources-results">
+                <div v-if="forageSources.length === 0" class="no-forage-sources">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No forage sources found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in forageSources" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="forage-count">({{ zone.forage_info.length }} locations)</span>
+                    </div>
+                    
+                    <div class="forage-info-list">
+                      <div v-for="(info, index) in zone.forage_info" :key="index" class="forage-info-item">
+                        <span class="forage-chance">{{ info.chance }}% chance</span>
+                        <span v-if="info.level" class="forage-level">Level {{ info.level }}+</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tradeskill Recipes Section -->
+            <div v-if="shouldShowTradeskillRecipes" class="detail-section tradeskill-recipes-section">
+              <div class="tradeskill-recipes-header">
+                <h4>
+                  <i class="fas fa-hammer"></i>
+                  Tradeskill Recipes<span v-if="itemDataAvailability && itemDataAvailability.tradeskill_recipes > 0"> ({{ itemDataAvailability.tradeskill_recipes }} recipes)</span>
+                </h4>
+                <button 
+                  v-if="!tradeskillRecipes && !loadingTradeskillRecipes"
+                  @click="loadTradeskillRecipes" 
+                  class="tradeskill-recipes-button"
+                  :disabled="loadingTradeskillRecipes"
+                >
+                  <i class="fas fa-search"></i>
+                  Show tradeskill recipes
+                </button>
+              </div>
+              
+              <!-- Tradeskill Recipes Results -->
+              <div v-if="tradeskillRecipes && !loadingTradeskillRecipes" class="tradeskill-recipes-results">
+                <div v-if="tradeskillRecipes.length === 0" class="no-tradeskill-recipes">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No tradeskill recipes found for this item</span>
+                </div>
+                
+                <div v-else class="skills-list">
+                  <div v-for="skill in tradeskillRecipes" :key="skill.tradeskill_id" class="skill-section">
+                    <div class="skill-header">
+                      <i class="fas fa-tools"></i>
+                      <span class="skill-name">{{ skill.tradeskill_name }}</span>
+                      <span class="recipe-count">({{ skill.recipes.length }} recipes)</span>
+                    </div>
+                    
+                    <div class="recipes-list">
+                      <div v-for="recipe in skill.recipes" :key="recipe.recipe_id" class="recipe-item">
+                        <span class="recipe-name clickable" @click="loadRecipeDetails(recipe.recipe_id)">{{ recipe.recipe_name }}</span>
+                        <span v-if="recipe.component_count > 1" class="component-count">{{ recipe.component_count }} needed</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Created by Recipes Section -->
+            <div v-if="shouldShowCreatedByRecipes" class="detail-section created-by-recipes-section">
+              <div class="created-by-recipes-header">
+                <h4>
+                  <i class="fas fa-cog"></i>
+                  Created by Recipes<span v-if="itemDataAvailability && itemDataAvailability.created_by_recipes > 0"> ({{ itemDataAvailability.created_by_recipes }} recipes)</span>
+                </h4>
+                <button 
+                  v-if="!createdByRecipes && !loadingCreatedByRecipes"
+                  @click="loadCreatedByRecipes" 
+                  class="created-by-recipes-button"
+                  :disabled="loadingCreatedByRecipes"
+                >
+                  <i class="fas fa-search"></i>
+                  Show creation recipes
+                </button>
+              </div>
+              
+              <!-- Created by Recipes Results -->
+              <div v-if="createdByRecipes && !loadingCreatedByRecipes" class="created-by-recipes-results">
+                <div v-if="createdByRecipes.length === 0" class="no-created-by-recipes">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>This item is not created by any tradeskill recipes</span>
+                </div>
+                
+                <div v-else class="creation-recipes-list">
+                  <div v-for="recipe in createdByRecipes" :key="recipe.recipe_id" class="creation-recipe-item">
+                    <div class="recipe-info">
+                      <span class="recipe-name clickable" @click="loadRecipeDetails(recipe.recipe_id)">
+                        {{ recipe.recipe_name }}
+                      </span>
+                      <div class="recipe-details">
+                        <span class="tradeskill-badge">{{ recipe.tradeskill_name }}</span>
+                        <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
                       </div>
                     </div>
                   </div>
@@ -835,12 +1112,94 @@
       </div>
     </div>
   </div>
+
+  <!-- Recipe Details Modal -->
+  <div v-if="selectedRecipe" class="modal-overlay" @click="closeRecipeDetails">
+    <div class="modal-content recipe-modal" @click.stop>
+      <div class="modal-header">
+        <h3>Recipe Details</h3>
+        <button @click="closeRecipeDetails" class="close-button">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <div class="modal-body">
+        <div v-if="selectedRecipe" class="recipe-details">
+          <!-- Recipe Header -->
+          <div class="recipe-header">
+            <h4>{{ selectedRecipe.recipe.recipe_name }}</h4>
+            <div class="recipe-info">
+              <span class="tradeskill-badge">{{ selectedRecipe.recipe.tradeskill_name }}</span>
+              <span class="trivial-level">Trivial: {{ selectedRecipe.recipe.trivial_level }}</span>
+            </div>
+          </div>
+          
+          <!-- What it Creates -->
+          <div v-if="selectedRecipe.creates && selectedRecipe.creates.length > 0" class="recipe-section creates-section">
+            <h5><i class="fas fa-magic"></i> Creates</h5>
+            <div class="items-grid">
+              <div 
+                v-for="item in selectedRecipe.creates" 
+                :key="item.item_id" 
+                :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
+              >
+                <span class="item-name">{{ item.item_name }}</span>
+                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                <span v-if="item.success_count > 1" class="item-count">x{{ item.success_count }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- What it Requires -->
+          <div v-if="selectedRecipe.requires && selectedRecipe.requires.length > 0" class="recipe-section requires-section">
+            <h5><i class="fas fa-list"></i> Required Components</h5>
+            <div class="items-grid">
+              <div 
+                v-for="item in selectedRecipe.requires" 
+                :key="item.item_id" 
+                :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
+              >
+                <span class="item-name">{{ item.item_name }}</span>
+                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                <span v-if="item.component_count > 1" class="item-count">x{{ item.component_count }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Container Items -->
+          <div v-if="selectedRecipe.containers && selectedRecipe.containers.length > 0" class="recipe-section containers-section">
+            <h5><i class="fas fa-box"></i> Container Required</h5>
+            <div class="items-grid">
+              <div 
+                v-for="item in selectedRecipe.containers" 
+                :key="item.item_id" 
+                :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
+              >
+                <span class="item-name">{{ item.item_name }}</span>
+                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Recipe Notes -->
+          <div v-if="selectedRecipe.recipe.notes" class="recipe-section notes-section">
+            <h5><i class="fas fa-sticky-note"></i> Notes</h5>
+            <div class="recipe-notes">{{ selectedRecipe.recipe.notes }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { API_BASE_URL } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
+import { toastService } from '../services/toastService'
 
 // State
 const searchQuery = ref('')
@@ -870,6 +1229,87 @@ const dropSourcesRequested = ref(false)
 const merchantSources = ref(null)
 const loadingMerchantSources = ref(false)
 const merchantSourcesRequested = ref(false)
+
+// Ground spawns state
+const groundSpawns = ref(null)
+const loadingGroundSpawns = ref(false)
+const groundSpawnsRequested = ref(false)
+
+// Forage sources state
+const forageSources = ref(null)
+const loadingForageSources = ref(false)
+const forageSourcesRequested = ref(false)
+
+// Tradeskill recipes state
+const tradeskillRecipes = ref(null)
+const loadingTradeskillRecipes = ref(false)
+const tradeskillRecipesRequested = ref(false)
+
+// Created by recipes state
+const createdByRecipes = ref(null)
+const loadingCreatedByRecipes = ref(false)
+const createdByRecipesRequested = ref(false)
+
+// Recipe details state
+const selectedRecipe = ref(null)
+const loadingRecipeDetails = ref(false)
+
+// Data availability state
+const itemDataAvailability = ref(null)
+const loadingAvailability = ref(false)
+
+// Item modal loading state - encompasses both item details and availability loading
+const loadingItemModal = ref(false)
+
+// Computed properties for section visibility - Only show when data exists
+const shouldShowDropSources = computed(() => {
+  // Show while loading
+  if (loadingAvailability.value) return false
+  
+  // Show all if availability check failed (fallback)
+  if (itemDataAvailability.value === 'failed') return true
+  
+  // Show if no availability data yet (initial state)
+  if (!itemDataAvailability.value) return false
+  
+  // Only show if data exists
+  return itemDataAvailability.value.drop_sources > 0
+})
+
+const shouldShowMerchantSources = computed(() => {
+  if (loadingAvailability.value) return false
+  if (itemDataAvailability.value === 'failed') return true
+  if (!itemDataAvailability.value) return false
+  return itemDataAvailability.value.merchant_sources > 0
+})
+
+const shouldShowGroundSpawns = computed(() => {
+  if (loadingAvailability.value) return false
+  if (itemDataAvailability.value === 'failed') return true
+  if (!itemDataAvailability.value) return false
+  return itemDataAvailability.value.ground_spawns > 0
+})
+
+const shouldShowForageSources = computed(() => {
+  if (loadingAvailability.value) return false
+  if (itemDataAvailability.value === 'failed') return true
+  if (!itemDataAvailability.value) return false
+  return itemDataAvailability.value.forage_sources > 0
+})
+
+const shouldShowTradeskillRecipes = computed(() => {
+  if (loadingAvailability.value) return false
+  if (itemDataAvailability.value === 'failed') return true
+  if (!itemDataAvailability.value) return false
+  return itemDataAvailability.value.tradeskill_recipes > 0
+})
+
+const shouldShowCreatedByRecipes = computed(() => {
+  if (loadingAvailability.value) return false
+  if (itemDataAvailability.value === 'failed') return true
+  if (!itemDataAvailability.value) return false
+  return itemDataAvailability.value.created_by_recipes > 0
+})
 
 // Advanced filtering state
 const showFilterDropdown = ref(false)
@@ -967,7 +1407,7 @@ const isFilterConfigValid = computed(() => {
 
 const performSearch = async (page = 1) => {
   if (!searchQuery.value && !selectedClass.value && !minLevel.value && !maxLevel.value && activeFilters.value.length === 0) {
-    alert('Please enter a search term or select a filter')
+    toastService.warning('Please enter a search term or select a filter')
     return
   }
 
@@ -1053,9 +1493,9 @@ const performSearch = async (page = 1) => {
   } catch (error) {
     console.error('Error searching items:', error)
     if (error.name === 'AbortError') {
-      alert('Search timed out. The query is taking too long. Try using more specific search terms.')
+      toastService.warning('Search timed out. The query is taking too long. Try using more specific search terms.')
     } else {
-      alert('Error searching items: ' + error.message)
+      toastService.error('Error searching items: ' + error.message)
     }
     items.value = []
     totalCount.value = 0
@@ -1205,6 +1645,31 @@ const cancelFilterConfig = () => {
 }
 
 const selectItem = async (item) => {
+  // Start loading modal
+  loadingItemModal.value = true
+  
+  // Clear all source states when selecting a new item
+  dropSources.value = null
+  loadingDropSources.value = false
+  dropSourcesRequested.value = false
+  merchantSources.value = null
+  loadingMerchantSources.value = false
+  merchantSourcesRequested.value = false
+  groundSpawns.value = null
+  loadingGroundSpawns.value = false
+  groundSpawnsRequested.value = false
+  forageSources.value = null
+  loadingForageSources.value = false
+  forageSourcesRequested.value = false
+  tradeskillRecipes.value = null
+  loadingTradeskillRecipes.value = false
+  tradeskillRecipesRequested.value = false
+  createdByRecipes.value = null
+  loadingCreatedByRecipes.value = false
+  createdByRecipesRequested.value = false
+  itemDataAvailability.value = null
+  loadingAvailability.value = false
+  
   try {
     const response = await fetch(`${API_BASE_URL}/api/items/${item.item_id}`)
     if (!response.ok) {
@@ -1213,9 +1678,40 @@ const selectItem = async (item) => {
     }
     const data = await response.json()
     selectedItemDetail.value = data.item
+    
+    // Load data availability after item details are loaded
+    await loadItemDataAvailability(item.item_id)
   } catch (error) {
     console.error('Error loading item details:', error)
-    alert('Error loading item details: ' + error.message)
+    toastService.error('Error loading item details: ' + error.message)
+  } finally {
+    // Stop loading modal only after both item details and availability are loaded
+    loadingItemModal.value = false
+  }
+}
+
+const loadItemDataAvailability = async (itemId) => {
+  if (!itemId) return
+  
+  loadingAvailability.value = true
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${itemId}/availability`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    itemDataAvailability.value = data
+    
+  } catch (error) {
+    console.error('Error loading item data availability:', error)
+    // Fallback: Set to 'failed' state so we can show all buttons
+    itemDataAvailability.value = 'failed'
+  } finally {
+    loadingAvailability.value = false
   }
 }
 
@@ -1229,6 +1725,27 @@ const closeItemModal = () => {
   merchantSources.value = null
   loadingMerchantSources.value = false
   merchantSourcesRequested.value = false
+  // Clear ground spawns when closing modal
+  groundSpawns.value = null
+  loadingGroundSpawns.value = false
+  groundSpawnsRequested.value = false
+  // Clear forage sources when closing modal
+  forageSources.value = null
+  loadingForageSources.value = false
+  forageSourcesRequested.value = false
+  // Clear tradeskill recipes when closing modal
+  tradeskillRecipes.value = null
+  loadingTradeskillRecipes.value = false
+  tradeskillRecipesRequested.value = false
+  // Clear created by recipes when closing modal
+  createdByRecipes.value = null
+  loadingCreatedByRecipes.value = false
+  createdByRecipesRequested.value = false
+  // Clear availability data when closing modal
+  itemDataAvailability.value = null
+  loadingAvailability.value = false
+  // Clear item modal loading state
+  loadingItemModal.value = false
 }
 
 const loadDropSources = async () => {
@@ -1254,8 +1771,9 @@ const loadDropSources = async () => {
     
   } catch (error) {
     console.error('Error loading drop sources:', error)
-    alert('Error loading drop sources: ' + error.message)
+    toastService.error('Error loading drop sources: ' + error.message)
     dropSources.value = []
+    dropSourcesRequested.value = false // Reset to allow retry
   } finally {
     // Ensure loading modal shows for minimum 1 second
     const elapsedTime = Date.now() - startTime
@@ -1268,6 +1786,13 @@ const loadDropSources = async () => {
     
     loadingDropSources.value = false
   }
+}
+
+const retryDropSources = async () => {
+  // Reset the state and try again
+  dropSources.value = null
+  dropSourcesRequested.value = false
+  await loadDropSources()
 }
 
 const loadMerchantSources = async () => {
@@ -1293,8 +1818,9 @@ const loadMerchantSources = async () => {
     
   } catch (error) {
     console.error('Error loading merchant sources:', error)
-    alert('Error loading merchant sources: ' + error.message)
+    toastService.error('Error loading merchant sources: ' + error.message)
     merchantSources.value = []
+    merchantSourcesRequested.value = false // Reset to allow retry
   } finally {
     // Ensure loading modal shows for minimum 1 second
     const elapsedTime = Date.now() - startTime
@@ -1307,6 +1833,276 @@ const loadMerchantSources = async () => {
     
     loadingMerchantSources.value = false
   }
+}
+
+const loadGroundSpawns = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  groundSpawnsRequested.value = true
+  loadingGroundSpawns.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/ground-spawns`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    groundSpawns.value = data.zones || []
+    
+  } catch (error) {
+    console.error('Error loading ground spawns:', error)
+    toastService.error('Error loading ground spawns: ' + error.message)
+    groundSpawns.value = null // Reset to null to allow retry (uses !groundSpawns condition)
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingGroundSpawns.value = false
+  }
+}
+
+const loadForageSources = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  forageSourcesRequested.value = true
+  loadingForageSources.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/forage-sources`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    forageSources.value = data.zones || []
+    
+  } catch (error) {
+    console.error('Error loading forage sources:', error)
+    toastService.error('Error loading forage sources: ' + error.message)
+    forageSources.value = null // Reset to null to allow retry (uses !forageSources condition)
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingForageSources.value = false
+  }
+}
+
+const loadTradeskillRecipes = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  tradeskillRecipesRequested.value = true
+  loadingTradeskillRecipes.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/tradeskill-recipes`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    tradeskillRecipes.value = data.skills || []
+    
+  } catch (error) {
+    console.error('Error loading tradeskill recipes:', error)
+    toastService.error('Error loading tradeskill recipes: ' + error.message)
+    tradeskillRecipes.value = null // Reset to null to allow retry (uses !tradeskillRecipes condition)
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingTradeskillRecipes.value = false
+  }
+}
+
+const loadCreatedByRecipes = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  createdByRecipesRequested.value = true
+  loadingCreatedByRecipes.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/created-by-recipes`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    createdByRecipes.value = data.recipes || []
+    
+  } catch (error) {
+    console.error('Error loading created by recipes:', error)
+    toastService.error('Error loading created by recipes: ' + error.message)
+    createdByRecipes.value = null // Reset to null to allow retry
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingCreatedByRecipes.value = false
+  }
+}
+
+// Timeout handlers for loading modals
+const onDropSourcesTimeout = () => {
+  console.warn('Drop sources loading timed out')
+  loadingDropSources.value = false
+  dropSources.value = []
+  dropSourcesRequested.value = false // Reset to show button again
+  toastService.warning('Request timed out while loading drop sources. Please try again.')
+}
+
+const onMerchantSourcesTimeout = () => {
+  console.warn('Merchant sources loading timed out')
+  loadingMerchantSources.value = false
+  merchantSources.value = []
+  merchantSourcesRequested.value = false // Reset to show button again
+  toastService.warning('Request timed out while loading merchant sources. Please try again.')
+}
+
+const onGroundSpawnsTimeout = () => {
+  console.warn('Ground spawns loading timed out')
+  loadingGroundSpawns.value = false
+  groundSpawns.value = null // Reset to null to show button again (uses !groundSpawns condition)
+  toastService.warning('Request timed out while loading ground spawns. Please try again.')
+}
+
+const onForageSourcesTimeout = () => {
+  console.warn('Forage sources loading timed out')
+  loadingForageSources.value = false
+  forageSources.value = null // Reset to null to show button again (uses !forageSources condition)
+  toastService.warning('Request timed out while loading forage sources. Please try again.')
+}
+
+const onTradeskillRecipesTimeout = () => {
+  console.warn('Tradeskill recipes loading timed out')
+  loadingTradeskillRecipes.value = false
+  tradeskillRecipes.value = null // Reset to null to show button again (uses !tradeskillRecipes condition)
+  toastService.warning('Request timed out while loading tradeskill recipes. Please try again.')
+}
+
+const onCreatedByRecipesTimeout = () => {
+  console.warn('Created by recipes loading timed out')
+  loadingCreatedByRecipes.value = false
+  createdByRecipes.value = null // Reset to null to show button again (uses !createdByRecipes condition)
+  toastService.warning('Request timed out while loading creation recipes. Please try again.')
+}
+
+const onRecipeDetailsTimeout = () => {
+  console.warn('Recipe details loading timed out')
+  loadingRecipeDetails.value = false
+  selectedRecipe.value = null
+  toastService.warning('Request timed out while loading recipe details. Please try again.')
+}
+
+const onItemModalTimeout = () => {
+  console.warn('Item modal loading timed out')
+  loadingItemModal.value = false
+  selectedItemDetail.value = null
+  toastService.warning('Request timed out while loading item details. Please try again.')
+}
+
+const loadRecipeDetails = async (recipeId) => {
+  if (!recipeId) return
+  
+  loadingRecipeDetails.value = true
+  
+  // Track start time for minimum display duration
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/recipes/${recipeId}`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    selectedRecipe.value = data
+    
+  } catch (error) {
+    console.error('Error loading recipe details:', error)
+    toastService.error('Error loading recipe details: ' + error.message)
+  } finally {
+    // Ensure loading modal shows for minimum 1 second
+    const elapsedTime = Date.now() - startTime
+    const minDisplayTime = 1000 // 1 second
+    const remainingTime = Math.max(0, minDisplayTime - elapsedTime)
+    
+    if (remainingTime > 0) {
+      await new Promise(resolve => setTimeout(resolve, remainingTime))
+    }
+    
+    loadingRecipeDetails.value = false
+  }
+}
+
+const closeRecipeDetails = () => {
+  selectedRecipe.value = null
+  loadingRecipeDetails.value = false
+}
+
+const onSearchTimeout = () => {
+  console.warn('Search request timed out')
+  searching.value = false
+  searchPerformed.value = true
+  items.value = []
+  toastService.warning('Search request timed out. Please try again with different criteria.')
+}
+
+const onPaginationTimeout = () => {
+  console.warn('Pagination request timed out')
+  paginating.value = false
+  toastService.warning('Pagination request timed out. Please try again.')
 }
 
 const hasStats = (item) => {
@@ -2855,6 +3651,28 @@ const handleClickOutside = (event) => {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.close-button {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  color: #f7fafc;
+  background: rgba(255, 255, 255, 0.1);
+  transform: rotate(90deg);
+}
+
 .modal-body {
   padding: 30px;
 }
@@ -3396,6 +4214,41 @@ const handleClickOutside = (event) => {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.no-sources-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  align-self: flex-start;
+}
+
+.retry-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.retry-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .zones-list {
   display: flex;
   flex-direction: column;
@@ -3570,5 +4423,684 @@ const handleClickOutside = (event) => {
   color: #9ca3af;
   font-size: 0.85rem;
   font-style: italic;
+}
+
+/* Coin Display Styles */
+.coin-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.coin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.coin-icon {
+  width: 16px;
+  height: 16px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.coin.platinum {
+  color: #e5e7eb;
+}
+
+.coin.gold {
+  color: #fbbf24;
+}
+
+.coin.silver {
+  color: #d1d5db;
+}
+
+.coin.bronze {
+  color: #cd7c2f;
+}
+
+.adventure-points {
+  color: #8b5cf6;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(139, 92, 246, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.free-item {
+  color: #10b981;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(16, 185, 129, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Ground Spawns Section */
+.ground-spawns-section {
+  margin-top: 20px;
+}
+
+.ground-spawns-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.ground-spawns-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.ground-spawns-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.ground-spawns-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.ground-spawns-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ground-spawns-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-ground-spawns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.spawn-count {
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  font-weight: normal;
+}
+
+.spawn-points-list {
+  padding: 8px;
+}
+
+.spawn-point-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.spawn-point-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.spawn-location {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.respawn-timer {
+  color: #10b981;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(16, 185, 129, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Forage Sources Section */
+.forage-sources-section {
+  margin-top: 20px;
+}
+
+.forage-sources-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.forage-sources-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.forage-sources-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #8b5a2b 0%, #654422 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(139, 90, 43, 0.3);
+}
+
+.forage-sources-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 90, 43, 0.4);
+}
+
+.forage-sources-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.forage-sources-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-forage-sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.forage-count {
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  font-weight: normal;
+}
+
+.forage-info-list {
+  padding: 8px;
+}
+
+.forage-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.forage-info-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.forage-chance {
+  color: #8b5a2b;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.forage-level {
+  color: #94a3b8;
+  font-weight: 500;
+  font-size: 0.85rem;
+  background: rgba(148, 163, 184, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Tradeskill Recipes Section */
+.tradeskill-recipes-section {
+  margin-top: 20px;
+}
+
+.tradeskill-recipes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.tradeskill-recipes-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.tradeskill-recipes-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
+.tradeskill-recipes-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
+}
+
+.tradeskill-recipes-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.tradeskill-recipes-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-tradeskill-recipes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.skills-list {
+  padding: 0;
+}
+
+.skill-section {
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.skill-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(124, 58, 237, 0.1);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.skill-name {
+  color: #c4b5fd;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.recipe-count {
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  font-weight: normal;
+}
+
+.recipes-list {
+  padding: 8px;
+}
+
+.recipe-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.recipe-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.recipe-name {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.recipe-name.clickable {
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.recipe-name.clickable:hover {
+  color: #a78bfa;
+  text-decoration: underline;
+}
+
+.component-count {
+  color: #7c3aed;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(124, 58, 237, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Recipe Modal Styles */
+.recipe-modal {
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.recipe-details {
+  padding: 0;
+}
+
+.recipe-header {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recipe-header h4 {
+  color: #f7fafc;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+}
+
+.recipe-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tradeskill-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.trivial-level {
+  color: #9ca3af;
+  font-size: 0.9rem;
+}
+
+.recipe-section {
+  margin-bottom: 30px;
+}
+
+.recipe-section h5 {
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recipe-section h5 i {
+  color: #a78bfa;
+}
+
+.creates-section h5 i {
+  color: #34d399;
+}
+
+.requires-section h5 i {
+  color: #fbbf24;
+}
+
+.containers-section h5 i {
+  color: #60a5fa;
+}
+
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.recipe-section .recipe-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.recipe-section .recipe-item.clickable {
+  cursor: pointer;
+}
+
+.recipe-section .recipe-item.clickable:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(167, 139, 250, 0.4);
+  transform: translateY(-1px);
+}
+
+.recipe-section .item-name {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.recipe-section .item-count {
+  color: #a78bfa;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(167, 139, 250, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Undiscovered item styles */
+.recipe-section .recipe-item.undiscovered {
+  opacity: 0.6;
+  border-color: rgba(255, 255, 255, 0.05);
+  cursor: not-allowed;
+}
+
+.recipe-section .recipe-item.undiscovered .item-name {
+  color: #9ca3af;
+}
+
+.recipe-section .recipe-item.undiscovered:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.05);
+  transform: none;
+}
+
+.undiscovered-badge {
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 0.8rem;
+  background: rgba(239, 68, 68, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.recipe-notes {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  color: #cbd5e0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Loading container for recipe modal */
+.loading-container {
+  position: relative;
+  min-height: 200px;
+}
+
+/* Created by Recipes Section Styles */
+.created-by-recipes-section {
+  margin-top: 20px;
+}
+
+.created-by-recipes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.created-by-recipes-button {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.created-by-recipes-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
+}
+
+.created-by-recipes-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.created-by-recipes-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.no-created-by-recipes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.creation-recipes-list {
+  padding: 0;
+}
+
+.creation-recipe-item {
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.creation-recipe-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(167, 139, 250, 0.4);
+  transform: translateY(-1px);
+}
+
+.creation-recipe-item .recipe-info {
+  padding: 12px 16px;
+}
+
+.creation-recipe-item .recipe-name {
+  color: #e2e8f0;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.creation-recipe-item .recipe-name:hover {
+  color: #a78bfa;
+  text-decoration: underline;
+}
+
+.creation-recipe-item .recipe-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.creation-recipe-item .tradeskill-badge {
+  background: rgba(124, 58, 237, 0.2);
+  color: #c4b5fd;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+}
+
+.creation-recipe-item .trivial-level {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 </style>

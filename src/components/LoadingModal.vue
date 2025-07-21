@@ -14,7 +14,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   visible: {
@@ -40,8 +40,14 @@ const props = defineProps({
   randomClassIcon: {
     type: Boolean,
     default: true
+  },
+  timeoutMs: {
+    type: Number,
+    default: 10000 // 10 seconds default timeout
   }
 })
+
+const emit = defineEmits(['timeout'])
 
 // EverQuest classes for loading icons
 const classNames = [
@@ -64,11 +70,28 @@ const classNames = [
 ]
 
 const currentIcon = ref('')
+const timeoutId = ref(null)
 
 // Select a random class icon when component becomes visible
+// Also handle timeout logic
 watch(() => props.visible, (newVal) => {
   if (newVal && props.randomClassIcon && !props.customIcon) {
     currentIcon.value = classNames[Math.floor(Math.random() * classNames.length)]
+  }
+  
+  // Handle timeout
+  if (newVal) {
+    // Start timeout when modal becomes visible
+    timeoutId.value = setTimeout(() => {
+      console.warn(`LoadingModal timeout reached after ${props.timeoutMs}ms`)
+      emit('timeout')
+    }, props.timeoutMs)
+  } else {
+    // Clear timeout when modal is hidden
+    if (timeoutId.value) {
+      clearTimeout(timeoutId.value)
+      timeoutId.value = null
+    }
   }
 })
 
@@ -90,6 +113,14 @@ const handleIconError = (event) => {
   // Fallback to a default icon if the class icon fails to load
   event.target.style.display = 'none'
 }
+
+// Cleanup timeout on component unmount
+onUnmounted(() => {
+  if (timeoutId.value) {
+    clearTimeout(timeoutId.value)
+    timeoutId.value = null
+  }
+})
 </script>
 
 <style scoped>
