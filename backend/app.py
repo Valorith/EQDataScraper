@@ -3918,18 +3918,27 @@ if __name__ == '__main__':
         initialize_database_connection()  # Auth database
         
         # Initialize content database only if configured
-        if config.get('production_database_url') or os.environ.get('EQEMU_DATABASE_URL'):
-            try:
-                from utils.content_db_manager import initialize_content_database
-                logger.info("Initializing content database...")
-                if initialize_content_database():
-                    logger.info("✅ Content database initialized successfully")
-                else:
-                    logger.warning("⚠️ Content database initialization failed - will retry on first request")
-            except Exception as e:
-                logger.error(f"Error initializing content database: {e}")
-        else:
-            logger.info("⚠️ No content database configured - skipping initialization")
+        # Check both persistent config and environment variables for database configuration
+        try:
+            from utils.persistent_config import get_persistent_config
+            persistent_config = get_persistent_config()
+            db_config = persistent_config.get_database_config()
+            
+            if db_config or os.environ.get('EQEMU_DATABASE_URL'):
+                try:
+                    from utils.content_db_manager import initialize_content_database
+                    logger.info("Initializing content database...")
+                    if initialize_content_database():
+                        logger.info("✅ Content database initialized successfully")
+                    else:
+                        logger.warning("⚠️ Content database initialization failed - will retry on first request")
+                except Exception as e:
+                    logger.error(f"Error initializing content database: {e}")
+            else:
+                logger.info("⚠️ No content database configured - skipping initialization")
+        except Exception as e:
+            logger.error(f"Error checking database configuration: {e}")
+            logger.info("⚠️ Database initialization skipped due to configuration error")
     
     # Spell system disabled - skipping spell data preloading
     logger.info("🚫 Spell system disabled - skipping startup spell data preload")

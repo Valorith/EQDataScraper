@@ -60,16 +60,7 @@ class ContentDatabaseManager:
         return sanitized
         
     def _load_database_config(self) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """Load and sanitize database configuration."""
-        # First validate configuration
-        validation_result = validate_database_config()
-        self._last_validation_result = validation_result
-        
-        if not validation_result['valid']:
-            logger.error(f"Database configuration validation failed: {validation_result['errors']}")
-            for error in validation_result['errors']:
-                logger.error(f"  - {error['field']}: {error['message']}")
-                
+        """Load and sanitize database configuration with Railway restart handling."""
         config_manager = get_persistent_config()
         config = config_manager.get_database_config()
         
@@ -77,6 +68,10 @@ class ContentDatabaseManager:
             logger.error("No database configuration found")
             return None, None
             
+        # Log configuration source for debugging Railway restart issues
+        config_source = config.get('config_source', 'unknown')
+        logger.info(f"Loading database config from: {config_source}")
+        
         # Sanitize the configuration
         config = self._sanitize_database_config(config)
         
@@ -89,6 +84,36 @@ class ContentDatabaseManager:
         parsed = urlparse(database_url)
         db_type = config.get('database_type', 'mysql')
         
+        # Validate that we have all required connection parameters
+        missing_params = []
+        if not parsed.hostname:
+            missing_params.append('hostname')
+        if not parsed.username:
+            missing_params.append('username')
+        if not parsed.password:
+            missing_params.append('password')
+        if not parsed.path or len(parsed.path) <= 1:
+            missing_params.append('database')
+            
+        if missing_params:
+            logger.error(f"Database configuration missing required parameters: {missing_params}")
+            logger.info("This often happens after Railway restarts - attempting to reload from environment variables")
+            
+            # Force reload from environment variables
+            config_manager._config = None  # Clear cached config
+            config = config_manager.get_database_config()
+            if config:
+                database_url = config.get('production_database_url', '')
+                if database_url:
+                    parsed = urlparse(database_url)
+                    logger.info("Successfully reloaded configuration from environment variables")
+                else:
+                    logger.error("Failed to reload database configuration")
+                    return None, None
+            else:
+                logger.error("Failed to reload database configuration from environment")
+                return None, None
+        
         db_config = {
             'host': self._sanitize_config_value(parsed.hostname or ''),
             'port': int(parsed.port) if parsed.port else 3306,
@@ -98,8 +123,8 @@ class ContentDatabaseManager:
             'use_ssl': config.get('database_ssl', True)
         }
         
-        # Remove empty values
-        db_config = {k: v for k, v in db_config.items() if v or v is False}
+        # Remove empty values (but keep ssl setting even if False)
+        db_config = {k: v for k, v in db_config.items() if v or k == 'use_ssl'}
         
         logger.info(f"Loaded database config: host={db_config.get('host')}, "
                    f"port={db_config.get('port')}, db={db_config.get('database')}, "
