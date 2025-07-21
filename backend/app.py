@@ -1830,8 +1830,9 @@ def get_spell_details(spell_id):
 @rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
 def get_items_with_spell(spell_id):
     """
-    Get items that contain the specified spell as a scroll effect, click effect, proc effect, 
+    Get discovered items that contain the specified spell as a scroll effect, click effect, proc effect, 
     worn effect, focus effect, or bard effect.
+    Only returns items that exist in both items and discovered_items tables.
     """
     try:
         spell_id_int = int(spell_id)
@@ -1846,39 +1847,45 @@ def get_items_with_spell(spell_id):
         cursor = conn.cursor()
         
         try:
-            # Check if items table exists
+            # Check if required tables exist
             cursor.execute("SHOW TABLES LIKE 'items'")
             if not cursor.fetchone():
                 app.logger.warning("Items table not available in this database")
                 return jsonify({'items': [], 'message': 'Item data not available in this database'})
             
-            # Query for items that have this spell in any spell effect field
-            # Based on EQEmu database schema
+            cursor.execute("SHOW TABLES LIKE 'discovered_items'")
+            if not cursor.fetchone():
+                app.logger.warning("Discovered_items table not available in this database")
+                return jsonify({'items': [], 'message': 'Discovered items data not available in this database'})
+            
+            # Query for discovered items that have this spell in any spell effect field
+            # Only include items that exist in both items and discovered_items tables
             query = """
                 SELECT DISTINCT
-                    id,
-                    name,
-                    icon,
-                    scrolleffect,
-                    clickeffect,
-                    proceffect,
-                    worneffect,
-                    focuseffect,
-                    bardeffect
+                    items.id,
+                    items.name,
+                    items.icon,
+                    items.scrolleffect,
+                    items.clickeffect,
+                    items.proceffect,
+                    items.worneffect,
+                    items.focuseffect,
+                    items.bardeffect
                 FROM items
-                WHERE scrolleffect = %s
-                   OR clickeffect = %s
-                   OR proceffect = %s
-                   OR worneffect = %s
-                   OR focuseffect = %s
-                   OR bardeffect = %s
-                ORDER BY name ASC
+                INNER JOIN discovered_items di ON items.id = di.item_id
+                WHERE items.scrolleffect = %s
+                   OR items.clickeffect = %s
+                   OR items.proceffect = %s
+                   OR items.worneffect = %s
+                   OR items.focuseffect = %s
+                   OR items.bardeffect = %s
+                ORDER BY items.name ASC
                 LIMIT 1000
             """
             
             cursor.execute(query, (spell_id_int, spell_id_int, spell_id_int, spell_id_int, spell_id_int, spell_id_int))
             results = cursor.fetchall()
-            app.logger.debug(f"Items with spell {spell_id_int} query returned {len(results)} results")
+            app.logger.debug(f"Discovered items with spell {spell_id_int} query returned {len(results)} results")
             
             if not results:
                 return jsonify({'items': [], 'total_count': 0})
@@ -1919,7 +1926,7 @@ def get_items_with_spell(spell_id):
                     'effect_types': effect_types
                 })
             
-            app.logger.info(f"Found {len(items)} items with spell ID: {spell_id_int}")
+            app.logger.info(f"Found {len(items)} discovered items with spell ID: {spell_id_int}")
             
             return jsonify({
                 'items': items,
