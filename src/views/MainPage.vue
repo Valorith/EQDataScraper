@@ -137,6 +137,19 @@
         </div>
       </router-link>
       
+      <router-link 
+        to="/npcs"
+        class="nav-card npcs-nav"
+      >
+        <div class="nav-icon">
+          <div class="nav-icon-symbol">🧙</div>
+        </div>
+        <div class="nav-content">
+          <h3 class="nav-title">NPCs</h3>
+          <p class="nav-description">Search for NPCs, view their stats, spawn locations, and loot tables</p>
+        </div>
+      </router-link>
+      
       <div class="nav-card wiki-nav placeholder">
         <div class="nav-icon">
           <div class="nav-icon-symbol">📚</div>
