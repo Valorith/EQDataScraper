@@ -123,24 +123,21 @@
             @click="openNPCModal(npc)"
             class="npc-row"
           >
-            <div class="npc-basic-info">
-              <div class="npc-name-level">
+            <div class="npc-main-info">
+              <div class="npc-name-section">
                 <h3 class="npc-name">{{ npc.name }}</h3>
-                <span class="npc-level">Level {{ npc.level }}</span>
-              </div>
-              <div class="npc-race-class">
-                <span class="npc-race">{{ getRaceName(npc.race) }}</span>
-                <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                <div class="npc-details">
+                  <span class="npc-level">Level {{ npc.level }}</span>
+                  <span class="npc-separator">•</span>
+                  <span class="npc-race">{{ getRaceName(npc.race) }}</span>
+                  <span class="npc-separator">•</span>
+                  <span class="npc-class">{{ getClassName(npc.class) }}</span>
+                </div>
               </div>
             </div>
-            <div class="npc-stats-info">
-              <span class="npc-hp">{{ npc.hp?.toLocaleString() }} HP</span>
-              <span v-if="npc.mindmg || npc.maxdmg" class="npc-damage">
-                {{ npc.mindmg }}-{{ npc.maxdmg }} dmg
-              </span>
-            </div>
-            <div v-if="npc.zone_short_name" class="npc-zone-info">
-              {{ npc.zone_long_name || npc.zone_short_name }}
+            <div v-if="npc.zone_short_name" class="npc-zone-display">
+              <span class="zone-label">Zone:</span>
+              <span class="zone-name">{{ getFormattedZoneName(npc) }}</span>
             </div>
           </div>
         </div>
@@ -625,6 +622,23 @@ export default {
       return this.classNames[classId] || `Class ${classId}`
     },
 
+    getFormattedZoneName(npc) {
+      // Use long name if available, otherwise format short name
+      if (npc.zone_long_name && npc.zone_long_name.trim()) {
+        return npc.zone_long_name
+      }
+      
+      // Format short name: remove underscores, capitalize words
+      if (npc.zone_short_name) {
+        return npc.zone_short_name
+          .replace(/_/g, ' ')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+      }
+      
+      return 'Unknown Zone'
+    },
 
     handleIconError(event) {
       event.target.style.display = 'none'
@@ -888,7 +902,7 @@ export default {
 .npc-list {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 12px;
   margin-bottom: 30px;
 }
 
@@ -897,13 +911,13 @@ export default {
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  padding: 20px;
+  padding: 18px 24px;
   cursor: pointer;
   transition: all 0.3s ease;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 20px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: 20px;
 }
 
 .npc-row:hover {
@@ -912,55 +926,74 @@ export default {
   border-color: rgba(102, 126, 234, 0.5);
 }
 
-.npc-basic-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.npc-main-info {
+  flex: 1;
+  min-width: 0; /* Allow text to truncate if needed */
 }
 
-.npc-name-level {
+.npc-name-section {
   display: flex;
-  align-items: center;
-  gap: 15px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .npc-row .npc-name {
   color: white;
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
+  line-height: 1.2;
 }
 
-.npc-row .npc-level {
+.npc-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.npc-level {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 0.85rem;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
-.npc-race-class {
-  display: flex;
-  gap: 15px;
-  color: #ccc;
-  font-size: 0.9rem;
+.npc-separator {
+  color: #666;
+  font-weight: bold;
 }
 
-.npc-stats-info {
+.npc-race, .npc-class {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.npc-zone-display {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 120px;
   text-align: right;
-  color: #ccc;
-  font-size: 0.9rem;
 }
 
-.npc-zone-info {
-  color: #9ca3af;
-  font-size: 0.85rem;
-  text-align: right;
-  opacity: 0.8;
+.zone-label {
+  color: #888;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.zone-name {
+  color: #e5e7eb;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 /* NPC Grid View */
@@ -1465,14 +1498,17 @@ export default {
   }
   
   .npc-row {
-    grid-template-columns: 1fr;
-    gap: 15px;
-    text-align: left;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
   }
   
-  .npc-stats-info,
-  .npc-zone-info {
+  .npc-zone-display {
+    align-self: stretch;
+    align-items: flex-start;
     text-align: left;
+    min-width: auto;
   }
   
   .modal-overlay {
