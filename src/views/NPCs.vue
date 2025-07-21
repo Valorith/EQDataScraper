@@ -81,20 +81,72 @@
     <!-- Results Section -->
     <div v-if="searchPerformed" class="results-section">
       <div class="results-header">
-        <h2>Search Results</h2>
-        <div class="results-meta">
-          <span class="results-count">
-            Found {{ totalCount.toLocaleString() }} NPC{{ totalCount !== 1 ? 's' : '' }}
-          </span>
-          <span v-if="searchQuery" class="search-query">
-            for "{{ searchQuery }}"
-          </span>
+        <div class="results-info-container">
+          <h2>Search Results</h2>
+          <div class="results-info">
+            <span>{{ totalCount.toLocaleString() }} NPC{{ totalCount !== 1 ? 's' : '' }} found</span>
+            <span v-if="searchQuery">(searching for "{{ searchQuery }}")</span>
+          </div>
+        </div>
+        
+        <!-- View Toggle -->
+        <div class="view-toggle-container">
+          <span class="view-toggle-label">View:</span>
+          <div class="view-toggle">
+            <button 
+              @click="viewMode = 'list'" 
+              :class="['view-button', { active: viewMode === 'list' }]"
+              title="List View"
+            >
+              <i class="fas fa-list"></i>
+              <span class="view-button-text">List</span>
+            </button>
+            <button 
+              @click="viewMode = 'grid'" 
+              :class="['view-button', { active: viewMode === 'grid' }]"
+              title="Grid View"
+            >
+              <i class="fas fa-th"></i>
+              <span class="view-button-text">Grid</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Results List -->
-      <div v-if="searchResults.length > 0" class="npc-results">
-        <div class="npc-grid">
+      <!-- Results Display -->
+      <div v-if="searchResults.length > 0" :class="['npc-results', viewMode]">
+        <!-- List View -->
+        <div v-if="viewMode === 'list'" class="npc-list">
+          <div 
+            v-for="npc in searchResults" 
+            :key="npc.id"
+            @click="openNPCModal(npc)"
+            class="npc-row"
+          >
+            <div class="npc-basic-info">
+              <div class="npc-name-level">
+                <h3 class="npc-name">{{ npc.name }}</h3>
+                <span class="npc-level">Level {{ npc.level }}</span>
+              </div>
+              <div class="npc-race-class">
+                <span class="npc-race">{{ getRaceName(npc.race) }}</span>
+                <span class="npc-class">{{ getClassName(npc.class) }}</span>
+              </div>
+            </div>
+            <div class="npc-stats-info">
+              <span class="npc-hp">{{ npc.hp?.toLocaleString() }} HP</span>
+              <span v-if="npc.mindmg || npc.maxdmg" class="npc-damage">
+                {{ npc.mindmg }}-{{ npc.maxdmg }} dmg
+              </span>
+            </div>
+            <div v-if="npc.zone_short_name" class="npc-zone-info">
+              {{ npc.zone_long_name || npc.zone_short_name }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid View -->
+        <div v-if="viewMode === 'grid'" class="npc-grid">
           <div 
             v-for="npc in searchResults" 
             :key="npc.id"
@@ -112,7 +164,7 @@
               </div>
               <div class="npc-stats">
                 <span class="npc-hp">{{ npc.hp?.toLocaleString() }} HP</span>
-                <span v-if="npc.damage" class="npc-damage">
+                <span v-if="npc.mindmg || npc.maxdmg" class="npc-damage">
                   {{ npc.mindmg }}-{{ npc.maxdmg }} dmg
                 </span>
               </div>
@@ -411,6 +463,9 @@ export default {
       searchPerformed: false,
       searchResults: [],
       totalCount: 0,
+      
+      // View mode
+      viewMode: 'list', // Default to list view like Items and Spells
       
       // Pagination
       currentPage: 1,
@@ -758,30 +813,157 @@ export default {
 }
 
 .results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 25px;
+  gap: 20px;
 }
 
-.results-header h2 {
+.results-info-container h2 {
   color: white;
   margin: 0 0 10px 0;
   font-size: 1.8rem;
 }
 
-.results-meta {
-  color: #ccc;
-  font-size: 1rem;
+.results-info {
+  color: #9ca3af;
+  font-size: 0.95rem;
 }
 
-.results-count {
+.results-info span:not(:last-child) {
+  margin-right: 8px;
+}
+
+/* View Toggle */
+.view-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-toggle-label {
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.view-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.view-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.view-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.view-button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.view-button-text {
+  font-weight: 500;
+}
+
+/* NPC List View */
+.npc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.npc-row {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 20px;
+  align-items: center;
+}
+
+.npc-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.npc-basic-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.npc-name-level {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.npc-row .npc-name {
+  color: white;
+  margin: 0;
+  font-size: 1.2rem;
   font-weight: 600;
 }
 
-.search-query {
-  font-style: italic;
+.npc-row .npc-level {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.npc-race-class {
+  display: flex;
+  gap: 15px;
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.npc-stats-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: right;
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.npc-zone-info {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  text-align: right;
   opacity: 0.8;
 }
 
-/* NPC Grid */
+/* NPC Grid View */
 .npc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -1263,8 +1445,34 @@ export default {
     align-items: stretch;
   }
   
+  .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .view-toggle-container {
+    align-self: stretch;
+    justify-content: center;
+  }
+  
+  .view-button-text {
+    display: inline;
+  }
+  
   .npc-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .npc-row {
+    grid-template-columns: 1fr;
+    gap: 15px;
+    text-align: left;
+  }
+  
+  .npc-stats-info,
+  .npc-zone-info {
+    text-align: left;
   }
   
   .modal-overlay {
