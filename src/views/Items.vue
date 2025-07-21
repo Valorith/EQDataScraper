@@ -1051,9 +1051,23 @@
                     </div>
                     
                     <div class="recipes-list">
-                      <div v-for="recipe in skill.recipes" :key="recipe.recipe_id" class="recipe-item">
-                        <span class="recipe-name clickable" @click="loadRecipeDetails(recipe.recipe_id)">{{ recipe.recipe_name }}</span>
-                        <span v-if="recipe.component_count > 1" class="component-count">{{ recipe.component_count }} needed</span>
+                      <div v-for="recipe in skill.recipes" :key="recipe.recipe_id" class="recipe-list-item">
+                        <div class="recipe-item-icon">
+                          <img 
+                            v-if="recipe.result_item_icon" 
+                            :src="`/icons/items/${recipe.result_item_icon}.gif`" 
+                            :alt="recipe.result_item_name || recipe.recipe_name"
+                            @error="handleIconError"
+                            class="item-icon-img"
+                          />
+                          <i v-else class="fas fa-hammer"></i>
+                        </div>
+                        <div class="recipe-item-info">
+                          <span class="recipe-name clickable" @click="loadRecipeDetails(recipe.recipe_id)">{{ recipe.recipe_name }}</span>
+                          <div class="recipe-item-badges">
+                            <span v-if="recipe.component_count > 1" class="component-count">{{ recipe.component_count }} needed</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1088,11 +1102,21 @@
                 
                 <div v-else class="creation-recipes-list">
                   <div v-for="recipe in createdByRecipes" :key="recipe.recipe_id" class="creation-recipe-item">
-                    <div class="recipe-info">
+                    <div class="recipe-item-icon">
+                      <img 
+                        v-if="recipe.result_item_icon" 
+                        :src="`/icons/items/${recipe.result_item_icon}.gif`" 
+                        :alt="recipe.result_item_name || recipe.recipe_name"
+                        @error="handleIconError"
+                        class="item-icon-img"
+                      />
+                      <i v-else class="fas fa-cog"></i>
+                    </div>
+                    <div class="recipe-item-info">
                       <span class="recipe-name clickable" @click="loadRecipeDetails(recipe.recipe_id)">
                         {{ recipe.recipe_name }}
                       </span>
-                      <div class="recipe-details">
+                      <div class="recipe-item-badges">
                         <span class="tradeskill-badge">{{ recipe.tradeskill_name }}</span>
                         <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
                       </div>
@@ -1144,9 +1168,23 @@
                 :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
                 @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
               >
-                <span class="item-name">{{ item.item_name }}</span>
-                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
-                <span v-if="item.success_count > 1" class="item-count">x{{ item.success_count }}</span>
+                <div class="recipe-item-icon">
+                  <img 
+                    v-if="item.item_icon" 
+                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :alt="item.item_name"
+                    @error="handleIconError"
+                    class="item-icon-img"
+                  />
+                  <i v-else class="fas fa-cube"></i>
+                </div>
+                <div class="recipe-item-info">
+                  <span class="item-name">{{ item.item_name }}</span>
+                  <div class="recipe-item-badges">
+                    <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                    <span v-if="item.success_count > 1" class="item-count">x{{ item.success_count }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1161,9 +1199,23 @@
                 :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
                 @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
               >
-                <span class="item-name">{{ item.item_name }}</span>
-                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
-                <span v-if="item.component_count > 1" class="item-count">x{{ item.component_count }}</span>
+                <div class="recipe-item-icon">
+                  <img 
+                    v-if="item.item_icon" 
+                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :alt="item.item_name"
+                    @error="handleIconError"
+                    class="item-icon-img"
+                  />
+                  <i v-else class="fas fa-cube"></i>
+                </div>
+                <div class="recipe-item-info">
+                  <span class="item-name">{{ item.item_name }}</span>
+                  <div class="recipe-item-badges">
+                    <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                    <span v-if="item.component_count > 1" class="item-count">x{{ item.component_count }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1178,8 +1230,22 @@
                 :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
                 @click="item.is_discovered ? selectItem({ item_id: item.item_id, Name: item.item_name }) && closeRecipeDetails() : null"
               >
-                <span class="item-name">{{ item.item_name }}</span>
-                <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                <div class="recipe-item-icon">
+                  <img 
+                    v-if="item.item_icon" 
+                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :alt="item.item_name"
+                    @error="handleIconError"
+                    class="item-icon-img"
+                  />
+                  <i v-else class="fas fa-box"></i>
+                </div>
+                <div class="recipe-item-info">
+                  <span class="item-name">{{ item.item_name }}</span>
+                  <div class="recipe-item-badges">
+                    <span v-if="!item.is_discovered" class="undiscovered-badge">Not Discovered</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1197,6 +1263,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { API_BASE_URL } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
 import { toastService } from '../services/toastService'
@@ -2337,10 +2404,22 @@ const getTopStatsDisplay = (item) => {
   return topStats
 }
 
+// Get route for query parameter checking
+const route = useRoute()
+
 // Lifecycle
 onMounted(() => {
   // Click outside handler for filter dropdown
   document.addEventListener('click', handleClickOutside)
+  
+  // Check if there's an item query parameter to open automatically
+  if (route.query.item) {
+    const itemId = parseInt(route.query.item)
+    if (!isNaN(itemId)) {
+      // Create a mock item object with the ID to open the modal
+      selectItem({ item_id: itemId, id: itemId })
+    }
+  }
 })
 
 // Cleanup on unmount
@@ -3032,68 +3111,71 @@ const handleClickOutside = (event) => {
 
 .items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
   padding: 0 30px;
 }
 
 .item-card {
-  background: linear-gradient(135deg, rgba(26, 32, 44, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%);
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
-              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  padding: 0;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(217, 70, 239, 0.1) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
 }
 
 .item-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4),
-              0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
   border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
 }
 
 .card-header {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex: 1;
 }
 
 .card-icon-section {
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(217, 70, 239, 0.2) 100%);
+  border-radius: 8px;
 }
 
 .card-title-section {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .card-title-section .item-name {
-  color: #f7fafc;
-  font-size: 1.1rem;
-  font-weight: 700;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
   margin: 0;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .card-title-section .item-type {
-  color: #9ca3af;
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
   font-weight: 500;
 }
 
@@ -4090,8 +4172,8 @@ const handleClickOutside = (event) => {
 }
 
 .item-icon-grid {
-  width: 48px;
-  height: 48px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
@@ -4099,8 +4181,8 @@ const handleClickOutside = (event) => {
 }
 
 .item-icon-placeholder-grid {
-  width: 48px;
-  height: 48px;
+  width: 32px;
+  height: 32px;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   display: none;
@@ -4790,43 +4872,54 @@ const handleClickOutside = (event) => {
   padding: 8px;
 }
 
-.recipe-item {
+.recipe-list-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(217, 70, 239, 0.1) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: all 0.3s ease;
   margin: 4px 0;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  transition: background 0.2s ease;
+  cursor: pointer;
+  min-height: 44px;
 }
 
-.recipe-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+.recipe-list-item:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
 }
 
-.recipe-name {
-  color: #e2e8f0;
-  font-size: 0.9rem;
+.recipe-list-item .recipe-name {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
-.recipe-name.clickable {
+.recipe-list-item .recipe-name.clickable {
   cursor: pointer;
   transition: color 0.2s ease;
 }
 
-.recipe-name.clickable:hover {
-  color: #a78bfa;
+.recipe-list-item .recipe-name.clickable:hover {
+  color: #c4b5fd;
   text-decoration: underline;
 }
 
 .component-count {
-  color: #7c3aed;
-  font-weight: 600;
-  font-size: 0.85rem;
-  background: rgba(124, 58, 237, 0.2);
-  padding: 2px 8px;
-  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(217, 70, 239, 0.3) 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* Recipe Modal Styles */
@@ -4903,21 +4996,22 @@ const handleClickOutside = (event) => {
   color: #60a5fa;
 }
 
-.items-grid {
+.recipe-section .items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
 .recipe-section .recipe-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(217, 70, 239, 0.1) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  min-height: 44px;
 }
 
 .recipe-section .recipe-item.clickable {
@@ -4925,24 +5019,66 @@ const handleClickOutside = (event) => {
 }
 
 .recipe-section .recipe-item.clickable:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(167, 139, 250, 0.4);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+}
+
+.recipe-item-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(217, 70, 239, 0.2) 100%);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recipe-item-icon .item-icon-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.recipe-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .recipe-section .item-name {
-  color: #e2e8f0;
-  font-size: 0.9rem;
-  font-weight: 500;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.recipe-item-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .recipe-section .item-count {
-  color: #a78bfa;
-  font-weight: 600;
-  font-size: 0.85rem;
-  background: rgba(167, 139, 250, 0.2);
-  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(217, 70, 239, 0.3) 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 2px 6px;
   border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* Undiscovered item styles */
@@ -5050,57 +5186,55 @@ const handleClickOutside = (event) => {
 }
 
 .creation-recipe-item {
-  margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.creation-recipe-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(167, 139, 250, 0.4);
-  transform: translateY(-1px);
-}
-
-.creation-recipe-item .recipe-info {
-  padding: 12px 16px;
-}
-
-.creation-recipe-item .recipe-name {
-  color: #e2e8f0;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 0.2s ease;
-  display: block;
-  margin-bottom: 8px;
-}
-
-.creation-recipe-item .recipe-name:hover {
-  color: #a78bfa;
-  text-decoration: underline;
-}
-
-.creation-recipe-item .recipe-details {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(217, 70, 239, 0.1) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  padding: 12px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.creation-recipe-item:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+}
+
+.creation-recipe-item .recipe-name {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.creation-recipe-item .recipe-name:hover {
+  color: #c4b5fd;
+  text-decoration: underline;
 }
 
 .creation-recipe-item .tradeskill-badge {
-  background: rgba(124, 58, 237, 0.2);
-  color: #c4b5fd;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  border: 1px solid rgba(124, 58, 237, 0.3);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(217, 70, 239, 0.3) 100%);
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .creation-recipe-item .trivial-level {
-  color: #9ca3af;
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
   font-weight: 500;
 }
 </style>

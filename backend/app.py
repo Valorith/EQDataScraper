@@ -1605,29 +1605,18 @@ def get_spell_details(spell_id):
         app.logger.info(f"Got connection, db_type: {db_type}")
         cursor = conn.cursor()
         
-        # Query for detailed spell information
+        # Query for detailed spell information - simplified to use common fields
         spell_query = """
             SELECT 
                 id,
                 name,
-                player_1,
-                teleport_zone,
-                you_cast,
-                other_casts,
-                cast_on_you,
-                cast_on_other,
-                spell_fades,
-                `range`,
-                aoerange,
-                pushback,
-                pushup,
-                cast_time,
-                recovery_time,
-                recast_time,
-                buffdurationformula,
-                buffduration,
-                AEDuration,
                 mana,
+                cast_time,
+                `range`,
+                targettype,
+                buffduration,
+                skill,
+                resisttype,
                 effect_base_value1, effect_base_value2, effect_base_value3, effect_base_value4,
                 effect_base_value5, effect_base_value6, effect_base_value7, effect_base_value8,
                 effect_base_value9, effect_base_value10, effect_base_value11, effect_base_value12,
@@ -1635,129 +1624,16 @@ def get_spell_details(spell_id):
                 effect_limit_value5, effect_limit_value6, effect_limit_value7, effect_limit_value8,
                 effect_limit_value9, effect_limit_value10, effect_limit_value11, effect_limit_value12,
                 max1, max2, max3, max4, max5, max6, max7, max8, max9, max10, max11, max12,
-                icon,
-                new_icon,
-                spell_icon,
-                memicon,
-                components1, components2, components3, components4,
-                component_counts1, component_counts2, component_counts3, component_counts4,
-                NoexpendReagent1, NoexpendReagent2, NoexpendReagent3, NoexpendReagent4,
-                formula1, formula2, formula3, formula4, formula5, formula6,
-                formula7, formula8, formula9, formula10, formula11, formula12,
-                LightType,
-                goodEffect,
-                Activated,
-                resisttype,
                 effectid1, effectid2, effectid3, effectid4, effectid5, effectid6,
                 effectid7, effectid8, effectid9, effectid10, effectid11, effectid12,
-                targettype,
-                basediff,
-                skill,
-                zonetype,
-                EnvironmentType,
-                TimeOfDay,
+                formula1, formula2, formula3, formula4, formula5, formula6,
+                formula7, formula8, formula9, formula10, formula11, formula12,
                 classes1, classes2, classes3, classes4, classes5, classes6,
                 classes7, classes8, classes9, classes10, classes11, classes12,
                 classes13, classes14, classes15, classes16,
-                CastingAnim,
-                TargetAnim,
-                TravelType,
-                SpellAffectIndex,
-                disallow_sit,
-                deities,
-                field142,
-                field143,
-                new_icon,
-                spellanim,
-                uninterruptable,
-                ResistDiff,
-                dot_stacking_exempt,
-                deleteable,
-                RecourseLink,
-                no_partial_resist,
-                field152,
-                field153,
-                short_buff_box,
-                descnum,
-                typedescnum,
-                effectdescnum,
-                effectdescnum2,
-                npc_no_los,
-                field160,
-                reflectable,
-                bonushate,
-                field163,
-                field164,
-                ldon_trap,
-                EndurCost,
-                EndurTimerID,
-                IsDiscipline,
-                field169,
-                field170,
-                field171,
-                HateAdded,
-                EndurUpkeep,
-                numhits,
-                pvpresistbase,
-                pvpresistcalc,
-                pvpresistcap,
-                spell_category,
-                pvp_duration,
-                pvp_duration_cap,
-                pcnpc_only_flag,
-                cast_not_standing,
-                can_mgb,
-                nodispell,
-                npc_category,
-                npc_usefulness,
-                MinResist,
-                MaxResist,
-                viral_targets,
-                viral_timer,
-                nimbuseffect,
-                ConeStartAngle,
-                ConeStopAngle,
-                sneaking,
-                not_extendable,
-                field198,
-                field199,
-                suspendable,
-                viral_range,
-                songcap,
-                field203,
-                field204,
-                no_block,
-                field206,
-                spellgroup,
-                rank,
-                field209,
-                field210,
-                CastRestriction,
-                allowrest,
-                InCombat,
-                OutofCombat,
-                field215,
-                field216,
-                field217,
-                aemaxtargets,
-                maxtargets,
-                field220,
-                field221,
-                field222,
-                field223,
-                persistdeath,
-                field225,
-                field226,
-                min_dist,
-                min_dist_mod,
-                max_dist,
-                max_dist_mod,
-                min_range,
-                field232,
-                field233,
-                field234,
-                field235,
-                field236
+                components1, components2, components3, components4,
+                icon,
+                new_icon
             FROM spells_new
             WHERE id = %s
         """
@@ -1773,12 +1649,9 @@ def get_spell_details(spell_id):
         if isinstance(spell, dict):
             spell_dict = spell
         else:
-            # Handle tuple results - map to expected field names
+            # Handle tuple results - map to expected field names (simplified)
             fields = [
-                'id', 'name', 'player_1', 'teleport_zone', 'you_cast', 'other_casts',
-                'cast_on_you', 'cast_on_other', 'spell_fades', 'range', 'aoerange',
-                'pushback', 'pushup', 'cast_time', 'recovery_time', 'recast_time',
-                'buffdurationformula', 'buffduration', 'AEDuration', 'mana',
+                'id', 'name', 'mana', 'cast_time', 'range', 'targettype', 'buffduration', 'skill', 'resisttype',
                 'effect_base_value1', 'effect_base_value2', 'effect_base_value3', 'effect_base_value4',
                 'effect_base_value5', 'effect_base_value6', 'effect_base_value7', 'effect_base_value8',
                 'effect_base_value9', 'effect_base_value10', 'effect_base_value11', 'effect_base_value12',
@@ -1786,20 +1659,16 @@ def get_spell_details(spell_id):
                 'effect_limit_value5', 'effect_limit_value6', 'effect_limit_value7', 'effect_limit_value8',
                 'effect_limit_value9', 'effect_limit_value10', 'effect_limit_value11', 'effect_limit_value12',
                 'max1', 'max2', 'max3', 'max4', 'max5', 'max6', 'max7', 'max8', 'max9', 'max10', 'max11', 'max12',
-                'icon', 'new_icon', 'spell_icon', 'memicon',
-                'components1', 'components2', 'components3', 'components4',
-                'component_counts1', 'component_counts2', 'component_counts3', 'component_counts4',
-                'NoexpendReagent1', 'NoexpendReagent2', 'NoexpendReagent3', 'NoexpendReagent4',
-                'formula1', 'formula2', 'formula3', 'formula4', 'formula5', 'formula6',
-                'formula7', 'formula8', 'formula9', 'formula10', 'formula11', 'formula12',
-                'LightType', 'goodEffect', 'Activated', 'resisttype',
                 'effectid1', 'effectid2', 'effectid3', 'effectid4', 'effectid5', 'effectid6',
                 'effectid7', 'effectid8', 'effectid9', 'effectid10', 'effectid11', 'effectid12',
-                'targettype', 'basediff', 'skill', 'zonetype', 'EnvironmentType', 'TimeOfDay',
+                'formula1', 'formula2', 'formula3', 'formula4', 'formula5', 'formula6',
+                'formula7', 'formula8', 'formula9', 'formula10', 'formula11', 'formula12',
                 'classes1', 'classes2', 'classes3', 'classes4', 'classes5', 'classes6',
                 'classes7', 'classes8', 'classes9', 'classes10', 'classes11', 'classes12',
-                'classes13', 'classes14', 'classes15', 'classes16'
-            ] + ['field' + str(i) for i in range(142, 237)]  # Add remaining fields
+                'classes13', 'classes14', 'classes15', 'classes16',
+                'components1', 'components2', 'components3', 'components4',
+                'icon', 'new_icon'
+            ]
             
             spell_dict = {field: spell[i] if i < len(spell) else None for i, field in enumerate(fields)}
         
@@ -1809,15 +1678,11 @@ def get_spell_details(spell_id):
             'name': spell_dict['name'],
             'mana': _safe_int(spell_dict['mana']),
             'cast_time': _safe_int(spell_dict['cast_time']),
-            'recovery_time': _safe_int(spell_dict['recovery_time']),
-            'recast_time': _safe_int(spell_dict['recast_time']),
             'range': _safe_int(spell_dict['range']),
-            'aoerange': _safe_int(spell_dict['aoerange']),
             'buffduration': _safe_int(spell_dict['buffduration']),
             'targettype': _safe_int(spell_dict['targettype']),
             'skill': _safe_int(spell_dict['skill']),
             'resisttype': _safe_int(spell_dict['resisttype']),
-            'spell_category': _safe_int(spell_dict.get('spell_category', 0)),
             'class_levels': {
                 'warrior': _safe_int(spell_dict['classes1']),
                 'cleric': _safe_int(spell_dict['classes2']),
@@ -1837,18 +1702,90 @@ def get_spell_details(spell_id):
                 'berserker': _safe_int(spell_dict['classes16'])
             },
             'effects': [
-                _safe_int(spell_dict.get('effectid1', 0)),
-                _safe_int(spell_dict.get('effectid2', 0)),
-                _safe_int(spell_dict.get('effectid3', 0)),
-                _safe_int(spell_dict.get('effectid4', 0)),
-                _safe_int(spell_dict.get('effectid5', 0)),
-                _safe_int(spell_dict.get('effectid6', 0)),
-                _safe_int(spell_dict.get('effectid7', 0)),
-                _safe_int(spell_dict.get('effectid8', 0)),
-                _safe_int(spell_dict.get('effectid9', 0)),
-                _safe_int(spell_dict.get('effectid10', 0)),
-                _safe_int(spell_dict.get('effectid11', 0)),
-                _safe_int(spell_dict.get('effectid12', 0))
+                {
+                    'id': _safe_int(spell_dict.get('effectid1', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value1', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value1', 0)),
+                    'max_value': _safe_int(spell_dict.get('max1', 0)),
+                    'formula': _safe_int(spell_dict.get('formula1', 0))
+                } if _safe_int(spell_dict.get('effectid1', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid2', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value2', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value2', 0)),
+                    'max_value': _safe_int(spell_dict.get('max2', 0)),
+                    'formula': _safe_int(spell_dict.get('formula2', 0))
+                } if _safe_int(spell_dict.get('effectid2', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid3', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value3', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value3', 0)),
+                    'max_value': _safe_int(spell_dict.get('max3', 0)),
+                    'formula': _safe_int(spell_dict.get('formula3', 0))
+                } if _safe_int(spell_dict.get('effectid3', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid4', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value4', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value4', 0)),
+                    'max_value': _safe_int(spell_dict.get('max4', 0)),
+                    'formula': _safe_int(spell_dict.get('formula4', 0))
+                } if _safe_int(spell_dict.get('effectid4', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid5', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value5', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value5', 0)),
+                    'max_value': _safe_int(spell_dict.get('max5', 0)),
+                    'formula': _safe_int(spell_dict.get('formula5', 0))
+                } if _safe_int(spell_dict.get('effectid5', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid6', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value6', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value6', 0)),
+                    'max_value': _safe_int(spell_dict.get('max6', 0)),
+                    'formula': _safe_int(spell_dict.get('formula6', 0))
+                } if _safe_int(spell_dict.get('effectid6', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid7', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value7', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value7', 0)),
+                    'max_value': _safe_int(spell_dict.get('max7', 0)),
+                    'formula': _safe_int(spell_dict.get('formula7', 0))
+                } if _safe_int(spell_dict.get('effectid7', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid8', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value8', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value8', 0)),
+                    'max_value': _safe_int(spell_dict.get('max8', 0)),
+                    'formula': _safe_int(spell_dict.get('formula8', 0))
+                } if _safe_int(spell_dict.get('effectid8', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid9', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value9', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value9', 0)),
+                    'max_value': _safe_int(spell_dict.get('max9', 0)),
+                    'formula': _safe_int(spell_dict.get('formula9', 0))
+                } if _safe_int(spell_dict.get('effectid9', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid10', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value10', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value10', 0)),
+                    'max_value': _safe_int(spell_dict.get('max10', 0)),
+                    'formula': _safe_int(spell_dict.get('formula10', 0))
+                } if _safe_int(spell_dict.get('effectid10', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid11', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value11', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value11', 0)),
+                    'max_value': _safe_int(spell_dict.get('max11', 0)),
+                    'formula': _safe_int(spell_dict.get('formula11', 0))
+                } if _safe_int(spell_dict.get('effectid11', 0)) != 0 else None,
+                {
+                    'id': _safe_int(spell_dict.get('effectid12', 0)),
+                    'base_value': _safe_int(spell_dict.get('effect_base_value12', 0)),
+                    'limit_value': _safe_int(spell_dict.get('effect_limit_value12', 0)),
+                    'max_value': _safe_int(spell_dict.get('max12', 0)),
+                    'formula': _safe_int(spell_dict.get('formula12', 0))
+                } if _safe_int(spell_dict.get('effectid12', 0)) != 0 else None
             ],
             'components': [
                 _safe_int(spell_dict.get('components1', 0)),
@@ -1857,18 +1794,14 @@ def get_spell_details(spell_id):
                 _safe_int(spell_dict.get('components4', 0))
             ],
             'icon': _safe_int(spell_dict['icon']),
-            'new_icon': _safe_int(spell_dict['new_icon']),
-            'spell_icon': _safe_int(spell_dict.get('spell_icon', 0)),
-            'you_cast': spell_dict.get('you_cast', ''),
-            'other_casts': spell_dict.get('other_casts', ''),
-            'cast_on_you': spell_dict.get('cast_on_you', ''),
-            'cast_on_other': spell_dict.get('cast_on_other', ''),
-            'spell_fades': spell_dict.get('spell_fades', ''),
-            'pushback': _safe_int(spell_dict.get('pushback', 0)),
-            'pushup': _safe_int(spell_dict.get('pushup', 0)),
-            'goodEffect': _safe_int(spell_dict.get('goodEffect', 0)),
-            'deities': _safe_int(spell_dict.get('deities', 0))
+            'new_icon': _safe_int(spell_dict['new_icon'])
         }
+        
+        # Filter out None effects and keep only valid effect IDs with meaningful values
+        detailed_spell['effects'] = [effect for effect in detailed_spell['effects'] 
+                                    if effect is not None 
+                                    and effect['id'] not in (0, 254)  # Exclude blank effects
+                                    and effect['base_value'] != 0]    # Only show effects with values
         
         app.logger.info(f"Spell details retrieved successfully for ID: {spell_id_int}")
         
@@ -1886,6 +1819,133 @@ def get_spell_details(spell_id):
                 cursor.close()
             except:
                 pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
+
+@app.route('/api/spells/<spell_id>/items', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_items_with_spell(spell_id):
+    """
+    Get items that contain the specified spell as a scroll effect, click effect, proc effect, 
+    worn effect, focus effect, or bard effect.
+    """
+    try:
+        spell_id_int = int(spell_id)
+        app.logger.info(f"Getting items with spell ID: {spell_id_int}")
+        
+        # Get database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # Check if items table exists
+            cursor.execute("SHOW TABLES LIKE 'items'")
+            if not cursor.fetchone():
+                app.logger.warning("Items table not available in this database")
+                return jsonify({'items': [], 'message': 'Item data not available in this database'})
+            
+            # Query for items that have this spell in any spell effect field
+            # Based on EQEmu database schema
+            query = """
+                SELECT DISTINCT
+                    id,
+                    name,
+                    icon,
+                    scrolleffect,
+                    clickeffect,
+                    proceffect,
+                    worneffect,
+                    focuseffect,
+                    bardeffect
+                FROM items
+                WHERE scrolleffect = %s
+                   OR clickeffect = %s
+                   OR proceffect = %s
+                   OR worneffect = %s
+                   OR focuseffect = %s
+                   OR bardeffect = %s
+                ORDER BY name ASC
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (spell_id_int, spell_id_int, spell_id_int, spell_id_int, spell_id_int, spell_id_int))
+            results = cursor.fetchall()
+            app.logger.debug(f"Items with spell {spell_id_int} query returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'items': [], 'total_count': 0})
+            
+            # Format results
+            items = []
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    item_id, name, icon, scrolleffect, clickeffect, proceffect, worneffect, focuseffect, bardeffect = (
+                        row['id'], row['name'], row['icon'], row['scrolleffect'], 
+                        row['clickeffect'], row['proceffect'], row['worneffect'], 
+                        row['focuseffect'], row['bardeffect']
+                    )
+                else:
+                    # Tuple format
+                    item_id, name, icon, scrolleffect, clickeffect, proceffect, worneffect, focuseffect, bardeffect = row
+                
+                # Determine which effect type(s) match
+                effect_types = []
+                if scrolleffect == spell_id_int:
+                    effect_types.append('scroll')
+                if clickeffect == spell_id_int:
+                    effect_types.append('click')
+                if proceffect == spell_id_int:
+                    effect_types.append('proc')
+                if worneffect == spell_id_int:
+                    effect_types.append('worn')
+                if focuseffect == spell_id_int:
+                    effect_types.append('focus')
+                if bardeffect == spell_id_int:
+                    effect_types.append('bard')
+                
+                items.append({
+                    'id': item_id,
+                    'name': name.replace('_', ' ') if name else 'Unknown Item',
+                    'icon': icon or 0,
+                    'effect_types': effect_types
+                })
+            
+            app.logger.info(f"Found {len(items)} items with spell ID: {spell_id_int}")
+            
+            return jsonify({
+                'items': items,
+                'total_count': len(items),
+                'spell_id': spell_id_int
+            })
+            
+        except Exception as e:
+            app.logger.error(f"Error querying items with spell: {e}")
+            import traceback
+            app.logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({'error': f'Failed to query items with spell: {str(e)}'}), 500
+            
+        finally:
+            cursor.close()
+            
+    except ValueError:
+        app.logger.error(f"Invalid spell ID: {spell_id}")
+        return jsonify({'error': 'Invalid spell ID'}), 400
+    except Exception as e:
+        app.logger.error(f"Error getting items with spell: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Failed to get items with spell: {str(e)}'}), 500
+        
+    finally:
         if conn:
             try:
                 conn.close()
@@ -3104,15 +3164,57 @@ def get_item_tradeskill_recipes(item_id):
                 return jsonify({'skills': []})
             
             # Optimized query using explicit JOINs
-            # Include recipe name, ID, and tradeskill type
+            # Include recipe name, ID, tradeskill type, and resulting item icon
             query = """
                 SELECT 
                     tsr.name as recipe_name,
                     tsr.id as recipe_id,
                     tsr.tradeskill,
-                    tsre.componentcount
+                    tsre.componentcount,
+                    result_items.icon as result_item_icon,
+                    result_items.name as result_item_name
                 FROM tradeskill_recipe tsr
                 INNER JOIN tradeskill_recipe_entries tsre ON tsr.id = tsre.recipe_id
+                LEFT JOIN (
+                    SELECT 
+                        tre_result.recipe_id,
+                        MAX(CASE 
+                            WHEN i.name NOT LIKE '%%Hammer%%' AND i.name NOT LIKE '%%hammer%%' 
+                            AND i.name NOT LIKE '%%Tool%%' AND i.name NOT LIKE '%%tool%%'
+                            AND i.name NOT LIKE '%%Kit%%' AND i.name NOT LIKE '%%kit%%'
+                            AND i.name NOT LIKE '%%Needle%%' AND i.name NOT LIKE '%%needle%%'
+                            AND i.name NOT LIKE '%%Awl%%' AND i.name NOT LIKE '%%awl%%'
+                            AND i.name NOT LIKE '%%Chisel%%' AND i.name NOT LIKE '%%chisel%%'
+                            AND i.name NOT LIKE '%%Tongs%%' AND i.name NOT LIKE '%%tongs%%'
+                            AND i.name NOT LIKE '%%File%%' AND i.name NOT LIKE '%%file%%'
+                            AND i.name NOT LIKE '%%Planer%%' AND i.name NOT LIKE '%%planer%%'
+                            AND i.name NOT LIKE '%%Saw%%' AND i.name NOT LIKE '%%saw%%'
+                            AND i.name NOT LIKE '%%Pottery Wheel%%' AND i.name NOT LIKE '%%pottery wheel%%'
+                            AND i.name NOT LIKE '%%Kiln%%' AND i.name NOT LIKE '%%kiln%%'
+                            THEN i.icon
+                            ELSE NULL
+                        END) as icon,
+                        MAX(CASE 
+                            WHEN i.name NOT LIKE '%%Hammer%%' AND i.name NOT LIKE '%%hammer%%' 
+                            AND i.name NOT LIKE '%%Tool%%' AND i.name NOT LIKE '%%tool%%'
+                            AND i.name NOT LIKE '%%Kit%%' AND i.name NOT LIKE '%%kit%%'
+                            AND i.name NOT LIKE '%%Needle%%' AND i.name NOT LIKE '%%needle%%'
+                            AND i.name NOT LIKE '%%Awl%%' AND i.name NOT LIKE '%%awl%%'
+                            AND i.name NOT LIKE '%%Chisel%%' AND i.name NOT LIKE '%%chisel%%'
+                            AND i.name NOT LIKE '%%Tongs%%' AND i.name NOT LIKE '%%tongs%%'
+                            AND i.name NOT LIKE '%%File%%' AND i.name NOT LIKE '%%file%%'
+                            AND i.name NOT LIKE '%%Planer%%' AND i.name NOT LIKE '%%planer%%'
+                            AND i.name NOT LIKE '%%Saw%%' AND i.name NOT LIKE '%%saw%%'
+                            AND i.name NOT LIKE '%%Pottery Wheel%%' AND i.name NOT LIKE '%%pottery wheel%%'
+                            AND i.name NOT LIKE '%%Kiln%%' AND i.name NOT LIKE '%%kiln%%'
+                            THEN i.name
+                            ELSE NULL
+                        END) as name
+                    FROM tradeskill_recipe_entries tre_result
+                    INNER JOIN items i ON tre_result.item_id = i.id
+                    WHERE tre_result.successcount > 0
+                    GROUP BY tre_result.recipe_id
+                ) result_items ON tsr.id = result_items.recipe_id
                 WHERE tsre.item_id = %s
                   AND tsre.componentcount > 0
                 GROUP BY tsr.id
@@ -3166,12 +3268,18 @@ def get_item_tradeskill_recipes(item_id):
             for row in results:
                 # Handle both dict and tuple results
                 if isinstance(row, dict):
-                    recipe_name, recipe_id, tradeskill, componentcount = (
-                        row['recipe_name'], row['recipe_id'], row['tradeskill'], row['componentcount']
+                    recipe_name, recipe_id, tradeskill, componentcount, result_item_icon, result_item_name = (
+                        row['recipe_name'], row['recipe_id'], row['tradeskill'], row['componentcount'],
+                        row.get('result_item_icon'), row.get('result_item_name')
                     )
                 else:
-                    # Tuple format
-                    recipe_name, recipe_id, tradeskill, componentcount = row
+                    # Tuple format - now includes icon and name
+                    if len(row) >= 6:
+                        recipe_name, recipe_id, tradeskill, componentcount, result_item_icon, result_item_name = row
+                    else:
+                        # Fallback for old format
+                        recipe_name, recipe_id, tradeskill, componentcount = row[:4]
+                        result_item_icon, result_item_name = None, None
                 
                 # Get tradeskill name
                 skill_name = tradeskill_names.get(tradeskill, f'Unknown Skill ({tradeskill})')
@@ -3189,7 +3297,9 @@ def get_item_tradeskill_recipes(item_id):
                 recipes_by_skill[skill_name]['recipes'].append({
                     'recipe_id': recipe_id,
                     'recipe_name': clean_recipe_name,
-                    'component_count': componentcount
+                    'component_count': componentcount,
+                    'result_item_icon': result_item_icon,
+                    'result_item_name': result_item_name
                 })
             
             # Convert to list and sort by skill name
@@ -3448,18 +3558,23 @@ def get_item_created_by_recipes(item_id):
                 return jsonify({'error': 'Invalid item ID'}), 400
             
             # Query for recipes that create this item (successcount > 0)
+            # Include the icon of the item being created
             query = """
                 SELECT
                     tr.name as recipe_name,
                     tr.id as recipe_id,
                     tr.tradeskill as tradeskill_id,
-                    tr.trivial as trivial_level
+                    tr.trivial as trivial_level,
+                    i.icon as result_item_icon,
+                    i.name as result_item_name
                 FROM
                     tradeskill_recipe tr,
-                    tradeskill_recipe_entries tre
+                    tradeskill_recipe_entries tre,
+                    items i
                 WHERE
                     tr.id = tre.recipe_id
                     AND tre.item_id = %s
+                    AND tre.item_id = i.id
                     AND tre.successcount > 0
                 GROUP BY
                     tr.id
@@ -3516,8 +3631,15 @@ def get_item_created_by_recipes(item_id):
                     recipe_id = row['recipe_id']
                     tradeskill_id = row['tradeskill_id']
                     trivial_level = row['trivial_level']
+                    result_item_icon = row.get('result_item_icon')
+                    result_item_name = row.get('result_item_name')
                 else:
-                    recipe_name, recipe_id, tradeskill_id, trivial_level = row
+                    if len(row) >= 6:
+                        recipe_name, recipe_id, tradeskill_id, trivial_level, result_item_icon, result_item_name = row
+                    else:
+                        # Fallback for old format
+                        recipe_name, recipe_id, tradeskill_id, trivial_level = row[:4]
+                        result_item_icon, result_item_name = None, None
                 
                 tradeskill_name = tradeskill_names.get(tradeskill_id, 'Unknown')
                 
@@ -3526,7 +3648,9 @@ def get_item_created_by_recipes(item_id):
                     'recipe_name': recipe_name.replace('_', ' ') if recipe_name else 'Unknown Recipe',
                     'tradeskill_id': tradeskill_id,
                     'tradeskill_name': tradeskill_name,
-                    'trivial_level': trivial_level
+                    'trivial_level': trivial_level,
+                    'result_item_icon': result_item_icon,
+                    'result_item_name': result_item_name
                 })
             
             return jsonify({'recipes': recipes})

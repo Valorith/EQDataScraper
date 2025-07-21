@@ -538,106 +538,178 @@
         </div>
         
         <div class="modal-body">
-          <div class="spell-details">
-            <!-- Primary Stats -->
-            <div class="detail-section primary-stats">
-              <h4>Casting Information</h4>
-              <div class="primary-stats-grid">
-                <div v-if="selectedSpellDetail.mana" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-star"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ selectedSpellDetail.mana }}</span>
-                    <span class="stat-label">Mana Cost</span>
+          <div class="spell-modal-content">
+            <!-- Main Content Grid -->
+            <div class="spell-modal-grid">
+              <!-- Left Column -->
+              <div class="left-column">
+                <!-- Primary Stats -->
+                <div class="detail-section">
+                  <h4>Casting Information</h4>
+                  <div class="casting-info-list">
+                    <div v-if="selectedSpellDetail.mana" class="casting-info-item">
+                      <div class="info-icon"><i class="fas fa-star"></i></div>
+                      <div class="info-content">
+                        <span class="info-value">{{ selectedSpellDetail.mana }}</span>
+                        <span class="info-label">Mana Cost</span>
+                      </div>
+                    </div>
+                    <div v-if="selectedSpellDetail.cast_time !== undefined" class="casting-info-item">
+                      <div class="info-icon"><i class="fas fa-clock"></i></div>
+                      <div class="info-content">
+                        <span class="info-value">{{ formatCastTime(selectedSpellDetail.cast_time) }}</span>
+                        <span class="info-label">Cast Time</span>
+                      </div>
+                    </div>
+                    <div v-if="selectedSpellDetail.range" class="casting-info-item">
+                      <div class="info-icon"><i class="fas fa-crosshairs"></i></div>
+                      <div class="info-content">
+                        <span class="info-value">{{ selectedSpellDetail.range }}</span>
+                        <span class="info-label">Range</span>
+                      </div>
+                    </div>
+                    <div v-if="selectedSpellDetail.buffduration !== undefined" class="casting-info-item">
+                      <div class="info-icon"><i class="fas fa-hourglass-half"></i></div>
+                      <div class="info-content">
+                        <span class="info-value">{{ formatDuration(selectedSpellDetail.buffduration) }}</span>
+                        <span class="info-label">Duration</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div v-if="selectedSpellDetail.cast_time !== undefined" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-clock"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ formatCastTime(selectedSpellDetail.cast_time) }}</span>
-                    <span class="stat-label">Cast Time</span>
+                
+                <!-- Components and Additional Info -->
+                <div class="bottom-info-grid">
+                  <!-- Components -->
+                  <div v-if="hasSpellComponents(selectedSpellDetail)" class="detail-section">
+                    <h4>Components</h4>
+                    <div class="components-list">
+                      <div v-for="(component, index) in selectedSpellDetail.components" :key="index" 
+                           v-if="component && component !== 0" class="component-item">
+                        <span class="component-index">{{ index + 1 }}:</span>
+                        <span class="component-value">{{ component }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Additional Information -->
+                  <div class="detail-section">
+                    <h4>Additional Information</h4>
+                    <div class="additional-info-list">
+                      <div v-if="selectedSpellDetail.targettype !== undefined" class="info-row">
+                        <span class="info-label">Target Type:</span>
+                        <span class="info-value">{{ getTargetType(selectedSpellDetail.targettype) }}</span>
+                      </div>
+                      <div v-if="selectedSpellDetail.resisttype !== undefined" class="info-row">
+                        <span class="info-label">Resist Type:</span>
+                        <span class="info-value">{{ getResistType(selectedSpellDetail.resisttype) }}</span>
+                      </div>
+                      <div v-if="selectedSpellDetail.spell_category !== undefined" class="info-row">
+                        <span class="info-label">Category:</span>
+                        <span class="info-value">{{ selectedSpellDetail.spell_category }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div v-if="selectedSpellDetail.range" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-crosshairs"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ selectedSpellDetail.range }}</span>
-                    <span class="stat-label">Range</span>
+              </div>
+
+              <!-- Right Column -->
+              <div class="right-column">
+                <!-- Spell Effects -->
+                <div v-if="hasSpellEffects(selectedSpellDetail)" class="detail-section">
+                  <h4>Spell Effects</h4>
+                  <div class="spell-effects-list">
+                    <div v-for="(effect, index) in selectedSpellDetail.effects" :key="index" class="spell-effect-row">
+                      <span class="effect-number">{{ index + 1 }} :</span>
+                      <span class="effect-type">Effect type :</span>
+                      <span class="effect-description">{{ getSimpleEffectDescription(effect) }}</span>
+                    </div>
                   </div>
                 </div>
-                <div v-if="selectedSpellDetail.buffduration !== undefined" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ formatDuration(selectedSpellDetail.buffduration) }}</span>
-                    <span class="stat-label">Duration</span>
+
+                <!-- Items with Spell -->
+                <div v-if="shouldShowSpellItems" class="detail-section spell-items-section">
+                  <h4>
+                    <i class="fas fa-magic"></i>
+                    Items with Spell
+                  </h4>
+                  
+                  <!-- Loading State -->
+                  <div v-if="loadingSpellItems" class="loading-container">
+                    <div class="loading-spinner">
+                      <i class="fas fa-spinner fa-spin"></i>
+                      <span>Loading items...</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Items List -->
+                  <div v-else-if="spellItems.length > 0" class="spell-items-list">
+                    <div class="spell-items-count">
+                      Found {{ spellItems.length }} item{{ spellItems.length !== 1 ? 's' : '' }} with this spell
+                    </div>
+                    <div class="spell-items-grid">
+                      <div 
+                        v-for="item in spellItems" 
+                        :key="item.id" 
+                        class="spell-item-card"
+                        @click="openItemModal(item.id)"
+                      >
+                        <div class="spell-item-icon">
+                          <img 
+                            :src="`/icons/items/${item.icon}.gif`" 
+                            :alt="item.name"
+                            @error="handleItemIconError"
+                            class="item-icon-img"
+                          />
+                        </div>
+                        <div class="spell-item-info">
+                          <div class="spell-item-name">{{ item.name }}</div>
+                          <div class="spell-item-effects">
+                            <span 
+                              v-for="effectType in item.effect_types" 
+                              :key="effectType" 
+                              class="effect-type-badge"
+                              :class="`effect-${effectType}`"
+                            >
+                              {{ effectType }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- No Items Found -->
+                  <div v-else-if="spellItemsRequested && spellItems.length === 0" class="no-spell-items">
+                    <i class="fas fa-info-circle"></i>
+                    <span>No items found with this spell</span>
                   </div>
                 </div>
               </div>
             </div>
-            
-            <!-- Class Levels -->
-            <div class="detail-section">
+
+            <!-- Class Requirements - Bottom Section -->
+            <div class="class-requirements-bottom">
               <h4>Class Requirements</h4>
-              <div class="class-requirements-grid">
+              <div class="class-requirements-horizontal">
                 <template v-for="(level, className) in selectedSpellDetail.class_levels" :key="className">
                   <div 
                     v-if="level && level !== 255"
-                    class="class-requirement-item"
+                    class="class-requirement-horizontal"
                     :title="`${getClassAbbreviation(className)}: Level ${level}`"
                   >
                     <img 
                       :src="`/icons/${className}.gif`" 
                       :alt="`${className} icon`"
-                      class="class-icon-detail"
+                      class="class-icon-horizontal"
                       @error="handleIconError"
                     />
-                    <div class="class-req-text">
-                      {{ getClassAbbreviation(className) }} ({{ level }})
+                    <div class="class-info-horizontal">
+                      <span class="class-name-horizontal">{{ getClassAbbreviation(className) }}</span>
+                      <span class="class-level-horizontal">{{ level }}</span>
                     </div>
                   </div>
                 </template>
-              </div>
-            </div>
-
-            <!-- Spell Effects (if available) -->
-            <div v-if="hasSpellEffects(selectedSpellDetail)" class="detail-section">
-              <h4>Effects</h4>
-              <div class="effects-list">
-                <div v-for="(effect, index) in selectedSpellDetail.effects" :key="index" 
-                     v-if="effect && effect !== 0" class="effect-item">
-                  <span class="effect-label">Effect {{ index + 1 }}:</span>
-                  <span class="effect-value">{{ effect }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Components (if available) -->
-            <div v-if="hasSpellComponents(selectedSpellDetail)" class="detail-section">
-              <h4>Components</h4>
-              <div class="components-list">
-                <div v-for="(component, index) in selectedSpellDetail.components" :key="index" 
-                     v-if="component && component !== 0" class="component-item">
-                  <span class="component-label">Component {{ index + 1 }}:</span>
-                  <span class="component-value">{{ component }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Additional Information -->
-            <div class="detail-section">
-              <h4>Additional Information</h4>
-              <div class="additional-info-grid">
-                <div v-if="selectedSpellDetail.targettype !== undefined" class="info-item">
-                  <span class="info-label">Target Type:</span>
-                  <span class="info-value">{{ getTargetType(selectedSpellDetail.targettype) }}</span>
-                </div>
-                <div v-if="selectedSpellDetail.resisttype !== undefined" class="info-item">
-                  <span class="info-label">Resist Type:</span>
-                  <span class="info-value">{{ getResistType(selectedSpellDetail.resisttype) }}</span>
-                </div>
-                <div v-if="selectedSpellDetail.spell_category !== undefined" class="info-item">
-                  <span class="info-label">Category:</span>
-                  <span class="info-value">{{ selectedSpellDetail.spell_category }}</span>
-                </div>
               </div>
             </div>
           </div>
@@ -703,6 +775,11 @@ export default {
       // Spell details modal
       selectedSpellDetail: null,
       
+      // Spell items state
+      spellItems: [],
+      loadingSpellItems: false,
+      spellItemsRequested: false,
+      
       // Class cards scrolling state
       classScrollPositions: {},
       
@@ -763,6 +840,13 @@ export default {
       return Array.from(groups.entries())
         .sort(([a], [b]) => a - b)
         .map(([level, spells]) => ({ level, spells }))
+    },
+
+    // Show spell items section if we have spell details loaded
+    shouldShowSpellItems() {
+      return this.selectedSpellDetail && 
+             this.selectedSpellDetail.spell_id && 
+             (this.loadingSpellItems || this.spellItemsRequested)
     }
   },
   
@@ -985,8 +1069,14 @@ export default {
     // Spell details modal methods
     async openSpellModal(spell) {
       try {
+        // Disable body scrolling
+        document.body.style.overflow = 'hidden'
+        
         // First, show the modal with basic spell data
         this.selectedSpellDetail = { ...spell }
+        
+        // Start loading spell items immediately
+        this.loadSpellItems()
         
         // Then fetch detailed spell information
         const response = await axios.get(`${API_BASE_URL}/api/spells/${spell.spell_id}/details`)
@@ -1010,6 +1100,63 @@ export default {
 
     closeSpellModal() {
       this.selectedSpellDetail = null
+      // Reset spell items state when closing modal
+      this.spellItems = []
+      this.loadingSpellItems = false
+      this.spellItemsRequested = false
+      // Re-enable body scrolling
+      document.body.style.overflow = ''
+    },
+
+    // Spell items methods
+    async loadSpellItems() {
+      if (!this.selectedSpellDetail || !this.selectedSpellDetail.spell_id) {
+        console.error('No spell selected or spell ID missing')
+        return
+      }
+
+      try {
+        this.loadingSpellItems = true
+        this.spellItemsRequested = true
+        
+        const response = await axios.get(`${API_BASE_URL}/api/spells/${this.selectedSpellDetail.spell_id}/items`)
+        
+        // Check if API returned HTML instead of JSON
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
+          throw new Error('API returned HTML instead of JSON - possible proxy routing issue')
+        }
+        
+        this.spellItems = response.data.items || []
+        
+        console.log(`Loaded ${this.spellItems.length} items with spell ID ${this.selectedSpellDetail.spell_id}`)
+        
+      } catch (error) {
+        console.error('Error loading spell items:', error)
+        this.spellItems = []
+        toastService.error('Failed to load items with this spell')
+      } finally {
+        this.loadingSpellItems = false
+      }
+    },
+
+    openItemModal(itemId) {
+      // Navigate to the Items page and open the specific item modal
+      // This will use the exact same item modal as the Items page
+      this.$router.push({
+        name: 'Items',
+        query: { item: itemId }
+      })
+    },
+
+    handleItemIconError(event) {
+      // Fallback for item icons
+      const currentSrc = event.target.src
+      if (currentSrc.includes('.gif')) {
+        event.target.src = currentSrc.replace('.gif', '.png')
+      } else {
+        // Final fallback to default item icon
+        event.target.src = '/icons/items/0.gif'
+      }
     },
 
     getSpellIconUrl(spell) {
@@ -1219,7 +1366,313 @@ export default {
     },
 
     hasSpellEffects(spell) {
-      return spell.effects && spell.effects.some(effect => effect && effect !== 0)
+      return spell.effects && spell.effects.length > 0
+    },
+
+    getEffectName(effectId) {
+      const effectNames = {
+        0: 'Current HP',
+        1: 'Armor Class', 
+        2: 'ATK',
+        3: 'Movement Speed',
+        4: 'STR',
+        5: 'DEX',
+        6: 'AGI', 
+        7: 'STA',
+        8: 'INT',
+        9: 'WIS',
+        10: 'CHA',
+        11: 'Attack Speed',
+        12: 'Invisibility',
+        13: 'See Invisible',
+        14: 'Water Breathing',
+        15: 'Mana',
+        19: 'Levitate',
+        27: 'Dispel Magic',
+        32: 'Summon Item',
+        35: 'Disease',
+        36: 'Poison',
+        45: 'Resist Fire',
+        46: 'Resist Cold', 
+        47: 'Resist Poison',
+        48: 'Resist Disease',
+        49: 'Resist Magic',
+        54: 'Absorb Magic Attack',
+        56: 'Levitation',
+        57: 'Damage Shield',
+        58: 'Illusion',
+        63: 'Infravision',
+        64: 'Ultravision',
+        67: 'Max HP',
+        69: 'Create Food',
+        70: 'Create Water',
+        79: 'Current HP Once',
+        90: 'Hate',
+        96: 'Haste',
+        97: 'Root',
+        98: 'Heal Over Time',
+        99: 'Complete Heal',
+        118: 'Root',
+        124: 'Improved Damage',
+        126: 'Alter NPC Level',
+        148: 'Skill Attack',
+        150: 'Death Save',
+        180: 'Divine Favor',
+        189: 'Instrument Modifier',
+        205: 'Rampage',
+        417: 'Decrease Worn Item Restriction'
+      };
+      return effectNames[effectId] || `Effect ${effectId}`;
+    },
+
+    getEffectDescription(effect) {
+      const { id, base_value, max_value, limit_value } = effect;
+      const value = base_value;
+      const maxVal = max_value;
+      const limit = limit_value;
+      
+      // Helper function to format value ranges
+      const formatValue = (base, max, showSign = true) => {
+        if (max !== 0 && max !== base) {
+          const sign = showSign && base >= 0 ? '+' : '';
+          const maxSign = showSign && max >= 0 ? '+' : '';
+          return `${sign}${base} to ${maxSign}${max}`;
+        }
+        const sign = showSign && base >= 0 ? '+' : '';
+        return `${sign}${base}`;
+      };
+
+      switch (id) {
+        // HP/Mana Effects
+        case 0: // Current HP (SE_CurrentHP)
+          return value < 0 ? `Damages ${formatValue(Math.abs(value), Math.abs(maxVal), false)} hit points` : `Heals ${formatValue(value, maxVal, false)} hit points`;
+        case 15: // Mana (SE_Mana)
+          return value < 0 ? `Drains ${formatValue(Math.abs(value), Math.abs(maxVal), false)} mana` : `Restores ${formatValue(value, maxVal, false)} mana`;
+        case 79: // Current HP Once (SE_CurrentHPOnce)
+          return value < 0 ? `Instantly damages ${formatValue(Math.abs(value), Math.abs(maxVal), false)} hit points` : `Instantly heals ${formatValue(value, maxVal, false)} hit points`;
+        case 67: // Max HP (SE_MaxHP)
+          return `${value < 0 ? 'Decreases' : 'Increases'} maximum hit points by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 98: // Heal Over Time (SE_HealOverTime)
+          return `Heals ${formatValue(value, maxVal, false)} hit points per tick`;
+        case 99: // Complete Heal (SE_CompleteHeal)
+          return `Completely heals target`;
+
+        // Stat Modifications
+        case 1: // Armor Class (SE_ArmorClass)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Armor Class by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 2: // ATK (SE_ATK)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Attack by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 4: // STR (SE_STR)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Strength by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 5: // DEX (SE_DEX)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Dexterity by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 6: // AGI (SE_AGI)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Agility by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 7: // STA (SE_STA)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Stamina by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 8: // INT (SE_INT)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Intelligence by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 9: // WIS (SE_WIS)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Wisdom by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 10: // CHA (SE_CHA)
+          return `${value < 0 ? 'Decreases' : 'Increases'} Charisma by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+
+        // Speed/Movement Effects
+        case 3: // Movement Speed (SE_MovementSpeed) - percentage based
+          if (value > 100) return `Increases movement speed by ${value - 100}%`;
+          if (value < 100) return `Decreases movement speed by ${100 - value}%`;
+          return `Normal movement speed`;
+        case 11: // Attack Speed (SE_AttackSpeed) - haste formula
+          if (value > 100) return `Increases haste by ${value - 100}%`;
+          if (value < 100) return `Decreases attack speed by ${100 - value}%`;
+          return `Normal attack speed`;
+
+        // Resistance Effects
+        case 45: // Resist Fire (SE_ResistFire)
+          return `${value < 0 ? 'Decreases' : 'Increases'} fire resistance by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 46: // Resist Cold (SE_ResistCold)
+          return `${value < 0 ? 'Decreases' : 'Increases'} cold resistance by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 47: // Resist Poison (SE_ResistPoison)
+          return `${value < 0 ? 'Decreases' : 'Increases'} poison resistance by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 48: // Resist Disease (SE_ResistDisease)
+          return `${value < 0 ? 'Decreases' : 'Increases'} disease resistance by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+        case 49: // Resist Magic (SE_ResistMagic)
+          return `${value < 0 ? 'Decreases' : 'Increases'} magic resistance by ${formatValue(Math.abs(value), Math.abs(maxVal), false)}`;
+
+        // Magic Effects
+        case 27: // Dispel Magic (SE_DispelMagic)
+          return `${value}% chance to dispel magical effects`;
+
+        // Counter Effects (positive adds, negative removes)
+        case 35: // Disease (SE_Disease)
+          return value > 0 ? `Inflicts ${value} disease counters` : `Removes ${Math.abs(value)} disease counters`;
+        case 36: // Poison (SE_Poison)
+          return value > 0 ? `Inflicts ${value} poison counters` : `Removes ${Math.abs(value)} poison counters`;
+
+        // Utility Effects
+        case 12: // Invisibility (SE_Invisibility)
+          return value > 0 ? `Grants invisibility level ${value}` : `Removes invisibility`;
+        case 13: // See Invisible (SE_SeeInvis)
+          return `Grants see invisible`;
+        case 14: // Enduring Breath (SE_WaterBreathing)
+          return `Grants enduring breath`;
+        case 19: // Levitate (SE_Levitate)
+          return `Grants levitation`;
+        case 56: // Levitation (SE_Levitation - alternative)
+          return `Grants levitation`;
+        case 63: // Infravision (SE_Infravision)
+          return `Grants infravision`;
+        case 64: // Ultravision (SE_Ultravision)
+          return `Grants ultravision`;
+
+        // Combat Effects
+        case 54: // Rune (SE_AbsorbMagicAtt)
+          return `Absorbs ${formatValue(value, maxVal, false)} points of magical damage`;
+        case 57: // Damage Shield (SE_DamageShield)
+          return `Reflects ${formatValue(value, maxVal, false)} damage to attackers`;
+        case 58: // Illusion (SE_Illusion)
+          return `Changes appearance to race ${value}`;
+        case 90: // Hate (SE_Hate)
+          return value > 0 ? `Increases hate by ${value}` : `Reduces hate by ${Math.abs(value)}`;
+        case 97: // Root (SE_Root)
+          return `Immobilizes target`;
+        case 118: // Root (SE_Root - alternative ID)
+          return `Immobilizes target`;
+
+        // Creation Effects
+        case 32: // Create Item (SE_SummonItem)
+          return `Summons item${maxVal !== 0 ? ` (up to ${maxVal} charges)` : ''}`;
+        case 69: // Create Food (SE_CreateFood)
+          return `Summons food`;
+        case 70: // Create Water (SE_CreateWater)  
+          return `Summons water`;
+
+        // Percentage-based Effects
+        case 96: // Haste (SE_Haste) 
+          return `Increases haste by ${value}%`;
+        case 124: // Improved Damage (SE_ImprovedDamage)
+          return `Increases spell damage by ${value}%`;
+        case 150: // Death Save (SE_DeathSave)
+          return `${value}% chance to heal when below 15% health`;
+        case 180: // Divine Favor (SE_DivineFavor)
+          return `Increases healing by ${value}%`;
+
+        // Special Combat Effects
+        case 205: // Rampage (SE_Rampage)
+          return `Performs ${value} combat rounds on multiple targets`;
+        case 126: // Alter NPC Level (SE_AlterNPCLevel)
+          return `Changes NPC level by ${formatValue(value, maxVal, true)}`;
+        case 148: // Skill Attack (SE_SkillAttack)
+          return `Skill-based attack using skill ${value}${limit !== 0 ? ` (limit ${limit})` : ''}`;
+        case 189: // Instrument Modifier (SE_InstrumentMod)
+          return `Modifies instrument effectiveness by ${formatValue(value, maxVal, false)}`;
+        case 417: // Decrease Worn Item Restriction (SE_ReduceSkillTimer)
+          return `Reduces worn item restrictions by ${formatValue(value, maxVal, false)}`;
+
+        // Default cases
+        default:
+          if (value !== 0) {
+            return `${this.getEffectName(id)}: ${formatValue(value, maxVal)}${limit !== 0 ? ` (limit ${limit})` : ''}`;
+          }
+          return `${this.getEffectName(id)}`;
+      }
+    },
+
+    getSimpleEffectDescription(effect) {
+      if (!effect || !effect.id) return 'Unknown effect'
+      
+      const id = effect.id
+      const value = effect.base_value || 0
+      const maxVal = effect.max_value || 0
+      
+      // Helper function to format value range like EQ Alla
+      const formatRange = (val, max) => {
+        if (max !== 0 && max !== val) {
+          return `${val} to ${max}`
+        }
+        return `${val}`
+      }
+      
+      // Define EQ Alla effect names (based on their $dbspelleffects array)
+      const getEffectBaseName = (effectId) => {
+        const effectNames = {
+          0: 'Hitpoints',
+          1: 'AC',
+          2: 'ATK', 
+          3: 'Movement',
+          4: 'STR',
+          5: 'DEX',
+          6: 'AGI',
+          7: 'STA',
+          8: 'INT',
+          9: 'WIS',
+          10: 'CHA',
+          11: 'Attack Speed',
+          12: 'Invisibility',
+          13: 'See Invisible',
+          14: 'Enduring Breath',
+          15: 'Mana',
+          19: 'Levitate',
+          35: 'Disease Counter',
+          36: 'Poison Counter',
+          45: 'Fire Resist',
+          46: 'Cold Resist',
+          47: 'Poison Resist',
+          48: 'Disease Resist',
+          49: 'Magic Resist',
+          56: 'Levitation',
+          63: 'Infravision',
+          64: 'Ultravision',
+          96: 'Haste',
+          97: 'Root',
+          99: 'Root'
+        }
+        return effectNames[effectId] || `Effect ${effectId}`
+      }
+      
+      const baseName = getEffectBaseName(id)
+      
+      // Handle special cases that don't follow the standard increase/decrease pattern
+      switch (id) {
+        case 12: // Invisibility
+          return 'Invisibility'
+        case 13: // See Invisible
+          return 'See Invisible'
+        case 14: // Enduring Breath
+          return 'Endure Breath'
+        case 19: // Levitate
+        case 56: // Levitation
+          return 'Levitate'
+        case 63: // Infravision
+          return 'Infravision'
+        case 64: // Ultravision
+          return 'Ultravision'
+        case 97: // Root
+        case 99: // Root
+          return 'Immobilize'
+        
+        // Movement Speed - special formatting
+        case 3:
+          if (value > 100) return `Increase Movement Rate by ${value - 100}%`
+          if (value < 100) return `Decrease Movement Rate by ${100 - value}%`
+          return 'Normal Movement Rate'
+        
+        // Attack Speed/Haste - special formatting  
+        case 11:
+          if (value > 100) return `Increase Attack Speed by ${value - 100}%`
+          if (value < 100) return `Decrease Attack Speed by ${100 - value}%`
+          return 'Normal Attack Speed'
+        case 96:
+          return `Increase Attack Speed by ${value}%`
+          
+        // Standard increase/decrease effects
+        default:
+          if (value < 0) {
+            return `Decrease ${baseName} by ${formatRange(Math.abs(value), Math.abs(maxVal))}`
+          } else {
+            return `Increase ${baseName} by ${formatRange(value, maxVal)}`
+          }
+      }
     },
 
     hasSpellComponents(spell) {
@@ -1606,7 +2059,8 @@ export default {
       console.warn('Spell pagination request timed out')
       this.paginating = false
       toastService.warning('Pagination request timed out. Please try again.')
-    }
+    },
+
   },
 
   mounted() {
@@ -1615,6 +2069,11 @@ export default {
 
   updated() {
     this.initializeClassScrolling()
+  },
+
+  unmounted() {
+    // Ensure body scrolling is restored if component is destroyed while modal is open
+    document.body.style.overflow = ''
   }
 }
 </script>
@@ -3184,6 +3643,7 @@ export default {
   justify-content: center;
   z-index: 9999;
   padding: 20px;
+  box-sizing: border-box;
 }
 
 .modal-content {
@@ -3192,16 +3652,19 @@ export default {
   border-radius: 20px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5),
               0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  max-width: 800px;
   width: 100%;
   max-height: 95vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 .spell-modal {
-  max-width: 900px;
+  max-width: 1000px;
+  max-height: 90vh;
+  width: 95vw;
+  min-width: 320px;
 }
 
 .modal-header {
@@ -3299,6 +3762,7 @@ export default {
   flex: 1;
   overflow-y: auto;
   padding: 0;
+  min-height: 0; /* Allow flexbox shrinking */
 }
 
 .spell-details {
@@ -3310,7 +3774,7 @@ export default {
 }
 
 .detail-section:last-child {
-  margin-bottom: 0;
+  margin-bottom: 20px;
 }
 
 .detail-section h4 {
@@ -3325,7 +3789,7 @@ export default {
 
 .primary-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 15px;
 }
 
@@ -3445,18 +3909,74 @@ export default {
 
 .effects-list, .components-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 15px;
 }
 
 .effect-item, .component-item {
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.component-item {
+  flex-direction: row;
   justify-content: space-between;
   align-items: center;
+}
+
+.effect-description {
+  margin-bottom: 8px;
+}
+
+.effect-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.effect-technical {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.effect-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.effect-id {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Courier New', monospace;
+}
+
+.effect-values {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.stat-item {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .effect-label, .component-label {
@@ -3509,33 +4029,825 @@ export default {
               0 0 0 1px rgba(255, 255, 255, 0.2) inset;
 }
 
+/* New Modal Layout */
+.spell-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 24px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.left-column,
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Casting Information Styles */
+.casting-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.casting-info-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.casting-info-item:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Class Requirements Styles */
+.class-requirements-container {
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.class-requirements-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.class-requirement-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.class-requirement-card:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.class-icon-small {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.class-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.class-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.class-level {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Effects Container */
+.effects-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.effect-card {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 14px;
+  transition: all 0.3s ease;
+}
+
+.effect-card:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.effect-main {
+  margin-bottom: 10px;
+}
+
+.effect-description-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.effect-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.effect-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.effect-name-small {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.effect-id-small {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Courier New', monospace;
+}
+
+.effect-stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stat-badge {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Bottom Info Grid */
+.bottom-info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+/* Components List */
+.components-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.component-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.component-index {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.component-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Additional Info List */
+.additional-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.info-row .info-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.info-row .info-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Custom Scrollbars */
+.class-requirements-scroll::-webkit-scrollbar,
+.effects-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.class-requirements-scroll::-webkit-scrollbar-track,
+.effects-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.class-requirements-scroll::-webkit-scrollbar-thumb,
+.effects-container::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.6) 0%, rgba(118, 75, 162, 0.6) 100%);
+  border-radius: 3px;
+}
+
+.class-requirements-scroll::-webkit-scrollbar-thumb:hover,
+.effects-container::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.8) 100%);
+}
+
+/* Horizontal Class Requirements - Bottom Section */
+.class-requirements-bottom {
+  margin-top: 30px;
+  padding-top: 25px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.class-requirements-bottom h4 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0 0 20px 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  text-align: center;
+}
+
+.class-requirements-horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.class-requirement-horizontal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 15px;
+  transition: all 0.3s ease;
+  min-width: 100px;
+  min-height: 60px;
+  cursor: pointer;
+}
+
+.class-requirement-horizontal:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.class-icon-horizontal {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  flex-shrink: 0;
+}
+
+.class-info-horizontal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.class-name-horizontal {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  line-height: 1;
+}
+
+.class-level-horizontal {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1;
+}
+
+/* Spell Items Section */
+.spell-items-section {
+  margin-top: 20px;
+}
+
+.spell-items-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 20px 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+.spell-items-section h4 i {
+  background: linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 1.1rem;
+}
+
+.loading-container {
+  padding: 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+}
+
+.loading-spinner i {
+  font-size: 1.2rem;
+  color: #8b5cf6;
+}
+
+.spell-items-list {
+  margin-top: 15px;
+}
+
+.spell-items-count {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 15px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.spell-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.spell-item-card {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(217, 70, 239, 0.1) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.spell-item-card:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+}
+
+.spell-item-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(217, 70, 239, 0.2) 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.item-icon-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.spell-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.spell-item-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spell-item-effects {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.effect-type-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.effect-type-badge.effect-scroll {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.effect-type-badge.effect-click {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.effect-type-badge.effect-proc {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.effect-type-badge.effect-worn {
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.effect-type-badge.effect-focus {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.effect-type-badge.effect-bard {
+  background: rgba(236, 72, 153, 0.2);
+  color: #ec4899;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
+.no-spell-items {
+  padding: 30px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.no-spell-items i {
+  font-size: 2rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Custom scrollbar for spell items grid */
+.spell-items-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.spell-items-grid::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.spell-items-grid::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.6) 0%, rgba(217, 70, 239, 0.6) 100%);
+  border-radius: 3px;
+}
+
+.spell-items-grid::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.8) 0%, rgba(217, 70, 239, 0.8) 100%);
+}
+
 /* Responsive Modal */
+@media (max-width: 1200px) {
+  .spell-modal {
+    max-width: 95vw;
+    width: 95vw;
+  }
+}
+
+@media (max-width: 1024px) {
+  .spell-modal {
+    max-width: 98vw;
+    max-height: 95vh;
+    width: 98vw;
+  }
+  
+  .spell-modal-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .left-column, .right-column {
+    max-height: none;
+    overflow-y: visible;
+  }
+  
+  .effects-container,
+  .class-requirements-scroll {
+    max-height: 300px;
+  }
+  
+  .class-requirements-horizontal {
+    gap: 10px;
+  }
+  
+  .class-requirement-horizontal {
+    min-width: 90px;
+    min-height: 55px;
+    padding: 10px 12px;
+  }
+  
+  .class-icon-horizontal {
+    width: 28px;
+    height: 28px;
+  }
+}
+
 @media (max-width: 768px) {
   .modal-overlay {
-    padding: 10px;
+    padding: 8px;
+  }
+  
+  .spell-modal {
+    max-width: 100vw;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 12px;
   }
   
   .modal-header {
-    padding: 20px;
+    padding: 15px;
   }
   
-  .spell-details {
-    padding: 20px;
+  .modal-header-content {
+    gap: 12px;
   }
   
-  .primary-stats-grid,
-  .class-requirements-grid,
-  .additional-info-grid {
-    grid-template-columns: 1fr;
+  .spell-modal-grid {
+    padding: 16px;
+    gap: 16px;
   }
   
-  .effects-list,
-  .components-list {
-    grid-template-columns: 1fr;
+  .effects-container,
+  .class-requirements-scroll {
+    max-height: 250px;
   }
   
   .spell-header-info h3 {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
   }
+  
+  .detail-section h4 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+  }
+  
+  .class-requirements-bottom {
+    margin-top: 20px;
+    padding-top: 20px;
+  }
+  
+  .class-requirements-bottom h4 {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+  }
+  
+  .class-requirements-horizontal {
+    gap: 8px;
+    justify-content: center;
+  }
+  
+  .class-requirement-horizontal {
+    min-width: 80px;
+    min-height: 50px;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  
+  .class-icon-horizontal {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .class-name-horizontal {
+    font-size: 0.75rem;
+  }
+  
+  .class-level-horizontal {
+    font-size: 0.7rem;
+  }
+  
+  .spell-items-section h4 {
+    font-size: 1.1rem;
+    justify-content: center;
+  }
+  
+  .spell-items-grid {
+    grid-template-columns: 1fr;
+    max-height: 300px;
+  }
+  
+  .spell-item-card {
+    padding: 10px;
+    gap: 10px;
+  }
+  
+  .spell-item-icon {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .item-icon-img {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .spell-item-name {
+    font-size: 0.9rem;
+  }
+  
+  /* Simple spell effects list - mobile responsive */
+  .spell-effects-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: 8px;
+  }
+  
+  .spell-effect-row {
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    gap: 6px;
+  }
+  
+  .effect-number {
+    min-width: 18px;
+    font-size: 0.8rem;
+  }
+  
+  .effect-type {
+    font-size: 0.8rem;
+  }
+}
+
+/* Enhanced Spell Effects List Styles for Better Readability */
+.spell-effects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  backdrop-filter: blur(5px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.spell-effect-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+.spell-effect-row:hover {
+  background: rgba(102, 126, 234, 0.08);
+  border-color: rgba(102, 126, 234, 0.2);
+  transform: translateX(2px);
+}
+
+.effect-number {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+  color: #ffffff;
+  font-weight: 700;
+  min-width: 32px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.effect-type {
+  color: rgba(255, 255, 255, 0.8);
+  flex-shrink: 0;
+  font-weight: 500;
+  font-size: 0.9rem;
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+}
+
+.effect-description {
+  color: #ffffff;
+  font-weight: 600;
+  flex: 1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  line-height: 1.3;
+}
+
+/* Enhanced custom scrollbar for spell effects */
+.spell-effects-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.spell-effects-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  margin: 4px;
+}
+
+.spell-effects-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.6) 0%, rgba(118, 75, 162, 0.6) 100%);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.spell-effects-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.8) 100%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Add visual distinction for different effect types */
+.spell-effect-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.spell-effect-row:nth-child(even) {
+  background: rgba(102, 126, 234, 0.02);
 }
 </style>
