@@ -3906,6 +3906,577 @@ def cleanup_resources():
     gc.collect()
     logger.info("Garbage collection completed")
 
+
+@app.route('/api/npcs/search', methods=['GET'])
+@exempt_when_limiting
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)
+def search_npcs():
+    """
+    Search NPCs in the EQEmu database.
+    Returns NPCs with basic information and spawn locations.
+    """
+    app.logger.info("=== NPC SEARCH START ===")
+    conn = None
+    cursor = None
+    
+    try:
+        # Get database connection
+        app.logger.info("Getting database connection...")
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        app.logger.info(f"Got connection, db_type: {db_type}")
+        cursor = conn.cursor()
+        
+        # Get search parameters
+        search_query = request.args.get('q', '').strip()
+        limit = min(int(request.args.get('limit', 20)), 100)
+        offset = int(request.args.get('offset', 0))
+        min_level = request.args.get('min_level')
+        max_level = request.args.get('max_level')
+        zone_filter = request.args.get('zone')
+        
+        app.logger.info(f"Search params: q='{search_query}', limit={limit}, offset={offset}")
+        
+        if not search_query and not min_level and not max_level and not zone_filter:
+            return jsonify({'error': 'Search query or filters required'}), 400
+        
+        # Build WHERE clause and parameters
+        where_conditions = []
+        query_params = []
+        
+        # Add search query condition with underscore/space/hash handling
+        if search_query:
+            # Convert spaces to underscores for database search, and use both patterns
+            search_with_underscores = search_query.replace(' ', '_')
+            search_with_spaces = search_query.replace('_', ' ')
+            
+            # Search for multiple variations to handle database format variations:
+            # - Original query
+            # - With underscores instead of spaces  
+            # - With spaces instead of underscores
+            # - With # prefix variations
+            # - Using REPLACE to normalize both _ and # for comparison
+            where_conditions.append("""(
+                nt.name LIKE %s OR 
+                nt.name LIKE %s OR 
+                nt.name LIKE %s OR
+                nt.name LIKE %s OR
+                nt.name LIKE %s OR
+                REPLACE(REPLACE(nt.name, '_', ' '), '#', '') LIKE %s
+            )""")
+            query_params.extend([
+                f'%{search_query}%',                    # Original search
+                f'%{search_with_underscores}%',         # Spaces -> underscores
+                f'%{search_with_spaces}%',              # Underscores -> spaces 
+                f'%#{search_query}%',                   # With # prefix
+                f'%#{search_with_underscores}%',        # With # prefix and underscores
+                f'%{search_query}%'                     # Normalized comparison
+            ])
+        
+        # Add level filters
+        if min_level:
+            where_conditions.append("nt.level >= %s")
+            query_params.append(int(min_level))
+        
+        if max_level:
+            where_conditions.append("nt.level <= %s")
+            query_params.append(int(max_level))
+        
+        # Add zone filter
+        if zone_filter:
+            where_conditions.append("z.short_name = %s")
+            query_params.append(zone_filter)
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # Count query
+        count_query = f"""
+            SELECT COUNT(DISTINCT nt.id) as total_count
+            FROM npc_types nt
+            LEFT JOIN spawnentry se ON nt.id = se.npcID
+            LEFT JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+            LEFT JOIN zone z ON s2.zone = z.short_name
+            WHERE {where_clause}
+        """
+        
+        cursor.execute(count_query, query_params)
+        result = cursor.fetchone()
+        total_count = result['total_count'] if isinstance(result, dict) else result[0]
+        
+        # Main search query with spawn location info
+        search_query_sql = f"""
+            SELECT DISTINCT
+                nt.id,
+                nt.name,
+                nt.lastname,
+                nt.level,
+                nt.race,
+                nt.class,
+                nt.hp,
+                nt.mindmg,
+                nt.maxdmg,
+                z.short_name as zone_short_name,
+                z.long_name as zone_long_name
+            FROM npc_types nt
+            LEFT JOIN spawnentry se ON nt.id = se.npcID
+            LEFT JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+            LEFT JOIN zone z ON s2.zone = z.short_name
+            WHERE {where_clause}
+            ORDER BY nt.name ASC
+            LIMIT %s OFFSET %s
+        """
+        
+        search_params = query_params + [limit, offset]
+        cursor.execute(search_query_sql, search_params)
+        results = cursor.fetchall()
+        
+        app.logger.debug(f"NPC search query returned {len(results)} results")
+        
+        # Format results
+        npcs = []
+        for row in results:
+            if isinstance(row, dict):
+                npc_data = dict(row)
+            else:
+                # Convert tuple to dict
+                columns = [desc[0] for desc in cursor.description]
+                npc_data = dict(zip(columns, row))
+            
+            # Clean up the data
+            npc = {
+                'id': npc_data['id'],
+                'name': npc_data['name'].replace('_', ' ') if npc_data['name'] else 'Unknown NPC',
+                'lastname': npc_data.get('lastname', ''),
+                'level': npc_data.get('level', 1),
+                'race': npc_data.get('race', 0),
+                'class': npc_data.get('class', 0),
+                'hp': npc_data.get('hp', 0),
+                'mindmg': npc_data.get('mindmg', 0),
+                'maxdmg': npc_data.get('maxdmg', 0),
+                'zone_short_name': npc_data.get('zone_short_name', ''),
+                'zone_long_name': npc_data.get('zone_long_name', '')
+            }
+            npcs.append(npc)
+        
+        app.logger.info(f"Formatted {len(npcs)} NPCs for response")
+        
+        return jsonify({
+            'npcs': npcs,
+            'total_count': total_count,
+            'limit': limit,
+            'offset': offset,
+            'search_query': request.args.get('q', '')
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error searching NPCs: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
+
+def parse_special_abilities(special_abilities_str):
+    """
+    Parse EQEmu special_abilities field into a list of readable special attacks.
+    
+    EQEmu special_abilities format is typically comma-separated values with codes:
+    Example: "1,1^2,1^3,1^35,1" 
+    
+    Common special ability codes:
+    1 = Summon, 2 = Enrage, 3 = Rampage, 4 = Area Rampage, 5 = Flurry, 
+    6 = Triple, 7 = Quad, 8 = Dual Wield, 9 = Bane Attack, 10 = Magical Attack,
+    11 = Ranged Attack, 12 = Unslowable, 13 = Unmezzable, 14 = Uncharmable,
+    15 = Unstunable, 16 = Unsnareable, 17 = Unfearable, 18 = Undispellable,
+    19 = Immune to Fleeing, 20 = Destructible Object, 21 = No Harm from Players,
+    22 = Always Flee, 23 = Flee Percent, 24 = Allow Beneficial, 25 = Disable Melee,
+    26 = NPC Chase Distance, 27 = Allow Tank, 28 = Ignore Root Aggro,
+    29 = Casting Resist Diff, 30 = Counter Avoid Damage, 31 = Prox Aggro,
+    32 = Immune to Aggro, 33 = Resist Ranged Spells, 34 = See Invis,
+    35 = See Invis vs Undead, 36 = See Hide, 37 = See Improved Hide,
+    38 = Innate Dual Wield, 39 = Innate Berserk, 40 = Findable, 41 = Track
+    """
+    
+    if not special_abilities_str or special_abilities_str.strip() == '':
+        return []
+    
+    # Map of ability codes to readable names
+    ability_names = {
+        1: "Summon", 2: "Enrage", 3: "Rampage", 4: "Area Rampage", 5: "Flurry",
+        6: "Triple Attack", 7: "Quad Attack", 8: "Dual Wield", 9: "Bane Attack", 
+        10: "Magical Attack", 11: "Ranged Attack", 12: "Unslowable", 13: "Unmezzable",
+        14: "Uncharmable", 15: "Unstunable", 16: "Unsnareable", 17: "Unfearable",
+        18: "Undispellable", 19: "Immune to Fleeing", 20: "Destructible Object",
+        21: "No Harm from Players", 22: "Always Flee", 23: "Flee Percent",
+        24: "Allow Beneficial", 25: "Disable Melee", 26: "NPC Chase Distance",
+        27: "Allow Tank", 28: "Ignore Root Aggro", 29: "Casting Resist Diff",
+        30: "Counter Avoid Damage", 31: "Prox Aggro", 32: "Immune to Aggro",
+        33: "Resist Ranged Spells", 34: "See Invisible", 35: "See Invisible vs Undead",
+        36: "See Hide", 37: "See Improved Hide", 38: "Innate Dual Wield",
+        39: "Innate Berserk", 40: "Findable", 41: "Track"
+    }
+    
+    special_attacks = []
+    
+    try:
+        # Parse the special_abilities string - typically format like "1,1^2,1^3,1"
+        # Each ability is separated by ^ and has format "code,value"
+        abilities = special_abilities_str.split('^')
+        
+        for ability in abilities:
+            if ',' in ability:
+                parts = ability.split(',')
+                if len(parts) >= 2:
+                    try:
+                        ability_code = int(parts[0])
+                        ability_value = int(parts[1])
+                        
+                        # Only include active abilities (value > 0)
+                        if ability_value > 0 and ability_code in ability_names:
+                            special_attacks.append(ability_names[ability_code])
+                    except (ValueError, IndexError):
+                        continue
+        
+        # Remove duplicates and sort
+        special_attacks = sorted(list(set(special_attacks)))
+        
+    except Exception as e:
+        app.logger.warning(f"Error parsing special abilities '{special_abilities_str}': {e}")
+        return []
+    
+    return special_attacks
+
+
+@app.route('/api/npcs/<npc_id>/details', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_npc_details(npc_id):
+    """
+    Get detailed information about a specific NPC including spawn locations and loot drops.
+    Only shows discovered items in loot drops.
+    """
+    try:
+        npc_id_int = int(npc_id)
+        app.logger.info(f"Getting NPC details for ID: {npc_id_int}")
+        
+        # Get database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # Get comprehensive NPC information matching EQ Alla clone
+            npc_query = """
+                SELECT 
+                    nt.*
+                FROM npc_types nt
+                WHERE nt.id = %s
+            """
+            
+            cursor.execute(npc_query, (npc_id_int,))
+            npc_result = cursor.fetchone()
+            
+            if not npc_result:
+                return jsonify({'error': 'NPC not found'}), 404
+            
+            # Convert to dict if it's a tuple
+            if isinstance(npc_result, dict):
+                npc_data = dict(npc_result)
+            else:
+                columns = [desc[0] for desc in cursor.description]
+                npc_data = dict(zip(columns, npc_result))
+            
+            # Get spawn locations matching EQ Alla clone query structure
+            spawn_query = """
+                SELECT DISTINCT
+                    z.note,
+                    z.short_name,
+                    z.long_name,
+                    s2.x,
+                    s2.y,
+                    s2.z,
+                    sg.name AS spawngroup
+                FROM zone z
+                INNER JOIN spawn2 s2 ON z.short_name = s2.zone
+                INNER JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID
+                LEFT JOIN spawngroup sg ON s2.spawngroupID = sg.id
+                WHERE se.npcID = %s
+                ORDER BY z.long_name
+            """
+            
+            cursor.execute(spawn_query, (npc_id_int,))
+            spawn_results = cursor.fetchall()
+            
+            spawn_locations = []
+            for spawn in spawn_results:
+                if isinstance(spawn, dict):
+                    spawn_data = dict(spawn)
+                else:
+                    columns = [desc[0] for desc in cursor.description]
+                    spawn_data = dict(zip(columns, spawn))
+                
+                spawn_locations.append({
+                    'zone_short_name': spawn_data['short_name'],
+                    'zone_long_name': spawn_data['long_name'] or spawn_data['short_name'],
+                    'zone_note': spawn_data.get('note', ''),
+                    'spawngroup': spawn_data.get('spawngroup', ''),
+                    'x': spawn_data.get('x', 0),
+                    'y': spawn_data.get('y', 0),
+                    'z': spawn_data.get('z', 0)
+                })
+            
+            # Get NPC spells (matching EQ Alla clone query structure)
+            npc_spells = []
+            if npc_data.get('npc_spells_id'):
+                spells_query = """
+                    SELECT 
+                        nse.spellid,
+                        sn.name as spell_name,
+                        sn.new_icon,
+                        nse.minlevel,
+                        nse.maxlevel,
+                        nse.priority,
+                        nse.recast_delay
+                    FROM npc_spells_entries nse
+                    INNER JOIN spells_new sn ON nse.spellid = sn.id
+                    WHERE nse.npc_spells_id = %s
+                    AND nse.minlevel <= %s
+                    AND nse.maxlevel >= %s
+                    ORDER BY nse.priority DESC, sn.name
+                """
+                
+                cursor.execute(spells_query, (npc_data['npc_spells_id'], npc_data.get('level', 1), npc_data.get('level', 1)))
+                spell_results = cursor.fetchall()
+                
+                for spell in spell_results:
+                    if isinstance(spell, dict):
+                        spell_data = dict(spell)
+                    else:
+                        columns = [desc[0] for desc in cursor.description]
+                        spell_data = dict(zip(columns, spell))
+                    
+                    npc_spells.append({
+                        'spell_id': spell_data['spellid'],
+                        'spell_name': spell_data['spell_name'].replace('_', ' ') if spell_data['spell_name'] else 'Unknown Spell',
+                        'icon': spell_data.get('new_icon', 0),
+                        'min_level': spell_data.get('minlevel', 1),
+                        'max_level': spell_data.get('maxlevel', 255),
+                        'priority': spell_data.get('priority', 0),
+                        'recast_delay': spell_data.get('recast_delay', 0)
+                    })
+
+            # Get merchant items (only discovered items)
+            merchant_items = []
+            if npc_data.get('merchant_id'):
+                merchant_query = """
+                    SELECT DISTINCT
+                        i.id as item_id,
+                        i.name as item_name,
+                        i.icon,
+                        i.price
+                    FROM merchantlist ml
+                    INNER JOIN items i ON ml.item = i.id
+                    INNER JOIN discovered_items di ON i.id = di.item_id
+                    WHERE ml.merchantid = %s
+                    AND ml.item > 0
+                    ORDER BY ml.slot, i.name
+                    LIMIT 100
+                """
+                
+                cursor.execute(merchant_query, (npc_data['merchant_id'],))
+                merchant_results = cursor.fetchall()
+                
+                for item in merchant_results:
+                    if isinstance(item, dict):
+                        item_data = dict(item)
+                    else:
+                        columns = [desc[0] for desc in cursor.description]
+                        item_data = dict(zip(columns, item))
+                    
+                    merchant_items.append({
+                        'item_id': item_data['item_id'],
+                        'item_name': item_data['item_name'].replace('_', ' ') if item_data['item_name'] else 'Unknown Item',
+                        'icon': item_data.get('icon', 0),
+                        'price': item_data.get('price', 0)
+                    })
+
+            # Get loot drops with hierarchical structure (loot drops containing items)
+            loot_drops = []
+            if npc_data.get('loottable_id'):
+                # First, get all unique loot drops for this NPC's loot table
+                loot_groups_query = """
+                    SELECT DISTINCT
+                        lte.lootdrop_id,
+                        lte.probability as table_probability,
+                        lte.multiplier,
+                        lte.droplimit,
+                        lte.mindrop
+                    FROM loottable_entries lte
+                    WHERE lte.loottable_id = %s
+                    ORDER BY lte.probability DESC, lte.lootdrop_id
+                """
+                
+                cursor.execute(loot_groups_query, (npc_data['loottable_id'],))
+                loot_groups = cursor.fetchall()
+                
+                for group in loot_groups:
+                    if isinstance(group, dict):
+                        group_data = dict(group)
+                    else:
+                        columns = [desc[0] for desc in cursor.description]
+                        group_data = dict(zip(columns, group))
+                    
+                    loot_drop_id = group_data['lootdrop_id']
+                    table_probability = group_data.get('probability', 100)
+                    multiplier = group_data.get('multiplier', 1)
+                    droplimit = group_data.get('droplimit', 0)
+                    mindrop = group_data.get('mindrop', 0)
+                    
+                    # Get items for this specific loot drop group
+                    items_query = """
+                        SELECT DISTINCT
+                            i.id as item_id,
+                            i.name as item_name,
+                            i.icon,
+                            i.itemtype,
+                            lde.chance as item_chance
+                        FROM lootdrop_entries lde
+                        INNER JOIN items i ON lde.item_id = i.id
+                        INNER JOIN discovered_items di ON i.id = di.item_id
+                        WHERE lde.lootdrop_id = %s
+                        AND lde.item_id > 0
+                        ORDER BY lde.chance DESC, i.name
+                        LIMIT 20
+                    """
+                    
+                    cursor.execute(items_query, (loot_drop_id,))
+                    item_results = cursor.fetchall()
+                    
+                    items = []
+                    for item in item_results:
+                        if isinstance(item, dict):
+                            item_data = dict(item)
+                        else:
+                            columns = [desc[0] for desc in cursor.description]
+                            item_data = dict(zip(columns, item))
+                        
+                        # Calculate overall probability (table_probability * item_chance)
+                        item_chance = item_data.get('item_chance', 1)
+                        overall_probability = round((table_probability / 100.0) * (item_chance / 100.0) * 100, 2)
+                        
+                        items.append({
+                            'item_id': item_data['item_id'],
+                            'item_name': item_data['item_name'].replace('_', ' ') if item_data['item_name'] else 'Unknown Item',
+                            'icon': item_data.get('icon', 0),
+                            'itemtype': item_data.get('itemtype', 0),
+                            'item_chance': item_chance,
+                            'overall_probability': max(0.01, overall_probability)
+                        })
+                    
+                    # Only add loot drop groups that have items
+                    if items:
+                        loot_drops.append({
+                            'loot_drop_id': loot_drop_id,
+                            'table_probability': table_probability,
+                            'multiplier': multiplier,
+                            'droplimit': droplimit,
+                            'mindrop': mindrop,
+                            'items': items
+                        })
+            
+            # Format response with comprehensive NPC data matching EQ Alla clone
+            detailed_npc = {
+                'id': npc_data['id'],
+                'name': npc_data['name'].replace('_', ' ') if npc_data['name'] else 'Unknown NPC',
+                'lastname': npc_data.get('lastname', ''),
+                'level': npc_data.get('level', 1),
+                'race': npc_data.get('race', 0),
+                'class': npc_data.get('class', 0),
+                'gender': npc_data.get('gender', 0),
+                'size': npc_data.get('size', 6),
+                'texture': npc_data.get('texture', 0),
+                'helmtexture': npc_data.get('helmtexture', 0),
+                
+                # Combat stats
+                'hp': npc_data.get('hp', 0),
+                'mana': npc_data.get('mana', 0),
+                'ac': npc_data.get('AC', 0),
+                'mindmg': npc_data.get('mindmg', 0),
+                'maxdmg': npc_data.get('maxdmg', 0),
+                'attack_speed': npc_data.get('attack_speed', 0),
+                'attack_delay': npc_data.get('attack_delay', 30),
+                
+                # Resistances
+                'resistances': {
+                    'magic': npc_data.get('MR', 0),
+                    'cold': npc_data.get('CR', 0),
+                    'disease': npc_data.get('DR', 0),
+                    'fire': npc_data.get('FR', 0),
+                    'poison': npc_data.get('PR', 0)
+                },
+                
+                # System IDs
+                'loottable_id': npc_data.get('loottable_id', 0),
+                'merchant_id': npc_data.get('merchant_id', 0),
+                'npc_spells_id': npc_data.get('npc_spells_id', 0),
+                'npc_faction_id': npc_data.get('npc_faction_id', 0),
+                
+                # Special attacks
+                'special_attacks': parse_special_abilities(npc_data.get('special_abilities', '')),
+                
+                # Associated data
+                'spawn_locations': spawn_locations,
+                'loot_drops': loot_drops,
+                'spells': npc_spells,
+                'merchant_items': merchant_items
+            }
+            
+            app.logger.info(f"NPC details retrieved successfully for ID: {npc_id_int}")
+            
+            return jsonify(detailed_npc)
+            
+        except Exception as e:
+            app.logger.error(f"Error querying NPC details: {e}")
+            import traceback
+            app.logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({'error': f'Failed to query NPC details: {str(e)}'}), 500
+            
+        finally:
+            cursor.close()
+            
+    except ValueError:
+        app.logger.error(f"Invalid NPC ID: {npc_id}")
+        return jsonify({'error': 'Invalid NPC ID'}), 400
+    except Exception as e:
+        app.logger.error(f"Error getting NPC details: {e}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Failed to get NPC details: {str(e)}'}), 500
+        
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+
+
 if __name__ == '__main__':
     import atexit
     

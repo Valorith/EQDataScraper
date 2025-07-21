@@ -3,6 +3,7 @@ import MainPage from '../views/MainPage.vue'
 import Home from '../views/Home.vue'
 import Items from '../views/Items.vue'
 import Spells from '../views/Spells.vue'
+import NPCs from '../views/NPCs.vue'
 
 // OAuth authentication components (lazy loaded)
 const AuthCallback = () => import('../views/AuthCallback.vue')
@@ -36,6 +37,11 @@ const routes = [
     path: '/spells',
     name: 'Spells',
     component: Spells
+  },
+  {
+    path: '/npcs',
+    name: 'NPCs',
+    component: NPCs
   },
   // OAuth authentication routes
   {

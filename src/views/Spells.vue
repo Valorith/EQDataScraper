@@ -857,6 +857,18 @@ export default {
              (this.loadingSpellItems || this.spellItemsRequested)
     }
   },
+
+  watch: {
+    '$route'(to, from) {
+      // Handle spell modal opening when route changes with spell query parameter
+      if (to.query.spell && to.query.spell !== from.query.spell) {
+        const spellId = parseInt(to.query.spell)
+        if (!isNaN(spellId)) {
+          this.openSpellFromId(spellId)
+        }
+      }
+    }
+  },
   
   methods: {
     async performSearch(page = 1) {
@@ -1120,6 +1132,46 @@ export default {
       this.spellItemsRequested = false
       // Re-enable body scrolling
       document.body.style.overflow = ''
+    },
+
+    async openSpellFromId(spellId) {
+      try {
+        console.log('Opening spell modal for ID:', spellId)
+        
+        // Disable body scrolling
+        document.body.style.overflow = 'hidden'
+        
+        // Start loading state
+        this.loadingSpellDetails = true
+        
+        // Fetch spell details directly by ID
+        console.log('Fetching spell details from API...')
+        const response = await axios.get(`${API_BASE_URL}/api/spells/${spellId}/details`)
+        
+        // Check if API returned HTML instead of JSON
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
+          throw new Error('API returned HTML instead of JSON - possible proxy routing issue')
+        }
+        
+        console.log('Received spell data:', response.data)
+        
+        // Set the spell details for the modal
+        this.selectedSpellDetail = response.data
+        
+        // Start loading spell items immediately after setting spell details
+        this.loadSpellItems()
+        
+        // Stop loading state - modal is now ready to display
+        this.loadingSpellDetails = false
+        
+        console.log('Spell modal should now be visible')
+        
+      } catch (error) {
+        console.error('Error fetching spell details by ID:', error)
+        this.loadingSpellDetails = false
+        // Re-enable body scrolling on error
+        document.body.style.overflow = ''
+      }
     },
 
     // Spell items methods
@@ -2077,8 +2129,18 @@ export default {
 
   },
 
-  mounted() {
+  async mounted() {
     this.initializeClassScrolling()
+    
+    // Check if we need to auto-open a spell modal from query parameter
+    console.log('Spells.vue mounted, route query:', this.$route.query)
+    if (this.$route.query.spell) {
+      const spellId = parseInt(this.$route.query.spell)
+      console.log('Found spell ID in query:', spellId)
+      if (!isNaN(spellId)) {
+        await this.openSpellFromId(spellId)
+      }
+    }
   },
 
   updated() {
