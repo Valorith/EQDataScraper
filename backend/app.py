@@ -2580,6 +2580,1168 @@ def get_item_types():
         return jsonify({'error': f'Failed to get item types: {str(e)}'}), 500
 
 
+@app.route('/api/items/<item_id>/drop-sources', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_drop_sources(item_id):
+    """
+    Get NPCs and zones where an item is dropped.
+    Optimized version of the legacy PHP query with proper JOINs and indexing.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'lootdrop_entries'")
+            if not cursor.fetchone():
+                app.logger.warning("Loot tables not available in this database")
+                return jsonify({'zones': [], 'message': 'Drop source data not available in this database'})
+            
+            # Pre-check removed - availability endpoint now uses same filtering logic
+            # Optimized query using explicit JOINs and proper indexing
+            # Use standard EQEmu table names
+            query = """
+                SELECT DISTINCT
+                    nt.id as npc_id,
+                    nt.name as npc_name,
+                    s2.zone,
+                    z.long_name as zone_name,
+                    lte.multiplier,
+                    lte.probability,
+                    lde.chance
+                FROM npc_types nt
+                INNER JOIN spawnentry se ON nt.id = se.npcID
+                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                INNER JOIN zone z ON s2.zone = z.short_name
+                INNER JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+                INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+                LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
+                WHERE lde.item_id = %s
+                  AND z.min_status = 0
+                  AND s2d.spawn2_id IS NULL
+                  AND nt.merchant_id = 0
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                ORDER BY z.long_name, nt.name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    npc_id, npc_name, zone_short, zone_name, multiplier, probability, chance = (
+                        row['npc_id'], row['npc_name'], row['zone'], row['zone_name'],
+                        row['multiplier'], row['probability'], row['chance']
+                    )
+                else:
+                    # Tuple format: npc_id, npc_name, zone, zone_name, multiplier, probability, chance
+                    npc_id, npc_name, zone_short, zone_name, multiplier, probability, chance = row
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'npcs': []
+                    }
+                
+                # Calculate drop chance (chance * probability / 100)
+                drop_chance = round((chance * probability / 100), 2)
+                
+                zones_data[zone_short]['npcs'].append({
+                    'npc_id': npc_id,
+                    'npc_name': npc_name.replace('_', ' '),
+                    'chance': chance,
+                    'probability': probability,
+                    'multiplier': multiplier,
+                    'drop_chance': drop_chance
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item drop sources for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get drop sources: {str(e)}'}), 500
+
+
+def calculate_merchant_price(base_price, sellrate, npc_class):
+    """
+    Calculate the actual price a merchant sells an item for.
+    
+    EverQuest pricing logic:
+    - base_price: Item's base price in copper
+    - sellrate: Merchant's pricing modifier (default 100 = 100%)
+    - npc_class: Different classes may have different pricing rules
+    
+    Returns price in copper
+    """
+    if not base_price or base_price <= 0:
+        return 0
+    
+    # Default sellrate if not set
+    if not sellrate or sellrate <= 0:
+        sellrate = 100
+    
+    # Calculate final price: (base_price * sellrate) / 100
+    final_price = int((base_price * sellrate) / 100)
+    
+    # Ensure minimum price of 1 copper for sellable items
+    return max(1, final_price)
+
+
+def convert_copper_to_coins(copper_amount):
+    """
+    Convert copper amount to platinum, gold, silver, bronze coins.
+    EverQuest currency: 1000 copper = 100 silver = 10 gold = 1 platinum
+    """
+    if not copper_amount or copper_amount <= 0:
+        return {'platinum': 0, 'gold': 0, 'silver': 0, 'bronze': 0}
+    
+    platinum = copper_amount // 1000
+    remaining = copper_amount % 1000
+    
+    gold = remaining // 100
+    remaining = remaining % 100
+    
+    silver = remaining // 10
+    bronze = remaining % 10
+    
+    return {
+        'platinum': platinum,
+        'gold': gold,
+        'silver': silver,
+        'bronze': bronze
+    }
+
+
+@app.route('/api/items/<item_id>/merchant-sources', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_merchant_sources(item_id):
+    """
+    Get NPCs and zones where an item is sold by merchants.
+    Optimized version of the legacy PHP query with proper JOINs and pricing info.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'merchantlist'")
+            if not cursor.fetchone():
+                app.logger.warning("Merchant tables not available in this database")
+                return jsonify({'zones': [], 'message': 'Merchant data not available in this database'})
+            
+            # Check if item is sold anywhere (optimized pre-check)
+            cursor.execute("""
+                SELECT 1 FROM merchantlist 
+                WHERE item = %s LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'zones': []})
+            
+            # Optimized query using explicit JOINs and proper indexing
+            # Include pricing information for shopkeepers and LDON merchants
+            # Note: sellrate might not exist in all EQEmu schemas, so we'll use a default
+            query = """
+                SELECT DISTINCT
+                    nt.id as npc_id,
+                    nt.name as npc_name,
+                    nt.class as npc_class,
+                    s2.zone,
+                    z.long_name as zone_name,
+                    ml.slot as merchant_slot,
+                    i.price as item_base_price,
+                    100 as merchant_sellrate
+                FROM npc_types nt
+                INNER JOIN merchantlist ml ON nt.merchant_id = ml.merchantid
+                INNER JOIN spawnentry se ON nt.id = se.npcID
+                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                INNER JOIN zone z ON s2.zone = z.short_name
+                INNER JOIN items i ON ml.item = i.id
+                LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
+                WHERE ml.item = %s
+                  AND z.min_status = 0
+                  AND s2d.spawn2_id IS NULL
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                ORDER BY z.long_name, nt.name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    npc_id, npc_name, npc_class, zone_short, zone_name, merchant_slot, item_base_price, merchant_sellrate = (
+                        row['npc_id'], row['npc_name'], row['npc_class'], row['zone'], 
+                        row['zone_name'], row['merchant_slot'], row['item_base_price'], row['merchant_sellrate']
+                    )
+                else:
+                    # Tuple format: npc_id, npc_name, npc_class, zone, zone_name, merchant_slot, item_base_price, merchant_sellrate
+                    npc_id, npc_name, npc_class, zone_short, zone_name, merchant_slot, item_base_price, merchant_sellrate = row
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'merchants': []
+                    }
+                
+                # Calculate actual selling price
+                actual_price = calculate_merchant_price(item_base_price, merchant_sellrate, npc_class)
+                
+                # Convert to coin breakdown
+                coins = convert_copper_to_coins(actual_price)
+                
+                # Determine merchant type and pricing info
+                merchant_type = 'merchant'
+                pricing_info = None
+                
+                if npc_class == 41:  # Shopkeeper
+                    merchant_type = 'shopkeeper'
+                    pricing_info = 'Sold for coins'
+                elif npc_class == 61:  # LDON merchant
+                    merchant_type = 'ldon_merchant'
+                    pricing_info = 'Sold for adventure points'
+                else:
+                    pricing_info = 'Sold for coins'
+                
+                zones_data[zone_short]['merchants'].append({
+                    'npc_id': npc_id,
+                    'npc_name': npc_name.replace('_', ' '),
+                    'npc_class': npc_class,
+                    'merchant_type': merchant_type,
+                    'pricing_info': pricing_info,
+                    'merchant_slot': merchant_slot,
+                    'price_copper': actual_price,
+                    'price_coins': coins,
+                    'base_price': item_base_price,
+                    'sellrate': merchant_sellrate
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item merchant sources for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get merchant sources: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>/ground-spawns', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_ground_spawns(item_id):
+    """
+    Get zones and coordinates where an item spawns on the ground.
+    Optimized version of the legacy PHP query with proper JOINs.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'ground_spawns'")
+            if not cursor.fetchone():
+                app.logger.warning("Ground spawns table not available in this database")
+                return jsonify({'zones': [], 'message': 'Ground spawn data not available in this database'})
+            
+            # Check if item has ground spawns (optimized pre-check) 
+            cursor.execute("""
+                SELECT 1 FROM ground_spawns 
+                WHERE item = %s LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'zones': []})
+            
+            # Optimized query using explicit JOINs
+            # Use basic coordinate fields that exist in EQEmu ground_spawns table
+            query = """
+                SELECT 
+                    gs.id as spawn_id,
+                    gs.max_x,
+                    gs.max_y, 
+                    gs.max_z,
+                    gs.respawn_timer,
+                    z.short_name as zone_short,
+                    z.long_name as zone_name
+                FROM ground_spawns gs
+                INNER JOIN zone z ON gs.zoneid = z.zoneidnumber
+                WHERE gs.item = %s
+                  AND z.min_status = 0
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                ORDER BY z.long_name, gs.max_x, gs.max_y
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    spawn_id, max_x, max_y, max_z, respawn_timer, zone_short, zone_name = (
+                        row['spawn_id'], row['max_x'], row['max_y'], row['max_z'],
+                        row['respawn_timer'], row['zone_short'], row['zone_name']
+                    )
+                else:
+                    # Tuple format
+                    spawn_id, max_x, max_y, max_z, respawn_timer, zone_short, zone_name = row
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'spawn_points': []
+                    }
+                
+                # Format coordinates - simple X, Y, Z format
+                coord_display = f"{max_x}, {max_y}, {max_z}"
+                
+                zones_data[zone_short]['spawn_points'].append({
+                    'spawn_id': spawn_id,
+                    'coordinates': coord_display,
+                    'x': max_x,
+                    'y': max_y,
+                    'z': max_z,
+                    'respawn_timer': respawn_timer
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item ground spawns for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get ground spawns: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>/forage-sources', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_forage_sources(item_id):
+    """
+    Get zones where an item can be foraged.
+    Optimized version of the legacy PHP query with proper JOINs.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'forage'")
+            if not cursor.fetchone():
+                app.logger.warning("Forage table not available in this database")
+                return jsonify({'zones': [], 'message': 'Forage data not available in this database'})
+            
+            # Check if item can be foraged (optimized pre-check)
+            cursor.execute("""
+                SELECT 1 FROM forage 
+                WHERE itemid = %s LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'zones': []})
+            
+            # Optimized query using explicit JOINs
+            # Include chance and level information from the forage table
+            query = """
+                SELECT 
+                    z.short_name as zone_short,
+                    z.long_name as zone_name,
+                    f.chance,
+                    f.level
+                FROM forage f
+                INNER JOIN zone z ON f.zoneid = z.zoneidnumber
+                WHERE f.itemid = %s
+                  AND z.min_status = 0
+                  AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                GROUP BY z.zoneidnumber
+                ORDER BY z.long_name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'zones': []})
+            
+            # Organize results by zone
+            zones_data = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    zone_short, zone_name, chance, level = (
+                        row['zone_short'], row['zone_name'], row['chance'], row['level']
+                    )
+                else:
+                    # Tuple format
+                    zone_short, zone_name, chance, level = row
+                
+                if zone_short not in zones_data:
+                    zones_data[zone_short] = {
+                        'zone_short': zone_short,
+                        'zone_name': zone_name,
+                        'forage_info': []
+                    }
+                
+                zones_data[zone_short]['forage_info'].append({
+                    'chance': chance,
+                    'level': level
+                })
+            
+            # Convert to list and sort by zone name
+            zones_list = list(zones_data.values())
+            zones_list.sort(key=lambda x: x['zone_name'])
+            
+            return jsonify({'zones': zones_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item forage sources for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get forage sources: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>/tradeskill-recipes', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_tradeskill_recipes(item_id):
+    """
+    Get tradeskill recipes that use this item as a component.
+    Optimized version of the legacy PHP query with proper JOINs.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
+            if not cursor.fetchone():
+                app.logger.warning("Tradeskill recipe tables not available in this database")
+                return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
+            
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
+            if not cursor.fetchone():
+                app.logger.warning("Tradeskill recipe entries table not available in this database")
+                return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
+            
+            # Check if item is used in any recipes (optimized pre-check)
+            cursor.execute("""
+                SELECT 1 FROM tradeskill_recipe_entries 
+                WHERE item_id = %s AND componentcount > 0 LIMIT 1
+            """, (item_id,))
+            
+            if not cursor.fetchone():
+                return jsonify({'skills': []})
+            
+            # Optimized query using explicit JOINs
+            # Include recipe name, ID, and tradeskill type
+            query = """
+                SELECT 
+                    tsr.name as recipe_name,
+                    tsr.id as recipe_id,
+                    tsr.tradeskill,
+                    tsre.componentcount
+                FROM tradeskill_recipe tsr
+                INNER JOIN tradeskill_recipe_entries tsre ON tsr.id = tsre.recipe_id
+                WHERE tsre.item_id = %s
+                  AND tsre.componentcount > 0
+                GROUP BY tsr.id
+                ORDER BY tsr.tradeskill, tsr.name
+                LIMIT 1000
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'skills': []})
+            
+            # EverQuest tradeskill mapping (based on EQEmu skills documentation)
+            tradeskill_names = {
+                # Legacy/custom mapping (preserved for compatibility)
+                0: 'Baking',
+                1: 'Tailoring', 
+                2: 'Smithing',
+                3: 'Brewing',
+                4: 'Fletching',
+                5: 'Alchemy',
+                6: 'Pottery',
+                7: 'Research',
+                8: 'Tinkering',
+                9: 'Jewelry Making',
+                10: 'Make Poison',
+                11: 'Unknown',
+                # Standard EQEmu skill IDs (based on official skill table)
+                56: 'Make Poison',
+                57: 'Tinkering',
+                58: 'Research',
+                59: 'Alchemy',
+                60: 'Baking',
+                61: 'Tailoring',
+                63: 'Blacksmithing',
+                64: 'Fletching',
+                65: 'Brewing',
+                68: 'Jewelry Making',
+                69: 'Pottery',
+                # Extended/custom tradeskills
+                62: 'Augmentation Distillation',
+                66: 'Tradeskill 66',
+                67: 'Tradeskill 67',
+                70: 'Tradeskill 70'
+            }
+            
+            # Organize results by tradeskill type
+            recipes_by_skill = {}
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    recipe_name, recipe_id, tradeskill, componentcount = (
+                        row['recipe_name'], row['recipe_id'], row['tradeskill'], row['componentcount']
+                    )
+                else:
+                    # Tuple format
+                    recipe_name, recipe_id, tradeskill, componentcount = row
+                
+                # Get tradeskill name
+                skill_name = tradeskill_names.get(tradeskill, f'Unknown Skill ({tradeskill})')
+                
+                if skill_name not in recipes_by_skill:
+                    recipes_by_skill[skill_name] = {
+                        'tradeskill_name': skill_name,
+                        'tradeskill_id': tradeskill,
+                        'recipes': []
+                    }
+                
+                # Clean up recipe name (replace underscores with spaces)
+                clean_recipe_name = recipe_name.replace('_', ' ') if recipe_name else f'Recipe {recipe_id}'
+                
+                recipes_by_skill[skill_name]['recipes'].append({
+                    'recipe_id': recipe_id,
+                    'recipe_name': clean_recipe_name,
+                    'component_count': componentcount
+                })
+            
+            # Convert to list and sort by skill name
+            skills_list = list(recipes_by_skill.values())
+            skills_list.sort(key=lambda x: x['tradeskill_name'])
+            
+            return jsonify({'skills': skills_list})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting item tradeskill recipes for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get tradeskill recipes: {str(e)}'}), 500
+
+
+@app.route('/api/recipes/<recipe_id>', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_recipe_details(recipe_id):
+    """
+    Get detailed information about a specific recipe including:
+    - What item it creates (produces)
+    - What components are required 
+    - Tradeskill information
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # First check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
+            if not cursor.fetchone():
+                app.logger.warning("Tradeskill_recipe table not available in this database")
+                return jsonify({'error': 'Recipe data not available in this database'}), 503
+            
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")  
+            if not cursor.fetchone():
+                app.logger.warning("Tradeskill_recipe_entries table not available in this database")
+                return jsonify({'error': 'Recipe entries data not available in this database'}), 503
+            
+            cursor.execute("SHOW TABLES LIKE 'items'")
+            if not cursor.fetchone():
+                app.logger.warning("Items table not available in this database")
+                return jsonify({'error': 'Items data not available in this database'}), 503
+            
+            # Validate recipe_id
+            try:
+                recipe_id = int(recipe_id)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid recipe ID'}), 400
+            
+            # First, get the recipe basic information
+            recipe_query = """
+                SELECT 
+                    tr.id as recipe_id,
+                    tr.name as recipe_name,
+                    tr.tradeskill as tradeskill_id,
+                    tr.trivial as trivial_level,
+                    tr.nofail as no_fail,
+                    tr.replace_container as replace_container,
+                    tr.notes as notes
+                FROM tradeskill_recipe tr
+                WHERE tr.id = %s
+            """
+            
+            cursor.execute(recipe_query, (recipe_id,))
+            recipe_info = cursor.fetchone()
+            
+            if not recipe_info:
+                return jsonify({'error': 'Recipe not found'}), 404
+            
+            # Handle both dict and tuple results for recipe info
+            if isinstance(recipe_info, dict):
+                recipe_data = {
+                    'recipe_id': recipe_info['recipe_id'],
+                    'recipe_name': recipe_info['recipe_name'].replace('_', ' ') if recipe_info['recipe_name'] else 'Unknown Recipe',
+                    'tradeskill_id': recipe_info['tradeskill_id'],
+                    'trivial_level': recipe_info['trivial_level'],
+                    'no_fail': bool(recipe_info['no_fail']),
+                    'replace_container': bool(recipe_info['replace_container']),
+                    'notes': recipe_info['notes']
+                }
+            else:
+                # Tuple format
+                recipe_data = {
+                    'recipe_id': recipe_info[0],
+                    'recipe_name': recipe_info[1].replace('_', ' ') if recipe_info[1] else 'Unknown Recipe',
+                    'tradeskill_id': recipe_info[2],
+                    'trivial_level': recipe_info[3],
+                    'no_fail': bool(recipe_info[4]),
+                    'replace_container': bool(recipe_info[5]),
+                    'notes': recipe_info[6]
+                }
+            
+            # Map tradeskill ID to name (based on EQEmu skills documentation)
+            tradeskill_names = {
+                # Legacy/custom mapping (preserved for compatibility)
+                0: 'Baking',
+                1: 'Tailoring',
+                2: 'Smithing',
+                3: 'Brewing',
+                4: 'Fletching',
+                5: 'Alchemy',
+                6: 'Pottery',
+                7: 'Research',
+                8: 'Tinkering',
+                9: 'Jewelry Making',
+                10: 'Make Poison',
+                11: 'Unknown',
+                # Standard EQEmu skill IDs (based on official skill table)
+                56: 'Make Poison',
+                57: 'Tinkering',
+                58: 'Research',
+                59: 'Alchemy',
+                60: 'Baking',
+                61: 'Tailoring',
+                63: 'Blacksmithing',
+                64: 'Fletching',
+                65: 'Brewing',
+                68: 'Jewelry Making',
+                69: 'Pottery',
+                # Extended/custom tradeskills
+                62: 'Augmentation Distillation',
+                66: 'Tradeskill 66',
+                67: 'Tradeskill 67',
+                70: 'Tradeskill 70'
+            }
+            
+            recipe_data['tradeskill_name'] = tradeskill_names.get(recipe_data['tradeskill_id'], 'Unknown')
+            
+            # Get all recipe entries, marking whether items are discovered or not
+            # Undiscovered items will show as plain text only (not clickable)
+            entries_query = """
+                SELECT 
+                    tre.item_id,
+                    tre.successcount as success_count,
+                    tre.failcount as fail_count,
+                    tre.componentcount as component_count,
+                    tre.iscontainer as is_container,
+                    i.Name as item_name,
+                    i.icon as item_icon,
+                    i.nodrop as no_drop,
+                    i.norent as no_rent,
+                    i.stackable as is_stackable,
+                    CASE WHEN di.item_id IS NOT NULL THEN 1 ELSE 0 END as is_discovered
+                FROM tradeskill_recipe_entries tre
+                INNER JOIN items i ON tre.item_id = i.id
+                LEFT JOIN discovered_items di ON i.id = di.item_id
+                WHERE tre.recipe_id = %s
+                ORDER BY tre.successcount DESC, tre.componentcount DESC
+            """
+            
+            cursor.execute(entries_query, (recipe_id,))
+            entries = cursor.fetchall()
+            
+            creates_items = []  # Items produced (successcount > 0)
+            requires_items = []  # Items needed as components (componentcount > 0)
+            container_items = []  # Container items (is_container = 1)
+            
+            for entry in entries:
+                # Handle both dict and tuple results
+                if isinstance(entry, dict):
+                    item_data = {
+                        'item_id': entry['item_id'],
+                        'item_name': entry['item_name'],
+                        'item_icon': entry['item_icon'],
+                        'success_count': entry['success_count'] or 0,
+                        'fail_count': entry['fail_count'] or 0,
+                        'component_count': entry['component_count'] or 0,
+                        'is_container': bool(entry['is_container']),
+                        'no_drop': bool(entry['no_drop']),
+                        'no_rent': bool(entry['no_rent']),
+                        'is_stackable': bool(entry['is_stackable']),
+                        'is_discovered': bool(entry['is_discovered'])
+                    }
+                else:
+                    # Tuple format: item_id, success_count, fail_count, component_count, is_container, item_name, item_icon, no_drop, no_rent, is_stackable, is_discovered
+                    item_data = {
+                        'item_id': entry[0],
+                        'item_name': entry[5],
+                        'item_icon': entry[6],
+                        'success_count': entry[1] or 0,
+                        'fail_count': entry[2] or 0,
+                        'component_count': entry[3] or 0,
+                        'is_container': bool(entry[4]),
+                        'no_drop': bool(entry[7]),
+                        'no_rent': bool(entry[8]),
+                        'is_stackable': bool(entry[9]),
+                        'is_discovered': bool(entry[10])
+                    }
+                
+                # Categorize items based on their role in the recipe
+                if item_data['success_count'] > 0:
+                    creates_items.append(item_data)
+                
+                if item_data['component_count'] > 0:
+                    requires_items.append(item_data)
+                
+                if item_data['is_container']:
+                    container_items.append(item_data)
+            
+            # Build final response
+            response_data = {
+                'recipe': recipe_data,
+                'creates': creates_items,
+                'requires': requires_items,
+                'containers': container_items
+            }
+            
+            return jsonify(response_data)
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting recipe details for recipe {recipe_id}: {e}")
+        return jsonify({'error': f'Failed to get recipe details: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>/created-by-recipes', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=30, requests_per_hour=300)
+def get_item_created_by_recipes(item_id):
+    """
+    Get tradeskill recipes that create this item as a result.
+    Equivalent to return_where_item_result_trade_skill() from the legacy system.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # Check if required tables exist
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
+            if not cursor.fetchone():
+                return jsonify({'recipes': []})
+            
+            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
+            if not cursor.fetchone():
+                return jsonify({'recipes': []})
+            
+            # Validate item_id
+            try:
+                item_id = int(item_id)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid item ID'}), 400
+            
+            # Query for recipes that create this item (successcount > 0)
+            query = """
+                SELECT
+                    tr.name as recipe_name,
+                    tr.id as recipe_id,
+                    tr.tradeskill as tradeskill_id,
+                    tr.trivial as trivial_level
+                FROM
+                    tradeskill_recipe tr,
+                    tradeskill_recipe_entries tre
+                WHERE
+                    tr.id = tre.recipe_id
+                    AND tre.item_id = %s
+                    AND tre.successcount > 0
+                GROUP BY
+                    tr.id
+                ORDER BY
+                    tr.tradeskill, tr.trivial, tr.name
+            """
+            
+            cursor.execute(query, (item_id,))
+            results = cursor.fetchall()
+            app.logger.debug(f"Drop sources query for item {item_id} returned {len(results)} results")
+            
+            if not results:
+                return jsonify({'recipes': []})
+            
+            # Use the same tradeskill mapping as other endpoints
+            tradeskill_names = {
+                # Legacy/custom mapping (preserved for compatibility)
+                0: 'Baking',
+                1: 'Tailoring',
+                2: 'Smithing',
+                3: 'Brewing',
+                4: 'Fletching',
+                5: 'Alchemy',
+                6: 'Pottery',
+                7: 'Research',
+                8: 'Tinkering',
+                9: 'Jewelry Making',
+                10: 'Make Poison',
+                11: 'Unknown',
+                # Standard EQEmu skill IDs (based on official skill table)
+                56: 'Make Poison',
+                57: 'Tinkering',
+                58: 'Research',
+                59: 'Alchemy',
+                60: 'Baking',
+                61: 'Tailoring',
+                63: 'Blacksmithing',
+                64: 'Fletching',
+                65: 'Brewing',
+                68: 'Jewelry Making',
+                69: 'Pottery',
+                # Extended/custom tradeskills
+                62: 'Augmentation Distillation',
+                66: 'Tradeskill 66',
+                67: 'Tradeskill 67',
+                70: 'Tradeskill 70'
+            }
+            
+            recipes = []
+            for row in results:
+                # Handle both dict and tuple results
+                if isinstance(row, dict):
+                    recipe_name = row['recipe_name']
+                    recipe_id = row['recipe_id']
+                    tradeskill_id = row['tradeskill_id']
+                    trivial_level = row['trivial_level']
+                else:
+                    recipe_name, recipe_id, tradeskill_id, trivial_level = row
+                
+                tradeskill_name = tradeskill_names.get(tradeskill_id, 'Unknown')
+                
+                recipes.append({
+                    'recipe_id': recipe_id,
+                    'recipe_name': recipe_name.replace('_', ' ') if recipe_name else 'Unknown Recipe',
+                    'tradeskill_id': tradeskill_id,
+                    'tradeskill_name': tradeskill_name,
+                    'trivial_level': trivial_level
+                })
+            
+            return jsonify({'recipes': recipes})
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error getting recipes that create item {item_id}: {e}")
+        return jsonify({'error': f'Failed to get creation recipes: {str(e)}'}), 500
+
+
+@app.route('/api/items/<item_id>/availability', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=60, requests_per_hour=600)
+def get_item_data_availability(item_id):
+    """
+    Lightweight endpoint to check which data sources are available for an item.
+    Returns counts/existence flags without fetching actual data for efficiency.
+    """
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # Validate item_id
+            try:
+                item_id = int(item_id)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid item ID'}), 400
+            
+            availability = {
+                'drop_sources': 0,
+                'merchant_sources': 0,
+                'ground_spawns': 0,
+                'forage_sources': 0,
+                'tradeskill_recipes': 0,
+                'created_by_recipes': 0
+            }
+            
+            app.logger.info(f"Checking availability for item {item_id}")
+            
+            # Check tradeskill recipes (where item is used as component) - Use simple existence check
+            try:
+                cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
+                if cursor.fetchone():
+                    cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
+                    if cursor.fetchone():
+                        # Simple existence check - just see if any record exists
+                        cursor.execute("""
+                            SELECT 1 FROM tradeskill_recipe_entries 
+                            WHERE item_id = %s AND componentcount > 0 LIMIT 1
+                        """, (item_id,))
+                        result = cursor.fetchone()
+                        availability['tradeskill_recipes'] = 1 if result else 0
+                        app.logger.info(f"Tradeskill recipes for item {item_id}: {'found' if result else 'none'}")
+            except Exception as e:
+                app.logger.error(f"Tradeskill recipes check failed: {e}")
+            
+            # Check created by recipes (where item is created as result) - Use simple existence check
+            try:
+                cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
+                if cursor.fetchone():
+                    cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
+                    if cursor.fetchone():
+                        # Simple existence check - just see if any record exists
+                        cursor.execute("""
+                            SELECT 1 FROM tradeskill_recipe_entries 
+                            WHERE item_id = %s AND successcount > 0 LIMIT 1
+                        """, (item_id,))
+                        result = cursor.fetchone()
+                        availability['created_by_recipes'] = 1 if result else 0
+                        app.logger.info(f"Created by recipes for item {item_id}: {'found' if result else 'none'}")
+            except Exception as e:
+                app.logger.error(f"Created by recipes check failed: {e}")
+            
+            # Check drop sources - Use the same complex query as the actual drop sources endpoint
+            try:
+                cursor.execute("SHOW TABLES LIKE 'lootdrop_entries'")
+                if cursor.fetchone():
+                    # Use the same filtering logic as the drop sources endpoint to avoid false positives
+                    cursor.execute("""
+                        SELECT 1 FROM npc_types nt
+                        INNER JOIN spawnentry se ON nt.id = se.npcID
+                        INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                        INNER JOIN zone z ON s2.zone = z.short_name
+                        INNER JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+                        INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+                        LEFT JOIN spawn2_disabled s2d ON s2.id = s2d.spawn2_id
+                        WHERE lde.item_id = %s
+                          AND z.min_status = 0
+                          AND s2d.spawn2_id IS NULL
+                          AND nt.merchant_id = 0
+                          AND z.short_name NOT IN ('load', 'arena', 'nexus', 'arttest', 'ssratemple', 'tutorial')
+                        LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['drop_sources'] = 1 if result else 0
+                    app.logger.debug(f"Drop sources availability for item {item_id}: {'found' if result else 'none'}")
+            except Exception as e:
+                app.logger.debug(f"Drop sources check failed: {e}")
+            
+            # Check merchant sources - Use existence check
+            try:
+                cursor.execute("SHOW TABLES LIKE 'merchantlist'")
+                if cursor.fetchone():
+                    cursor.execute("""
+                        SELECT 1 FROM merchantlist 
+                        WHERE item = %s LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['merchant_sources'] = 1 if result else 0
+            except Exception as e:
+                app.logger.debug(f"Merchant sources check failed: {e}")
+            
+            # Check ground spawns - Use existence check
+            try:
+                cursor.execute("SHOW TABLES LIKE 'ground_spawns'")
+                if cursor.fetchone():
+                    cursor.execute("""
+                        SELECT 1 FROM ground_spawns 
+                        WHERE item = %s LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['ground_spawns'] = 1 if result else 0
+            except Exception as e:
+                app.logger.debug(f"Ground spawns check failed: {e}")
+            
+            # Check forage sources - Use existence check
+            try:
+                cursor.execute("SHOW TABLES LIKE 'forage'")
+                if cursor.fetchone():
+                    cursor.execute("""
+                        SELECT 1 FROM forage 
+                        WHERE itemid = %s LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['forage_sources'] = 1 if result else 0
+            except Exception as e:
+                app.logger.debug(f"Forage sources check failed: {e}")
+            
+            return jsonify(availability)
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error checking item data availability for item {item_id}: {e}")
+        return jsonify({'error': f'Failed to check data availability: {str(e)}'}), 500
+
+
+@app.route('/api/debug/tables', methods=['GET'])
+@rate_limit_by_ip(requests_per_minute=10, requests_per_hour=60)
+def debug_database_tables():
+    """Debug endpoint to check which tables exist in the database."""
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        cursor = conn.cursor()
+        
+        try:
+            # Get all tables
+            cursor.execute("SHOW TABLES")
+            all_tables = [row[0] for row in cursor.fetchall()]
+            
+            # Check specific tables we need
+            required_tables = [
+                'tradeskill_recipe',
+                'tradeskill_recipe_entries',
+                'lootdrop_entries',
+                'loottable_entries',
+                'npc_types',
+                'merchantlist',
+                'ground_spawns',
+                'forage',
+                'items'
+            ]
+            
+            table_status = {}
+            for table in required_tables:
+                exists = table in all_tables
+                table_status[table] = exists
+                
+                if exists:
+                    try:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table} LIMIT 1")
+                        count = cursor.fetchone()[0]
+                        table_status[f"{table}_count"] = count
+                    except Exception as e:
+                        table_status[f"{table}_error"] = str(e)
+            
+            return jsonify({
+                'total_tables': len(all_tables),
+                'all_tables': all_tables[:20],  # First 20 tables
+                'required_tables': table_status
+            })
+            
+        finally:
+            cursor.close()
+            conn.close()
+            
+    except Exception as e:
+        return jsonify({'error': f'Failed to debug tables: {str(e)}'}), 500
+
+
+# Debug endpoints removed for security - they could leak information about undiscovered items
+
+
 def cleanup_resources():
     """Clean up resources on shutdown to prevent hanging."""
     logger.info("Cleaning up resources...")
