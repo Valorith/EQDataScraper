@@ -507,8 +507,15 @@
       </div>
     </div>
 
+    <!-- Spell Details Loading Modal -->
+    <LoadingModal 
+      :visible="loadingSpellDetails" 
+      text="Loading spell details..." 
+      :full-screen="true" 
+    />
+
     <!-- Spell Details Modal -->
-    <div v-if="selectedSpellDetail" class="modal-overlay" @click="closeSpellModal">
+    <div v-if="selectedSpellDetail && !loadingSpellDetails" class="modal-overlay" @click="closeSpellModal">
       <div class="modal-content spell-modal" @click.stop>
         <div class="modal-header">
           <div class="modal-header-content">
@@ -774,6 +781,7 @@ export default {
       
       // Spell details modal
       selectedSpellDetail: null,
+      loadingSpellDetails: false,
       
       // Spell items state
       spellItems: [],
@@ -1072,13 +1080,10 @@ export default {
         // Disable body scrolling
         document.body.style.overflow = 'hidden'
         
-        // First, show the modal with basic spell data
-        this.selectedSpellDetail = { ...spell }
+        // Start loading state - don't show modal yet
+        this.loadingSpellDetails = true
         
-        // Start loading spell items immediately
-        this.loadSpellItems()
-        
-        // Then fetch detailed spell information
+        // Fetch detailed spell information first
         const response = await axios.get(`${API_BASE_URL}/api/spells/${spell.spell_id}/details`)
         
         // Check if API returned HTML instead of JSON
@@ -1086,20 +1091,29 @@ export default {
           throw new Error('API returned HTML instead of JSON - possible proxy routing issue')
         }
         
-        // Update with detailed information
-        this.selectedSpellDetail = { ...this.selectedSpellDetail, ...response.data }
+        // Combine basic spell data with detailed information
+        this.selectedSpellDetail = { ...spell, ...response.data }
+        
+        // Start loading spell items immediately after setting spell details
+        this.loadSpellItems()
+        
+        // Stop loading state - modal is now ready to display
+        this.loadingSpellDetails = false
         
       } catch (error) {
         console.error('Error fetching spell details:', error)
         // Keep the modal open with basic data even if detailed fetch fails
-        if (!this.selectedSpellDetail) {
-          this.selectedSpellDetail = { ...spell }
-        }
+        this.selectedSpellDetail = { ...spell }
+        this.loadingSpellDetails = false
+        
+        // Still try to load spell items with basic spell data
+        this.loadSpellItems()
       }
     },
 
     closeSpellModal() {
       this.selectedSpellDetail = null
+      this.loadingSpellDetails = false
       // Reset spell items state when closing modal
       this.spellItems = []
       this.loadingSpellItems = false
