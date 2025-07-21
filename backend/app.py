@@ -3947,10 +3947,34 @@ def search_npcs():
         where_conditions = []
         query_params = []
         
-        # Add search query condition
+        # Add search query condition with underscore/space/hash handling
         if search_query:
-            where_conditions.append("nt.name LIKE %s")
-            query_params.append(f'%{search_query}%')
+            # Convert spaces to underscores for database search, and use both patterns
+            search_with_underscores = search_query.replace(' ', '_')
+            search_with_spaces = search_query.replace('_', ' ')
+            
+            # Search for multiple variations to handle database format variations:
+            # - Original query
+            # - With underscores instead of spaces  
+            # - With spaces instead of underscores
+            # - With # prefix variations
+            # - Using REPLACE to normalize both _ and # for comparison
+            where_conditions.append("""(
+                nt.name LIKE %s OR 
+                nt.name LIKE %s OR 
+                nt.name LIKE %s OR
+                nt.name LIKE %s OR
+                nt.name LIKE %s OR
+                REPLACE(REPLACE(nt.name, '_', ' '), '#', '') LIKE %s
+            )""")
+            query_params.extend([
+                f'%{search_query}%',                    # Original search
+                f'%{search_with_underscores}%',         # Spaces -> underscores
+                f'%{search_with_spaces}%',              # Underscores -> spaces 
+                f'%#{search_query}%',                   # With # prefix
+                f'%#{search_with_underscores}%',        # With # prefix and underscores
+                f'%{search_query}%'                     # Normalized comparison
+            ])
         
         # Add level filters
         if min_level:
