@@ -240,9 +240,52 @@
                 <span class="info-label">Health Points:</span>
                 <span class="info-value">{{ selectedNPCDetail.hp?.toLocaleString() }}</span>
               </div>
+              <div v-if="selectedNPCDetail.mana" class="info-row">
+                <span class="info-label">Mana:</span>
+                <span class="info-value">{{ selectedNPCDetail.mana?.toLocaleString() }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.ac" class="info-row">
+                <span class="info-label">Armor Class:</span>
+                <span class="info-value">{{ selectedNPCDetail.ac }}</span>
+              </div>
               <div v-if="selectedNPCDetail.mindmg || selectedNPCDetail.maxdmg" class="info-row">
                 <span class="info-label">Damage:</span>
                 <span class="info-value">{{ selectedNPCDetail.mindmg }} to {{ selectedNPCDetail.maxdmg }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.attack_speed" class="info-row">
+                <span class="info-label">Attack Speed:</span>
+                <span class="info-value">{{ selectedNPCDetail.attack_speed }}%</span>
+              </div>
+              <div v-if="selectedNPCDetail.attack_delay" class="info-row">
+                <span class="info-label">Attack Delay:</span>
+                <span class="info-value">{{ selectedNPCDetail.attack_delay }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resistances -->
+          <div v-if="selectedNPCDetail.resistances && hasResistances" class="detail-section">
+            <h4>Resistances</h4>
+            <div class="info-grid">
+              <div v-if="selectedNPCDetail.resistances.magic" class="info-row">
+                <span class="info-label">Magic Resistance:</span>
+                <span class="info-value">{{ selectedNPCDetail.resistances.magic }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.resistances.cold" class="info-row">
+                <span class="info-label">Cold Resistance:</span>
+                <span class="info-value">{{ selectedNPCDetail.resistances.cold }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.resistances.disease" class="info-row">
+                <span class="info-label">Disease Resistance:</span>
+                <span class="info-value">{{ selectedNPCDetail.resistances.disease }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.resistances.fire" class="info-row">
+                <span class="info-label">Fire Resistance:</span>
+                <span class="info-value">{{ selectedNPCDetail.resistances.fire }}</span>
+              </div>
+              <div v-if="selectedNPCDetail.resistances.poison" class="info-row">
+                <span class="info-label">Poison Resistance:</span>
+                <span class="info-value">{{ selectedNPCDetail.resistances.poison }}</span>
               </div>
             </div>
           </div>
@@ -253,6 +296,55 @@
             <div class="spawn-locations">
               <div v-for="location in selectedNPCDetail.spawn_locations" :key="location.zone_short_name" class="spawn-location">
                 <strong>{{ location.zone_long_name || location.zone_short_name }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- NPC Spells -->
+          <div v-if="selectedNPCDetail.spells && selectedNPCDetail.spells.length > 0" class="detail-section">
+            <h4>Spells cast by this NPC</h4>
+            <div class="npc-spells">
+              <div v-for="spell in selectedNPCDetail.spells" :key="spell.spell_id" class="spell-item">
+                <div class="spell-item-info">
+                  <img 
+                    v-if="spell.icon" 
+                    :src="`/icons/spells/${spell.icon}.gif`" 
+                    :alt="spell.spell_name"
+                    @error="handleIconError"
+                    class="spell-item-icon"
+                  />
+                  <i v-else class="fas fa-magic spell-item-icon-placeholder"></i>
+                  <div class="spell-details">
+                    <span class="spell-name">{{ spell.spell_name }}</span>
+                    <div class="spell-meta">
+                      <span v-if="spell.priority" class="spell-priority">Priority: {{ spell.priority }}</span>
+                      <span v-if="spell.recast_delay" class="spell-recast">Recast: {{ spell.recast_delay }}s</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Merchant Items -->
+          <div v-if="selectedNPCDetail.merchant_items && selectedNPCDetail.merchant_items.length > 0" class="detail-section">
+            <h4>Items sold by this merchant</h4>
+            <div class="merchant-items">
+              <div v-for="item in selectedNPCDetail.merchant_items" :key="item.item_id" class="merchant-item">
+                <div class="merchant-item-info">
+                  <img 
+                    v-if="item.icon" 
+                    :src="`/icons/items/${item.icon}.gif`" 
+                    :alt="item.item_name"
+                    @error="handleIconError"
+                    class="merchant-item-icon"
+                  />
+                  <i v-else class="fas fa-cube merchant-item-icon-placeholder"></i>
+                  <div class="merchant-details">
+                    <span class="merchant-item-name">{{ item.item_name }}</span>
+                    <span v-if="item.price" class="merchant-price">{{ item.price?.toLocaleString() }} copper</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -355,6 +447,12 @@ export default {
   computed: {
     totalPages() {
       return Math.ceil(this.totalCount / this.limit)
+    },
+    
+    hasResistances() {
+      if (!this.selectedNPCDetail || !this.selectedNPCDetail.resistances) return false
+      const res = this.selectedNPCDetail.resistances
+      return res.magic || res.cold || res.disease || res.fire || res.poison
     }
   },
   
@@ -917,6 +1015,107 @@ export default {
 
 .loot-probability {
   color: #ccc;
+  font-size: 0.9rem;
+}
+
+/* NPC Spells */
+.npc-spells {
+  display: grid;
+  gap: 10px;
+}
+
+.spell-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px 15px;
+}
+
+.spell-item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spell-item-icon {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.spell-item-icon-placeholder {
+  width: 24px;
+  height: 24px;
+  color: #666;
+}
+
+.spell-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spell-name {
+  color: white;
+  font-weight: 500;
+}
+
+.spell-meta {
+  display: flex;
+  gap: 15px;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.spell-priority, .spell-recast {
+  color: #ccc;
+}
+
+/* Merchant Items */
+.merchant-items {
+  display: grid;
+  gap: 10px;
+}
+
+.merchant-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px 15px;
+}
+
+.merchant-item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.merchant-item-icon {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.merchant-item-icon-placeholder {
+  width: 24px;
+  height: 24px;
+  color: #666;
+}
+
+.merchant-details {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.merchant-item-name {
+  color: white;
+  font-weight: 500;
+}
+
+.merchant-price {
+  color: #ffd700;
+  font-weight: 600;
   font-size: 0.9rem;
 }
 

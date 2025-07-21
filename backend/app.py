@@ -4086,25 +4086,10 @@ def get_npc_details(npc_id):
         cursor = conn.cursor()
         
         try:
-            # Get basic NPC information
+            # Get comprehensive NPC information matching EQ Alla clone
             npc_query = """
                 SELECT 
-                    nt.id,
-                    nt.name,
-                    nt.lastname,
-                    nt.level,
-                    nt.race,
-                    nt.class,
-                    nt.hp,
-                    nt.mana,
-                    nt.mindmg,
-                    nt.maxdmg,
-                    nt.texture,
-                    nt.helmtexture,
-                    nt.size,
-                    nt.loottable_id,
-                    nt.merchant_id,
-                    nt.npc_spells_id
+                    nt.*
                 FROM npc_types nt
                 WHERE nt.id = %s
             """
@@ -4122,17 +4107,20 @@ def get_npc_details(npc_id):
                 columns = [desc[0] for desc in cursor.description]
                 npc_data = dict(zip(columns, npc_result))
             
-            # Get spawn locations
+            # Get spawn locations matching EQ Alla clone query structure
             spawn_query = """
                 SELECT DISTINCT
+                    z.note,
                     z.short_name,
                     z.long_name,
                     s2.x,
                     s2.y,
-                    s2.z
-                FROM spawnentry se
-                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
-                INNER JOIN zone z ON s2.zone = z.short_name
+                    s2.z,
+                    sg.name AS spawngroup
+                FROM zone z
+                INNER JOIN spawn2 s2 ON z.short_name = s2.zone
+                INNER JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID
+                LEFT JOIN spawngroup sg ON s2.spawngroupID = sg.id
                 WHERE se.npcID = %s
                 ORDER BY z.long_name
             """
@@ -4150,13 +4138,90 @@ def get_npc_details(npc_id):
                 
                 spawn_locations.append({
                     'zone_short_name': spawn_data['short_name'],
-                    'zone_long_name': spawn_data['long_name'],
+                    'zone_long_name': spawn_data['long_name'] or spawn_data['short_name'],
+                    'zone_note': spawn_data.get('note', ''),
+                    'spawngroup': spawn_data.get('spawngroup', ''),
                     'x': spawn_data.get('x', 0),
                     'y': spawn_data.get('y', 0),
                     'z': spawn_data.get('z', 0)
                 })
             
-            # Get loot drops (only discovered items)
+            # Get NPC spells (matching EQ Alla clone query structure)
+            npc_spells = []
+            if npc_data.get('npc_spells_id'):
+                spells_query = """
+                    SELECT 
+                        nse.spellid,
+                        sn.name as spell_name,
+                        sn.new_icon,
+                        nse.minlevel,
+                        nse.maxlevel,
+                        nse.priority,
+                        nse.recast_delay
+                    FROM npc_spells_entries nse
+                    INNER JOIN spells_new sn ON nse.spellid = sn.id
+                    WHERE nse.npc_spells_id = %s
+                    AND nse.minlevel <= %s
+                    AND nse.maxlevel >= %s
+                    ORDER BY nse.priority DESC, sn.name
+                """
+                
+                cursor.execute(spells_query, (npc_data['npc_spells_id'], npc_data.get('level', 1), npc_data.get('level', 1)))
+                spell_results = cursor.fetchall()
+                
+                for spell in spell_results:
+                    if isinstance(spell, dict):
+                        spell_data = dict(spell)
+                    else:
+                        columns = [desc[0] for desc in cursor.description]
+                        spell_data = dict(zip(columns, spell))
+                    
+                    npc_spells.append({
+                        'spell_id': spell_data['spellid'],
+                        'spell_name': spell_data['spell_name'].replace('_', ' ') if spell_data['spell_name'] else 'Unknown Spell',
+                        'icon': spell_data.get('new_icon', 0),
+                        'min_level': spell_data.get('minlevel', 1),
+                        'max_level': spell_data.get('maxlevel', 255),
+                        'priority': spell_data.get('priority', 0),
+                        'recast_delay': spell_data.get('recast_delay', 0)
+                    })
+
+            # Get merchant items (only discovered items)
+            merchant_items = []
+            if npc_data.get('merchant_id'):
+                merchant_query = """
+                    SELECT DISTINCT
+                        i.id as item_id,
+                        i.name as item_name,
+                        i.icon,
+                        i.price
+                    FROM merchantlist ml
+                    INNER JOIN items i ON ml.item = i.id
+                    INNER JOIN discovered_items di ON i.id = di.item_id
+                    WHERE ml.merchantid = %s
+                    AND ml.item > 0
+                    ORDER BY ml.slot, i.name
+                    LIMIT 100
+                """
+                
+                cursor.execute(merchant_query, (npc_data['merchant_id'],))
+                merchant_results = cursor.fetchall()
+                
+                for item in merchant_results:
+                    if isinstance(item, dict):
+                        item_data = dict(item)
+                    else:
+                        columns = [desc[0] for desc in cursor.description]
+                        item_data = dict(zip(columns, item))
+                    
+                    merchant_items.append({
+                        'item_id': item_data['item_id'],
+                        'item_name': item_data['item_name'].replace('_', ' ') if item_data['item_name'] else 'Unknown Item',
+                        'icon': item_data.get('icon', 0),
+                        'price': item_data.get('price', 0)
+                    })
+
+            # Get loot drops (only discovered items) with enhanced probability calculation
             loot_drops = []
             if npc_data.get('loottable_id'):
                 loot_query = """
@@ -4164,20 +4229,21 @@ def get_npc_details(npc_id):
                         i.id as item_id,
                         i.name as item_name,
                         i.icon,
+                        i.itemtype,
+                        lde.chance as drop_chance,
+                        lte.probability as table_probability,
                         ROUND(
-                            (ltd.probability / 100.0) * 
-                            (lte.probability / 100.0) * 
+                            (COALESCE(lde.chance, 1) / 100.0) * 
+                            (COALESCE(lte.probability, 100) / 100.0) * 
                             100, 2
-                        ) as probability
+                        ) as calculated_probability
                     FROM loottable_entries lte
                     INNER JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
-                    INNER JOIN loottable lt ON lte.loottable_id = lt.id
-                    INNER JOIN lootdrop ltd ON lte.lootdrop_id = ltd.id
                     INNER JOIN items i ON lde.item_id = i.id
                     INNER JOIN discovered_items di ON i.id = di.item_id
-                    WHERE lt.id = %s
+                    WHERE lte.loottable_id = %s
                     AND lde.item_id > 0
-                    ORDER BY probability DESC, i.name
+                    ORDER BY calculated_probability DESC, i.name
                     LIMIT 50
                 """
                 
@@ -4195,10 +4261,13 @@ def get_npc_details(npc_id):
                         'item_id': loot_data['item_id'],
                         'item_name': loot_data['item_name'].replace('_', ' ') if loot_data['item_name'] else 'Unknown Item',
                         'icon': loot_data.get('icon', 0),
-                        'probability': max(0.01, loot_data.get('probability', 0))  # Minimum 0.01% to show
+                        'itemtype': loot_data.get('itemtype', 0),
+                        'drop_chance': loot_data.get('drop_chance', 1),
+                        'table_probability': loot_data.get('table_probability', 100),
+                        'probability': max(0.01, loot_data.get('calculated_probability', 0))
                     })
             
-            # Format response
+            # Format response with comprehensive NPC data matching EQ Alla clone
             detailed_npc = {
                 'id': npc_data['id'],
                 'name': npc_data['name'].replace('_', ' ') if npc_data['name'] else 'Unknown NPC',
@@ -4206,18 +4275,40 @@ def get_npc_details(npc_id):
                 'level': npc_data.get('level', 1),
                 'race': npc_data.get('race', 0),
                 'class': npc_data.get('class', 0),
-                'hp': npc_data.get('hp', 0),
-                'mana': npc_data.get('mana', 0),
-                'mindmg': npc_data.get('mindmg', 0),
-                'maxdmg': npc_data.get('maxdmg', 0),
+                'gender': npc_data.get('gender', 0),
+                'size': npc_data.get('size', 6),
                 'texture': npc_data.get('texture', 0),
                 'helmtexture': npc_data.get('helmtexture', 0),
-                'size': npc_data.get('size', 6),
+                
+                # Combat stats
+                'hp': npc_data.get('hp', 0),
+                'mana': npc_data.get('mana', 0),
+                'ac': npc_data.get('AC', 0),
+                'mindmg': npc_data.get('mindmg', 0),
+                'maxdmg': npc_data.get('maxdmg', 0),
+                'attack_speed': npc_data.get('attack_speed', 0),
+                'attack_delay': npc_data.get('attack_delay', 30),
+                
+                # Resistances
+                'resistances': {
+                    'magic': npc_data.get('MR', 0),
+                    'cold': npc_data.get('CR', 0),
+                    'disease': npc_data.get('DR', 0),
+                    'fire': npc_data.get('FR', 0),
+                    'poison': npc_data.get('PR', 0)
+                },
+                
+                # System IDs
                 'loottable_id': npc_data.get('loottable_id', 0),
                 'merchant_id': npc_data.get('merchant_id', 0),
                 'npc_spells_id': npc_data.get('npc_spells_id', 0),
+                'npc_faction_id': npc_data.get('npc_faction_id', 0),
+                
+                # Associated data
                 'spawn_locations': spawn_locations,
-                'loot_drops': loot_drops
+                'loot_drops': loot_drops,
+                'spells': npc_spells,
+                'merchant_items': merchant_items
             }
             
             app.logger.info(f"NPC details retrieved successfully for ID: {npc_id_int}")
