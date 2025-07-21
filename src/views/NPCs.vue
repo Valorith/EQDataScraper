@@ -158,32 +158,28 @@
             @click="openNPCModal(npc)"
             class="npc-card"
           >
-            <div class="npc-card-header">
-              <h3 class="npc-name">{{ npc.name }}</h3>
-              <span class="npc-level">Level {{ npc.level }}</span>
-            </div>
-            <div class="npc-card-body">
-              <div class="npc-info">
-                <span class="npc-race">{{ getRaceName(npc.race) }}</span>
-                <div class="npc-class-with-icon">
-                  <img 
-                    v-if="getClassIcon(npc.class)" 
-                    :src="getClassIcon(npc.class)" 
-                    :alt="getClassName(npc.class)"
-                    class="npc-class-icon"
-                    @error="handleIconError"
-                  />
-                  <span class="npc-class">{{ getClassName(npc.class) }}</span>
+            <div class="npc-card-content">
+              <div class="npc-card-main">
+                <h3 class="npc-card-name">{{ npc.name }}</h3>
+                <div class="npc-card-details">
+                  <span class="npc-card-level">Level {{ npc.level }}</span>
+                  <span class="npc-card-separator">•</span>
+                  <span class="npc-card-race">{{ getRaceName(npc.race) }}</span>
+                  <span class="npc-card-separator">•</span>
+                  <div class="npc-card-class-with-icon">
+                    <img 
+                      v-if="getClassIcon(npc.class)" 
+                      :src="getClassIcon(npc.class)" 
+                      :alt="getClassName(npc.class)"
+                      class="npc-card-class-icon"
+                      @error="handleIconError"
+                    />
+                    <span class="npc-card-class">{{ getClassName(npc.class) }}</span>
+                  </div>
                 </div>
               </div>
-              <div class="npc-stats">
-                <span class="npc-hp">{{ npc.hp?.toLocaleString() }} HP</span>
-                <span v-if="npc.mindmg || npc.maxdmg" class="npc-damage">
-                  {{ npc.mindmg }}-{{ npc.maxdmg }} dmg
-                </span>
-              </div>
-              <div v-if="npc.zone_short_name" class="npc-zone">
-                Zone: {{ npc.zone_long_name || npc.zone_short_name }}
+              <div v-if="npc.zone_short_name" class="npc-card-zone-display">
+                <span class="npc-card-zone-name">{{ getFormattedZoneName(npc) }}</span>
               </div>
             </div>
           </div>
@@ -1138,77 +1134,147 @@ export default {
 /* NPC Grid View */
 .npc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
   margin-bottom: 30px;
 }
 
 .npc-card {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  padding: 20px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.12) 0%, 
+    rgba(255, 255, 255, 0.08) 100%);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 24px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  min-height: 120px;
+}
+
+.npc-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, 
+    rgba(102, 126, 234, 0.05) 0%, 
+    rgba(118, 75, 162, 0.05) 100%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
 
 .npc-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
-  border-color: rgba(102, 126, 234, 0.5);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.6);
 }
 
-.npc-card-header {
+.npc-card:hover::before {
+  opacity: 1;
+}
+
+.npc-card-content {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
+  height: 100%;
+  gap: 16px;
+  z-index: 1;
+  position: relative;
 }
 
-.npc-name {
-  color: white;
+.npc-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.npc-card-name {
+  color: #f8fafc;
   margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.3px;
 }
 
-.npc-level {
+.npc-card-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  flex-wrap: wrap;
+}
+
+.npc-card-level {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
+  padding: 5px 14px;
+  border-radius: 14px;
   font-size: 0.85rem;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.npc-card-separator {
+  color: #64748b;
   font-weight: 600;
+  font-size: 0.75rem;
 }
 
-.npc-card-body {
-  color: #ccc;
+.npc-card-race {
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
-.npc-info {
+.npc-card-class-with-icon {
   display: flex;
-  gap: 15px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 6px;
 }
 
-.npc-race, .npc-class {
-  font-weight: 500;
+.npc-card-class-icon {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
-.npc-stats {
+.npc-card-class {
+  color: #cbd5e1;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.npc-card-zone-display {
   display: flex;
-  gap: 15px;
-  margin-bottom: 10px;
+  justify-content: center;
+  margin-top: auto;
 }
 
-.npc-hp, .npc-damage {
+.npc-card-zone-name {
+  color: #e2e8f0;
   font-size: 0.9rem;
-}
-
-.npc-zone {
-  font-size: 0.85rem;
-  opacity: 0.8;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
 }
 
 /* Modal Styles */
