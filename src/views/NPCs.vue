@@ -229,10 +229,6 @@
                 <span class="info-label">Class:</span>
                 <span class="info-value">{{ getClassName(selectedNPCDetail.class) }}</span>
               </div>
-              <div v-if="selectedNPCDetail.faction_id" class="info-row">
-                <span class="info-label">Main Faction:</span>
-                <span class="info-value">{{ selectedNPCDetail.faction_name || `Faction ${selectedNPCDetail.faction_id}` }}</span>
-              </div>
             </div>
           </div>
 
@@ -247,14 +243,6 @@
               <div v-if="selectedNPCDetail.mindmg || selectedNPCDetail.maxdmg" class="info-row">
                 <span class="info-label">Damage:</span>
                 <span class="info-value">{{ selectedNPCDetail.mindmg }} to {{ selectedNPCDetail.maxdmg }}</span>
-              </div>
-              <div v-if="selectedNPCDetail.attack_speed" class="info-row">
-                <span class="info-label">Attack Speed:</span>
-                <span class="info-value">{{ selectedNPCDetail.attack_speed }}%</span>
-              </div>
-              <div v-if="selectedNPCDetail.special_attacks" class="info-row">
-                <span class="info-label">Special Attacks:</span>
-                <span class="info-value">{{ getSpecialAttacks(selectedNPCDetail.special_attacks) }}</span>
               </div>
             </div>
           </div>
@@ -484,11 +472,6 @@ export default {
       return this.classNames[classId] || `Class ${classId}`
     },
 
-    getSpecialAttacks(specialAttacks) {
-      if (!specialAttacks || specialAttacks === '0') return 'None'
-      // This would need to be expanded based on EQEmu's special attack flags
-      return 'Various'
-    },
 
     handleIconError(event) {
       event.target.style.display = 'none'

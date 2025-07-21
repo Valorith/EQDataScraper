@@ -3994,9 +3994,6 @@ def search_npcs():
                 nt.hp,
                 nt.mindmg,
                 nt.maxdmg,
-                nt.attack_speed,
-                nt.special_attacks,
-                nt.faction_id,
                 z.short_name as zone_short_name,
                 z.long_name as zone_long_name
             FROM npc_types nt
@@ -4035,9 +4032,6 @@ def search_npcs():
                 'hp': npc_data.get('hp', 0),
                 'mindmg': npc_data.get('mindmg', 0),
                 'maxdmg': npc_data.get('maxdmg', 0),
-                'attack_speed': npc_data.get('attack_speed', 100),
-                'special_attacks': npc_data.get('special_attacks', ''),
-                'faction_id': npc_data.get('faction_id', 0),
                 'zone_short_name': npc_data.get('zone_short_name', ''),
                 'zone_long_name': npc_data.get('zone_long_name', '')
             }
@@ -4105,9 +4099,6 @@ def get_npc_details(npc_id):
                     nt.mana,
                     nt.mindmg,
                     nt.maxdmg,
-                    nt.attack_speed,
-                    nt.special_attacks,
-                    nt.faction_id,
                     nt.texture,
                     nt.helmtexture,
                     nt.size,
@@ -4219,9 +4210,6 @@ def get_npc_details(npc_id):
                 'mana': npc_data.get('mana', 0),
                 'mindmg': npc_data.get('mindmg', 0),
                 'maxdmg': npc_data.get('maxdmg', 0),
-                'attack_speed': npc_data.get('attack_speed', 100),
-                'special_attacks': npc_data.get('special_attacks', ''),
-                'faction_id': npc_data.get('faction_id', 0),
                 'texture': npc_data.get('texture', 0),
                 'helmtexture': npc_data.get('helmtexture', 0),
                 'size': npc_data.get('size', 6),
