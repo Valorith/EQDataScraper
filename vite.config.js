@@ -76,6 +76,23 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    assetsDir: 'assets'
+    assetsDir: 'assets',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          'vendor-ui': ['axios']
+        }
+      },
+      onwarn(warning, warn) {
+        // Suppress dynamic import warnings
+        if (warning.code === 'DYNAMIC_IMPORT_USAGE' || 
+            warning.message.includes('dynamically imported')) {
+          return
+        }
+        warn(warning)
+      }
+    }
   }
 }) 

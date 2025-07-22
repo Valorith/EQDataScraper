@@ -92,47 +92,59 @@
             :key="`${npc.id}-${npc.x}-${npc.y}`"
             :class="['npc-pin', { 'newly-plotted': npc.isNewlyPlotted }]"
             @click="$emit('npc-click', npc)"
-            :transform="`translate(${npc.x}, ${npc.y}) scale(${npcIconScale})`"
+            :transform="`translate(${npc.x}, ${npc.y}) scale(${npc.isNewlyPlotted ? npcIconScale : npcIconScale * 0.5})`"
           >
-            <!-- Extra Large Outer Glow Ring -->
+            <!-- Red Outer Ring with Blinking Animation -->
             <circle
               cx="0"
               cy="0"
-              r="25"
+              r="22"
               fill="none"
-              :stroke="npc.color || '#10b981'"
+              stroke="#ff4444"
               stroke-width="2"
-              opacity="0.6"
-              class="npc-glow-ring"
+              opacity="0.8"
+              class="npc-red-ring"
             />
             
-            <!-- Larger Main Background Circle -->
+            <!-- Moderate Outer Glow Ring -->
             <circle
               cx="0"
               cy="0"
               r="20"
+              fill="none"
+              :stroke="npc.color || '#10b981'"
+              stroke-width="2"
+              opacity="0.5"
+              class="npc-glow-ring"
+            />
+            
+            <!-- Main Background Circle -->
+            <circle
+              cx="0"
+              cy="0"
+              r="16"
               :fill="npc.color || '#10b981'"
               stroke="#ffffff"
-              stroke-width="3"
+              stroke-width="2"
               class="npc-icon-bg"
               style="filter: url(#npcGlow);"
             />
             
-            <!-- Larger High Contrast NPC Person Icon -->
+            <!-- Well-proportioned NPC Person Icon -->
             <g fill="#ffffff" stroke="none" class="npc-person-icon">
               <!-- Head -->
-              <circle cx="0" cy="-6" r="5" />
+              <circle cx="0" cy="-5" r="4" />
               
               <!-- Body -->
-              <rect x="-4" y="1" width="8" height="12" rx="2" />
+              <rect x="-3" y="1" width="6" height="10" rx="1.5" />
               
               <!-- Arms -->
-              <rect x="-8" y="3" width="3" height="9" rx="1.5" />
-              <rect x="5" y="3" width="3" height="9" rx="1.5" />
+              <rect x="-6" y="2" width="2.5" height="8" rx="1.2" />
+              <rect x="3.5" y="2" width="2.5" height="8" rx="1.2" />
               
               <!-- Legs -->
-              <rect x="-3" y="13" width="2.5" height="8" rx="1.2" />
-              <rect x="0.5" y="13" width="2.5" height="8" rx="1.2" />
+              <rect x="-2.5" y="11" width="2" height="7" rx="1" />
+              <rect x="0.5" y="11" width="2" height="7" rx="1" />
             </g>
             
             <title>{{ npc.name || 'Unknown NPC' }} ({{ Math.round(npc.x) }}, {{ Math.round(npc.y) }})</title>
@@ -727,18 +739,17 @@ export default {
     })
 
     const npcIconScale = computed(() => {
-      // DRAMATICALLY larger scale factor for maximum visibility at all zoom levels
+      // Scale with stronger preference for larger sizes when zoomed out
       const bounds = mapBounds.value
       const viewBoxWidth = bounds.maxX - bounds.minX
       const viewBoxHeight = bounds.maxY - bounds.minY
       const diagonal = Math.sqrt(viewBoxWidth * viewBoxWidth + viewBoxHeight * viewBoxHeight)
       
-      // Much larger base scale - 10x larger than original for extreme visibility
-      // Scale inversely with zoom but maintain very high visibility
-      const baseScale = diagonal * 0.003 / Math.sqrt(zoomLevel.value)
+      // Use square root of zoom for less aggressive scaling, favoring larger icons
+      const baseScale = diagonal * 0.0015 / Math.sqrt(zoomLevel.value)
       
-      // Ensure minimum scale of 6.0 and maximum of 15.0 for maximum visibility
-      return Math.max(6.0, Math.min(15.0, baseScale))
+      // Wider range - much larger when zoomed out, current small size when zoomed in
+      return Math.max(0.9, Math.min(10.0, baseScale))
     })
     
     const npcLabelSize = computed(() => {
@@ -1963,8 +1974,11 @@ export default {
   cursor: pointer;
   opacity: 1;
   pointer-events: all;
-  /* Add initial plot animation */
-  animation: npcPlotAnimation 2s ease-out, npcPulse 3s ease-in-out infinite 2s;
+}
+
+/* Animation for newly plotted NPCs - no transform conflicts */
+.npc-pin.newly-plotted {
+  animation: npcPlotAnimation 3s ease-out;
 }
 
 .npc-pin:hover .npc-icon-bg {
@@ -2017,7 +2031,21 @@ export default {
   }
 }
 
-/* Remove the ongoing pulse - only use for newly plotted NPCs */
+/* Continuous blinking animation for red ring */
+.npc-red-ring {
+  animation: npcRedRingBlink 1.5s ease-in-out infinite;
+}
+
+@keyframes npcRedRingBlink {
+  0%, 100% { 
+    opacity: 0.2;
+  }
+  50% { 
+    opacity: 0.8;
+  }
+}
+
+/* Size reduction handled via SVG scale attribute to avoid positioning conflicts */
 
 /* Individual component styling */
 .npc-icon-bg {

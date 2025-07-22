@@ -131,7 +131,10 @@
                     :class="['npc-card-compact', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
                   >
                     <div class="npc-basic-info">
-                      <div class="npc-name-compact">{{ npc.full_name }}</div>
+                      <div class="npc-name-compact">
+                        {{ npc.full_name }}
+                        <span v-if="npc.spawn_count > 1" class="spawn-count-badge">({{ npc.spawn_count }})</span>
+                      </div>
                       <div class="npc-meta">
                         <span class="npc-level-compact">Lv {{ npc.level }}</span>
                         <span v-if="npc.respawn_time > 0" class="npc-respawn-compact">
@@ -146,6 +149,8 @@
                         @click="plotNpcOnMap(npc)"
                         class="npc-action-btn map-pin-btn"
                         title="Show on map"
+                        style="display: none;"
+                        disabled
                       >
                         📍
                       </button>
@@ -163,8 +168,62 @@
             </div>
             
             <div v-if="activeTab === 'items'" class="tab-panel">
-              <h3>Items</h3>
-              <p>Items found in this zone.</p>
+              <div class="items-header">
+                <h3>Items in {{ selectedZone.longName }}</h3>
+                <div class="items-summary">
+                  <span v-if="itemsLoading" class="loading-text">Loading items...</span>
+                  <span v-else-if="uniqueZoneItems.length > 0" class="item-count">{{ uniqueZoneItems.length }} unique items found</span>
+                  <span v-else class="no-items">No items found</span>
+                </div>
+              </div>
+
+              <div v-if="itemsLoading" class="items-loading">
+                <div class="loading-spinner"></div>
+                <p>Loading item data...</p>
+              </div>
+
+              <div v-else-if="zoneItems.length === 0" class="no-items-message">
+                <div class="no-data-icon">⚔️</div>
+                <h4>No Items Found</h4>
+                <p>This zone doesn't have any items dropping from NPCs in the database, or the database connection is unavailable.</p>
+              </div>
+
+              <div v-else class="items-list">
+                <div class="items-grid">
+                  <div 
+                    v-for="item in uniqueZoneItems" 
+                    :key="item.id"
+                    class="item-card-compact"
+                  >
+                    <div class="item-icon-container">
+                      <img 
+                        :src="item.icon_url || '/icons/item_default.png'"
+                        :alt="item.name"
+                        class="item-icon"
+                        @error="handleItemIconError"
+                      />
+                    </div>
+                    <div class="item-basic-info">
+                      <div class="item-name-compact">{{ item.name }}</div>
+                      <div class="item-meta">
+                        <span v-if="item.ac" class="item-stat">AC: {{ item.ac }}</span>
+                        <span v-if="item.damage" class="item-stat">DMG: {{ item.damage }}</span>
+                        <span v-if="item.delay" class="item-stat">DLY: {{ item.delay }}</span>
+                        <span v-if="item.drop_count > 1" class="drop-count-badge">({{ item.drop_count }})</span>
+                      </div>
+                    </div>
+                    <div class="item-actions">
+                      <button 
+                        @click="openItemInfo(item)"
+                        class="item-action-btn info-btn"
+                        title="View item details"
+                      >
+                        ℹ️
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <div v-if="activeTab === 'quests'" class="tab-panel">
@@ -340,6 +399,7 @@
 
 <script>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import LoadingModal from '../components/LoadingModal.vue'
 import ZoneMap from '../components/ZoneMap.vue'
 import { useBackendUrl } from '../composables/useBackendUrl'
@@ -353,6 +413,7 @@ export default {
   },
   setup() {
     const { backendUrl } = useBackendUrl()
+    const router = useRouter()
     
     // Reactive state
     const loading = ref(false)
@@ -368,6 +429,8 @@ export default {
     const zoneNpcs = ref([])
     const npcsLoading = ref(false)
     const selectedNpcForMap = ref(null)
+    const zoneItems = ref([])
+    const itemsLoading = ref(false)
     
     // Available zones list - comprehensive list including variations
     const availableZones = ref([
@@ -731,18 +794,35 @@ export default {
       )
     })
 
-    // Deduplicate NPCs - only show each NPC once with aggregated spawn info
+    // Group NPCs by name - combine NPCs with same name and aggregate all spawn locations
     const uniqueZoneNpcs = computed(() => {
       const npcMap = new Map()
       
+      // Helper function to check if name should be filtered out
+      const shouldFilterOut = (name) => {
+        const cleanName = name.replace(/^#/, '').trim()
+        
+        // Filter out NPCs that don't have at least one letter (case-insensitive)
+        const hasLetter = /[a-zA-Z]/.test(cleanName)
+        const isEmpty = cleanName === ''
+        
+        return !hasLetter || isEmpty
+      }
+      
       zoneNpcs.value.forEach(npc => {
-        const key = npc.id // Use NPC ID as unique identifier
+        // Skip NPCs with filtered names
+        if (shouldFilterOut(npc.full_name)) {
+          return
+        }
+        
+        const cleanName = npc.full_name.replace(/^#/, '').trim()
+        const key = cleanName.toLowerCase() // Use cleaned name as unique identifier
         
         if (!npcMap.has(key)) {
           // First occurrence - create entry with spawn locations array
           npcMap.set(key, {
             ...npc,
-            full_name: npc.full_name.replace(/^#/, '').trim(),
+            full_name: cleanName,
             name: npc.name.replace(/^#/, '').trim(),
             spawn_locations: [{
               x: npc.location.x,
@@ -752,10 +832,11 @@ export default {
               respawn_time: npc.spawn_info.respawn_time,
               spawn_chance: npc.spawn_info.spawn_chance
             }],
-            respawn_time: npc.spawn_info.respawn_time // Primary respawn time
+            respawn_time: npc.spawn_info.respawn_time, // Primary respawn time
+            spawn_count: 1 // Track how many spawn locations this NPC has
           })
         } else {
-          // Additional spawn location for same NPC
+          // Additional spawn location for same named NPC
           const existing = npcMap.get(key)
           existing.spawn_locations.push({
             x: npc.location.x,
@@ -765,6 +846,12 @@ export default {
             respawn_time: npc.spawn_info.respawn_time,
             spawn_chance: npc.spawn_info.spawn_chance
           })
+          existing.spawn_count += 1
+          
+          // Use the shortest respawn time among all instances
+          if (npc.spawn_info.respawn_time < existing.respawn_time) {
+            existing.respawn_time = npc.spawn_info.respawn_time
+          }
         }
       })
       
@@ -772,6 +859,33 @@ export default {
         // Sort by level descending, then by name
         if (a.level !== b.level) return b.level - a.level
         return a.full_name.localeCompare(b.full_name)
+      })
+    })
+
+    // Group items by ID - combine items with same ID and count occurrences
+    const uniqueZoneItems = computed(() => {
+      const itemMap = new Map()
+      
+      zoneItems.value.forEach(item => {
+        const key = item.id // Use item ID as unique identifier
+        
+        if (!itemMap.has(key)) {
+          // First occurrence - create entry
+          itemMap.set(key, {
+            ...item,
+            drop_count: 1, // Track how many NPCs drop this item
+            icon_url: item.icon ? `https://lucy.allakhazam.com/images/icons/${item.icon}.gif` : null
+          })
+        } else {
+          // Additional occurrence - increment count
+          const existing = itemMap.get(key)
+          existing.drop_count += 1
+        }
+      })
+      
+      return Array.from(itemMap.values()).sort((a, b) => {
+        // Sort by name alphabetically
+        return a.name.localeCompare(b.name)
       })
     })
     
@@ -793,13 +907,15 @@ export default {
       highlightedIndex.value = -1
       searchQuery.value = ''
       zoneNpcs.value = []
+      zoneItems.value = []
       
       try {
         selectedZone.value = zone
-        // Load both map data and NPCs in parallel
+        // Load map data, NPCs, and items in parallel
         await Promise.all([
           loadZoneMap(zone.shortName),
-          loadZoneNpcs(zone.shortName)
+          loadZoneNpcs(zone.shortName),
+          loadZoneItems(zone.shortName)
         ])
       } catch (error) {
         console.error('Error selecting zone:', error)
@@ -850,12 +966,41 @@ export default {
         mapLabels.value = []
       }
     }
+
+    const loadZoneItems = async (zoneShortName) => {
+      itemsLoading.value = true
+      try {
+        const url = `${backendUrl.value}/api/zone-items/${zoneShortName}`
+        console.log('Fetching zone items from:', url)
+        
+        const response = await fetch(url)
+        if (!response.ok) {
+          if (response.status === 503) {
+            console.warn('Database not connected for item data')
+            zoneItems.value = []
+            return
+          }
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        console.log('Item data received:', data)
+        
+        zoneItems.value = data.items || []
+      } catch (error) {
+        console.error('Error loading zone items:', error)
+        zoneItems.value = []
+      } finally {
+        itemsLoading.value = false
+      }
+    }
     
     const clearSelection = () => {
       selectedZone.value = null
       mapLines.value = []
       mapLabels.value = []
       zoneNpcs.value = []
+      zoneItems.value = []
       selectedNpcForMap.value = null
       searchQuery.value = ''
       searchResults.value = []
@@ -882,7 +1027,7 @@ export default {
         mapContainer.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
       
-      // Clear the newly plotted flag after animation duration (3 seconds)
+      // After 1 second, reduce the size by clearing the newly plotted flag
       setTimeout(() => {
         if (selectedNpcForMap.value && selectedNpcForMap.value.plotTimestamp) {
           selectedNpcForMap.value = {
@@ -890,20 +1035,22 @@ export default {
             plotTimestamp: null
           }
         }
-      }, 3100) // Slightly longer than animation duration
+      }, 1000) // Size reduction after 1 second
     }
 
     const openNpcInfo = async (npc) => {
       // Show confirmation dialog
       const confirmed = window.confirm(
-        `Navigate to detailed information for ${npc.full_name}?\n\nThis will open the NPC details page in a new tab.`
+        `Navigate to detailed information for ${npc.full_name}?\n\nThis will open the NPC details page in a new tab with the modal automatically opened.`
       )
       
       if (confirmed) {
         try {
-          // Open NPC details in new tab
-          // Construct URL for NPC page with specific NPC ID
-          const npcUrl = `/npcs?id=${npc.id}&name=${encodeURIComponent(npc.full_name)}`
+          // Open NPC details page in new tab with auto-open modal parameter
+          // The NPCs page expects 'npc' parameter with the NPC ID
+          const npcUrl = `/npcs?npc=${npc.id}`
+          
+          // Open in new tab
           window.open(npcUrl, '_blank')
         } catch (error) {
           console.error('Error opening NPC details:', error)
@@ -923,6 +1070,31 @@ export default {
       const days = Math.floor(seconds / 86400)
       const hours = Math.floor((seconds % 86400) / 3600)
       return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+    }
+
+    const handleItemIconError = (event) => {
+      // Fallback to default item icon if loading fails
+      event.target.src = '/icons/item_default.png'
+    }
+
+    const openItemInfo = async (item) => {
+      // Show confirmation dialog
+      const confirmed = window.confirm(
+        `Navigate to detailed information for ${item.name}?\n\nThis will open the Item details page in a new tab.`
+      )
+      
+      if (confirmed) {
+        try {
+          // Open Item details page in new tab with auto-open modal parameter
+          // The Items page expects 'item' parameter with the item ID  
+          const itemUrl = `/items?item=${item.id}`
+          
+          // Open in new tab
+          window.open(itemUrl, '_blank')
+        } catch (error) {
+          console.error('Error opening item details:', error)
+        }
+      }
     }
     
     const handleZoneNavigation = (zoneName) => {
@@ -1477,12 +1649,17 @@ export default {
       uniqueZoneNpcs,
       selectedNpcForMap,
       npcsLoading,
+      zoneItems,
+      uniqueZoneItems,
+      itemsLoading,
       handleSearch,
       selectZone,
       clearSelection,
       handleNpcClick,
       plotNpcOnMap,
       openNpcInfo,
+      handleItemIconError,
+      openItemInfo,
       handleZoneNavigation,
       clearSearch,
       handleKeydown,
@@ -2000,6 +2177,17 @@ export default {
   text-overflow: ellipsis;
 }
 
+.spawn-count-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.375rem;
+  margin-left: 0.5rem;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .npc-meta {
   display: flex;
   align-items: center;
@@ -2135,6 +2323,217 @@ export default {
   }
   
   .npc-action-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+  }
+}
+
+/* ===== ITEM STYLES ===== */
+.items-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.items-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #f3f4f6;
+}
+
+.items-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.item-count {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.items-loading {
+  text-align: center;
+  padding: 3rem;
+}
+
+.no-items-message {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: #9ca3af;
+}
+
+.no-items-message .no-data-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.7;
+}
+
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.item-card-compact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(31, 41, 55, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(75, 85, 99, 0.4);
+  border-radius: 0.75rem;
+  transition: all 0.3s ease;
+  min-height: 68px;
+}
+
+.item-card-compact:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(31, 41, 55, 0.8);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.item-icon-container {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(75, 85, 99, 0.3);
+}
+
+.item-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item-basic-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-name-compact {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f3f4f6;
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.item-stat {
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.drop-count-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.15);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.375rem;
+  margin-left: 0.5rem;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.item-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.item-action-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-action-btn.info-btn {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.item-action-btn.info-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .items-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .item-card-compact {
+    padding: 0.5rem 0.75rem;
+    min-height: 56px;
+  }
+  
+  .item-name-compact {
+    font-size: 0.9rem;
+  }
+  
+  .item-stat {
+    font-size: 0.75rem;
+  }
+  
+  .item-action-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .item-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .item-card-compact {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    min-height: auto;
+    padding: 0.75rem;
+  }
+  
+  .item-actions {
+    justify-content: center;
+    gap: 1rem;
+  }
+  
+  .item-action-btn {
     width: 36px;
     height: 36px;
     font-size: 1rem;

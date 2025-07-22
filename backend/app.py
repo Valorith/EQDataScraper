@@ -4529,6 +4529,317 @@ if __name__ == '__main__':
     server_startup_progress['startup_time'] = datetime.now().isoformat()
     logger.info("✅ Server startup complete")
 
+
+@app.route('/api/zone-map/<zone_short_name>', methods=['GET'])
+def get_zone_map(zone_short_name):
+    """
+    Get zone map data (lines) for rendering an interactive map.
+    Reads from the Maps folder and returns processed line data.
+    """
+    try:
+        # Sanitize zone name to prevent directory traversal
+        zone_short_name = zone_short_name.replace('..', '').replace('/', '').replace('\\', '').strip()
+        
+        if not zone_short_name:
+            return jsonify({'error': 'Zone name is required'}), 400
+        
+        # Look for map file in Maps directory
+        maps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Maps')
+        map_file_path = os.path.join(maps_dir, f"{zone_short_name}.txt")
+        
+        # Also try with _1 and _2 suffixes if base doesn't exist
+        if not os.path.exists(map_file_path):
+            for suffix in ['_1', '_2']:
+                alt_path = os.path.join(maps_dir, f"{zone_short_name}{suffix}.txt")
+                if os.path.exists(alt_path):
+                    map_file_path = alt_path
+                    break
+        
+        if not os.path.exists(map_file_path):
+            return jsonify({'error': 'Zone map not found', 'zone': zone_short_name}), 404
+        
+        # Read and parse map file
+        lines = []
+        try:
+            with open(map_file_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f):
+                    line = line.strip()
+                    if line.startswith('L '):
+                        lines.append(line)
+                    # Limit lines to prevent excessive memory usage
+                    if len(lines) >= 10000:
+                        app.logger.warning(f"Zone map {zone_short_name} has >10000 lines, truncating")
+                        break
+        except UnicodeDecodeError:
+            # Try with latin-1 encoding if UTF-8 fails
+            with open(map_file_path, 'r', encoding='latin-1') as f:
+                for line_num, line in enumerate(f):
+                    line = line.strip()
+                    if line.startswith('L '):
+                        lines.append(line)
+                    if len(lines) >= 10000:
+                        break
+        
+        # Try to load label file (usually _1.txt suffix)
+        labels = []
+        label_file_path = os.path.join(maps_dir, f"{zone_short_name}_1.txt")
+        
+        if os.path.exists(label_file_path):
+            try:
+                with open(label_file_path, 'r', encoding='utf-8') as f:
+                    for line_num, line in enumerate(f):
+                        line = line.strip()
+                        if line.startswith('P '):
+                            labels.append(line)
+                        # Limit labels to prevent excessive memory usage
+                        if len(labels) >= 1000:
+                            app.logger.warning(f"Zone labels {zone_short_name} has >1000 labels, truncating")
+                            break
+            except UnicodeDecodeError:
+                # Try with latin-1 encoding if UTF-8 fails
+                with open(label_file_path, 'r', encoding='latin-1') as f:
+                    for line_num, line in enumerate(f):
+                        line = line.strip()
+                        if line.startswith('P '):
+                            labels.append(line)
+                        if len(labels) >= 1000:
+                            break
+            except Exception as e:
+                app.logger.warning(f"Could not read label file for {zone_short_name}: {str(e)}")
+        
+        app.logger.info(f"Loaded {len(lines)} map lines and {len(labels)} labels for zone: {zone_short_name}")
+        
+        return jsonify({
+            'zone': zone_short_name,
+            'lines': lines,
+            'labels': labels,
+            'line_count': len(lines),
+            'label_count': len(labels)
+        })
+        
+    except FileNotFoundError:
+        return jsonify({'error': 'Zone map not found', 'zone': zone_short_name}), 404
+    except Exception as e:
+        app.logger.error(f"Error loading zone map {zone_short_name}: {str(e)}")
+        return jsonify({'error': 'Failed to load zone map'}), 500
+
+
+@app.route('/api/zone-npcs/<zone_short_name>', methods=['GET'])
+def get_zone_npcs(zone_short_name):
+    """
+    Get all NPCs that spawn in a specific zone with their spawn locations.
+    Returns detailed NPC information for the zone page NPC list.
+    """
+    try:
+        zone_short_name = zone_short_name.lower().strip()
+        app.logger.info(f"Getting NPCs for zone: {zone_short_name}")
+        
+        # Get database connection
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            app.logger.error(f"Database connection failed: {error}")
+            return jsonify({'error': error or 'Database not configured'}), 503
+        
+        npcs = []
+        
+        cursor = conn.cursor()
+        try:
+            # Query to get all NPCs in the specified zone with spawn details
+            # Based on EQEmu spawn2 schema: https://docs.eqemu.io/schema/spawns/spawn2/
+            npc_query = """
+                SELECT DISTINCT
+                    nt.id,
+                    nt.name,
+                    nt.lastname,
+                    nt.level,
+                    nt.race,
+                    nt.class,
+                    nt.hp,
+                    nt.mana,
+                    nt.AC,
+                    nt.mindmg,
+                    nt.maxdmg,
+                    s2.x,
+                    s2.y,
+                    s2.z,
+                    s2.heading,
+                    s2.respawntime,
+                    s2.variance,
+                    s2.pathgrid,
+                    sg.name AS spawngroup_name,
+                    se.chance AS spawn_chance
+                FROM npc_types nt
+                INNER JOIN spawnentry se ON nt.id = se.npcID
+                INNER JOIN spawn2 s2 ON se.spawngroupID = s2.spawngroupID
+                LEFT JOIN spawngroup sg ON s2.spawngroupID = sg.id
+                WHERE s2.zone = %s
+                ORDER BY nt.level DESC, nt.name ASC
+                LIMIT 500
+            """
+            
+            cursor.execute(npc_query, (zone_short_name,))
+            results = cursor.fetchall()
+            
+            app.logger.debug(f"Found {len(results)} NPC spawns in zone: {zone_short_name}")
+            
+            # Process results
+            for row in results:
+                if isinstance(row, dict):
+                    npc_data = dict(row)
+                else:
+                    columns = [desc[0] for desc in cursor.description]
+                    npc_data = dict(zip(columns, row))
+                
+                npc = {
+                    'id': npc_data['id'],
+                    'name': npc_data['name'].replace('_', ' ') if npc_data['name'] else 'Unknown NPC',
+                    'lastname': npc_data.get('lastname', '') or '',
+                    'full_name': (npc_data['name'].replace('_', ' ') + ' ' + (npc_data.get('lastname', '') or '')).strip(),
+                    'level': npc_data.get('level', 1),
+                    'race': npc_data.get('race', 0),
+                    'class': npc_data.get('class', 0),
+                    'hp': npc_data.get('hp', 0),
+                    'mana': npc_data.get('mana', 0),
+                    'ac': npc_data.get('AC', 0),
+                    'mindmg': npc_data.get('mindmg', 0),
+                    'maxdmg': npc_data.get('maxdmg', 0),
+                    'location': {
+                        'x': float(npc_data.get('x', 0)) if npc_data.get('x') is not None else 0,
+                        'y': float(npc_data.get('y', 0)) if npc_data.get('y') is not None else 0,
+                        'z': float(npc_data.get('z', 0)) if npc_data.get('z') is not None else 0,
+                        'heading': float(npc_data.get('heading', 0)) if npc_data.get('heading') is not None else 0
+                    },
+                    'spawn_info': {
+                        'respawn_time': npc_data.get('respawntime', 0),
+                        'variance': npc_data.get('variance', 0),
+                        'spawn_chance': npc_data.get('spawn_chance', 100),
+                        'spawngroup': npc_data.get('spawngroup_name', '') or '',
+                        'pathgrid': npc_data.get('pathgrid', 0)
+                    }
+                }
+                npcs.append(npc)
+            
+            app.logger.info(f"Retrieved {len(npcs)} NPCs for zone: {zone_short_name}")
+            
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+        
+        return jsonify({
+            'zone': zone_short_name,
+            'npcs': npcs,
+            'count': len(npcs)
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting NPCs for zone {zone_short_name}: {e}")
+        return jsonify({'error': f'Failed to get zone NPCs: {str(e)}'}), 500
+
+
+@app.route('/api/zone-items/<zone_short_name>', methods=['GET'])
+def get_zone_items(zone_short_name):
+    """
+    Get all items that drop from NPCs in a specific zone.
+    Returns unique items with drop information for the zone page items list.
+    """
+    if not zone_short_name:
+        return jsonify({'error': 'Zone short name is required'}), 400
+    
+    try:
+        conn = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database not connected'}), 503
+            
+        cursor = conn.cursor()
+        items = []
+        
+        # Query to get all items that drop from NPCs in this zone
+        # This joins multiple tables to connect zones -> spawns -> NPCs -> loot tables -> items
+        query = """
+        SELECT DISTINCT
+            i.id,
+            i.name,
+            i.icon,
+            i.ac,
+            i.damage,
+            i.delay,
+            i.weight,
+            i.itemtype,
+            i.price,
+            i.classes,
+            i.races,
+            i.slots,
+            lt.chance,
+            COUNT(*) as drop_sources
+        FROM zone z
+        JOIN spawn2 s2 ON z.zoneidnumber = s2.zone
+        JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID
+        JOIN npc_types nt ON se.npcID = nt.id
+        JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+        JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+        JOIN items i ON lde.item_id = i.id
+        LEFT JOIN loottable lt ON nt.loottable_id = lt.id
+        WHERE z.short_name = %s
+        AND i.name IS NOT NULL 
+        AND i.name != ''
+        AND i.name NOT REGEXP '^[0-9#_]*$'
+        GROUP BY i.id, i.name, i.icon, i.ac, i.damage, i.delay, i.weight, 
+                 i.itemtype, i.price, i.classes, i.races, i.slots, lt.chance
+        ORDER BY i.name ASC
+        LIMIT 500
+        """
+        
+        cursor.execute(query, (zone_short_name,))
+        results = cursor.fetchall()
+        
+        if results:
+            columns = [desc[0] for desc in cursor.description]
+            for row in results:
+                item_data = dict(zip(columns, row))
+                
+                item = {
+                    'id': item_data['id'],
+                    'name': item_data['name'],
+                    'icon': item_data.get('icon', 0),
+                    'ac': item_data.get('ac', 0) if item_data.get('ac', 0) > 0 else None,
+                    'damage': item_data.get('damage', 0) if item_data.get('damage', 0) > 0 else None,
+                    'delay': item_data.get('delay', 0) if item_data.get('delay', 0) > 0 else None,
+                    'weight': item_data.get('weight', 0),
+                    'item_type': item_data.get('itemtype', 0),
+                    'price': item_data.get('price', 0),
+                    'classes': item_data.get('classes', 0),
+                    'races': item_data.get('races', 0),
+                    'slots': item_data.get('slots', 0),
+                    'drop_chance': item_data.get('chance', 0),
+                    'drop_sources': item_data.get('drop_sources', 1)
+                }
+                items.append(item)
+        
+        app.logger.info(f"Retrieved {len(items)} items for zone: {zone_short_name}")
+        
+    except Exception as e:
+        app.logger.error(f"Error getting items for zone {zone_short_name}: {e}")
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+        return jsonify({'error': f'Failed to get zone items: {str(e)}'}), 500
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+    
+    return jsonify({
+        'zone': zone_short_name,
+        'items': items,
+        'count': len(items)
+    })
+
+
 # Error handlers for failed endpoint logging
 @app.errorhandler(404)
 def handle_404(error):
