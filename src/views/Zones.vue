@@ -40,6 +40,13 @@
                 <div class="zone-name">{{ zone.longName }}</div>
                 <div class="zone-short-name">{{ zone.shortName }}</div>
               </div>
+              <div class="expansion-icon">
+                <img 
+                  :src="getExpansionIcon(zone.shortName)" 
+                  :alt="getExpansionName(zone.shortName)" 
+                  :title="getExpansionName(zone.shortName)"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -796,6 +803,108 @@ export default {
       { shortName: 'draniksscar', longName: 'Dranik\'s Scar' },
       { shortName: 'wallofslaughter', longName: 'Wall of Slaughter' }
     ])
+    
+    // Expansion mapping data
+    const expansionMapping = {
+      // Classic Zones
+      'classic': ['akanon', 'befallen', 'befallenb', 'blackburrow', 'crushbone', 'everfrost', 'feerrott', 
+                  'gfaydark', 'lfaydark', 'halas', 'highkeep', 'highpass', 'kithicor', 'lavastorm', 
+                  'mistmoore', 'najena', 'nektulos', 'oasis', 'southro', 'northro', 'eastdesert', 
+                  'rivervale', 'unrest', 'paw', 'permafrost', 'runnyeye', 'soldunga', 'soldungb', 
+                  'kedge', 'paineel', 'hole', 'guk', 'guktop', 'gukbottom', 'guka', 'gukb', 'gukc', 
+                  'gukd', 'guke', 'gukf', 'gukg', 'gukh', 'erudnext', 'erudnint', 'tox', 'neriaka', 
+                  'neriakb', 'neriakc', 'commons', 'commonlands', 'eastcommons', 'westcommons', 
+                  'steamfont', 'lakerathe', 'rathemtn', 'innothule', 'qeynos', 'qeynos2', 'qcat', 
+                  'freporte', 'freportn', 'freportw', 'kaladima', 'kaladimb', 'felwithea', 'felwitheb', 
+                  'grobb', 'oggok', 'qey2hh1', 'northkarana', 'southkarana', 'eastkarana', 'ecommons', 
+                  'butcher', 'cauldron', 'lakerathe', 'innothule', 'rathemtn', 'beholder', 'misty', 
+                  'oot', 'erudsxing', 'stonebrunt', 'warrens', 'toxxulia', 'kerraridge', 'tutorial', 
+                  'load', 'load2', 'airplane', 'fearplane', 'hateplane', 'hateplaneb'],
+      
+      // Ruins of Kunark
+      'kunark': ['emeraldjungle', 'firiona', 'overthere', 'fieldofbone', 'kurn', 'kurntower', 
+                 'warslikswood', 'warsliks', 'dreadlands', 'burningwood', 'burning', 'skyfire', 
+                 'frontier', 'lakeofillomen', 'lakeillomen', 'swampofnohope', 'swampnohope', 
+                 'trakanon', 'timorous', 'chardok', 'chardokb', 'droga', 'nurga', 'kaesora', 
+                 'sebilis', 'oldsebilis', 'citymist', 'karnor', 'karnors', 'veeshanspe', 'vp', 
+                 'howlingstones', 'charasis', 'cabeast', 'cabwest'],
+      
+      // Scars of Velious  
+      'velious': ['eastwastes', 'iceclad', 'cobaltscar', 'greatdivide', 'wakening', 'wakeningland', 
+                  'westwastes', 'crystal', 'crystalcaverns', 'frozenshadow', 'necropolis', 'dragnecro', 
+                  'kael', 'kaeldrakkel', 'skyshrine', 'thurgadina', 'thurgadin', 'thurgadinb', 
+                  'icewell', 'growthplane', 'mischiefplane', 'sleeper', 'sleepers', 'sleeperstomb', 
+                  'sirens', 'sirensgrotto', 'templeveeshan'],
+      
+      // Shadows of Luclin
+      'luclin': ['shadowhaven', 'nexus', 'sharvahl', 'netherbian', 'ssratemple', 'griegsend', 
+                 'vexthal', 'luclin', 'umbral', 'scarlet', 'tenebrous', 'twilight', 'grimling', 
+                 'mseru', 'sseru', 'akheva', 'maiden', 'dawnshroud', 'echo', 'echocaverns', 
+                 'fungusgrove', 'hollowshade', 'paludal', 'katta', 'bazaar'],
+      
+      // Planes of Power
+      'pop': ['poknowledge', 'potranquility', 'pojustice', 'bothunder', 'postorms', 'hohonora', 
+              'hohonorb', 'solrotower', 'potimea', 'potimeb', 'potime', 'codecay', 'ponightmare', 
+              'podisease', 'poinnovation', 'potorment', 'povalor', 'fireplane', 'powater', 'poair', 
+              'poeartha', 'poearthb', 'pofire'],
+      
+      // Legacy of Ykesha
+      'ykesha': ['gunthak', 'dulak'],
+      
+      // Gates of Discord  
+      'god': ['abysmal', 'natimbi', 'qinimi', 'barindu', 'ferubi', 'snpool', 'snlair', 'snplant', 
+              'sncrematory', 'tipt', 'vxed', 'nadox', 'yxtta', 'uqua', 'kodtaz', 'ikkinz', 'riwwi', 
+              'taelosia'],
+      
+      // Omens of War
+      'oow': ['wallofslaughter', 'bloodfields', 'oldbloodfields', 'causeway', 'draniksscar', 'ruined'],
+      
+      // Dragons of Norrath
+      'don': ['broodlands', 'stillmoona', 'stillmoonb', 'thundercrest', 'lavaspire', 'tirranun', 
+              'provinggrounds', 'delvea', 'delveb', 'thenest'],
+      
+      // Modern Expansions (simplified grouping)
+      'modern': ['shardslanding', 'housethule', 'scorchedwoods', 'resplendenttemple', 'sarith', 
+                 'kattacastrum', 'freeportsewers', 'drunder', 'underquarry', 'toskirakk', 
+                 'laurioninn', 'korafax', 'mechanotus', 'ethernerekarana', 'brellsrest', 'hive', 
+                 'fieldofscale', 'sepulcher', 'oceangreen', 'dragonscale', 'thevoid', 'dranik', 
+                 'stoneroot', 'lopingplains', 'undershore', 'buried', 'buriedsea', 'solteris', 
+                 'devastation', 'ruins', 'illsalin', 'hatesfury', 'torgiran']
+    }
+    
+    // Expansion display names and icons
+    const expansionInfo = {
+      'classic': { name: 'Classic EverQuest', icon: '/expansions/original.gif' },
+      'kunark': { name: 'Ruins of Kunark', icon: '/expansions/kunarkicon.gif' },
+      'velious': { name: 'Scars of Velious', icon: '/expansions/veliousicon.gif' },
+      'luclin': { name: 'Shadows of Luclin', icon: '/expansions/luclinicon.gif' },
+      'pop': { name: 'Planes of Power', icon: '/expansions/poricon.png' },
+      'ykesha': { name: 'Legacy of Ykesha', icon: '/expansions/original.gif' },
+      'god': { name: 'Gates of Discord', icon: '/expansions/gatesicon.gif' },
+      'oow': { name: 'Omens of War', icon: '/expansions/omensicon.gif' },
+      'don': { name: 'Dragons of Norrath', icon: '/expansions/dodicon.png' },
+      'modern': { name: 'Modern Expansions', icon: '/expansions/secrets.gif' }
+    }
+    
+    // Helper functions for expansion mapping
+    const getExpansionForZone = (zoneShortName) => {
+      for (const [expansion, zones] of Object.entries(expansionMapping)) {
+        if (zones.includes(zoneShortName.toLowerCase())) {
+          return expansion
+        }
+      }
+      return 'modern' // Default to modern for unknown zones
+    }
+    
+    const getExpansionName = (zoneShortName) => {
+      const expansion = getExpansionForZone(zoneShortName)
+      return expansionInfo[expansion]?.name || 'Modern Expansions'
+    }
+    
+    const getExpansionIcon = (zoneShortName) => {
+      const expansion = getExpansionForZone(zoneShortName)
+      return expansionInfo[expansion]?.icon || '/expansions/secrets.gif'
+    }
     
     // Tab configuration
     const tabs = ref([
@@ -1820,7 +1929,10 @@ export default {
       allGroupsCollapsed,
       toggleGroup,
       toggleAllGroups,
-      isGroupCollapsed
+      isGroupCollapsed,
+      getExpansionForZone,
+      getExpansionName,
+      getExpansionIcon
     }
   }
 }
@@ -1934,6 +2046,9 @@ export default {
 }
 
 .search-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 1rem;
   cursor: pointer;
   border-bottom: 1px solid rgba(75, 85, 99, 0.3);
@@ -1958,6 +2073,24 @@ export default {
   font-size: 0.9rem;
   opacity: 0.7;
   margin-top: 0.2rem;
+}
+
+.expansion-icon {
+  flex-shrink: 0;
+  margin-left: 1rem;
+}
+
+.expansion-icon img {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+  image-rendering: pixelated;
+}
+
+.search-result-item:hover .expansion-icon img {
+  opacity: 1;
 }
 
 .selected-zone-section {
