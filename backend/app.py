@@ -4557,6 +4557,9 @@ def get_zone_map(zone_short_name):
         
         # Debug logging for production troubleshooting
         print(f"[DEBUG] zone-map endpoint: zone={zone_short_name}, maps_dir={maps_dir}, exists={os.path.exists(maps_dir)}")
+        if os.path.exists(maps_dir):
+            files = os.listdir(maps_dir)[:5]  # Show first 5 files for debugging
+            print(f"[DEBUG] Maps directory contains {len(os.listdir(maps_dir))} files, sample: {files}")
         
         map_file_path = os.path.join(maps_dir, f"{zone_short_name}.txt")
         
