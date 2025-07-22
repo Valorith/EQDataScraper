@@ -812,29 +812,31 @@ export default {
                   'mistmoore', 'najena', 'nektulos', 'oasis', 'southro', 'northro', 'eastdesert', 
                   'rivervale', 'unrest', 'paw', 'permafrost', 'runnyeye', 'soldunga', 'soldungb', 
                   'kedge', 'paineel', 'hole', 'guk', 'guktop', 'gukbottom', 'guka', 'gukb', 'gukc', 
-                  'gukd', 'guke', 'gukf', 'gukg', 'gukh', 'erudnext', 'erudnint', 'tox', 'neriaka', 
+                  'gukd', 'guke', 'gukf', 'gukg', 'gukh', 'erudnext', 'erudnint', 'tox', 'toxxulia', 'neriaka', 
                   'neriakb', 'neriakc', 'commons', 'commonlands', 'eastcommons', 'westcommons', 
                   'steamfont', 'lakerathe', 'rathemtn', 'innothule', 'qeynos', 'qeynos2', 'qcat', 
                   'freporte', 'freportn', 'freportw', 'kaladima', 'kaladimb', 'felwithea', 'felwitheb', 
                   'grobb', 'oggok', 'qey2hh1', 'northkarana', 'southkarana', 'eastkarana', 'ecommons', 
-                  'butcher', 'cauldron', 'lakerathe', 'innothule', 'rathemtn', 'beholder', 'misty', 
-                  'oot', 'erudsxing', 'stonebrunt', 'warrens', 'toxxulia', 'kerraridge', 'tutorial', 
-                  'load', 'load2', 'airplane', 'fearplane', 'hateplane', 'hateplaneb'],
+                  'butcher', 'cauldron', 'beholder', 'misty', 'mistythicket', 'oot', 'oceanoftears', 
+                  'erudsxing', 'stonebrunt', 'warrens', 'kerraridge', 'tutorial', 'tutoriala', 'tutorialb',
+                  'load', 'load2', 'airplane', 'fearplane', 'hateplane', 'hateplaneb', 'cazicthule', 'xorbb'],
       
       // Ruins of Kunark
       'kunark': ['emeraldjungle', 'firiona', 'overthere', 'fieldofbone', 'kurn', 'kurntower', 
                  'warslikswood', 'warsliks', 'dreadlands', 'burningwood', 'burning', 'skyfire', 
-                 'frontier', 'lakeofillomen', 'lakeillomen', 'swampofnohope', 'swampnohope', 
-                 'trakanon', 'timorous', 'chardok', 'chardokb', 'droga', 'nurga', 'kaesora', 
-                 'sebilis', 'oldsebilis', 'citymist', 'karnor', 'karnors', 'veeshanspe', 'vp', 
-                 'howlingstones', 'charasis', 'cabeast', 'cabwest'],
+                 'frontier', 'frontiermtns', 'frontiermtnsb', 'lakeofillomen', 'lakeillomen', 'swampofnohope', 'swampnohope', 
+                 'trakanon', 'timorous', 'timorousfalls', 'chardok', 'chardokb', 'chardoktwo', 'droga', 'drogab', 'nurga', 'kaesora', 
+                 'sebilis', 'oldsebilis', 'citymist', 'karnor', 'karnors', 'veeshanspe', 'vp', 'veeshan', 
+                 'howlingstones', 'charasis', 'charasisb', 'charasistwo', 'cabeast', 'cabwest', 'dalnir', 'veksar'],
       
       // Scars of Velious  
-      'velious': ['eastwastes', 'iceclad', 'cobaltscar', 'greatdivide', 'wakening', 'wakeningland', 
-                  'westwastes', 'crystal', 'crystalcaverns', 'frozenshadow', 'necropolis', 'dragnecro', 
-                  'kael', 'kaeldrakkel', 'skyshrine', 'thurgadina', 'thurgadin', 'thurgadinb', 
-                  'icewell', 'growthplane', 'mischiefplane', 'sleeper', 'sleepers', 'sleeperstomb', 
-                  'sirens', 'sirensgrotto', 'templeveeshan'],
+      'velious': ['eastwastes', 'eastwastestwo', 'eastwastesshard', 'iceclad', 'cobaltscar', 'cobaltscartwo', 
+                  'greatdivide', 'greatdividetwo', 'wakening', 'wakeningland', 'westwastes', 'westwastestwo', 
+                  'crystal', 'crystalcaverns', 'crystaltwoa', 'crystaltwob', 'frozenshadow', 'frozenshadowtwo', 
+                  'necropolis', 'necropolistwo', 'dragnecro', 'kael', 'kaeldrakkel', 'kaelshard', 'kaeltwo', 
+                  'skyshrine', 'skyshrinetwo', 'thurgadina', 'thurgadin', 'thurgadinb', 'icewell', 
+                  'velketor', 'velketortwo', 'growthplane', 'mischiefplane', 'sleeper', 'sleepers', 'sleeperstomb', 'sleepertwo', 
+                  'sirens', 'sirensgrotto', 'templeveeshan', 'templeveeshantwo', 'icefall', 'frostcrypt'],
       
       // Shadows of Luclin
       'luclin': ['shadowhaven', 'nexus', 'sharvahl', 'netherbian', 'ssratemple', 'griegsend', 
@@ -2081,12 +2083,13 @@ export default {
 }
 
 .expansion-icon img {
-  width: 24px;
-  height: 24px;
+  width: 72px;
+  height: 43px;
   border-radius: 4px;
   opacity: 0.8;
   transition: opacity 0.2s ease;
   image-rendering: pixelated;
+  object-fit: contain;
 }
 
 .search-result-item:hover .expansion-icon img {
