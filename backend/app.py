@@ -4543,8 +4543,21 @@ def get_zone_map(zone_short_name):
         if not zone_short_name:
             return jsonify({'error': 'Zone name is required'}), 400
         
-        # Look for map file in Maps directory
-        maps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Maps')
+        # Look for map file in Maps directory - try multiple possible locations
+        # First try: relative to backend directory (Railway deployment with symlink)
+        maps_dir = os.path.join(os.path.dirname(__file__), 'Maps')
+        
+        # Second try: relative to project root (local development)
+        if not os.path.exists(maps_dir):
+            maps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Maps')
+        
+        # Third try: absolute path for Railway deployment
+        if not os.path.exists(maps_dir):
+            maps_dir = '/app/Maps'
+        
+        # Debug logging for production troubleshooting
+        print(f"[DEBUG] zone-map endpoint: zone={zone_short_name}, maps_dir={maps_dir}, exists={os.path.exists(maps_dir)}")
+        
         map_file_path = os.path.join(maps_dir, f"{zone_short_name}.txt")
         
         # Also try with _1 and _2 suffixes if base doesn't exist
