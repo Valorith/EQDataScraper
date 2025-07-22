@@ -92,8 +92,8 @@ if ENABLE_USER_ACCOUNTS:
     # Allow specific origins for OAuth callbacks
     allowed_origins = [
         'http://localhost:3000',
-        'http://localhost:3000',
-        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002',
         'https://eqdatascraper-frontend-production.up.railway.app'
     ]
     
@@ -4738,6 +4738,156 @@ def get_zone_npcs(zone_short_name):
         return jsonify({'error': f'Failed to get zone NPCs: {str(e)}'}), 500
 
 
+def get_cursor_value(cursor_row, index=0):
+    """Helper to extract values from cursor results regardless of format"""
+    if cursor_row is None:
+        return None
+    if isinstance(cursor_row, dict):
+        keys = list(cursor_row.keys())
+        return cursor_row[keys[index]] if index < len(keys) else None
+    elif isinstance(cursor_row, (list, tuple)):
+        return cursor_row[index] if index < len(cursor_row) else None
+    else:
+        return cursor_row if index == 0 else None
+
+@app.route('/api/zone-items-debug/<zone_short_name>', methods=['GET'])
+def debug_zone_items(zone_short_name):
+    """Simple debug to check each step of the zone items query"""
+    if not zone_short_name:
+        return jsonify({'error': 'Zone short name is required'}), 400
+    
+    cursor = None
+    conn = None
+    
+    try:
+        conn, db_type, error = get_eqemu_db_connection()
+        if not conn:
+            return jsonify({'error': error or 'Database not connected'}), 503
+            
+        cursor = conn.cursor()
+        
+        # Just run each query step and show results as simple counts
+        results = {}
+        
+        # Step 1: Test spawn2 directly with zone name (same as working NPC query)
+        cursor.execute("SELECT COUNT(*) FROM spawn2 WHERE zone = %s", (zone_short_name,))
+        spawn2_count = get_cursor_value(cursor.fetchone())
+        results['spawn2_count'] = spawn2_count
+        
+        if spawn2_count == 0:
+            results['message'] = 'No spawn2 entries found for this zone'
+            return jsonify(results)
+        
+        # Step 2: Count spawnentry connections
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            WHERE s2.zone = %s
+        """, (zone_short_name,))
+        spawnentry_count = get_cursor_value(cursor.fetchone())
+        results['spawnentry_count'] = spawnentry_count
+        
+        if spawnentry_count == 0:
+            results['message'] = 'No spawnentry connections found'
+            return jsonify(results)
+        
+        # Step 3: Count NPC connections
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            JOIN npc_types nt ON se.npcID = nt.id
+            WHERE s2.zone = %s
+        """, (zone_short_name,))
+        npc_count = get_cursor_value(cursor.fetchone())
+        results['npc_count'] = npc_count
+        
+        if npc_count == 0:
+            results['message'] = 'No NPC connections found'
+            return jsonify(results)
+        
+        # Step 4: Count NPCs with loot tables
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            JOIN npc_types nt ON se.npcID = nt.id
+            WHERE s2.zone = %s AND nt.loottable_id > 0
+        """, (zone_short_name,))
+        loot_npc_count = get_cursor_value(cursor.fetchone())
+        results['npcs_with_loot'] = loot_npc_count
+        
+        if loot_npc_count == 0:
+            results['message'] = 'NPCs found but none have loot tables'
+            return jsonify(results)
+        
+        # Step 5: Count loottable entries
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            JOIN npc_types nt ON se.npcID = nt.id
+            JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+            WHERE s2.zone = %s AND nt.loottable_id > 0
+        """, (zone_short_name,))
+        loottable_count = get_cursor_value(cursor.fetchone())
+        results['loottable_entries'] = loottable_count
+        
+        if loottable_count == 0:
+            results['message'] = 'NPCs with loot tables found but no loottable_entries'
+            return jsonify(results)
+        
+        # Step 6: Count lootdrop entries  
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            JOIN npc_types nt ON se.npcID = nt.id
+            JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+            JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+            WHERE s2.zone = %s AND nt.loottable_id > 0
+        """, (zone_short_name,))
+        lootdrop_count = get_cursor_value(cursor.fetchone())
+        results['lootdrop_entries'] = lootdrop_count
+        
+        if lootdrop_count == 0:
+            results['message'] = 'Loottable entries found but no lootdrop_entries'
+            return jsonify(results)
+        
+        # Step 7: Count final items
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM spawn2 s2 
+            JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID 
+            JOIN npc_types nt ON se.npcID = nt.id
+            JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
+            JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
+            JOIN items ON lde.item_id = items.id
+            WHERE s2.zone = %s AND nt.loottable_id > 0
+            AND items.Name IS NOT NULL AND items.Name != ''
+        """, (zone_short_name,))
+        items_count = get_cursor_value(cursor.fetchone())
+        results['final_items'] = items_count
+        
+        if items_count == 0:
+            results['message'] = 'All joins successful but no valid items found'
+        else:
+            results['message'] = f'Success! Found {items_count} items'
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        app.logger.error(f"Debug failed for {zone_short_name}: {e}")
+        return jsonify({'error': f'Debug failed: {str(e)}'}), 500
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 @app.route('/api/zone-items/<zone_short_name>', methods=['GET'])
 def get_zone_items(zone_short_name):
     """
@@ -4747,91 +4897,81 @@ def get_zone_items(zone_short_name):
     if not zone_short_name:
         return jsonify({'error': 'Zone short name is required'}), 400
     
+    cursor = None
+    conn = None
     try:
-        conn = get_eqemu_db_connection()
+        conn, db_type, error = get_eqemu_db_connection()
         if not conn:
-            return jsonify({'error': 'Database not connected'}), 503
+            return jsonify({'error': error or 'Database not connected'}), 503
             
         cursor = conn.cursor()
         items = []
         
-        # Query to get all items that drop from NPCs in this zone
-        # This joins multiple tables to connect zones -> spawns -> NPCs -> loot tables -> items
-        query = """
-        SELECT DISTINCT
-            i.id,
-            i.name,
-            i.icon,
-            i.ac,
-            i.damage,
-            i.delay,
-            i.weight,
-            i.itemtype,
-            i.price,
-            i.classes,
-            i.races,
-            i.slots,
-            lt.chance,
-            COUNT(*) as drop_sources
-        FROM zone z
-        JOIN spawn2 s2 ON z.zoneidnumber = s2.zone
-        JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID
+        # Debug: First check if zone exists
+        cursor.execute("SELECT zoneidnumber, short_name, long_name FROM zone WHERE short_name = %s", (zone_short_name,))
+        zone_info = cursor.fetchone()
+        
+        if not zone_info:
+            app.logger.error(f"Zone '{zone_short_name}' not found in database")
+            return jsonify({'error': f'Zone {zone_short_name} not found'}), 404
+        
+        app.logger.info(f"Found zone: {zone_info}")
+        
+        # Use optimized single query approach for maximum performance
+        # This eliminates the N+1 query problem by joining all tables at once
+        import time
+        start_time = time.time()
+        
+        optimized_query = """
+        SELECT DISTINCT 
+            items.id, 
+            items.Name, 
+            items.icon, 
+            items.itemtype
+        FROM spawn2 s2
+        JOIN spawnentry se ON s2.spawngroupID = se.spawngroupID  
         JOIN npc_types nt ON se.npcID = nt.id
         JOIN loottable_entries lte ON nt.loottable_id = lte.loottable_id
         JOIN lootdrop_entries lde ON lte.lootdrop_id = lde.lootdrop_id
-        JOIN items i ON lde.item_id = i.id
-        LEFT JOIN loottable lt ON nt.loottable_id = lt.id
-        WHERE z.short_name = %s
-        AND i.name IS NOT NULL 
-        AND i.name != ''
-        AND i.name NOT REGEXP '^[0-9#_]*$'
-        GROUP BY i.id, i.name, i.icon, i.ac, i.damage, i.delay, i.weight, 
-                 i.itemtype, i.price, i.classes, i.races, i.slots, lt.chance
-        ORDER BY i.name ASC
-        LIMIT 500
+        JOIN items ON lde.item_id = items.id
+        WHERE s2.zone = %s
+        AND nt.loottable_id > 0
+        AND items.Name IS NOT NULL
+        AND items.Name != ''
+        ORDER BY items.Name
         """
         
-        cursor.execute(query, (zone_short_name,))
-        results = cursor.fetchall()
+        cursor.execute(optimized_query, (zone_short_name,))
+        item_results = cursor.fetchall()
+        query_time = time.time() - start_time
         
-        if results:
-            columns = [desc[0] for desc in cursor.description]
-            for row in results:
-                item_data = dict(zip(columns, row))
-                
-                item = {
-                    'id': item_data['id'],
-                    'name': item_data['name'],
-                    'icon': item_data.get('icon', 0),
-                    'ac': item_data.get('ac', 0) if item_data.get('ac', 0) > 0 else None,
-                    'damage': item_data.get('damage', 0) if item_data.get('damage', 0) > 0 else None,
-                    'delay': item_data.get('delay', 0) if item_data.get('delay', 0) > 0 else None,
-                    'weight': item_data.get('weight', 0),
-                    'item_type': item_data.get('itemtype', 0),
-                    'price': item_data.get('price', 0),
-                    'classes': item_data.get('classes', 0),
-                    'races': item_data.get('races', 0),
-                    'slots': item_data.get('slots', 0),
-                    'drop_chance': item_data.get('chance', 0),
-                    'drop_sources': item_data.get('drop_sources', 1)
-                }
-                items.append(item)
+        # Format results
+        items = []
+        for item_row in item_results:
+            items.append({
+                'id': get_cursor_value(item_row, 0),
+                'name': get_cursor_value(item_row, 1),
+                'icon': get_cursor_value(item_row, 2) or 0,
+                'item_type': get_cursor_value(item_row, 3) or 0
+            })
         
-        app.logger.info(f"Retrieved {len(items)} items for zone: {zone_short_name}")
+        app.logger.info(f"Retrieved {len(items)} items for zone: {zone_short_name} in {query_time*1000:.1f}ms using optimized single query")
         
     except Exception as e:
         app.logger.error(f"Error getting items for zone {zone_short_name}: {e}")
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
         return jsonify({'error': f'Failed to get zone items: {str(e)}'}), 500
     
     finally:
         if cursor:
-            cursor.close()
+            try:
+                cursor.close()
+            except:
+                pass
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass
     
     return jsonify({
         'zone': zone_short_name,

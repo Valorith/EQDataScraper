@@ -112,18 +112,15 @@
                 </div>
               </div>
 
-              <div v-if="npcsLoading" class="npcs-loading">
-                <div class="loading-spinner"></div>
-                <p>Loading NPC data...</p>
-              </div>
+              <LoadingModal :visible="npcsLoading" text="Loading NPCs..." />
 
-              <div v-else-if="zoneNpcs.length === 0" class="no-npcs-message">
+              <div v-if="!npcsLoading && zoneNpcs.length === 0" class="no-npcs-message">
                 <div class="no-data-icon">🏰</div>
                 <h4>No NPCs Found</h4>
                 <p>This zone doesn't have any NPCs in the database, or the database connection is unavailable.</p>
               </div>
 
-              <div v-else class="npcs-list">
+              <div v-if="!npcsLoading && zoneNpcs.length > 0" class="npcs-list">
                 <div class="npcs-grid">
                   <div 
                     v-for="npc in uniqueZoneNpcs" 
@@ -177,49 +174,71 @@
                 </div>
               </div>
 
-              <div v-if="itemsLoading" class="items-loading">
-                <div class="loading-spinner"></div>
-                <p>Loading item data...</p>
-              </div>
+              <LoadingModal :visible="itemsLoading" text="Loading items..." />
 
-              <div v-else-if="zoneItems.length === 0" class="no-items-message">
+              <div v-if="!itemsLoading && zoneItems.length === 0" class="no-items-message">
                 <div class="no-data-icon">⚔️</div>
                 <h4>No Items Found</h4>
                 <p>This zone doesn't have any items dropping from NPCs in the database, or the database connection is unavailable.</p>
               </div>
 
-              <div v-else class="items-list">
-                <div class="items-grid">
-                  <div 
-                    v-for="item in uniqueZoneItems" 
-                    :key="item.id"
-                    class="item-card-compact"
+              <div v-if="!itemsLoading && zoneItems.length > 0" class="items-list">
+                <!-- Show/Hide All Button -->
+                <div class="items-controls">
+                  <button 
+                    @click.stop="toggleAllGroups"
+                    class="toggle-all-btn"
+                    :title="allGroupsCollapsed ? 'Expand all item groups' : 'Collapse all item groups'"
                   >
-                    <div class="item-icon-container">
-                      <img 
-                        :src="item.icon_url || '/icons/item_default.png'"
-                        :alt="item.name"
-                        class="item-icon"
-                        @error="handleItemIconError"
-                      />
+                    <i :class="allGroupsCollapsed ? 'fas fa-chevron-down' : 'fas fa-chevron-up'"></i>
+                    {{ allGroupsCollapsed ? 'Show All' : 'Hide All' }}
+                  </button>
+                </div>
+
+                <div 
+                  v-for="group in groupedZoneItems" 
+                  :key="group.type"
+                  class="item-type-group"
+                >
+                  <div 
+                    class="item-type-header clickable-header"
+                    @click.stop="toggleGroup(group.type)"
+                    :title="`Click to ${isGroupCollapsed(group.type) ? 'expand' : 'collapse'} ${group.type}`"
+                  >
+                    <div class="header-content">
+                      <i :class="isGroupCollapsed(group.type) ? 'fas fa-chevron-right' : 'fas fa-chevron-down'" class="expand-icon"></i>
+                      <h4 class="item-type-title">{{ group.type }}</h4>
+                      <span class="item-type-count">({{ group.items.length }})</span>
                     </div>
-                    <div class="item-basic-info">
-                      <div class="item-name-compact">{{ item.name }}</div>
-                      <div class="item-meta">
-                        <span v-if="item.ac" class="item-stat">AC: {{ item.ac }}</span>
-                        <span v-if="item.damage" class="item-stat">DMG: {{ item.damage }}</span>
-                        <span v-if="item.delay" class="item-stat">DLY: {{ item.delay }}</span>
-                        <span v-if="item.drop_count > 1" class="drop-count-badge">({{ item.drop_count }})</span>
+                  </div>
+                  <div 
+                    v-if="!isGroupCollapsed(group.type)"
+                    class="items-grid"
+                  >
+                    <div 
+                      v-for="item in group.items" 
+                      :key="item.id"
+                      class="item-card-compact clickable-item"
+                      @click="openItemInfo(item)"
+                      :title="`Click to view details for ${item.name}`"
+                    >
+                      <div class="item-icon-container">
+                        <img 
+                          :src="item.icon_url || '/icons/item_default.png'"
+                          :alt="item.name"
+                          class="item-icon"
+                          @error="handleItemIconError"
+                        />
                       </div>
-                    </div>
-                    <div class="item-actions">
-                      <button 
-                        @click="openItemInfo(item)"
-                        class="item-action-btn info-btn"
-                        title="View item details"
-                      >
-                        ℹ️
-                      </button>
+                      <div class="item-basic-info">
+                        <div class="item-name-compact">{{ item.name }}</div>
+                        <div class="item-meta">
+                          <span v-if="item.ac" class="item-stat">AC: {{ item.ac }}</span>
+                          <span v-if="item.damage" class="item-stat">DMG: {{ item.damage }}</span>
+                          <span v-if="item.delay" class="item-stat">DLY: {{ item.delay }}</span>
+                          <span v-if="item.drop_count > 1" class="drop-count-badge">({{ item.drop_count }})</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -431,6 +450,8 @@ export default {
     const selectedNpcForMap = ref(null)
     const zoneItems = ref([])
     const itemsLoading = ref(false)
+    const collapsedGroups = ref([])  // Track which groups are collapsed
+    const allGroupsCollapsed = ref(true)    // Track if all groups are collapsed
     
     // Available zones list - comprehensive list including variations
     const availableZones = ref([
@@ -874,7 +895,7 @@ export default {
           itemMap.set(key, {
             ...item,
             drop_count: 1, // Track how many NPCs drop this item
-            icon_url: item.icon ? `https://lucy.allakhazam.com/images/icons/${item.icon}.gif` : null
+            icon_url: item.icon ? `/icons/items/${item.icon}.gif` : null
           })
         } else {
           // Additional occurrence - increment count
@@ -888,6 +909,73 @@ export default {
         return a.name.localeCompare(b.name)
       })
     })
+
+    // Group items by item type
+    const groupedZoneItems = computed(() => {
+      const groups = new Map()
+      
+      uniqueZoneItems.value.forEach(item => {
+        const itemType = getItemTypeDisplay(item.item_type)
+        
+        if (!groups.has(itemType)) {
+          groups.set(itemType, [])
+        }
+        groups.get(itemType).push(item)
+      })
+      
+      // Convert to array and sort groups by type name
+      const groupedArray = Array.from(groups.entries()).map(([type, items]) => ({
+        type,
+        items: items.sort((a, b) => a.name.localeCompare(b.name)) // Sort items within each group
+      }))
+      
+      // Sort groups by type name
+      const sortedGroups = groupedArray.sort((a, b) => a.type.localeCompare(b.type))
+      
+      return sortedGroups
+    })
+    
+    // Collapse/expand functions
+    const toggleGroup = (groupType) => {
+      console.log('toggleGroup called for:', groupType)
+      const index = collapsedGroups.value.indexOf(groupType)
+      if (index > -1) {
+        console.log('Expanding group:', groupType)
+        collapsedGroups.value.splice(index, 1)
+      } else {
+        console.log('Collapsing group:', groupType)
+        collapsedGroups.value.push(groupType)
+      }
+      updateAllGroupsState()
+      console.log('Current collapsed groups:', collapsedGroups.value)
+    }
+    
+    const toggleAllGroups = () => {
+      console.log('toggleAllGroups called, current state:', allGroupsCollapsed.value)
+      if (allGroupsCollapsed.value) {
+        // Expand all
+        console.log('Expanding all groups')
+        collapsedGroups.value.length = 0
+        allGroupsCollapsed.value = false
+      } else {
+        // Collapse all
+        console.log('Collapsing all groups')
+        collapsedGroups.value = groupedZoneItems.value.map(group => group.type)
+        allGroupsCollapsed.value = true
+      }
+      console.log('After toggle, collapsed groups:', collapsedGroups.value)
+    }
+    
+    const updateAllGroupsState = () => {
+      const totalGroups = groupedZoneItems.value.length
+      const collapsedCount = collapsedGroups.value.length
+      allGroupsCollapsed.value = collapsedCount === totalGroups
+    }
+    
+    const isGroupCollapsed = (groupType) => {
+      return collapsedGroups.value.includes(groupType)
+    }
+    
     
     // Methods
     const handleSearch = () => {
@@ -1078,22 +1166,15 @@ export default {
     }
 
     const openItemInfo = async (item) => {
-      // Show confirmation dialog
-      const confirmed = window.confirm(
-        `Navigate to detailed information for ${item.name}?\n\nThis will open the Item details page in a new tab.`
-      )
-      
-      if (confirmed) {
-        try {
-          // Open Item details page in new tab with auto-open modal parameter
-          // The Items page expects 'item' parameter with the item ID  
-          const itemUrl = `/items?item=${item.id}`
-          
-          // Open in new tab
-          window.open(itemUrl, '_blank')
-        } catch (error) {
-          console.error('Error opening item details:', error)
-        }
+      try {
+        // Open Item details page in new tab with auto-open modal parameter
+        // The Items page expects 'item' parameter with the item ID  
+        const itemUrl = `/items?item=${item.id}`
+        
+        // Open in new tab
+        window.open(itemUrl, '_blank')
+      } catch (error) {
+        console.error('Error opening item details:', error)
       }
     }
     
@@ -1633,6 +1714,75 @@ export default {
       }
     })
     
+    // Watch for zone changes to reset collapsed state
+    watch(selectedZone, () => {
+      if (selectedZone.value) {
+        collapsedGroups.value = []
+        allGroupsCollapsed.value = true
+      }
+    })
+    
+    // Watch for new item data to initialize collapsed state
+    watch(groupedZoneItems, (newGroups) => {
+      if (newGroups.length > 0 && collapsedGroups.value.length === 0) {
+        console.log('Initializing collapsed state for', newGroups.length, 'groups')
+        collapsedGroups.value = newGroups.map(group => group.type)
+        allGroupsCollapsed.value = true
+        console.log('Initialized collapsed groups:', collapsedGroups.value)
+      }
+    }, { immediate: true })
+    
+    const getItemTypeDisplay = (itemtype) => {
+      const typeMap = {
+        0: '1H Slashing',
+        1: '2H Slashing',
+        2: '1H Piercing',
+        3: '1H Blunt',
+        4: '2H Blunt',
+        5: 'Archery',
+        7: 'Throwing',
+        8: 'Shield',
+        10: 'Armor',
+        11: 'Tradeskill Item',
+        12: 'Lockpicking',
+        14: 'Food',
+        15: 'Drink',
+        16: 'Light Source',
+        17: 'Common Inventory Item',
+        18: 'Bind Wound',
+        19: 'Thrown Casting Item',
+        20: 'Spells / Song Sheets',
+        21: 'Potions',
+        22: 'Fletched Arrows',
+        23: 'Wind Instrument',
+        24: 'Stringed Instrument',
+        25: 'Brass Instrument',
+        26: 'Percussion Instrument',
+        27: 'Ammo',
+        29: 'Jewelry',
+        31: 'Readable Note/Scroll',
+        32: 'Readable Book',
+        33: 'Key',
+        34: 'Odd Item',
+        35: '2H Piercing',
+        36: 'Fishing Pole',
+        37: 'Fishing Bait',
+        38: 'Alcoholic Beverage',
+        39: 'More Keys',
+        40: 'Compass',
+        42: 'Poison',
+        45: 'Hand to Hand',
+        52: 'Charm',
+        53: 'Dye',
+        54: 'Augment',
+        55: 'Augment Solvent',
+        56: 'Augment Distiller',
+        58: 'Fellowship Banner Material',
+        60: 'Cultural Armor Manual',
+        63: 'New Currency',
+      }
+      return typeMap[itemtype] || `Type ${itemtype}`
+    }
     
     return {
       loading,
@@ -1651,6 +1801,7 @@ export default {
       npcsLoading,
       zoneItems,
       uniqueZoneItems,
+      groupedZoneItems,
       itemsLoading,
       handleSearch,
       selectZone,
@@ -1663,7 +1814,13 @@ export default {
       handleZoneNavigation,
       clearSearch,
       handleKeydown,
-      formatRespawnTime
+      formatRespawnTime,
+      getItemTypeDisplay,
+      collapsedGroups,
+      allGroupsCollapsed,
+      toggleGroup,
+      toggleAllGroups,
+      isGroupCollapsed
     }
   }
 }
@@ -2075,29 +2232,6 @@ export default {
   font-style: italic;
 }
 
-.npcs-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  color: #a78bfa;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(167, 139, 250, 0.3);
-  border-top: 3px solid #a78bfa;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
 
 .no-npcs-message {
   text-align: center;
@@ -2355,10 +2489,6 @@ export default {
   font-weight: 600;
 }
 
-.items-loading {
-  text-align: center;
-  padding: 3rem;
-}
 
 .no-items-message {
   text-align: center;
@@ -2538,5 +2668,105 @@ export default {
     height: 36px;
     font-size: 1rem;
   }
+}
+
+.item-type {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  display: inline-block;
+}
+
+.item-type-group {
+  margin-bottom: 2rem;
+}
+
+.item-type-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+.item-type-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #a78bfa;
+}
+
+.item-type-count {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.clickable-item {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clickable-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+.items-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.toggle-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 0.375rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-all-btn:hover {
+  background: rgba(102, 126, 234, 0.3);
+  border-color: rgba(102, 126, 234, 0.5);
+  transform: translateY(-1px);
+}
+
+.clickable-header {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clickable-header:hover {
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 0.375rem;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.expand-icon {
+  color: #a78bfa;
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
 }
 </style>
