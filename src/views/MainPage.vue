@@ -150,27 +150,33 @@
         </div>
       </router-link>
       
-      <div class="nav-card wiki-nav placeholder">
-        <div class="nav-icon">
-          <div class="nav-icon-symbol">📚</div>
-        </div>
-        <div class="nav-content">
-          <h3 class="nav-title">Wiki</h3>
-          <p class="nav-description">Comprehensive game guides and information (Coming Soon)</p>
-        </div>
-        <div class="coming-soon-badge">Coming Soon</div>
-      </div>
-      
-      <div class="nav-card zones-nav placeholder">
+      <router-link 
+        to="/zones"
+        class="nav-card zones-nav"
+      >
         <div class="nav-icon">
           <div class="nav-icon-symbol">🗺️</div>
         </div>
         <div class="nav-content">
           <h3 class="nav-title">Zones</h3>
-          <p class="nav-description">Explore different zones and their contents (Coming Soon)</p>
+          <p class="nav-description">Interactive zone maps with NPC locations, zone information, and exploration tools</p>
         </div>
-        <div class="coming-soon-badge">Coming Soon</div>
-      </div>
+      </router-link>
+      
+      <a 
+        href="https://wiki.clumsysworld.com/" 
+        target="_blank"
+        rel="noopener noreferrer"
+        class="nav-card wiki-nav"
+      >
+        <div class="nav-icon">
+          <div class="nav-icon-symbol">📚</div>
+        </div>
+        <div class="nav-content">
+          <h3 class="nav-title">Wiki</h3>
+          <p class="nav-description">Comprehensive game guides, quest walkthroughs, and strategy information</p>
+        </div>
+      </a>
       
       <div class="nav-card raid-nav placeholder">
         <div class="nav-icon">
@@ -456,6 +462,26 @@ export default {
   border-color: rgba(255,255,255,0.15);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+}
+
+/* Wiki card specific styling */
+.wiki-nav .nav-icon {
+  background: linear-gradient(135deg, #17a2b8, #138496);
+  box-shadow: 0 8px 24px rgba(23, 162, 184, 0.4);
+}
+
+.wiki-nav:hover .nav-icon {
+  background: linear-gradient(135deg, #138496, #117a8b);
+  box-shadow: 0 12px 32px rgba(23, 162, 184, 0.6);
+  transform: scale(1.1) rotate(-5deg);
+}
+
+.wiki-nav .nav-title {
+  color: #17a2b8;
+}
+
+.wiki-nav:hover .nav-title {
+  color: #138496;
 }
 
 .nav-icon {
@@ -1313,5 +1339,25 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   backdrop-filter: blur(10px);
+}
+
+/* Zones navigation card styling */
+.zones-nav .nav-icon {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  box-shadow: 0 8px 24px rgba(40, 167, 69, 0.4);
+}
+
+.zones-nav:hover .nav-icon {
+  background: linear-gradient(135deg, #20c997, #17a2b8);
+  box-shadow: 0 12px 32px rgba(40, 167, 69, 0.6);
+  transform: scale(1.1) rotate(5deg);
+}
+
+.zones-nav .nav-title {
+  color: #28a745;
+}
+
+.zones-nav:hover .nav-title {
+  color: #20c997;
 }
 </style>
