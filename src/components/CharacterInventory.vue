@@ -80,8 +80,8 @@
         <div class="equipment-slot-positioned charm-slot" data-slot="charm">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.charm }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.charm)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.charm)"
+               @click="selectItem(character.equipment?.charm)">
             <img v-if="character.equipment?.charm" 
                  :src="`/icons/items/${character.equipment.charm.icon}.png`" 
                  :alt="character.equipment.charm.name"
@@ -93,8 +93,8 @@
         <div class="equipment-slot-positioned head-slot" data-slot="head">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.head }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.head)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.head)"
+               @click="selectItem(character.equipment?.head)">
             <img v-if="character.equipment?.head" 
                  :src="`/icons/items/${character.equipment.head.icon}.png`" 
                  :alt="character.equipment.head.name"
@@ -106,7 +106,8 @@
         <div class="equipment-slot-positioned ear-slot" data-slot="ear1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear1 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.ear1)" @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.ear1)"
+               @click="selectItem(character.equipment?.ear1)">
             <img v-if="character.equipment?.ear1" 
                  :src="`/icons/items/${character.equipment.ear1.icon}.png`" 
                  :alt="character.equipment.ear1.name"
@@ -118,7 +119,8 @@
         <div class="equipment-slot-positioned ear-slot ear-2" data-slot="ear2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear2 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.ear2)" @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.ear2)"
+               @click="selectItem(character.equipment?.ear2)">
             <img v-if="character.equipment?.ear2" 
                  :src="`/icons/items/${character.equipment.ear2.icon}.png`" 
                  :alt="character.equipment.ear2.name"
@@ -130,7 +132,8 @@
         <div class="equipment-slot-positioned neck-slot" data-slot="neck">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.neck }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.neck)" @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.neck)"
+               @click="selectItem(character.equipment?.neck)">
             <img v-if="character.equipment?.neck" 
                  :src="`/icons/items/${character.equipment.neck.icon}.png`" 
                  :alt="character.equipment.neck.name"
@@ -142,8 +145,8 @@
         <div class="equipment-slot-positioned shoulder-slot" data-slot="shoulder">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.shoulder }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.shoulder)" 
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.shoulder)"
+               @click="selectItem(character.equipment?.shoulder)">
             <img v-if="character.equipment?.shoulder" 
                  :src="`/icons/items/${character.equipment.shoulder.icon}.png`" 
                  :alt="character.equipment.shoulder.name"
@@ -155,8 +158,8 @@
         <div class="equipment-slot-positioned arms-slot" data-slot="arms">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.arms }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.arms)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.arms)"
+               @click="selectItem(character.equipment?.arms)">
             <img v-if="character.equipment?.arms" 
                  :src="`/icons/items/${character.equipment.arms.icon}.png`" 
                  :alt="character.equipment.arms.name"
@@ -168,8 +171,8 @@
         <div class="equipment-slot-positioned back-slot" data-slot="back">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.back }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.back)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.back)"
+               @click="selectItem(character.equipment?.back)">
             <img v-if="character.equipment?.back" 
                  :src="`/icons/items/${character.equipment.back.icon}.png`" 
                  :alt="character.equipment.back.name"
@@ -181,8 +184,8 @@
         <div class="equipment-slot-positioned wrist-slot wrist-1" data-slot="wrist1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist1 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.wrist1)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.wrist1)"
+               @click="selectItem(character.equipment?.wrist1)">
             <img v-if="character.equipment?.wrist1" 
                  :src="`/icons/items/${character.equipment.wrist1.icon}.png`" 
                  :alt="character.equipment.wrist1.name"
@@ -194,8 +197,8 @@
         <div class="equipment-slot-positioned wrist-slot wrist-2" data-slot="wrist2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist2 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.wrist2)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.wrist2)"
+               @click="selectItem(character.equipment?.wrist2)">
             <img v-if="character.equipment?.wrist2" 
                  :src="`/icons/items/${character.equipment.wrist2.icon}.png`" 
                  :alt="character.equipment.wrist2.name"
@@ -207,8 +210,8 @@
         <div class="equipment-slot-positioned range-slot" data-slot="range">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.range }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.range)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.range)"
+               @click="selectItem(character.equipment?.range)">
             <img v-if="character.equipment?.range" 
                  :src="`/icons/items/${character.equipment.range.icon}.png`" 
                  :alt="character.equipment.range.name"
@@ -220,8 +223,8 @@
         <div class="equipment-slot-positioned hands-slot" data-slot="hands">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.hands }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.hands)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.hands)"
+               @click="selectItem(character.equipment?.hands)">
             <img v-if="character.equipment?.hands" 
                  :src="`/icons/items/${character.equipment.hands.icon}.png`" 
                  :alt="character.equipment.hands.name"
@@ -233,8 +236,8 @@
         <div class="equipment-slot-positioned primary-slot" data-slot="primary">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.primary }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.primary)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.primary)"
+               @click="selectItem(character.equipment?.primary)">
             <img v-if="character.equipment?.primary" 
                  :src="`/icons/items/${character.equipment.primary.icon}.png`" 
                  :alt="character.equipment.primary.name"
@@ -246,8 +249,8 @@
         <div class="equipment-slot-positioned secondary-slot" data-slot="secondary">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.secondary }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.secondary)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.secondary)"
+               @click="selectItem(character.equipment?.secondary)">
             <img v-if="character.equipment?.secondary" 
                  :src="`/icons/items/${character.equipment.secondary.icon}.png`" 
                  :alt="character.equipment.secondary.name"
@@ -259,8 +262,8 @@
         <div class="equipment-slot-positioned ammo-bottom-slot" data-slot="ammo">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ammo }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.ammo)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.ammo)"
+               @click="selectItem(character.equipment?.ammo)">
             <img v-if="character.equipment?.ammo" 
                  :src="`/icons/items/${character.equipment.ammo.icon}.png`" 
                  :alt="character.equipment.ammo.name"
@@ -272,8 +275,8 @@
         <div class="equipment-slot-positioned ring-slot ring-1" data-slot="ring1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring1 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.ring1)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.ring1)"
+               @click="selectItem(character.equipment?.ring1)">
             <img v-if="character.equipment?.ring1" 
                  :src="`/icons/items/${character.equipment.ring1.icon}.png`" 
                  :alt="character.equipment.ring1.name"
@@ -285,8 +288,8 @@
         <div class="equipment-slot-positioned ring-slot ring-2" data-slot="ring2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring2 }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.ring2)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.ring2)"
+               @click="selectItem(character.equipment?.ring2)">
             <img v-if="character.equipment?.ring2" 
                  :src="`/icons/items/${character.equipment.ring2.icon}.png`" 
                  :alt="character.equipment.ring2.name"
@@ -298,8 +301,8 @@
         <div class="equipment-slot-positioned chest-slot" data-slot="chest">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.chest }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.chest)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.chest)"
+               @click="selectItem(character.equipment?.chest)">
             <img v-if="character.equipment?.chest" 
                  :src="`/icons/items/${character.equipment.chest.icon}.png`" 
                  :alt="character.equipment.chest.name"
@@ -311,8 +314,8 @@
         <div class="equipment-slot-positioned legs-slot" data-slot="legs">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.legs }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.legs)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.legs)"
+               @click="selectItem(character.equipment?.legs)">
             <img v-if="character.equipment?.legs" 
                  :src="`/icons/items/${character.equipment.legs.icon}.png`" 
                  :alt="character.equipment.legs.name"
@@ -324,8 +327,8 @@
         <div class="equipment-slot-positioned feet-slot" data-slot="feet">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.feet }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.feet)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.feet)"
+               @click="selectItem(character.equipment?.feet)">
             <img v-if="character.equipment?.feet" 
                  :src="`/icons/items/${character.equipment.feet.icon}.png`" 
                  :alt="character.equipment.feet.name"
@@ -337,8 +340,8 @@
         <div class="equipment-slot-positioned waist-slot" data-slot="waist">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.waist }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.waist)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.waist)"
+               @click="selectItem(character.equipment?.waist)">
             <img v-if="character.equipment?.waist" 
                  :src="`/icons/items/${character.equipment.waist.icon}.png`" 
                  :alt="character.equipment.waist.name"
@@ -350,8 +353,8 @@
         <div class="equipment-slot-positioned ammo-slot" data-slot="power_source">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.power_source }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.power_source)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.power_source)"
+               @click="selectItem(character.equipment?.power_source)">
             <img v-if="character.equipment?.power_source" 
                  :src="`/icons/items/${character.equipment.power_source.icon}.png`" 
                  :alt="character.equipment.power_source.name"
@@ -363,8 +366,8 @@
         <div class="equipment-slot-positioned face-slot" data-slot="face">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.face }"
-               @mouseenter="showSimpleTooltip($event, character.equipment?.face)"
-               @mouseleave="hideSimpleTooltip">
+               :title="getItemTooltip(character.equipment?.face)"
+               @click="selectItem(character.equipment?.face)">
             <img v-if="character.equipment?.face" 
                  :src="`/icons/items/${character.equipment.face.icon}.png`" 
                  :alt="character.equipment.face.name"
@@ -419,12 +422,13 @@
         <div class="bags-section">
           <div class="inventory-bags">
             <div 
-              v-for="slot in character.inventory.slice(0, 10)" 
+              v-for="slot in character.inventory" 
               :key="slot.slot"
               class="bag-slot"
               :class="{ 'has-item': slot.item }"
-              
-              @click="handleSlotClick(slot)"
+              :title="getItemTooltip(slot.item)"
+              @click="selectItem(slot.item)"
+              @contextmenu.prevent="handleBagRightClick($event, slot)"
             >
               <div v-if="slot.item" class="item-container">
                 <img 
@@ -451,348 +455,321 @@
       <button class="eq-button find-item">Find Item</button>
     </div>
     
-    <!-- Simple Tooltip -->
-    <div v-if="simpleTooltip.visible" 
-         class="simple-tooltip"
-         :style="{ 
-           position: 'fixed', 
-           left: simpleTooltip.x + 'px', 
-           top: simpleTooltip.y + 'px',
-           zIndex: 9999
-         }">
-      <div class="tooltip-header">{{ simpleTooltip.item?.name }}</div>
-      <div v-if="simpleTooltip.loading" class="tooltip-loading">
-        Loading item details...
+    <!-- Item Modal -->
+    <ItemModal 
+      :selectedItemDetail="selectedItemDetail"
+      :loadingItemModal="loadingItemModal"
+      :dropSources="dropSources"
+      :loadingDropSources="loadingDropSources"
+      :dropSourcesRequested="dropSourcesRequested"
+      :merchantSources="merchantSources"
+      :loadingMerchantSources="loadingMerchantSources"
+      :merchantSourcesRequested="merchantSourcesRequested"
+      :itemDataAvailability="itemDataAvailability"
+      :loadingAvailability="loadingAvailability"
+      @close="closeItemModal"
+      @loadDropSources="loadDropSources"
+      @loadMerchantSources="loadMerchantSources"
+    />
+    
+    <!-- Loading Modal -->
+    <LoadingModal :visible="loadingItemModal" text="Loading item details..." @timeout="onItemModalTimeout" />
+    
+    <!-- Bag Windows -->
+    <div 
+      v-for="bagWindow in openBagWindows" 
+      :key="bagWindow.slotId"
+      class="bag-window"
+      :style="{ left: bagWindow.x + 'px', top: bagWindow.y + 'px', zIndex: bagWindow.zIndex }"
+      @mousedown="bringBagToFront(bagWindow.slotId)"
+    >
+      <div class="bag-window-header" @mousedown="startDrag($event, bagWindow)">
+        <span class="bag-window-title">{{ bagWindow.bagName }}</span>
+        <button class="bag-close-btn" @click="closeBagWindow(bagWindow.slotId)">×</button>
       </div>
-      <div v-else-if="simpleTooltip.error" class="tooltip-error">
-        {{ simpleTooltip.errorMessage || 'Failed to load details' }}
-      </div>
-      <div v-else class="tooltip-body">
-        <!-- Always show basic item info -->
-        <div v-if="simpleTooltip.item?.weight" class="basic">Weight: {{ simpleTooltip.item.weight }}</div>
-        <div v-if="simpleTooltip.item?.charges && simpleTooltip.item.charges > 0" class="basic">Charges: {{ simpleTooltip.item.charges }}</div>
-        
-        <!-- Show equipment stats from inventory data (fallback) -->
-        <div v-if="simpleTooltip.item?.stats?.ac" class="stat">AC: {{ simpleTooltip.item.stats.ac }}</div>
-        <div v-if="simpleTooltip.item?.stats?.hp" class="stat">HP: {{ simpleTooltip.item.stats.hp }}</div>
-        <div v-if="simpleTooltip.item?.stats?.mana" class="stat">MP: {{ simpleTooltip.item.stats.mana }}</div>
-        <div v-if="simpleTooltip.item?.stats?.endur" class="stat">Endurance: {{ simpleTooltip.item.stats.endur }}</div>
-        <div v-if="simpleTooltip.item?.stats?.attack" class="stat">ATK: {{ simpleTooltip.item.stats.attack }}</div>
-        
-        <!-- Show attributes from inventory data (fallback) -->
-        <div v-if="simpleTooltip.item?.attributes?.str" class="attr">STR: +{{ simpleTooltip.item.attributes.str }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.sta" class="attr">STA: +{{ simpleTooltip.item.attributes.sta }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.agi" class="attr">AGI: +{{ simpleTooltip.item.attributes.agi }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.dex" class="attr">DEX: +{{ simpleTooltip.item.attributes.dex }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.wis" class="attr">WIS: +{{ simpleTooltip.item.attributes.wis }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.int" class="attr">INT: +{{ simpleTooltip.item.attributes.int }}</div>
-        <div v-if="simpleTooltip.item?.attributes?.cha" class="attr">CHA: +{{ simpleTooltip.item.attributes.cha }}</div>
-        
-        <!-- Show resistances from inventory data (fallback) -->
-        <div v-if="simpleTooltip.item?.resistances?.poison" class="resist">Poison Resist: +{{ simpleTooltip.item.resistances.poison }}</div>
-        <div v-if="simpleTooltip.item?.resistances?.magic" class="resist">Magic Resist: +{{ simpleTooltip.item.resistances.magic }}</div>
-        <div v-if="simpleTooltip.item?.resistances?.fire" class="resist">Fire Resist: +{{ simpleTooltip.item.resistances.fire }}</div>
-        <div v-if="simpleTooltip.item?.resistances?.cold" class="resist">Cold Resist: +{{ simpleTooltip.item.resistances.cold }}</div>
-        <div v-if="simpleTooltip.item?.resistances?.disease" class="resist">Disease Resist: +{{ simpleTooltip.item.resistances.disease }}</div>
-        <div v-if="simpleTooltip.item?.resistances?.corruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.resistances.corruption }}</div>
-        
-        <!-- Detailed API data (shown when available) -->
-        <div v-if="simpleTooltip.item?.itemtype_name" class="item-type">{{ simpleTooltip.item.itemtype_name }}</div>
-        <div v-if="simpleTooltip.item?.ac && !simpleTooltip.item?.stats?.ac" class="stat">AC: {{ simpleTooltip.item.ac }}</div>
-        <div v-if="simpleTooltip.item?.hp && !simpleTooltip.item?.stats?.hp" class="stat">HP: {{ simpleTooltip.item.hp }}</div>
-        <div v-if="simpleTooltip.item?.mana && !simpleTooltip.item?.stats?.mana" class="stat">MP: {{ simpleTooltip.item.mana }}</div>
-        <div v-if="simpleTooltip.item?.endur && !simpleTooltip.item?.stats?.endur" class="stat">Endurance: {{ simpleTooltip.item.endur }}</div>
-        <div v-if="simpleTooltip.item?.attack && !simpleTooltip.item?.stats?.attack" class="stat">ATK: {{ simpleTooltip.item.attack }}</div>
-        
-        <!-- Weapon Stats (from detailed API) -->
-        <div v-if="simpleTooltip.item?.damage" class="weapon-stat">Damage: {{ simpleTooltip.item.damage }}</div>
-        <div v-if="simpleTooltip.item?.delay" class="weapon-stat">Delay: {{ simpleTooltip.item.delay }}</div>
-        <div v-if="simpleTooltip.item?.ratio" class="weapon-stat">Ratio: {{ simpleTooltip.item.ratio }}</div>
-        
-        <!-- Detailed attributes (from API, if different from inventory) -->
-        <div v-if="simpleTooltip.item?.astr && !simpleTooltip.item?.attributes?.str" class="attr">STR: +{{ simpleTooltip.item.astr }}</div>
-        <div v-if="simpleTooltip.item?.asta && !simpleTooltip.item?.attributes?.sta" class="attr">STA: +{{ simpleTooltip.item.asta }}</div>
-        <div v-if="simpleTooltip.item?.aagi && !simpleTooltip.item?.attributes?.agi" class="attr">AGI: +{{ simpleTooltip.item.aagi }}</div>
-        <div v-if="simpleTooltip.item?.adex && !simpleTooltip.item?.attributes?.dex" class="attr">DEX: +{{ simpleTooltip.item.adex }}</div>
-        <div v-if="simpleTooltip.item?.awis && !simpleTooltip.item?.attributes?.wis" class="attr">WIS: +{{ simpleTooltip.item.awis }}</div>
-        <div v-if="simpleTooltip.item?.aint && !simpleTooltip.item?.attributes?.int" class="attr">INT: +{{ simpleTooltip.item.aint }}</div>
-        <div v-if="simpleTooltip.item?.acha && !simpleTooltip.item?.attributes?.cha" class="attr">CHA: +{{ simpleTooltip.item.acha }}</div>
-        
-        <!-- Detailed resistances (from API, if different from inventory) -->
-        <div v-if="simpleTooltip.item?.pr && !simpleTooltip.item?.resistances?.poison" class="resist">Poison Resist: +{{ simpleTooltip.item.pr }}</div>
-        <div v-if="simpleTooltip.item?.mr && !simpleTooltip.item?.resistances?.magic" class="resist">Magic Resist: +{{ simpleTooltip.item.mr }}</div>
-        <div v-if="simpleTooltip.item?.fr && !simpleTooltip.item?.resistances?.fire" class="resist">Fire Resist: +{{ simpleTooltip.item.fr }}</div>
-        <div v-if="simpleTooltip.item?.cr && !simpleTooltip.item?.resistances?.cold" class="resist">Cold Resist: +{{ simpleTooltip.item.cr }}</div>
-        <div v-if="simpleTooltip.item?.dr && !simpleTooltip.item?.resistances?.disease" class="resist">Disease Resist: +{{ simpleTooltip.item.dr }}</div>
-        <div v-if="simpleTooltip.item?.svcorruption && !simpleTooltip.item?.resistances?.corruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.svcorruption }}</div>
-        
-        <!-- Flags -->
-        <div v-if="simpleTooltip.item?.magic" class="flag magic">MAGIC</div>
-        <div v-if="simpleTooltip.item?.lore" class="flag lore">LORE</div>
-        <div v-if="simpleTooltip.item?.nodrop || simpleTooltip.item?.isNoDrop" class="flag no-drop">NO DROP</div>
-        
-        <!-- Show if no detailed stats available -->
-        <div v-if="!hasAnyStats(simpleTooltip.item)" class="basic-info">Basic item information</div>
-        
-        <!-- Show system status if circuit breaker is active -->
-        <div v-if="consecutiveFailures >= MAX_CONSECUTIVE_FAILURES" class="system-status">
-          ⚠️ Enhanced tooltips temporarily disabled
+      <div class="bag-window-content">
+        <div class="bag-slots-grid" :style="getBagGridStyle(bagWindow.containerSize)">
+          <div 
+            v-for="bagSlot in bagWindow.contents" 
+            :key="bagSlot.slot"
+            class="bag-slot"
+            :class="{ 'has-item': bagSlot.item }"
+            :title="getItemTooltip(bagSlot.item, true)"
+            @click="selectItem(bagSlot.item)"
+          >
+            <div v-if="bagSlot.item" class="item-container">
+              <img 
+                :src="bagSlot.item.icon" 
+                :alt="bagSlot.item.name"
+                class="item-icon"
+                @error="handleImageError"
+              />
+              <span v-if="bagSlot.item.stackSize > 1" class="stack-count">
+                {{ bagSlot.item.stackSize }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+    
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
+import LoadingModal from './LoadingModal.vue'
+import ItemModal from './ItemModal.vue'
+import { getApiBaseUrl } from '../config/api'
 
 const props = defineProps({
   character: {
     type: Object,
     required: true
+  },
+  rawInventoryData: {
+    type: Array,
+    default: () => []
   }
 })
 
-// Simple tooltip state
-const simpleTooltip = ref({
-  visible: false,
-  x: 0,
-  y: 0,
-  item: null
+// Debug: Watch for prop changes
+import { watch } from 'vue'
+watch(() => props.rawInventoryData, (newData, oldData) => {
+  console.log('rawInventoryData prop changed from', oldData?.length || 0, 'to', newData?.length || 0, 'items')
+  if (newData?.length > 0) {
+    console.log('Sample items:', newData.slice(0, 3).map(item => ({ slotid: item?.slotid, name: item?.item_name })))
+  }
+}, { immediate: true })
+
+
+// Item modal state
+const selectedItemDetail = ref(null)
+const loadingItemModal = ref(false)
+
+// Drop sources state
+const dropSources = ref(null)
+const loadingDropSources = ref(false)
+const dropSourcesRequested = ref(false)
+
+// Merchant sources state
+const merchantSources = ref(null)
+const loadingMerchantSources = ref(false)
+const merchantSourcesRequested = ref(false)
+
+// Data availability state
+const itemDataAvailability = ref(null)
+const loadingAvailability = ref(false)
+
+// Bag window state
+const openBagWindows = ref([])
+const nextZIndex = ref(1000)
+const dragState = ref({
+  isDragging: false,
+  currentBag: null,
+  startX: 0,
+  startY: 0,
+  startMouseX: 0,
+  startMouseY: 0
 })
 
-let tooltipTimeout = null
-let requestCount = 0
-let lastRequestReset = Date.now()
-const MAX_REQUESTS_PER_MINUTE = 10 // Reduced further to prevent overwhelming backend
-const backendHealthy = ref(true)
-const lastHealthCheck = ref(0)
-const HEALTH_CHECK_INTERVAL = 10000 // Check backend health every 10 seconds
-const consecutiveFailures = ref(0)
-const MAX_CONSECUTIVE_FAILURES = 3 // Disable API calls after 3 consecutive failures
-
-const showSimpleTooltip = async (event, item) => {
+// Modal functions
+const selectItem = async (item) => {
   if (!item) return
   
-  clearTimeout(tooltipTimeout)
-  tooltipTimeout = setTimeout(async () => {
-    // Always show basic tooltip first with item name and weight
-    simpleTooltip.value = {
-      visible: true,
-      x: event.pageX + 20,
-      y: event.pageY + 20,
-      item: item,
-      loading: false,
-      error: false
-    }
-    
-    // Only try to fetch detailed data if we don't already have it and haven't failed before
-    if (!item.ac && !item.hp && !item.detailedDataLoaded && !item.detailedDataFailed) {
-      // Check if we've had too many consecutive failures
-      if (consecutiveFailures.value >= MAX_CONSECUTIVE_FAILURES) {
-        console.warn(`Too many consecutive failures (${consecutiveFailures.value}), disabling API calls for item ${item.name}`)
-        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-          simpleTooltip.value = {
-            ...simpleTooltip.value,
-            error: true,
-            errorMessage: 'API temporarily disabled - showing basic info'
-          }
-        }
-        return
-      }
-      
-      // Check backend health first
-      const isHealthy = await checkBackendHealth()
-      if (!isHealthy) {
-        console.warn(`Backend unhealthy, skipping API call for item ${item.name}`)
-        consecutiveFailures.value++
-        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-          simpleTooltip.value = {
-            ...simpleTooltip.value,
-            error: true,
-            errorMessage: 'Server unavailable - showing basic info'
-          }
-        }
-        return
-      }
-      
-      // Rate limiting - reset counter every minute
-      const now = Date.now()
-      if (now - lastRequestReset > 60000) {
-        requestCount = 0
-        lastRequestReset = now
-      }
-      
-      // Check if we've exceeded rate limit
-      if (requestCount >= MAX_REQUESTS_PER_MINUTE) {
-        console.warn('Tooltip request rate limit exceeded, showing basic tooltip only')
-        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-          simpleTooltip.value = {
-            ...simpleTooltip.value,
-            error: true,
-            errorMessage: 'Rate limited - too many requests'
-          }
-        }
-        return
-      }
-      
-      requestCount++
-      // Set loading state
-      if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-        simpleTooltip.value.loading = true
-      }
-      
-      // Fetch detailed item data with better error handling
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 2000) // Reduced to 2 seconds
-        
-        const response = await fetch(`http://localhost:5001/api/items/${item.id}/tooltip`, {
-          signal: controller.signal,
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        clearTimeout(timeoutId)
-        
-        if (response.ok) {
-          const detailedItem = await response.json()
-          // Mark item as having detailed data loaded
-          item.detailedDataLoaded = true
-          
-          // Reset consecutive failure counter on success
-          consecutiveFailures.value = 0
-          
-          // Update tooltip with detailed data if still visible for same item
-          if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-            simpleTooltip.value = {
-              ...simpleTooltip.value,
-              item: { ...item, ...detailedItem },
-              loading: false,
-              error: false
-            }
-          }
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-      } catch (error) {
-        console.warn(`Failed to load detailed item data for ${item.name} (ID: ${item.id}):`, error.name === 'AbortError' ? 'Request timeout' : error.message)
-        
-        // Increment consecutive failures counter
-        consecutiveFailures.value++
-        
-        // If it's a connection error, mark backend as unhealthy
-        if (error.message.includes('fetch') || error.message.includes('Connection') || error.name === 'TypeError') {
-          console.warn('Connection error detected, marking backend as unhealthy')
-          backendHealthy.value = false
-          lastHealthCheck.value = Date.now()
-        }
-        
-        // Show basic tooltip with error indicator
-        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-          simpleTooltip.value = {
-            ...simpleTooltip.value,
-            loading: false,
-            error: true,
-            errorMessage: error.name === 'AbortError' ? 'Timeout loading details' : 'Connection failed - showing basic info'
-          }
-        }
-        
-        // Mark item to prevent retrying failed requests (temporarily)
-        item.detailedDataFailed = true
-        
-        // Reset the failed flag after a delay to allow retry later, but only if consecutive failures are low
-        if (consecutiveFailures.value < MAX_CONSECUTIVE_FAILURES) {
-          setTimeout(() => {
-            item.detailedDataFailed = false
-          }, 30000) // Retry after 30 seconds
-        }
-      }
-    }
-  }, 200) // Reduced delay
-}
-
-const hideSimpleTooltip = () => {
-  clearTimeout(tooltipTimeout)
-  simpleTooltip.value.visible = false
-}
-
-const checkBackendHealth = async () => {
-  const now = Date.now()
-  if (now - lastHealthCheck.value < HEALTH_CHECK_INTERVAL) {
-    return backendHealthy.value
-  }
+  loadingItemModal.value = true
   
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 1000) // Very short timeout for health check
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${item.id}/details`)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    selectedItemDetail.value = data
     
-    const response = await fetch('http://localhost:5001/api/health', {
-      signal: controller.signal,
-      method: 'GET'
-    })
+    // Load data availability after item details are loaded
+    await loadItemDataAvailability(item.id)
+  } catch (error) {
+    console.error('Error loading item details:', error)
+    // Show basic item data even if API fails
+    selectedItemDetail.value = {
+      id: item.id,
+      Name: item.name,
+      icon: item.icon,
+      weight: item.weight || 0,
+      ac: item.ac || 0,
+      hp: item.hp || 0,
+      mana: item.mana || 0,
+      damage: item.damage || 0,
+      delay: item.delay || 0,
+      astr: item.astr || 0,
+      asta: item.asta || 0,
+      aagi: item.aagi || 0,
+      adex: item.adex || 0,
+      awis: item.awis || 0,
+      aint: item.aint || 0,
+      acha: item.acha || 0,
+      pr: item.pr || 0,
+      mr: item.mr || 0,
+      fr: item.fr || 0,
+      cr: item.cr || 0,
+      dr: item.dr || 0,
+      magic: item.magic || false,
+      lore: item.lore || false,
+      nodrop: item.nodrop || false
+    }
+  } finally {
+    loadingItemModal.value = false
+  }
+}
+
+const closeItemModal = () => {
+  selectedItemDetail.value = null
+  loadingItemModal.value = false
+  // Reset drop/merchant sources when closing modal
+  dropSources.value = null
+  loadingDropSources.value = false
+  dropSourcesRequested.value = false
+  merchantSources.value = null
+  loadingMerchantSources.value = false
+  merchantSourcesRequested.value = false
+  // Clear availability data when closing modal
+  itemDataAvailability.value = null
+  loadingAvailability.value = false
+}
+
+const onItemModalTimeout = () => {
+  console.warn('Item modal loading timed out')
+  loadingItemModal.value = false
+  selectedItemDetail.value = null
+}
+
+// Drop sources functions
+const loadDropSources = async () => {
+  if (!selectedItemDetail.value?.id || loadingDropSources.value || dropSourcesRequested.value) return
+  
+  loadingDropSources.value = true
+  dropSourcesRequested.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.id}/drop-sources`)
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const data = await response.json()
+    // Backend returns {zones: [...]} but frontend expects array directly
+    dropSources.value = data.zones || []
+  } catch (error) {
+    console.error('Error loading drop sources:', error)
+    dropSources.value = []
+  } finally {
+    loadingDropSources.value = false
+  }
+}
+
+// Merchant sources functions
+const loadMerchantSources = async () => {
+  if (!selectedItemDetail.value?.id || loadingMerchantSources.value || merchantSourcesRequested.value) return
+  
+  loadingMerchantSources.value = true
+  merchantSourcesRequested.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.id}/merchant-sources`)
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const data = await response.json()
+    // Backend returns {zones: [...]} but frontend expects array directly
+    merchantSources.value = data.zones || []
+  } catch (error) {
+    console.error('Error loading merchant sources:', error)
+    merchantSources.value = []
+  } finally {
+    loadingMerchantSources.value = false
+  }
+}
+
+// Item data availability function
+const loadItemDataAvailability = async (itemId) => {
+  if (!itemId) return
+  
+  loadingAvailability.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${itemId}/availability`)
     
-    clearTimeout(timeoutId)
-    backendHealthy.value = response.ok
-    lastHealthCheck.value = now
-    
-    if (!backendHealthy.value) {
-      console.warn('Backend health check failed, disabling tooltip API calls')
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
     }
     
+    const data = await response.json()
+    itemDataAvailability.value = data
+    
   } catch (error) {
-    console.warn('Backend health check failed:', error.message)
-    backendHealthy.value = false
-    lastHealthCheck.value = now
+    console.error('Error loading item data availability:', error)
+    // Fallback: Set to 'failed' state so we can show all buttons
+    itemDataAvailability.value = 'failed'
+  } finally {
+    loadingAvailability.value = false
   }
-  
-  return backendHealthy.value
+}
+
+// Helper functions for modal display
+const getItemTypeDisplay = (itemtype) => {
+  const ITEM_TYPES = {
+    0: 'Common Item',
+    1: '1H Slashing',
+    2: '2H Slashing', 
+    3: '1H Piercing',
+    4: '1H Blunt',
+    5: '2H Blunt',
+    7: 'Archery',
+    8: 'Shield',
+    10: 'Armor',
+    11: 'Miscellaneous',
+    14: 'Food',
+    15: 'Drink',
+    16: 'Light',
+    17: 'Combinable',
+    18: 'Bandage',
+    19: 'Throwing',
+    20: 'Spell',
+    21: 'Potion',
+    22: 'Wind Instrument',
+    23: 'String Instrument',
+    24: 'Brass Instrument',
+    25: 'Drum',
+    26: 'Arrow',
+    27: 'Jewelry',
+    29: 'Skill Tome',
+    35: 'Note'
+  }
+  return ITEM_TYPES[itemtype] || 'Unknown'
+}
+
+const getWeaponRatio = (damage, delay) => {
+  if (!damage || !delay) return '0.0'
+  return (damage / (delay / 10)).toFixed(1)
 }
 
 const hasAnyStats = (item) => {
   if (!item) return false
-  
-  // Check for any stats from inventory data
-  if (item.stats && (item.stats.ac || item.stats.hp || item.stats.mana || item.stats.attack)) return true
-  if (item.attributes && Object.values(item.attributes).some(val => val > 0)) return true
-  if (item.resistances && Object.values(item.resistances).some(val => val > 0)) return true
-  
-  // Check for any detailed API data
-  if (item.ac || item.hp || item.mana || item.attack || item.damage) return true
-  if (item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha) return true
-  if (item.pr || item.mr || item.fr || item.cr || item.dr || item.svcorruption) return true
-  
-  return false
+  return item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha ||
+         item.stats?.ac || item.stats?.hp || item.stats?.mana || item.stats?.endur || item.stats?.attack ||
+         item.attributes?.str || item.attributes?.sta || item.attributes?.agi || item.attributes?.dex ||
+         item.attributes?.wis || item.attributes?.int || item.attributes?.cha ||
+         item.resistances?.poison || item.resistances?.magic || item.resistances?.fire || 
+         item.resistances?.cold || item.resistances?.disease || item.resistances?.corruption ||
+         item.weight || item.charges
 }
 
-// Recovery mechanism - reset circuit breaker after 2 minutes of no activity
-const resetCircuitBreaker = () => {
-  if (consecutiveFailures.value >= MAX_CONSECUTIVE_FAILURES) {
-    console.log('Resetting circuit breaker, attempting to re-enable API calls')
-    consecutiveFailures.value = 0
-    backendHealthy.value = true
-    lastHealthCheck.value = 0
-  }
+const hasResistValues = (item) => {
+  if (!item) return false
+  return item.fr || item.cr || item.mr || item.dr || item.pr || item.svcorruption
 }
 
-// Set up recovery timer
-let recoveryTimer = setInterval(resetCircuitBreaker, 120000) // Every 2 minutes
-
-// Clean up tooltips when component unmounts
-onUnmounted(() => {
-  clearTimeout(tooltipTimeout)
-  if (recoveryTimer) {
-    clearInterval(recoveryTimer)
-  }
-})
-
-const handleSlotClick = (slot) => {
-  if (slot.item) {
-    console.log('Clicked item:', slot.item.name)
-    // Tooltips are now handled by the directive
-  }
+const hasAttributeValues = (item) => {
+  if (!item) return false
+  return item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha
 }
     
 const handleImageError = (event) => {
@@ -810,6 +787,18 @@ const handleImageError = (event) => {
 const formatCurrency = (value) => {
   // Format currency with commas for readability
   return value.toLocaleString()
+}
+
+const getItemTooltip = (item, isInBagWindow = false) => {
+  if (!item) return ''
+  
+  const isContainer = item.containerSize && item.containerSize > 0
+  
+  if (isContainer && !isInBagWindow) {
+    return `Left click for info.\nRight click to open`
+  } else {
+    return `Left click for info.`
+  }
 }
 
 const normalizeClassName = (className) => {
@@ -901,68 +890,386 @@ const normalizeClassName = (className) => {
   
   return classMapping[className] || className
 }
+
+// Bag window methods
+const handleBagRightClick = (event, slot) => {
+  
+  if (!slot.item || !slot.item.containerSize || slot.item.containerSize === 0) {
+    return // Not a container
+  }
+  
+  // Check if this bag is already open
+  const existingWindow = openBagWindows.value.find(w => w.slotId === slot.slotid)
+  if (existingWindow) {
+    bringBagToFront(slot.slotid)
+    return
+  }
+  
+  // Calculate position next to the clicked bag
+  const rect = event.target.closest('.bag-slot').getBoundingClientRect()
+  const x = rect.right + 10
+  const y = rect.top
+  
+  const bagContents = getBagContents(slot.slotid, slot.item.containerSize)
+  
+  // Create bag window
+  const bagWindow = {
+    slotId: slot.slotid,
+    bagName: slot.item.name,
+    containerSize: slot.item.containerSize,
+    x: x,
+    y: y,
+    zIndex: nextZIndex.value++,
+    contents: bagContents
+  }
+  
+  
+  openBagWindows.value.push(bagWindow)
+}
+
+const getBagContents = (bagSlotId, containerSize) => {
+  // Safety check for props
+  if (!props.rawInventoryData || !Array.isArray(props.rawInventoryData)) {
+    console.warn('rawInventoryData is not available or not an array:', props.rawInventoryData)
+    return []
+  }
+  
+  // Map bag slot IDs to their content slot ranges - EQEmu allocates 10 slots per bag regardless of actual size
+  const slotRanges = {
+    23: [262, 271], 24: [272, 281], 25: [282, 291], 26: [292, 301], 27: [302, 311],
+    28: [312, 321], 29: [322, 331], 30: [332, 341], 31: [342, 351], 32: [352, 361]
+  }
+  
+  const range = slotRanges[bagSlotId]
+  if (!range) {
+    return []
+  }
+  
+  const [startSlot, endSlot] = range
+  
+  // Find all items that exist in this bag's slot range, regardless of gaps
+  const bagItems = props.rawInventoryData.filter(item => 
+    item && item.slotid >= startSlot && item.slotid <= endSlot
+  ).sort((a, b) => a.slotid - b.slotid) // Sort by slot ID
+  
+  const contents = []
+  
+  // Create slots for the container, mapping actual items to UI slots
+  for (let i = 0; i < containerSize; i++) {
+    const inventoryItem = bagItems[i] // Use the i-th item found, not a specific slot
+    
+    contents.push({
+      slot: i,
+      slotid: inventoryItem ? inventoryItem.slotid : (startSlot + i), // Use actual slot if item exists
+      item: inventoryItem ? {
+        id: inventoryItem.itemid || inventoryItem.id,
+        name: inventoryItem.item_name || inventoryItem.name,
+        icon: `/icons/items/${inventoryItem.item_icon || inventoryItem.icon || 500}.png`,
+        charges: inventoryItem.charges || 0,
+        stackSize: inventoryItem.stackable ? (inventoryItem.charges || 1) : 1,
+        stackable: inventoryItem.stackable,
+        color: inventoryItem.color || 0
+      } : null
+    })
+  }
+  
+  return contents
+}
+
+const getBagGridStyle = (containerSize) => {
+  // Calculate grid dimensions based on container size
+  const columns = 2
+  const rows = Math.ceil(containerSize / columns)
+  
+  return {
+    gridTemplateColumns: `repeat(${columns}, 70px)`,
+    gridTemplateRows: `repeat(${rows}, 70px)`
+  }
+}
+
+const closeBagWindow = (slotId) => {
+  const index = openBagWindows.value.findIndex(w => w.slotId === slotId)
+  if (index !== -1) {
+    openBagWindows.value.splice(index, 1)
+  }
+}
+
+const bringBagToFront = (slotId) => {
+  const bagWindow = openBagWindows.value.find(w => w.slotId === slotId)
+  if (bagWindow) {
+    bagWindow.zIndex = nextZIndex.value++
+  }
+}
+
+const startDrag = (event, bagWindow) => {
+  dragState.value = {
+    isDragging: true,
+    currentBag: bagWindow,
+    startX: bagWindow.x,
+    startY: bagWindow.y,
+    startMouseX: event.clientX,
+    startMouseY: event.clientY
+  }
+  
+  document.addEventListener('mousemove', handleDrag)
+  document.addEventListener('mouseup', endDrag)
+  event.preventDefault()
+}
+
+const handleDrag = (event) => {
+  if (!dragState.value.isDragging) return
+  
+  const deltaX = event.clientX - dragState.value.startMouseX
+  const deltaY = event.clientY - dragState.value.startMouseY
+  
+  dragState.value.currentBag.x = dragState.value.startX + deltaX
+  dragState.value.currentBag.y = dragState.value.startY + deltaY
+}
+
+const endDrag = () => {
+  dragState.value.isDragging = false
+  dragState.value.currentBag = null
+  
+  document.removeEventListener('mousemove', handleDrag)
+  document.removeEventListener('mouseup', endDrag)
+}
 </script>
 
 <style scoped>
-/* Simple Tooltip Styling */
-.simple-tooltip {
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid #666;
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+  border: 2px solid #444;
+  border-radius: 8px;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.item-modal {
+  width: 500px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+  border-bottom: 1px solid #444;
+  background: linear-gradient(135deg, #333 0%, #222 100%);
+}
+
+.modal-header-content {
+  display: flex;
+  gap: 15px;
+  flex: 1;
+}
+
+.item-icon-modal-container {
+  flex-shrink: 0;
+}
+
+.item-icon-modal {
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+  border: 2px solid #555;
   border-radius: 4px;
-  padding: 8px;
-  font-size: 12px;
-  color: white;
-  max-width: 250px;
-  pointer-events: none;
+  background: #1a1a1a;
 }
 
-.tooltip-header {
-  color: #ffd700;
+.item-icon-placeholder-modal {
+  width: 64px;
+  height: 64px;
+  border: 2px solid #555;
+  border-radius: 4px;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 24px;
+}
+
+.item-header-info h3 {
+  color: #fff;
+  font-size: 18px;
+  margin: 0 0 10px 0;
   font-weight: bold;
-  margin-bottom: 4px;
 }
 
-.tooltip-body div {
-  margin: 2px 0;
+.item-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.tooltip-loading {
-  color: #87ceeb;
-  font-style: italic;
-}
-
-.tooltip-error {
-  color: #ff6b6b;
-  font-style: italic;
+.item-type-badge, .property-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
   font-size: 11px;
-}
-
-.no-drop {
-  color: #ff6b6b !important;
   font-weight: bold;
+  text-transform: uppercase;
 }
 
-.item-debug {
-  color: #888;
-  font-size: 10px;
-}
-
-.system-status {
-  color: #ffa500;
-  font-style: italic;
-  font-size: 10px;
-  text-align: center;
-  margin-top: 4px;
-  padding: 2px;
-  background: rgba(255, 165, 0, 0.1);
-  border-radius: 3px;
-}
-
-.basic-info {
+.item-type-badge {
+  background: #444;
   color: #ccc;
-  font-style: italic;
-  font-size: 11px;
 }
+
+.property-badge.magic {
+  background: #4a90e2;
+  color: white;
+}
+
+.property-badge.lore {
+  background: #f5a623;
+  color: white;
+}
+
+.property-badge.nodrop {
+  background: #d0021b;
+  color: white;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: #444;
+  color: #fff;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.detail-section {
+  margin-bottom: 25px;
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.detail-section h4 {
+  color: #fff;
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #444;
+  font-weight: bold;
+}
+
+.primary-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.primary-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.stat-icon {
+  width: 32px;
+  height: 32px;
+  background: #444;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-value {
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.stat-label {
+  color: #ccc;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.stat-extra {
+  color: #888;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.attributes-grid, .resistances-grid, .requirements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.attribute-item, .resist-item, .requirement-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  border: 1px solid #333;
+}
+
+.attr-label, .resist-label, .req-label {
+  color: #ccc;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.attr-value, .resist-value, .req-value {
+  color: #98d982;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.resist-item.fire .resist-value { color: #ff6b6b; }
+.resist-item.cold .resist-value { color: #74c0fc; }
+.resist-item.magic .resist-value { color: #da77f2; }
+.resist-item.disease .resist-value { color: #69db7c; }
+.resist-item.poison .resist-value { color: #95e5d4; }
 
 .character-inventory {
   background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
@@ -970,7 +1277,7 @@ const normalizeClassName = (className) => {
   color: #f0f0f0;
   font-family: 'Verdana', sans-serif;
   font-size: 14px;
-  width: 750px;
+  width: 800px;
   height: 813px;
   margin: 0 auto;
   position: relative;
@@ -1027,14 +1334,15 @@ const normalizeClassName = (className) => {
 
 .char-name {
   color: #fff;
-  font-size: 12px;
+  font-size: 20px;
   font-weight: bold;
-  margin-bottom: 2px;
+  margin-bottom: 6px;
 }
 
 .char-details {
   color: #ccc;
-  font-size: 10px;
+  font-size: 16px;
+  margin-bottom: 3px;
 }
 
 .character-stats {
@@ -1216,7 +1524,7 @@ const normalizeClassName = (className) => {
 
 /* Currency/Bags Panel (Right) */
 .currency-bags-panel {
-  width: 150px;
+  width: 200px;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -1315,34 +1623,27 @@ const normalizeClassName = (className) => {
   border: 1px inset #666;
   padding: 8px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .inventory-bags {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(5, 1fr);
+  grid-template-columns: repeat(2, 70px);
+  grid-template-rows: repeat(5, 70px);
   gap: 1px;
-  justify-content: center;
-  align-content: center;
-  height: 100%;
-  padding: 4px;
 }
 
 .bag-slot {
-  width: 100%;
-  height: 100%;
-  min-width: 60px;
-  min-height: 60px;
-  max-width: 80px;
-  max-height: 80px;
+  width: 70px;
+  height: 70px;
   background: #222;
   border: 1px inset #555;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  justify-self: center;
-  align-self: center;
   aspect-ratio: 1;
 }
 
@@ -1421,5 +1722,261 @@ const normalizeClassName = (className) => {
 
 .eq-button.find-item:hover {
   background: linear-gradient(to bottom, #5a7a5a, #4a6a4a);
+}
+
+/* Faster tooltip appearance for better UX */
+.equipment-slot, .bag-slot {
+  position: relative;
+}
+
+.equipment-slot[title]:hover::after,
+.bag-slot[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: pre;
+  z-index: 1000;
+  pointer-events: none;
+  animation: tooltipFadeIn 0.15s ease-out;
+  text-align: center;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Simple Tooltip Styles */
+.simple-tooltip {
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+  border: 2px solid #444;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+  min-width: 200px;
+  max-width: 350px;
+  font-size: 12px;
+  color: #fff;
+  pointer-events: none;
+  user-select: none;
+}
+
+.tooltip-header {
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #fff;
+  border-bottom: 1px solid #444;
+  padding-bottom: 4px;
+}
+
+.tooltip-loading {
+  color: #888;
+  font-style: italic;
+}
+
+.tooltip-error {
+  color: #ff6b6b;
+  font-style: italic;
+}
+
+.tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tooltip-body .basic {
+  color: #ccc;
+}
+
+.tooltip-body .stat {
+  color: #4CAF50;
+}
+
+.tooltip-body .attr {
+  color: #2196F3;
+}
+
+.tooltip-body .resist {
+  color: #FF9800;
+}
+
+.tooltip-body .weapon-stat {
+  color: #E91E63;
+}
+
+.tooltip-body .item-type {
+  color: #9C27B0;
+  font-style: italic;
+}
+
+.tooltip-body .flag {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: bold;
+  margin: 2px 0;
+  display: inline-block;
+}
+
+.tooltip-body .flag.magic {
+  background: #2196F3;
+  color: white;
+}
+
+.tooltip-body .flag.lore {
+  background: #FF9800;
+  color: white;
+}
+
+.tooltip-body .flag.no-drop {
+  background: #f44336;
+  color: white;
+}
+
+.tooltip-body .basic-info {
+  color: #888;
+  font-style: italic;
+}
+
+.tooltip-body .system-status {
+  color: #ff9800;
+  font-size: 11px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #444;
+}
+
+/* Bag Window Styles */
+.bag-window {
+  position: fixed;
+  background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+  border: 3px outset #666;
+  border-radius: 4px;
+  font-family: 'Verdana', sans-serif;
+  font-size: 12px;
+  color: #f0f0f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  user-select: none;
+}
+
+.bag-window-header {
+  background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+  border-bottom: 1px inset #666;
+  padding: 4px 8px;
+  cursor: move;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 20px;
+  font-weight: bold;
+}
+
+.bag-window-title {
+  color: #fff;
+  font-size: 11px;
+  flex: 1;
+  truncate: true;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bag-close-btn {
+  background: #aa4444;
+  border: 1px outset #666;
+  color: white;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+
+.bag-close-btn:hover {
+  background: #cc5555;
+}
+
+.bag-close-btn:active {
+  border: 1px inset #666;
+}
+
+.bag-window-content {
+  padding: 8px;
+}
+
+.bag-slots-grid {
+  display: grid;
+  gap: 1px;
+}
+
+.bag-window .bag-slot {
+  width: 70px;
+  height: 70px;
+  background: #222;
+  border: 1px inset #555;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+}
+
+.bag-window .bag-slot:hover {
+  background: #333;
+}
+
+.bag-window .bag-slot.has-item {
+  background: #2a2a2a;
+}
+
+.bag-window .item-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bag-window .item-icon {
+  max-width: 64px;
+  max-height: 64px;
+  width: auto;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.bag-window .stack-count {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 3px;
+  border-radius: 2px;
+  min-width: 12px;
+  text-align: center;
 }
 </style>

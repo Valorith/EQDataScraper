@@ -154,7 +154,16 @@ def check_rate_limit():
 def get_item_tooltip(item_id):
     """Get comprehensive item data for tooltips following Char Browser format."""
     
-    # Rate limiting check
+    # TEMPORARY: Disable tooltip API completely to prevent backend crashes
+    # TODO: Re-enable once database connection pooling issues are resolved
+    logger.info(f"Tooltip API temporarily disabled for item {item_id} to prevent crashes")
+    return jsonify({
+        'error': 'Tooltip API temporarily disabled to prevent server crashes',
+        'message': 'Showing basic inventory data only',
+        'item_id': item_id
+    }), 503
+    
+    # Rate limiting check (disabled during maintenance)
     if check_rate_limit():
         logger.warning(f"Rate limit exceeded for IP {request.remote_addr} on item {item_id}")
         return jsonify({'error': 'Rate limit exceeded - too many requests'}), 429

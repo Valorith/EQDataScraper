@@ -74,7 +74,9 @@
         <h2 class="section-title">Character Lookup</h2>
         <p class="section-description">Search for any character to view their inventory (does not affect your main character slots)</p>
         
-        <div class="search-container">
+        <div class="search-container" 
+             tabindex="0" 
+             @keydown="handleKeydown">
           <div class="search-input-group">
             <input 
               ref="searchInput"
@@ -95,21 +97,63 @@
             </button>
           </div>
           
-          <!-- Search Results Dropdown -->
-          <div v-if="searchResults.length > 0" class="search-dropdown">
-            <div 
-              v-for="character in searchResults"
-              :key="character.id"
-              class="dropdown-item"
-              @click="viewSearchedCharacter(character)"
-            >
-              <div class="character-portrait small">
-                <img :src="getClassIcon(character?.class || 'Warrior')" :alt="character?.class || 'Unknown'" />
+          <!-- Enhanced Search Results Dropdown -->
+          <div v-if="searchResults.length > 0" class="search-dropdown enhanced">
+            <!-- Results header with pagination info -->
+            <div class="dropdown-header">
+              <span class="results-count">
+                Showing {{ currentPage * resultsPerPage + 1 }}-{{ Math.min((currentPage + 1) * resultsPerPage, totalResults) }} of {{ totalResults }} results
+              </span>
+              <div class="pagination-controls">
+                <button 
+                  class="page-btn" 
+                  :disabled="!hasPrevPage"
+                  @click="navigatePrevPage"
+                  title="Previous page (← key)"
+                >
+                  ←
+                </button>
+                <span class="page-info">{{ currentPage + 1 }} / {{ totalPages }}</span>
+                <button 
+                  class="page-btn" 
+                  :disabled="!hasNextPage"
+                  @click="navigateNextPage"
+                  title="Next page (→ key)"
+                >
+                  →
+                </button>
               </div>
-              <div class="character-info">
-                <span class="character-name">{{ character?.name || 'Unknown' }}</span>
-                <span class="character-details">Level {{ character?.level || 0 }} {{ character?.class || 'Unknown' }}</span>
+            </div>
+            
+            <!-- Character list -->
+            <div class="dropdown-results">
+              <div 
+                v-for="(character, index) in paginatedResults"
+                :key="character.id"
+                class="dropdown-item"
+                :class="{ 'selected': index === selectedIndex }"
+                @click="viewSearchedCharacter(character)"
+                @mouseenter="selectedIndex = index"
+              >
+                <div class="character-portrait small">
+                  <img :src="getClassIcon(character?.class || 'Warrior')" 
+                       :alt="character?.class || 'Unknown'" 
+                       class="class-icon" />
+                </div>
+                <div class="character-info">
+                  <span class="character-name">{{ character?.name || 'Unknown' }}</span>
+                  <span class="character-details">Level {{ character?.level || 0 }} {{ character?.class || 'Unknown' }}</span>
+                  <span class="character-race">{{ character?.race || 'Unknown' }}</span>
+                </div>
+                <div class="select-indicator" v-if="index === selectedIndex">
+                  <span>Press Enter</span>
+                </div>
               </div>
+            </div>
+            
+            <!-- Keyboard navigation help -->
+            <div class="dropdown-footer">
+              <span class="nav-help">Use ↑↓ to navigate, ←→ for pages, Enter to select, Esc to close</span>
             </div>
           </div>
           
@@ -176,16 +220,12 @@
       
       <!-- Character Inventory Display -->
       <div v-else-if="selectedCharacter" class="inventory-section">
-        <div class="inventory-header">
-          <h3>{{ selectedCharacter?.name || 'Character' }}'s Inventory</h3>
-          <div class="inventory-source">
-            <span v-if="activeSlot" class="source-badge" :class="activeSlot">
-              {{ activeSlot === 'primary' ? 'Primary Main' : 'Secondary Main' }}
-            </span>
-            <span v-else class="source-badge lookup">Character Lookup</span>
-          </div>
-        </div>
-        <CharacterInventory :character="selectedCharacter" />
+        <CharacterInventory 
+          :character="selectedCharacter" 
+          :rawInventoryData="selectedCharacter.rawInventoryData || []" 
+        />
+        <!-- Debug: Show what we're passing -->
+        <div style="display: none;">Character has: {{ selectedCharacter.rawInventoryData?.length || 0 }} items</div>
       </div>
       
       <!-- Empty State -->
@@ -197,7 +237,7 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import CharacterInventory from '../components/CharacterInventory.vue'
 import { getApiBaseUrl } from '../config/api'
 import axios from 'axios'
@@ -216,6 +256,13 @@ export default {
     // Currently displayed character and source
     const selectedCharacter = ref(null)
     const activeSlot = ref(null) // 'primary', 'secondary', or null for search
+    // Store inventory data for bag contents
+    const inventoryDataCache = ref([])
+    
+    // Computed property to ensure inventory data is available
+    const inventoryData = computed(() => {
+      return inventoryDataCache.value || []
+    })
     
     // Character search functionality
     const searchInput = ref(null)
@@ -224,6 +271,88 @@ export default {
     const isSearching = ref(false)
     const searchPerformed = ref(false)
     const lastSearchQuery = ref('')
+    
+    // Enhanced pagination and navigation
+    const currentPage = ref(0)
+    const resultsPerPage = ref(8)
+    const selectedIndex = ref(-1)
+    const totalResults = ref(0)
+    
+    // Computed properties for pagination
+    const totalPages = computed(() => Math.ceil(totalResults.value / resultsPerPage.value))
+    const paginatedResults = computed(() => {
+      const start = currentPage.value * resultsPerPage.value
+      const end = start + resultsPerPage.value
+      return searchResults.value.slice(start, end)
+    })
+    const hasNextPage = computed(() => currentPage.value < totalPages.value - 1)
+    const hasPrevPage = computed(() => currentPage.value > 0)
+    
+    // Keyboard navigation functions
+    const navigateUp = () => {
+      if (paginatedResults.value.length === 0) return
+      selectedIndex.value = selectedIndex.value <= 0 ? paginatedResults.value.length - 1 : selectedIndex.value - 1
+    }
+    
+    const navigateDown = () => {
+      if (paginatedResults.value.length === 0) return
+      selectedIndex.value = selectedIndex.value >= paginatedResults.value.length - 1 ? 0 : selectedIndex.value + 1
+    }
+    
+    const navigateNextPage = () => {
+      if (hasNextPage.value) {
+        currentPage.value++
+        selectedIndex.value = 0
+      }
+    }
+    
+    const navigatePrevPage = () => {
+      if (hasPrevPage.value) {
+        currentPage.value--
+        selectedIndex.value = 0
+      }
+    }
+    
+    const selectCurrentCharacter = () => {
+      if (selectedIndex.value >= 0 && selectedIndex.value < paginatedResults.value.length) {
+        const character = paginatedResults.value[selectedIndex.value]
+        viewSearchedCharacter(character)
+      }
+    }
+    
+    // Keyboard event handler
+    const handleKeydown = (event) => {
+      if (searchResults.value.length === 0) return
+      
+      switch (event.key) {
+        case 'ArrowUp':
+          event.preventDefault()
+          navigateUp()
+          break
+        case 'ArrowDown':
+          event.preventDefault()
+          navigateDown()
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          navigatePrevPage()
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          navigateNextPage()
+          break
+        case 'Enter':
+          event.preventDefault()
+          selectCurrentCharacter()
+          break
+        case 'Escape':
+          event.preventDefault()
+          searchResults.value = []
+          searchPerformed.value = false
+          selectedIndex.value = -1
+          break
+      }
+    }
     
     // Modal for main character selection
     const showSearchModal = ref(false)
@@ -258,7 +387,10 @@ export default {
       
       try {
         const response = await axios.get(`${getApiBaseUrl()}/api/characters/search`, {
-          params: { name: query.trim() }
+          params: { 
+            name: query.trim(),
+            limit: isModalSearch ? 5 : 50  // Get more results for main search
+          }
         })
         
         return response.data.map(character => ({
@@ -281,7 +413,7 @@ export default {
       try {
         // Load basic character data with timeout and abort signal
         const charResponse = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}`, {
-          timeout: 5000, // 5 second timeout for basic character data
+          timeout: 10000, // Increased to 10 second timeout for basic character data
           signal: abortSignal
         })
         const character = charResponse.data
@@ -323,13 +455,18 @@ export default {
         })
         
         try {
+          // Load data sequentially to reduce database load
           await Promise.race([
-            Promise.all([
-              loadCharacterInventory(characterId, fullCharacter, abortSignal),
-              loadCharacterCurrency(characterId, fullCharacter, abortSignal),
-              loadCharacterStats(characterId, fullCharacter, abortSignal)
-            ]),
-            timeout(8000, abortSignal) // Reduced to 8 second timeout
+            (async () => {
+              // Load inventory first (most important)
+              await loadCharacterInventory(characterId, fullCharacter, abortSignal)
+              // Then load currency and stats in parallel
+              await Promise.all([
+                loadCharacterCurrency(characterId, fullCharacter, abortSignal),
+                loadCharacterStats(characterId, fullCharacter, abortSignal)
+              ])
+            })(),
+            timeout(20000, abortSignal) // Increased to 20 second timeout for sequential loading
           ])
         } catch (error) {
           if (error.name === 'AbortError') {
@@ -385,6 +522,14 @@ export default {
         console.log('Character loading already in progress, ignoring request')
         return
       }
+      
+      // Throttle character loading to prevent rapid successive requests
+      const now = Date.now()
+      if (window.lastCharacterLoadTime && now - window.lastCharacterLoadTime < 3000) {
+        console.log('Character loading throttled, please wait 3 seconds between requests')
+        return
+      }
+      window.lastCharacterLoadTime = now
       
       try {
         isLoadingCharacter.value = true
@@ -451,12 +596,24 @@ export default {
       try {
         const results = await searchCharacters(searchQuery.value)
         searchResults.value = results
+        totalResults.value = results.length
+        currentPage.value = 0
+        selectedIndex.value = -1
         searchPerformed.value = true
         // Clear the search input after successful search
         searchQuery.value = ''
+        
+        // Focus the search container for keyboard navigation
+        nextTick(() => {
+          const container = document.querySelector('.search-container')
+          if (container) container.focus()
+        })
       } catch (error) {
         console.error('Search failed:', error)
         searchResults.value = []
+        totalResults.value = 0
+        currentPage.value = 0
+        selectedIndex.value = -1
         searchPerformed.value = true
         // Clear the search input even on error
         searchQuery.value = ''
@@ -471,6 +628,14 @@ export default {
         console.log('Character loading already in progress, ignoring request')
         return
       }
+      
+      // Throttle character loading to prevent rapid successive requests
+      const now = Date.now()
+      if (window.lastCharacterLoadTime && now - window.lastCharacterLoadTime < 3000) {
+        console.log('Character loading throttled, please wait 3 seconds between requests')
+        return
+      }
+      window.lastCharacterLoadTime = now
       
       try {
         isLoadingCharacter.value = true
@@ -548,39 +713,81 @@ export default {
 
     const loadCharacterInventory = async (characterId, character, abortSignal = null) => {
       try {
+        console.log(`Loading inventory for character ${characterId}`)
         const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`, {
-          timeout: 6000, // Reduced to 6 second timeout
+          timeout: 15000, // Increased to 15 second timeout for stability
           signal: abortSignal
         })
+        
+        // Handle partial data warnings from backend
+        if (response.data.warning) {
+          console.warn(`Character ${characterId} inventory warning:`, response.data.warning)
+        }
         // Transform inventory data from EQEmu schema
         const equipmentData = response.data.equipment || {}
         const inventorySlots = response.data.inventory || []
         
+        // Store inventory data directly on character object for bag contents
+        character.rawInventoryData = [...inventorySlots]
+        console.log('character.rawInventoryData set to:', character.rawInventoryData.length, 'items')
+        // Debug: Check what bag content slots we received (simplified)
+        console.log('Total inventory slots received:', inventorySlots.length)
+        const bagContentSlots = inventorySlots.filter(slot => slot.slotid >= 262 && slot.slotid <= 361)
+        console.log('Bag content slots (262-361):', bagContentSlots.length)
+        
         // Set equipped items
         character.equipment = equipmentData
         
-        // Process inventory slots - transform backend data to UI format
-        character.inventory = inventorySlots.map((item, index) => ({
-          slot: index,
-          slotid: item.slotid,
-          item: item.itemid ? {
-            id: item.itemid,
-            name: item.item_name,
-            icon: `/icons/items/${item.item_icon || 500}.png`,
-            charges: item.charges || 0,
-            stackSize: item.stackable ? (item.charges || 1) : 1,
-            stackable: item.stackable,
-            color: item.color || 0,
-            augments: item.augslots || []
-          } : null
-        }))
+        // Process inventory slots - transform backend data to UI format using proper slot mapping
+        character.inventory = []
+        
+        // Create 10 main inventory slots (slots 23-32) - these contain bags/items
+        for (let slotId = 23; slotId <= 32; slotId++) {
+          const inventoryItem = inventorySlots.find(inv => inv.slotid === slotId)
+          
+          if (inventoryItem && inventoryItem.itemid) {
+            character.inventory.push({
+              slot: slotId - 23, // Convert EQEmu slot ID to 0-based UI position
+              slotid: slotId,
+              item: {
+                id: inventoryItem.itemid,
+                name: inventoryItem.item_name,
+                icon: `/icons/items/${inventoryItem.item_icon || 500}.png`,
+                charges: inventoryItem.charges || 0,
+                stackSize: inventoryItem.stackable ? (inventoryItem.charges || 1) : 1,
+                stackable: inventoryItem.stackable,
+                color: inventoryItem.color || 0,
+                augments: inventoryItem.augslots || [],
+                containerSize: inventoryItem.container_size || 0,
+                itemType: inventoryItem.item_type || 0
+              }
+            })
+          } else {
+            character.inventory.push({
+              slot: slotId - 23,
+              slotid: slotId,
+              item: null
+            })
+          }
+        }
         
         console.log('Loaded character equipment:', equipmentData)
-        console.log('Processed inventory slots:', character.inventory.length, character.inventory.slice(0, 3))
+        console.log('Raw inventory slots from backend:', inventorySlots.length, inventorySlots)
+        console.log('Processed inventory slots:', character.inventory.length, character.inventory)
         console.log('Character class for icon:', character.class)
       } catch (error) {
-        console.error('Failed to load character inventory:', error)
-        // Set empty equipment and inventory on error
+        if (error.name === 'AbortError') {
+          console.log('Character inventory loading was cancelled')
+          return
+        }
+        console.error(`Failed to load inventory for character ${characterId}:`, error)
+        
+        // Check if it's a timeout error and provide specific feedback
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+          console.warn('Character inventory loading timed out - server may be overloaded')
+        }
+        
+        // Set empty equipment and inventory on error for graceful degradation
         character.equipment = {}
         character.inventory = []
       }
@@ -644,7 +851,7 @@ export default {
     const loadCharacterCurrency = async (characterId, character, abortSignal = null) => {
       try {
         const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/currency`, {
-          timeout: 6000, // Reduced to 6 second timeout
+          timeout: 12000, // Increased to 12 second timeout
           signal: abortSignal
         })
         character.currency = {
@@ -663,7 +870,7 @@ export default {
     const loadCharacterStats = async (characterId, character, abortSignal = null) => {
       try {
         const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/stats`, {
-          timeout: 6000, // Reduced to 6 second timeout
+          timeout: 12000, // Increased to 12 second timeout
           signal: abortSignal
         })
         
@@ -708,8 +915,8 @@ export default {
         'Cavalier': 'Paladin', 'Knight': 'Paladin', 'Lord Protector': 'Paladin',
         // Ranger specializations
         'Pathfinder': 'Ranger', 'Outrider': 'Ranger', 'Warder': 'Ranger',
-        // Shadow Knight specializations
-        'Reaver': 'Shadowknight', 'Revenant': 'Shadowknight', 'Grave Lord': 'Shadowknight',
+        // Shadow Knight specializations and base class
+        'Shadow Knight': 'Shadowknight', 'Reaver': 'Shadowknight', 'Revenant': 'Shadowknight', 'Grave Lord': 'Shadowknight',
         // Druid specializations
         'Wanderer': 'Druid', 'Preserver': 'Druid', 'Hierophant': 'Druid',
         // Additional mappings...
@@ -858,14 +1065,27 @@ export default {
       // Currently displayed character
       selectedCharacter,
       activeSlot,
+      inventoryDataCache,
+      inventoryData,
       
       // Character search
       searchInput,
       searchQuery,
       searchResults,
+      paginatedResults,
       isSearching,
       searchPerformed,
       lastSearchQuery,
+      
+      // Pagination and navigation
+      currentPage,
+      resultsPerPage,
+      totalPages,
+      totalResults,
+      hasNextPage,
+      hasPrevPage,
+      selectedIndex,
+      handleKeydown,
       
       // Modal for main character selection
       showSearchModal,
@@ -1279,13 +1499,21 @@ export default {
 .character-portrait.small {
   width: 48px;
   height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
 }
 
-.character-portrait img {
+.character-portrait img,
+.character-portrait .class-icon {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .character-info h4 {
@@ -1456,8 +1684,82 @@ export default {
   border-radius: 8px;
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
   z-index: 1000;
-  max-height: 300px;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+.search-dropdown.enhanced {
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(40, 40, 50, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+}
+
+.results-count {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  min-width: 50px;
+  text-align: center;
+}
+
+.dropdown-results {
+  flex: 1;
   overflow-y: auto;
+  max-height: 350px;
+}
+
+.dropdown-footer {
+  padding: 8px 16px;
+  background: rgba(20, 20, 30, 0.9);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.nav-help {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-style: italic;
 }
 
 .dropdown-item {
@@ -1466,16 +1768,24 @@ export default {
   gap: 0.75rem;
   padding: 0.75rem;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
 }
 
 .dropdown-item:last-child {
   border-bottom: none;
 }
 
-.dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+.dropdown-item:hover,
+.dropdown-item.selected {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(2px);
+}
+
+.dropdown-item.selected {
+  background: rgba(106, 90, 205, 0.3);
+  border-left: 3px solid #6a5acd;
 }
 
 .dropdown-item .character-info {
@@ -1496,8 +1806,35 @@ export default {
   color: rgba(255, 255, 255, 0.7);
 }
 
+.dropdown-item .character-race {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.select-indicator {
+  position: absolute;
+  right: 16px;
+  background: rgba(106, 90, 205, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 .search-container {
   position: relative;
+}
+
+.search-container:focus {
+  outline: none;
 }
 
 /* Legacy search results for modal */

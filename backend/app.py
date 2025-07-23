@@ -2226,25 +2226,54 @@ def initialize_database_connection(max_retries=3, initial_delay=2):
                 # Test the connection
                 conn, db_type, error = get_eqemu_db_connection()
                 if conn:
+                    cursor = None
                     try:
-                        # Verify connection works
+                        # Verify connection works with a simple test query
                         cursor = conn.cursor()
+                        
+                        # Use a simpler test query that should always work
                         if db_type == 'mysql':
-                            cursor.execute("SELECT VERSION()")
+                            cursor.execute("SELECT 1 as test")
                         elif db_type == 'postgresql':
-                            cursor.execute("SELECT version()")
+                            cursor.execute("SELECT 1 as test")
                         elif db_type == 'mssql':
-                            cursor.execute("SELECT @@VERSION")
+                            cursor.execute("SELECT 1 as test")
+                        else:
+                            # Fallback for unknown database types
+                            cursor.execute("SELECT 1")
                         
                         result = cursor.fetchone()
-                        version = result[0] if result else "Unknown"
-                        cursor.close()
-                        conn.close()
-                        
-                        logger.info(f"✅ Database connection successful! Type: {db_type}, Version: {version.split()[0]}")
-                        return True
+                        if result:
+                            logger.info(f"✅ Database connection test successful! Type: {db_type}")
+                            
+                            # Now try to get version info (optional)
+                            try:
+                                if db_type == 'mysql':
+                                    cursor.execute("SELECT VERSION()")
+                                elif db_type == 'postgresql':
+                                    cursor.execute("SELECT version()")
+                                elif db_type == 'mssql':
+                                    cursor.execute("SELECT @@VERSION")
+                                    
+                                version_result = cursor.fetchone()
+                                version = version_result[0] if version_result else "Unknown"
+                                logger.info(f"Database version: {version.split()[0] if version != 'Unknown' else 'Unknown'}")
+                            except Exception as version_error:
+                                logger.warning(f"Could not get database version: {version_error}")
+                                
+                            cursor.close()
+                            conn.close()
+                            return True
+                        else:
+                            raise Exception("Test query returned no result")
+                            
                     except Exception as e:
-                        logger.error(f"❌ Database connection test failed: {e}")
+                        logger.error(f"❌ Database connection test failed: {type(e).__name__}: {e}")
+                        if cursor:
+                            try:
+                                cursor.close()
+                            except:
+                                pass
                         if conn:
                             try:
                                 conn.close()

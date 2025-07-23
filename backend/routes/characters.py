@@ -97,38 +97,59 @@ def _format_timestamp(timestamp):
     return None
 
 def get_eqemu_connection():
-    """Get connection to EQEmu MySQL database using main app's connection function."""
+    """Get connection to EQEmu MySQL database using direct connection."""
     try:
-        # Import the main app's database connection function
-        import sys
-        import os
+        from utils.persistent_config import get_persistent_config
+        import pymysql
+        from urllib.parse import urlparse
         
-        # Add the parent directory to Python path to import from app.py
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-            
-        from app import get_eqemu_db_connection
+        # Get database configuration
+        config = get_persistent_config()
+        database_url = config.get('production_database_url', '')
         
-        # Get connection using the main app's method
-        conn, db_type, error = get_eqemu_db_connection()
-        if error:
-            logger.error(f"Database connection failed: {error}")
+        if not database_url:
+            logger.error("No database URL configured")
             return None
+            
+        # Parse the database URL
+        parsed = urlparse(database_url)
+        if not parsed.hostname:
+            logger.error("Invalid database URL format")
+            return None
+            
+        logger.info(f"Attempting direct connection to {parsed.hostname}:{parsed.port}")
         
-        if conn:
-            logger.info("Successfully connected to EQEmu database via main app")
-            return conn
+        # Create direct connection
+        connection = pymysql.connect(
+            host=parsed.hostname,
+            port=parsed.port or 3306,
+            user=parsed.username,
+            password=parsed.password,
+            database=parsed.path.lstrip('/'),
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=10,
+            read_timeout=30,
+            write_timeout=30,
+            autocommit=True
+        )
+        
+        # Test the connection
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1 as test")
+        result = cursor.fetchone()
+        cursor.close()
+        
+        if result and result.get('test') == 1:
+            logger.info("Direct database connection successful")
+            return connection
         else:
-            logger.warning("No database connection available")
+            logger.error("Database connection test failed")
+            connection.close()
             return None
             
-    except ImportError as e:
-        logger.error(f"Failed to import main app database function: {e}")
-        return None
     except Exception as e:
-        logger.error(f"Failed to connect to EQEmu database: {e}")
+        logger.error(f"Failed to create direct database connection: {type(e).__name__}: {e}")
         return None
 
 def get_user_db_connection():
@@ -178,7 +199,7 @@ def search_characters():
     try:
         # Get and validate parameters
         name = request.args.get('name', '').strip()
-        limit = min(int(request.args.get('limit', 5)), 5)  # Limit to top 5 matches
+        limit = min(int(request.args.get('limit', 5)), 50)  # Allow up to 50 matches for pagination
         
         if not name or len(name) < 2:
             return jsonify({'error': 'Name parameter must be at least 2 characters'}), 400
@@ -368,16 +389,30 @@ def get_character_inventory(character_id):
     - Character inventory with item details
     """
     connection = None
+    cursor = None
+    
+    # Add basic validation
+    if not character_id or character_id <= 0:
+        return jsonify({'error': 'Invalid character ID'}), 400
+        
     try:
-        # Get EQEmu database connection
+        logger.info(f"Starting inventory request for character {character_id}")
+        
+        # Get EQEmu database connection with timeout
         connection = get_eqemu_connection()
         if not connection:
-            logger.error("No EQEmu database connection available")
-            return jsonify({'error': 'Database connection unavailable'}), 503
+            logger.error(f"No EQEmu database connection available for character {character_id}")
+            return jsonify({'error': 'Database connection unavailable - please try again later'}), 503
+            
+        logger.info(f"Connection obtained for character {character_id}, proceeding with queries")
         
-        # Get equipped items data
-        with connection.cursor() as cursor:
-            # Get equipped items (slots 0-22 are equipment slots)
+        # Get equipped items data with timeout and error handling
+        cursor = connection.cursor()
+        equipment = {}
+        inventory = []
+        
+        try:
+            # Get equipped items (slots 0-22 are equipment slots) - optimized query
             equipment_query = """
                 SELECT inv.slotid, inv.itemid, inv.charges, inv.color, inv.instnodrop,
                        inv.augslot1, inv.augslot2, inv.augslot3, inv.augslot4, inv.augslot5, inv.augslot6,
@@ -390,9 +425,13 @@ def get_character_inventory(character_id):
                 LEFT JOIN items ON inv.itemid = items.id
                 WHERE inv.charid = %s AND inv.slotid BETWEEN 0 AND 22
                 ORDER BY inv.slotid
+                LIMIT 23
             """
+            
+            logger.info(f"Executing equipment query for character {character_id}")
             cursor.execute(equipment_query, (character_id,))
             equipment_results = cursor.fetchall()
+            logger.info(f"Equipment query returned {len(equipment_results)} results")
             
             # Map slot IDs to slot names (EQEmu standard)
             slot_mapping = {
@@ -500,18 +539,21 @@ def get_character_inventory(character_id):
                                 }
                             }
         
-            # Get inventory data (general inventory slots 251-330 = 80 slots)
+            # Get inventory data (main bag slots 23-32 + bag contents 262-361) 
             inventory_query = """
                 SELECT inv.slotid, inv.itemid, inv.charges, inv.color, inv.instnodrop,
                        inv.augslot1, inv.augslot2, inv.augslot3, inv.augslot4, inv.augslot5, inv.augslot6,
-                       items.Name, items.icon, items.stackable
+                       items.Name, items.icon, items.stackable, items.size, items.itemtype, items.bagslots, items.bagtype
                 FROM inventory inv
                 LEFT JOIN items ON inv.itemid = items.id
-                WHERE inv.charid = %s AND inv.slotid BETWEEN 251 AND 330
+                WHERE inv.charid = %s AND (inv.slotid BETWEEN 23 AND 32 OR inv.slotid BETWEEN 262 AND 361)
                 ORDER BY inv.slotid
             """
+            
+            logger.info(f"Executing inventory query for character {character_id}")
             cursor.execute(inventory_query, (character_id,))
             inventory_results = cursor.fetchall()
+            logger.info(f"Inventory query returned {len(inventory_results)} results")
             
             inventory = []
             for row in inventory_results:
@@ -529,7 +571,9 @@ def get_character_inventory(character_id):
                         ],
                         'item_name': row.get('Name'),
                         'item_icon': row.get('icon'),
-                        'stackable': row.get('stackable')
+                        'stackable': row.get('stackable'),
+                        'container_size': row.get('bagslots'),
+                        'item_type': row.get('itemtype')
                     })
                 else:
                     # Fallback for tuple cursor results
@@ -542,17 +586,33 @@ def get_character_inventory(character_id):
                         'augslots': [row[5], row[6], row[7], row[8], row[9], row[10]],
                         'item_name': row[11],
                         'item_icon': row[12],
-                        'stackable': row[13]
+                        'stackable': row[13],
+                        'container_size': row[16],  # bagslots is now at index 16
+                        'item_type': row[15]
                     })
         
-        return jsonify({'equipment': equipment, 'inventory': inventory}), 200
+            return jsonify({'equipment': equipment, 'inventory': inventory}), 200
+            
+        except Exception as query_error:
+            logger.error(f"Database query error for character {character_id}: {query_error}")
+            # Return partial data if equipment loaded but inventory failed
+            if equipment:
+                return jsonify({'equipment': equipment, 'inventory': [], 'warning': 'Inventory data partially unavailable'}), 200
+            else:
+                return jsonify({'error': 'Failed to load character inventory'}), 500
+        finally:
+            if cursor:
+                cursor.close()
         
     except Exception as e:
-        logger.error(f"Error getting inventory for character {character_id}: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Connection error getting inventory for character {character_id}: {e}")
+        return jsonify({'error': 'Database connection failed'}), 503
     finally:
         if connection:
-            connection.close()
+            try:
+                connection.close()
+            except Exception as close_error:
+                logger.error(f"Error closing connection: {close_error}")
 
 @character_bp.route('/characters/<int:character_id>/currency', methods=['GET'])
 def get_character_currency(character_id):
