@@ -533,6 +533,11 @@
         
         <!-- Show if no detailed stats available -->
         <div v-if="!hasAnyStats(simpleTooltip.item)" class="basic-info">Basic item information</div>
+        
+        <!-- Show system status if circuit breaker is active -->
+        <div v-if="consecutiveFailures >= MAX_CONSECUTIVE_FAILURES" class="system-status">
+          ⚠️ Enhanced tooltips temporarily disabled
+        </div>
       </div>
     </div>
   </div>
@@ -560,10 +565,10 @@ let tooltipTimeout = null
 let requestCount = 0
 let lastRequestReset = Date.now()
 const MAX_REQUESTS_PER_MINUTE = 10 // Reduced further to prevent overwhelming backend
-let backendHealthy = true
-let lastHealthCheck = 0
+const backendHealthy = ref(true)
+const lastHealthCheck = ref(0)
 const HEALTH_CHECK_INTERVAL = 10000 // Check backend health every 10 seconds
-let consecutiveFailures = 0
+const consecutiveFailures = ref(0)
 const MAX_CONSECUTIVE_FAILURES = 3 // Disable API calls after 3 consecutive failures
 
 const showSimpleTooltip = async (event, item) => {
@@ -584,8 +589,8 @@ const showSimpleTooltip = async (event, item) => {
     // Only try to fetch detailed data if we don't already have it and haven't failed before
     if (!item.ac && !item.hp && !item.detailedDataLoaded && !item.detailedDataFailed) {
       // Check if we've had too many consecutive failures
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        console.warn(`Too many consecutive failures (${consecutiveFailures}), disabling API calls for item ${item.name}`)
+      if (consecutiveFailures.value >= MAX_CONSECUTIVE_FAILURES) {
+        console.warn(`Too many consecutive failures (${consecutiveFailures.value}), disabling API calls for item ${item.name}`)
         if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
           simpleTooltip.value = {
             ...simpleTooltip.value,
@@ -600,7 +605,7 @@ const showSimpleTooltip = async (event, item) => {
       const isHealthy = await checkBackendHealth()
       if (!isHealthy) {
         console.warn(`Backend unhealthy, skipping API call for item ${item.name}`)
-        consecutiveFailures++
+        consecutiveFailures.value++
         if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
           simpleTooltip.value = {
             ...simpleTooltip.value,
@@ -658,7 +663,7 @@ const showSimpleTooltip = async (event, item) => {
           item.detailedDataLoaded = true
           
           // Reset consecutive failure counter on success
-          consecutiveFailures = 0
+          consecutiveFailures.value = 0
           
           // Update tooltip with detailed data if still visible for same item
           if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
@@ -676,13 +681,13 @@ const showSimpleTooltip = async (event, item) => {
         console.warn(`Failed to load detailed item data for ${item.name} (ID: ${item.id}):`, error.name === 'AbortError' ? 'Request timeout' : error.message)
         
         // Increment consecutive failures counter
-        consecutiveFailures++
+        consecutiveFailures.value++
         
         // If it's a connection error, mark backend as unhealthy
         if (error.message.includes('fetch') || error.message.includes('Connection') || error.name === 'TypeError') {
           console.warn('Connection error detected, marking backend as unhealthy')
-          backendHealthy = false
-          lastHealthCheck = Date.now()
+          backendHealthy.value = false
+          lastHealthCheck.value = Date.now()
         }
         
         // Show basic tooltip with error indicator
@@ -699,7 +704,7 @@ const showSimpleTooltip = async (event, item) => {
         item.detailedDataFailed = true
         
         // Reset the failed flag after a delay to allow retry later, but only if consecutive failures are low
-        if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+        if (consecutiveFailures.value < MAX_CONSECUTIVE_FAILURES) {
           setTimeout(() => {
             item.detailedDataFailed = false
           }, 30000) // Retry after 30 seconds
@@ -716,8 +721,8 @@ const hideSimpleTooltip = () => {
 
 const checkBackendHealth = async () => {
   const now = Date.now()
-  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL) {
-    return backendHealthy
+  if (now - lastHealthCheck.value < HEALTH_CHECK_INTERVAL) {
+    return backendHealthy.value
   }
   
   try {
@@ -730,20 +735,20 @@ const checkBackendHealth = async () => {
     })
     
     clearTimeout(timeoutId)
-    backendHealthy = response.ok
-    lastHealthCheck = now
+    backendHealthy.value = response.ok
+    lastHealthCheck.value = now
     
-    if (!backendHealthy) {
+    if (!backendHealthy.value) {
       console.warn('Backend health check failed, disabling tooltip API calls')
     }
     
   } catch (error) {
     console.warn('Backend health check failed:', error.message)
-    backendHealthy = false
-    lastHealthCheck = now
+    backendHealthy.value = false
+    lastHealthCheck.value = now
   }
   
-  return backendHealthy
+  return backendHealthy.value
 }
 
 const hasAnyStats = (item) => {
@@ -764,11 +769,11 @@ const hasAnyStats = (item) => {
 
 // Recovery mechanism - reset circuit breaker after 2 minutes of no activity
 const resetCircuitBreaker = () => {
-  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+  if (consecutiveFailures.value >= MAX_CONSECUTIVE_FAILURES) {
     console.log('Resetting circuit breaker, attempting to re-enable API calls')
-    consecutiveFailures = 0
-    backendHealthy = true
-    lastHealthCheck = 0
+    consecutiveFailures.value = 0
+    backendHealthy.value = true
+    lastHealthCheck.value = 0
   }
 }
 
@@ -940,6 +945,23 @@ const normalizeClassName = (className) => {
 .item-debug {
   color: #888;
   font-size: 10px;
+}
+
+.system-status {
+  color: #ffa500;
+  font-style: italic;
+  font-size: 10px;
+  text-align: center;
+  margin-top: 4px;
+  padding: 2px;
+  background: rgba(255, 165, 0, 0.1);
+  border-radius: 3px;
+}
+
+.basic-info {
+  color: #ccc;
+  font-style: italic;
+  font-size: 11px;
 }
 
 .character-inventory {
