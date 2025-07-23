@@ -220,6 +220,7 @@ export default {
   data() {
     return {
       // Search functionality completely removed
+      searchEnabled: false // Explicitly disabled
     }
   },
   computed: {

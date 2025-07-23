@@ -1015,17 +1015,23 @@ export default {
 
 .character-portrait {
   width: 60px;
-  height: 60px;
-  border-radius: 50%;
+  height: 120px;
+  border-radius: 8px;
   overflow: hidden;
   margin-bottom: 0.5rem;
   background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .character-portrait img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: transparent;
 }
 
 .character-info {

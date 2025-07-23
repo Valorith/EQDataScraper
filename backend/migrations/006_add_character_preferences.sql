@@ -15,10 +15,7 @@ CREATE TABLE IF NOT EXISTS user_character_preferences (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- Ensure one record per user
-    CONSTRAINT unique_user_id UNIQUE (user_id),
-    
-    -- Add index for efficient lookups
-    INDEX idx_user_character_prefs (user_id)
+    CONSTRAINT unique_user_id UNIQUE (user_id)
 );
 
 -- Add trigger to update updated_at timestamp
@@ -33,6 +30,9 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trigger_update_user_character_preferences_updated_at
     BEFORE UPDATE ON user_character_preferences
     FOR EACH ROW EXECUTE FUNCTION update_user_character_preferences_updated_at();
+
+-- Add index for efficient lookups (PostgreSQL syntax)
+CREATE INDEX IF NOT EXISTS idx_user_character_prefs ON user_character_preferences (user_id);
 
 -- Add comments for documentation
 COMMENT ON TABLE user_character_preferences IS 'Stores user character preferences for Primary/Secondary main character selections';

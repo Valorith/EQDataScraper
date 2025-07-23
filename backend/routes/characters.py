@@ -796,7 +796,10 @@ def get_user_main_characters():
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            logger.warning("No user database - returning empty main characters")
+            if DEV_MODE_AUTH_BYPASS:
+                logger.warning("No user database - returning empty main characters in dev mode")
+            else:
+                logger.warning("No user database - returning empty main characters")
             return jsonify({
                 'primaryMain': None,
                 'secondaryMain': None
@@ -886,7 +889,19 @@ def set_primary_main():
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            return jsonify({'error': 'Database unavailable'}), 503
+            # In development mode with auth bypass, provide mock success
+            if DEV_MODE_AUTH_BYPASS:
+                logger.warning("No user database connection - returning mock success in dev mode")
+                return jsonify({
+                    'success': True,
+                    'message': 'Primary main character set successfully (mock - no database)',
+                    'character': {
+                        'characterId': character_id,
+                        'characterName': character_name
+                    }
+                }), 200
+            else:
+                return jsonify({'error': 'Database unavailable'}), 503
         
         # Set primary main character
         with connection.cursor() as cursor:
@@ -960,7 +975,19 @@ def set_secondary_main():
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            return jsonify({'error': 'Database unavailable'}), 503
+            # In development mode with auth bypass, provide mock success
+            if DEV_MODE_AUTH_BYPASS:
+                logger.warning("No user database connection - returning mock success in dev mode")
+                return jsonify({
+                    'success': True,
+                    'message': 'Secondary main character set successfully (mock - no database)',
+                    'character': {
+                        'characterId': character_id,
+                        'characterName': character_name
+                    }
+                }), 200
+            else:
+                return jsonify({'error': 'Database unavailable'}), 503
         
         # Set secondary main character
         with connection.cursor() as cursor:
@@ -1016,7 +1043,15 @@ def remove_primary_main():
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            return jsonify({'error': 'Database unavailable'}), 503
+            # In development mode with auth bypass, provide mock success
+            if DEV_MODE_AUTH_BYPASS:
+                logger.warning("No user database connection - returning mock success in dev mode")
+                return jsonify({
+                    'success': True,
+                    'message': 'Primary main character removed successfully (mock - no database)'
+                }), 200
+            else:
+                return jsonify({'error': 'Database unavailable'}), 503
         
         # Remove primary main character
         with connection.cursor() as cursor:
@@ -1066,7 +1101,15 @@ def remove_secondary_main():
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            return jsonify({'error': 'Database unavailable'}), 503
+            # In development mode with auth bypass, provide mock success
+            if DEV_MODE_AUTH_BYPASS:
+                logger.warning("No user database connection - returning mock success in dev mode")
+                return jsonify({
+                    'success': True,
+                    'message': 'Secondary main character removed successfully (mock - no database)'
+                }), 200
+            else:
+                return jsonify({'error': 'Database unavailable'}), 503
         
         # Remove secondary main character
         with connection.cursor() as cursor:
