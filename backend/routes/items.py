@@ -12,6 +12,8 @@ import pymysql
 import logging
 import sys
 import os
+import time
+from collections import defaultdict
 
 # Add the parent directory to Python path to import from app.py
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 # Create blueprint for item routes
 item_bp = Blueprint('items', __name__, url_prefix='/api')
+
+# Simple rate limiting for tooltip requests
+request_times = defaultdict(list)
+MAX_REQUESTS_PER_MINUTE = 30
+RATE_LIMIT_WINDOW = 60
 
 # EQEmu item type mapping (following Char Browser pattern)
 ITEM_TYPES = {
@@ -126,11 +133,39 @@ def format_item_tooltip(item_data):
         'color': item_data.get('color', 0)
     }
 
+def check_rate_limit():
+    """Simple rate limiting by IP address"""
+    client_ip = request.remote_addr or 'unknown'
+    now = time.time()
+    
+    # Clean old requests (older than rate limit window)
+    request_times[client_ip] = [req_time for req_time in request_times[client_ip] 
+                               if now - req_time < RATE_LIMIT_WINDOW]
+    
+    # Check if rate limit exceeded
+    if len(request_times[client_ip]) >= MAX_REQUESTS_PER_MINUTE:
+        return True
+    
+    # Add current request time
+    request_times[client_ip].append(now)
+    return False
+
 @item_bp.route('/items/<int:item_id>/tooltip', methods=['GET'])
 def get_item_tooltip(item_id):
     """Get comprehensive item data for tooltips following Char Browser format."""
     
+    # Rate limiting check
+    if check_rate_limit():
+        logger.warning(f"Rate limit exceeded for IP {request.remote_addr} on item {item_id}")
+        return jsonify({'error': 'Rate limit exceeded - too many requests'}), 429
+    
+    connection = None
     try:
+        # Validate item_id
+        if not item_id or item_id < 1:
+            logger.warning(f"Invalid item ID: {item_id}")
+            return jsonify({'error': 'Invalid item ID'}), 400
+        
         conn, db_type, error = get_eqemu_db_connection()
         if error:
             logger.error(f"Database connection failed: {error}")
@@ -165,12 +200,20 @@ def get_item_tooltip(item_id):
             
             return jsonify(formatted_item)
             
+    except pymysql.Error as e:
+        logger.error(f"Database error getting item tooltip {item_id}: {str(e)}")
+        return jsonify({'error': 'Database query failed'}), 500
     except Exception as e:
         logger.error(f"Error getting item tooltip {item_id}: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Internal server error'}), 500
     finally:
         if connection:
-            connection.close()
+            try:
+                connection.close()
+            except:
+                pass  # Ignore connection close errors
 
 @item_bp.route('/items/bulk', methods=['POST'])
 def get_items_bulk():

@@ -464,47 +464,75 @@
       <div v-if="simpleTooltip.loading" class="tooltip-loading">
         Loading item details...
       </div>
+      <div v-else-if="simpleTooltip.error" class="tooltip-error">
+        {{ simpleTooltip.errorMessage || 'Failed to load details' }}
+      </div>
       <div v-else class="tooltip-body">
-        <!-- Item Type -->
+        <!-- Always show basic item info -->
+        <div v-if="simpleTooltip.item?.weight" class="basic">Weight: {{ simpleTooltip.item.weight }}</div>
+        <div v-if="simpleTooltip.item?.charges && simpleTooltip.item.charges > 0" class="basic">Charges: {{ simpleTooltip.item.charges }}</div>
+        
+        <!-- Show equipment stats from inventory data (fallback) -->
+        <div v-if="simpleTooltip.item?.stats?.ac" class="stat">AC: {{ simpleTooltip.item.stats.ac }}</div>
+        <div v-if="simpleTooltip.item?.stats?.hp" class="stat">HP: {{ simpleTooltip.item.stats.hp }}</div>
+        <div v-if="simpleTooltip.item?.stats?.mana" class="stat">MP: {{ simpleTooltip.item.stats.mana }}</div>
+        <div v-if="simpleTooltip.item?.stats?.endur" class="stat">Endurance: {{ simpleTooltip.item.stats.endur }}</div>
+        <div v-if="simpleTooltip.item?.stats?.attack" class="stat">ATK: {{ simpleTooltip.item.stats.attack }}</div>
+        
+        <!-- Show attributes from inventory data (fallback) -->
+        <div v-if="simpleTooltip.item?.attributes?.str" class="attr">STR: +{{ simpleTooltip.item.attributes.str }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.sta" class="attr">STA: +{{ simpleTooltip.item.attributes.sta }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.agi" class="attr">AGI: +{{ simpleTooltip.item.attributes.agi }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.dex" class="attr">DEX: +{{ simpleTooltip.item.attributes.dex }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.wis" class="attr">WIS: +{{ simpleTooltip.item.attributes.wis }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.int" class="attr">INT: +{{ simpleTooltip.item.attributes.int }}</div>
+        <div v-if="simpleTooltip.item?.attributes?.cha" class="attr">CHA: +{{ simpleTooltip.item.attributes.cha }}</div>
+        
+        <!-- Show resistances from inventory data (fallback) -->
+        <div v-if="simpleTooltip.item?.resistances?.poison" class="resist">Poison Resist: +{{ simpleTooltip.item.resistances.poison }}</div>
+        <div v-if="simpleTooltip.item?.resistances?.magic" class="resist">Magic Resist: +{{ simpleTooltip.item.resistances.magic }}</div>
+        <div v-if="simpleTooltip.item?.resistances?.fire" class="resist">Fire Resist: +{{ simpleTooltip.item.resistances.fire }}</div>
+        <div v-if="simpleTooltip.item?.resistances?.cold" class="resist">Cold Resist: +{{ simpleTooltip.item.resistances.cold }}</div>
+        <div v-if="simpleTooltip.item?.resistances?.disease" class="resist">Disease Resist: +{{ simpleTooltip.item.resistances.disease }}</div>
+        <div v-if="simpleTooltip.item?.resistances?.corruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.resistances.corruption }}</div>
+        
+        <!-- Detailed API data (shown when available) -->
         <div v-if="simpleTooltip.item?.itemtype_name" class="item-type">{{ simpleTooltip.item.itemtype_name }}</div>
+        <div v-if="simpleTooltip.item?.ac && !simpleTooltip.item?.stats?.ac" class="stat">AC: {{ simpleTooltip.item.ac }}</div>
+        <div v-if="simpleTooltip.item?.hp && !simpleTooltip.item?.stats?.hp" class="stat">HP: {{ simpleTooltip.item.hp }}</div>
+        <div v-if="simpleTooltip.item?.mana && !simpleTooltip.item?.stats?.mana" class="stat">MP: {{ simpleTooltip.item.mana }}</div>
+        <div v-if="simpleTooltip.item?.endur && !simpleTooltip.item?.stats?.endur" class="stat">Endurance: {{ simpleTooltip.item.endur }}</div>
+        <div v-if="simpleTooltip.item?.attack && !simpleTooltip.item?.stats?.attack" class="stat">ATK: {{ simpleTooltip.item.attack }}</div>
         
-        <!-- Combat Stats -->
-        <div v-if="simpleTooltip.item?.ac" class="stat">AC: {{ simpleTooltip.item.ac }}</div>
-        <div v-if="simpleTooltip.item?.hp" class="stat">HP: {{ simpleTooltip.item.hp }}</div>
-        <div v-if="simpleTooltip.item?.mana" class="stat">MP: {{ simpleTooltip.item.mana }}</div>
-        <div v-if="simpleTooltip.item?.endur" class="stat">Endurance: {{ simpleTooltip.item.endur }}</div>
-        <div v-if="simpleTooltip.item?.attack" class="stat">ATK: {{ simpleTooltip.item.attack }}</div>
-        
-        <!-- Weapon Stats -->
+        <!-- Weapon Stats (from detailed API) -->
         <div v-if="simpleTooltip.item?.damage" class="weapon-stat">Damage: {{ simpleTooltip.item.damage }}</div>
         <div v-if="simpleTooltip.item?.delay" class="weapon-stat">Delay: {{ simpleTooltip.item.delay }}</div>
         <div v-if="simpleTooltip.item?.ratio" class="weapon-stat">Ratio: {{ simpleTooltip.item.ratio }}</div>
         
-        <!-- Attributes -->
-        <div v-if="simpleTooltip.item?.astr" class="attr">STR: +{{ simpleTooltip.item.astr }}</div>
-        <div v-if="simpleTooltip.item?.asta" class="attr">STA: +{{ simpleTooltip.item.asta }}</div>
-        <div v-if="simpleTooltip.item?.aagi" class="attr">AGI: +{{ simpleTooltip.item.aagi }}</div>
-        <div v-if="simpleTooltip.item?.adex" class="attr">DEX: +{{ simpleTooltip.item.adex }}</div>
-        <div v-if="simpleTooltip.item?.awis" class="attr">WIS: +{{ simpleTooltip.item.awis }}</div>
-        <div v-if="simpleTooltip.item?.aint" class="attr">INT: +{{ simpleTooltip.item.aint }}</div>
-        <div v-if="simpleTooltip.item?.acha" class="attr">CHA: +{{ simpleTooltip.item.acha }}</div>
+        <!-- Detailed attributes (from API, if different from inventory) -->
+        <div v-if="simpleTooltip.item?.astr && !simpleTooltip.item?.attributes?.str" class="attr">STR: +{{ simpleTooltip.item.astr }}</div>
+        <div v-if="simpleTooltip.item?.asta && !simpleTooltip.item?.attributes?.sta" class="attr">STA: +{{ simpleTooltip.item.asta }}</div>
+        <div v-if="simpleTooltip.item?.aagi && !simpleTooltip.item?.attributes?.agi" class="attr">AGI: +{{ simpleTooltip.item.aagi }}</div>
+        <div v-if="simpleTooltip.item?.adex && !simpleTooltip.item?.attributes?.dex" class="attr">DEX: +{{ simpleTooltip.item.adex }}</div>
+        <div v-if="simpleTooltip.item?.awis && !simpleTooltip.item?.attributes?.wis" class="attr">WIS: +{{ simpleTooltip.item.awis }}</div>
+        <div v-if="simpleTooltip.item?.aint && !simpleTooltip.item?.attributes?.int" class="attr">INT: +{{ simpleTooltip.item.aint }}</div>
+        <div v-if="simpleTooltip.item?.acha && !simpleTooltip.item?.attributes?.cha" class="attr">CHA: +{{ simpleTooltip.item.acha }}</div>
         
-        <!-- Resistances -->
-        <div v-if="simpleTooltip.item?.pr" class="resist">Poison Resist: +{{ simpleTooltip.item.pr }}</div>
-        <div v-if="simpleTooltip.item?.mr" class="resist">Magic Resist: +{{ simpleTooltip.item.mr }}</div>
-        <div v-if="simpleTooltip.item?.fr" class="resist">Fire Resist: +{{ simpleTooltip.item.fr }}</div>
-        <div v-if="simpleTooltip.item?.cr" class="resist">Cold Resist: +{{ simpleTooltip.item.cr }}</div>
-        <div v-if="simpleTooltip.item?.dr" class="resist">Disease Resist: +{{ simpleTooltip.item.dr }}</div>
-        <div v-if="simpleTooltip.item?.svcorruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.svcorruption }}</div>
-        
-        <!-- Basic Info -->
-        <div v-if="simpleTooltip.item?.weight" class="basic">Weight: {{ simpleTooltip.item.weight }}</div>
-        <div v-if="simpleTooltip.item?.charges" class="basic">Charges: {{ simpleTooltip.item.charges }}</div>
+        <!-- Detailed resistances (from API, if different from inventory) -->
+        <div v-if="simpleTooltip.item?.pr && !simpleTooltip.item?.resistances?.poison" class="resist">Poison Resist: +{{ simpleTooltip.item.pr }}</div>
+        <div v-if="simpleTooltip.item?.mr && !simpleTooltip.item?.resistances?.magic" class="resist">Magic Resist: +{{ simpleTooltip.item.mr }}</div>
+        <div v-if="simpleTooltip.item?.fr && !simpleTooltip.item?.resistances?.fire" class="resist">Fire Resist: +{{ simpleTooltip.item.fr }}</div>
+        <div v-if="simpleTooltip.item?.cr && !simpleTooltip.item?.resistances?.cold" class="resist">Cold Resist: +{{ simpleTooltip.item.cr }}</div>
+        <div v-if="simpleTooltip.item?.dr && !simpleTooltip.item?.resistances?.disease" class="resist">Disease Resist: +{{ simpleTooltip.item.dr }}</div>
+        <div v-if="simpleTooltip.item?.svcorruption && !simpleTooltip.item?.resistances?.corruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.svcorruption }}</div>
         
         <!-- Flags -->
         <div v-if="simpleTooltip.item?.magic" class="flag magic">MAGIC</div>
         <div v-if="simpleTooltip.item?.lore" class="flag lore">LORE</div>
         <div v-if="simpleTooltip.item?.nodrop || simpleTooltip.item?.isNoDrop" class="flag no-drop">NO DROP</div>
+        
+        <!-- Show if no detailed stats available -->
+        <div v-if="!hasAnyStats(simpleTooltip.item)" class="basic-info">Basic item information</div>
       </div>
     </div>
   </div>
@@ -529,61 +557,124 @@ const simpleTooltip = ref({
 })
 
 let tooltipTimeout = null
+let requestCount = 0
+let lastRequestReset = Date.now()
+const MAX_REQUESTS_PER_MINUTE = 20 // Limit tooltip requests to prevent overwhelming backend
 
 const showSimpleTooltip = async (event, item) => {
   if (!item) return
   
   clearTimeout(tooltipTimeout)
   tooltipTimeout = setTimeout(async () => {
-    // If item has full data, show it immediately
-    if (item.ac !== undefined || item.hp !== undefined) {
-      simpleTooltip.value = {
-        visible: true,
-        x: event.pageX + 20,
-        y: event.pageY + 20,
-        item: item,
-        loading: false
-      }
-    } else {
-      // Show loading tooltip first
-      simpleTooltip.value = {
-        visible: true,
-        x: event.pageX + 20,
-        y: event.pageY + 20,
-        item: item,
-        loading: true
+    // Always show basic tooltip first with item name and weight
+    simpleTooltip.value = {
+      visible: true,
+      x: event.pageX + 20,
+      y: event.pageY + 20,
+      item: item,
+      loading: false,
+      error: false
+    }
+    
+    // Only try to fetch detailed data if we don't already have it and haven't failed before
+    if (!item.ac && !item.hp && !item.detailedDataLoaded && !item.detailedDataFailed) {
+      // Rate limiting - reset counter every minute
+      const now = Date.now()
+      if (now - lastRequestReset > 60000) {
+        requestCount = 0
+        lastRequestReset = now
       }
       
-      // Fetch detailed item data
+      // Check if we've exceeded rate limit
+      if (requestCount >= MAX_REQUESTS_PER_MINUTE) {
+        console.warn('Tooltip request rate limit exceeded, showing basic tooltip only')
+        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+          simpleTooltip.value = {
+            ...simpleTooltip.value,
+            error: true,
+            errorMessage: 'Rate limited - too many requests'
+          }
+        }
+        return
+      }
+      
+      requestCount++
+      // Set loading state
+      if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+        simpleTooltip.value.loading = true
+      }
+      
+      // Fetch detailed item data with better error handling
       try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2000) // Reduced to 2 seconds
+        
         const response = await fetch(`http://localhost:5001/api/items/${item.id}/tooltip`, {
-          signal: AbortSignal.timeout(3000) // 3 second timeout
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
         })
+        
+        clearTimeout(timeoutId)
+        
         if (response.ok) {
           const detailedItem = await response.json()
-          // Update tooltip with detailed data
+          // Mark item as having detailed data loaded
+          item.detailedDataLoaded = true
+          
+          // Update tooltip with detailed data if still visible for same item
           if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
             simpleTooltip.value = {
               ...simpleTooltip.value,
               item: { ...item, ...detailedItem },
-              loading: false
+              loading: false,
+              error: false
             }
           }
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
       } catch (error) {
-        console.warn('Failed to load detailed item data:', error)
-        // Keep showing basic tooltip
+        console.warn(`Failed to load detailed item data for ${item.name} (ID: ${item.id}):`, error.name === 'AbortError' ? 'Request timeout' : error.message)
+        
+        // Show basic tooltip with error indicator
         if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
-          simpleTooltip.value.loading = false
+          simpleTooltip.value = {
+            ...simpleTooltip.value,
+            loading: false,
+            error: true,
+            errorMessage: error.name === 'AbortError' ? 'Timeout loading details' : 'Failed to load details'
+          }
         }
+        
+        // Mark item to prevent retrying failed requests
+        item.detailedDataFailed = true
       }
     }
-  }, 300)
+  }, 200) // Reduced delay
 }
 
 const hideSimpleTooltip = () => {
   clearTimeout(tooltipTimeout)
   simpleTooltip.value.visible = false
+}
+
+const hasAnyStats = (item) => {
+  if (!item) return false
+  
+  // Check for any stats from inventory data
+  if (item.stats && (item.stats.ac || item.stats.hp || item.stats.mana || item.stats.attack)) return true
+  if (item.attributes && Object.values(item.attributes).some(val => val > 0)) return true
+  if (item.resistances && Object.values(item.resistances).some(val => val > 0)) return true
+  
+  // Check for any detailed API data
+  if (item.ac || item.hp || item.mana || item.attack || item.damage) return true
+  if (item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha) return true
+  if (item.pr || item.mr || item.fr || item.cr || item.dr || item.svcorruption) return true
+  
+  return false
 }
 
 // Clean up tooltips when component unmounts
@@ -727,6 +818,17 @@ const normalizeClassName = (className) => {
 
 .tooltip-body div {
   margin: 2px 0;
+}
+
+.tooltip-loading {
+  color: #87ceeb;
+  font-style: italic;
+}
+
+.tooltip-error {
+  color: #ff6b6b;
+  font-style: italic;
+  font-size: 11px;
 }
 
 .no-drop {
