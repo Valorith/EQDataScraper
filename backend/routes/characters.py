@@ -633,8 +633,7 @@ def get_character_stats(character_id):
     """
     Get character's calculated stats (AC, ATK, resistances, max HP/MP, weight).
     
-    Note: These are calculated values that require complex formulas.
-    This endpoint returns basic estimates.
+    Calculates stats by summing base character stats plus equipment bonuses.
     
     Returns:
     - Calculated character statistics
@@ -648,22 +647,90 @@ def get_character_stats(character_id):
             
         logger.info(f"Stats request for character {character_id}")
         
-        # For now, return basic calculated stats
-        # In a full implementation, these would be calculated from:
-        # - Base character stats + racial bonuses
-        # - Equipment bonuses
-        # - Spell effects
-        # - AA bonuses
+        # Get base character data including any pre-calculated stats
+        with connection.cursor() as cursor:
+            char_query = """
+                SELECT cur_hp, mana, endurance, ac, pr, mr, fr, cr, dr, svcorruption,
+                       str, sta, agi, dex, wis, intel, cha, level, class
+                FROM character_data 
+                WHERE id = %s
+            """
+            cursor.execute(char_query, (character_id,))
+            char_result = cursor.fetchone()
+            
+            if not char_result:
+                connection.close()
+                return jsonify({'error': 'Character not found'}), 404
+            
+            # Handle both dictionary and tuple cursor results
+            if isinstance(char_result, dict):
+                base_hp = char_result['cur_hp'] or 0
+                base_mp = char_result['mana'] or 0
+                base_endurance = char_result['endurance'] or 0
+                base_ac = char_result['ac'] or 0
+                base_resistances = {
+                    'poison': char_result['pr'] or 0,
+                    'magic': char_result['mr'] or 0,
+                    'fire': char_result['fr'] or 0,
+                    'cold': char_result['cr'] or 0,
+                    'disease': char_result['dr'] or 0,
+                    'corrupt': char_result['svcorruption'] or 0
+                }
+                # Base stats for HP/MP calculations
+                base_str = char_result['str'] or 0
+                base_sta = char_result['sta'] or 0
+                base_wis = char_result['wis'] or 0
+                base_intel = char_result['intel'] or 0
+                char_level = char_result['level'] or 1
+                char_class = char_result['class'] or 1
+            else:
+                base_hp = char_result[0] or 0
+                base_mp = char_result[1] or 0
+                base_endurance = char_result[2] or 0
+                base_ac = char_result[3] or 0
+                base_resistances = {
+                    'poison': char_result[4] or 0,
+                    'magic': char_result[5] or 0,
+                    'fire': char_result[6] or 0,
+                    'cold': char_result[7] or 0,
+                    'disease': char_result[8] or 0,
+                    'corrupt': char_result[9] or 0
+                }
+                base_str = char_result[10] or 0
+                base_sta = char_result[11] or 0
+                base_agi = char_result[12] or 0
+                base_dex = char_result[13] or 0
+                base_wis = char_result[14] or 0
+                base_intel = char_result[15] or 0
+                base_cha = char_result[16] or 0
+                char_level = char_result[17] or 1
+                char_class = char_result[18] or 1
         
-        # TODO: Implement proper stat calculations from database
-        # This is a placeholder that returns calculated stats
-        calculated_stats = {
-            'maxHp': 0,  # Calculate from base + bonuses
-            'maxMp': 0,  # Calculate from base + bonuses
-            'ac': 0,     # Sum equipment AC
-            'atk': 0,    # Sum equipment ATK
-            'weight': 0, # Sum equipment weight
-            'resistances': {
+            # Get equipped items and calculate bonuses (Char Browser approach)
+            equipment_query = """
+                SELECT items.ac, items.hp, items.mana, items.endur, items.attack,
+                       items.pr, items.mr, items.fr, items.cr, items.dr, items.svcorruption,
+                       items.weight, items.astr, items.asta, items.aagi, items.adex, 
+                       items.awis, items.aint, items.acha, items.heroic_str, items.heroic_sta,
+                       items.heroic_agi, items.heroic_dex, items.heroic_wis, items.heroic_int,
+                       items.heroic_cha, items.heroic_pr, items.heroic_mr, items.heroic_fr,
+                       items.heroic_cr, items.heroic_dr, items.heroic_svcorr
+                FROM inventory inv
+                LEFT JOIN items ON inv.itemid = items.id
+                WHERE inv.charid = %s AND inv.slotid BETWEEN 0 AND 22
+                AND inv.itemid IS NOT NULL
+            """
+            cursor.execute(equipment_query, (character_id,))
+            equipment_results = cursor.fetchall()
+            
+            # Initialize calculated stats (following Char Browser pattern)
+            equipment_ac = 0
+            equipment_atk = 0
+            equipment_weight = 0
+            equipment_hp_bonus = 0
+            equipment_mp_bonus = 0
+            equipment_endur_bonus = 0
+            equipment_resistances = {
                 'poison': 0,
                 'magic': 0,
                 'disease': 0,
@@ -671,13 +738,144 @@ def get_character_stats(character_id):
                 'cold': 0,
                 'corrupt': 0
             }
-        }
+            # Track stat bonuses from equipment 
+            equipment_stats = {
+                'str': 0, 'sta': 0, 'agi': 0, 'dex': 0, 'wis': 0, 'int': 0, 'cha': 0
+            }
+            # Track heroic stats separately (Char Browser approach)
+            heroic_stats = {
+                'str': 0, 'sta': 0, 'agi': 0, 'dex': 0, 'wis': 0, 'int': 0, 'cha': 0
+            }
+            heroic_resistances = {
+                'poison': 0, 'magic': 0, 'fire': 0, 'cold': 0, 'disease': 0, 'corrupt': 0
+            }
+            
+            # Sum up equipment bonuses (Char Browser additem approach)
+            for item in equipment_results:
+                if isinstance(item, dict):
+                    # Basic stats
+                    equipment_ac += item.get('ac') or 0
+                    equipment_atk += item.get('attack') or 0
+                    equipment_weight += item.get('weight') or 0
+                    equipment_hp_bonus += item.get('hp') or 0
+                    equipment_mp_bonus += item.get('mana') or 0
+                    equipment_endur_bonus += item.get('endur') or 0
+                    
+                    # Resistances
+                    equipment_resistances['poison'] += item.get('pr') or 0
+                    equipment_resistances['magic'] += item.get('mr') or 0
+                    equipment_resistances['fire'] += item.get('fr') or 0
+                    equipment_resistances['cold'] += item.get('cr') or 0
+                    equipment_resistances['disease'] += item.get('dr') or 0
+                    equipment_resistances['corrupt'] += item.get('svcorruption') or 0
+                    
+                    # Stat bonuses
+                    equipment_stats['str'] += item.get('astr') or 0
+                    equipment_stats['sta'] += item.get('asta') or 0
+                    equipment_stats['agi'] += item.get('aagi') or 0
+                    equipment_stats['dex'] += item.get('adex') or 0
+                    equipment_stats['wis'] += item.get('awis') or 0
+                    equipment_stats['int'] += item.get('aint') or 0
+                    equipment_stats['cha'] += item.get('acha') or 0
+                    
+                    # Heroic stats (if available)
+                    heroic_stats['str'] += item.get('heroic_str') or 0
+                    heroic_stats['sta'] += item.get('heroic_sta') or 0
+                    heroic_stats['agi'] += item.get('heroic_agi') or 0
+                    heroic_stats['dex'] += item.get('heroic_dex') or 0
+                    heroic_stats['wis'] += item.get('heroic_wis') or 0
+                    heroic_stats['int'] += item.get('heroic_int') or 0
+                    heroic_stats['cha'] += item.get('heroic_cha') or 0
+                    
+                    # Heroic resistances
+                    heroic_resistances['poison'] += item.get('heroic_pr') or 0
+                    heroic_resistances['magic'] += item.get('heroic_mr') or 0
+                    heroic_resistances['fire'] += item.get('heroic_fr') or 0
+                    heroic_resistances['cold'] += item.get('heroic_cr') or 0
+                    heroic_resistances['disease'] += item.get('heroic_dr') or 0
+                    heroic_resistances['corrupt'] += item.get('heroic_svcorr') or 0
+                else:
+                    # Tuple cursor results (maintain compatibility)
+                    equipment_ac += item[0] or 0           # ac
+                    equipment_hp_bonus += item[1] or 0     # hp
+                    equipment_mp_bonus += item[2] or 0     # mana
+                    equipment_endur_bonus += item[3] or 0  # endur
+                    equipment_atk += item[4] or 0          # attack
+                    equipment_resistances['poison'] += item[5] or 0    # pr
+                    equipment_resistances['magic'] += item[6] or 0     # mr
+                    equipment_resistances['fire'] += item[7] or 0      # fr
+                    equipment_resistances['cold'] += item[8] or 0      # cr
+                    equipment_resistances['disease'] += item[9] or 0   # dr
+                    equipment_resistances['corrupt'] += item[10] or 0  # svcorruption
+                    equipment_weight += item[11] or 0      # weight
+                    
+                    # Additional stats (if query includes them)
+                    if len(item) > 12:
+                        equipment_stats['str'] += item[12] or 0  # astr
+                        equipment_stats['sta'] += item[13] or 0  # asta
+                        equipment_stats['agi'] += item[14] or 0  # aagi
+                        equipment_stats['dex'] += item[15] or 0  # adex
+                        equipment_stats['wis'] += item[16] or 0  # awis
+                        equipment_stats['int'] += item[17] or 0  # aint
+                        equipment_stats['cha'] += item[18] or 0  # acha
+            
+            # Calculate final stats (Char Browser approach)
+            # Total resistances = base + equipment + heroic
+            final_resistances = {}
+            for resist_type in equipment_resistances:
+                final_resistances[resist_type] = (
+                    base_resistances[resist_type] +
+                    equipment_resistances[resist_type] +
+                    heroic_resistances[resist_type]
+                )
+            
+            # Calculate effective stats with equipment bonuses
+            effective_sta = base_sta + equipment_stats['sta'] + heroic_stats['sta']
+            effective_wis = base_wis + equipment_stats['wis'] + heroic_stats['wis'] 
+            effective_intel = base_intel + equipment_stats['int'] + heroic_stats['int']
+            
+            calculated_stats = {
+                'maxHp': base_hp + equipment_hp_bonus,     # Base + equipment HP
+                'maxMp': base_mp + equipment_mp_bonus,     # Base + equipment MP  
+                'maxEndurance': base_endurance + equipment_endur_bonus, # Base + equipment Endurance
+                'ac': base_ac + equipment_ac,              # Base + equipment AC
+                'atk': equipment_atk,                      # Equipment attack bonuses
+                'weight': equipment_weight,                # Total equipment weight
+                'resistances': final_resistances,          # Combined resistances
+                
+                # Additional comprehensive stats (Char Browser style)
+                'totalStats': {
+                    'str': base_str + equipment_stats['str'] + heroic_stats['str'],
+                    'sta': effective_sta,
+                    'agi': base_agi + equipment_stats['agi'] + heroic_stats['agi'],
+                    'dex': base_dex + equipment_stats['dex'] + heroic_stats['dex'],
+                    'wis': effective_wis,
+                    'int': effective_intel,
+                    'cha': base_cha + equipment_stats['cha'] + heroic_stats['cha']
+                },
+                
+                # Equipment bonuses breakdown for debugging
+                'equipmentBonuses': {
+                    'hp': equipment_hp_bonus,
+                    'mp': equipment_mp_bonus,
+                    'endurance': equipment_endur_bonus,
+                    'ac': equipment_ac,
+                    'attack': equipment_atk,
+                    'weight': equipment_weight,
+                    'stats': equipment_stats,
+                    'resistances': equipment_resistances
+                }
+            }
+            
+            logger.info(f"Enhanced stats for character {character_id}: AC={base_ac + equipment_ac}, ATK={equipment_atk}, Weight={equipment_weight}, HP={base_hp}+{equipment_hp_bonus}, MP={base_mp}+{equipment_mp_bonus}, Resistances={final_resistances}")
         
         connection.close()
         return jsonify(calculated_stats), 200
         
     except Exception as e:
         logger.error(f"Error getting stats for character {character_id}: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @character_bp.route('/item/<int:item_id>', methods=['GET'])
