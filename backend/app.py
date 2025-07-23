@@ -281,6 +281,14 @@ if ENABLE_USER_ACCOUNTS:
         app.register_blueprint(users_bp, url_prefix='/api')
         app.register_blueprint(admin_bp, url_prefix='/api')
         
+        # Register character management blueprints
+        try:
+            from routes.characters import character_bp
+            app.register_blueprint(character_bp)
+            app.logger.info("✅ Character routes registered")
+        except ImportError as e:
+            app.logger.warning(f"⚠️ Could not load character routes: {e}")
+        
         # Initialize test data for dev mode after blueprints are registered
         initialize_test_data()
         
@@ -328,6 +336,14 @@ else:
         app.logger.info("✅ Minimal admin routes registered (OAuth disabled)")
     except ImportError as e:
         app.logger.warning(f"⚠️ Could not load minimal admin routes: {e}")
+    
+    # Register character management routes even when OAuth is disabled
+    try:
+        from routes.characters import character_bp
+        app.register_blueprint(character_bp)
+        app.logger.info("✅ Character routes registered (OAuth disabled)")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Could not load character routes: {e}")
 
 # Load configuration
 def load_config():

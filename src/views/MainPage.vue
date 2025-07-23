@@ -163,6 +163,19 @@
         </div>
       </router-link>
       
+      <router-link 
+        to="/characters"
+        class="nav-card characters-nav"
+      >
+        <div class="nav-icon">
+          <div class="nav-icon-symbol">👤</div>
+        </div>
+        <div class="nav-content">
+          <h3 class="nav-title">Characters</h3>
+          <p class="nav-description">View character inventories with an authentic EverQuest interface display</p>
+        </div>
+      </router-link>
+      
       <a 
         href="https://wiki.clumsysworld.com/" 
         target="_blank"
@@ -1359,5 +1372,25 @@ export default {
 
 .zones-nav:hover .nav-title {
   color: #20c997;
+}
+
+/* Characters navigation card styling */
+.characters-nav .nav-icon {
+  background: linear-gradient(135deg, #6f42c1, #8e5d9f);
+  box-shadow: 0 8px 24px rgba(111, 66, 193, 0.4);
+}
+
+.characters-nav:hover .nav-icon {
+  background: linear-gradient(135deg, #8e5d9f, #a878bf);
+  box-shadow: 0 12px 32px rgba(111, 66, 193, 0.6);
+  transform: scale(1.1) rotate(-5deg);
+}
+
+.characters-nav .nav-title {
+  color: #6f42c1;
+}
+
+.characters-nav:hover .nav-title {
+  color: #8e5d9f;
 }
 </style>
