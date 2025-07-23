@@ -651,7 +651,7 @@ def get_character_stats(character_id):
         with connection.cursor() as cursor:
             char_query = """
                 SELECT cur_hp, mana, endurance, ac, pr, mr, fr, cr, dr, svcorruption,
-                       str, sta, agi, dex, wis, intel, cha, level, class
+                       str, sta, agi, dex, wis, intel as int_col, cha, level, class
                 FROM character_data 
                 WHERE id = %s
             """
@@ -680,7 +680,7 @@ def get_character_stats(character_id):
                 base_str = char_result['str'] or 0
                 base_sta = char_result['sta'] or 0
                 base_wis = char_result['wis'] or 0
-                base_intel = char_result['intel'] or 0
+                base_intel = char_result['int_col'] or 0
                 char_level = char_result['level'] or 1
                 char_class = char_result['class'] or 1
             else:
@@ -706,15 +706,12 @@ def get_character_stats(character_id):
                 char_level = char_result[17] or 1
                 char_class = char_result[18] or 1
         
-            # Get equipped items and calculate bonuses (Char Browser approach)
+            # Get equipped items and calculate bonuses (start with basic stats)
             equipment_query = """
                 SELECT items.ac, items.hp, items.mana, items.endur, items.attack,
                        items.pr, items.mr, items.fr, items.cr, items.dr, items.svcorruption,
                        items.weight, items.astr, items.asta, items.aagi, items.adex, 
-                       items.awis, items.aint, items.acha, items.heroic_str, items.heroic_sta,
-                       items.heroic_agi, items.heroic_dex, items.heroic_wis, items.heroic_int,
-                       items.heroic_cha, items.heroic_pr, items.heroic_mr, items.heroic_fr,
-                       items.heroic_cr, items.heroic_dr, items.heroic_svcorr
+                       items.awis, items.aint, items.acha
                 FROM inventory inv
                 LEFT JOIN items ON inv.itemid = items.id
                 WHERE inv.charid = %s AND inv.slotid BETWEEN 0 AND 22
@@ -778,22 +775,8 @@ def get_character_stats(character_id):
                     equipment_stats['int'] += item.get('aint') or 0
                     equipment_stats['cha'] += item.get('acha') or 0
                     
-                    # Heroic stats (if available)
-                    heroic_stats['str'] += item.get('heroic_str') or 0
-                    heroic_stats['sta'] += item.get('heroic_sta') or 0
-                    heroic_stats['agi'] += item.get('heroic_agi') or 0
-                    heroic_stats['dex'] += item.get('heroic_dex') or 0
-                    heroic_stats['wis'] += item.get('heroic_wis') or 0
-                    heroic_stats['int'] += item.get('heroic_int') or 0
-                    heroic_stats['cha'] += item.get('heroic_cha') or 0
-                    
-                    # Heroic resistances
-                    heroic_resistances['poison'] += item.get('heroic_pr') or 0
-                    heroic_resistances['magic'] += item.get('heroic_mr') or 0
-                    heroic_resistances['fire'] += item.get('heroic_fr') or 0
-                    heroic_resistances['cold'] += item.get('heroic_cr') or 0
-                    heroic_resistances['disease'] += item.get('heroic_dr') or 0
-                    heroic_resistances['corrupt'] += item.get('heroic_svcorr') or 0
+                    # Heroic stats (not available in this database version)
+                    # heroic_stats placeholder for future expansion
                 else:
                     # Tuple cursor results (maintain compatibility)
                     equipment_ac += item[0] or 0           # ac
