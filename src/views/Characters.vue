@@ -342,7 +342,7 @@ export default {
         548, 549, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1100, 1200
       ]
       const randomIcon = iconNumbers[Math.floor(Math.random() * iconNumbers.length)]
-      return `/icons/items/${randomIcon}.gif`
+      return `/icons/items/${randomIcon}.png`
     }
 
     // UI Interaction Methods
@@ -483,7 +483,7 @@ export default {
           item: item.itemid ? {
             id: item.itemid,
             name: item.item_name,
-            icon: `/icons/items/${item.item_icon || 500}.gif`,
+            icon: `/icons/items/${item.item_icon || 500}.png`,
             charges: item.charges || 0,
             stackSize: item.stackable ? (item.charges || 1) : 1,
             stackable: item.stackable,

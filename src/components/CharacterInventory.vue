@@ -80,7 +80,7 @@
         <div class="equipment-slot-positioned charm-slot" data-slot="charm">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.charm }">
             <img v-if="character.equipment?.charm" 
-                 :src="`/icons/items/${character.equipment.charm.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.charm.icon}.png`" 
                  :alt="character.equipment.charm.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -90,7 +90,7 @@
         <div class="equipment-slot-positioned head-slot" data-slot="head">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.head }">
             <img v-if="character.equipment?.head" 
-                 :src="`/icons/items/${character.equipment.head.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.head.icon}.png`" 
                  :alt="character.equipment.head.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -100,7 +100,7 @@
         <div class="equipment-slot-positioned ear-slot" data-slot="ear1">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ear1 }">
             <img v-if="character.equipment?.ear1" 
-                 :src="`/icons/items/${character.equipment.ear1.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.ear1.icon}.png`" 
                  :alt="character.equipment.ear1.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -110,7 +110,7 @@
         <div class="equipment-slot-positioned ear-slot ear-2" data-slot="ear2">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ear2 }">
             <img v-if="character.equipment?.ear2" 
-                 :src="`/icons/items/${character.equipment.ear2.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.ear2.icon}.png`" 
                  :alt="character.equipment.ear2.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -120,7 +120,7 @@
         <div class="equipment-slot-positioned neck-slot" data-slot="neck">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.neck }">
             <img v-if="character.equipment?.neck" 
-                 :src="`/icons/items/${character.equipment.neck.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.neck.icon}.png`" 
                  :alt="character.equipment.neck.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -130,7 +130,7 @@
         <div class="equipment-slot-positioned shoulder-slot" data-slot="shoulder">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.shoulder }">
             <img v-if="character.equipment?.shoulder" 
-                 :src="`/icons/items/${character.equipment.shoulder.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.shoulder.icon}.png`" 
                  :alt="character.equipment.shoulder.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -140,7 +140,7 @@
         <div class="equipment-slot-positioned arms-slot" data-slot="arms">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.arms }">
             <img v-if="character.equipment?.arms" 
-                 :src="`/icons/items/${character.equipment.arms.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.arms.icon}.png`" 
                  :alt="character.equipment.arms.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -150,7 +150,7 @@
         <div class="equipment-slot-positioned back-slot" data-slot="back">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.back }">
             <img v-if="character.equipment?.back" 
-                 :src="`/icons/items/${character.equipment.back.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.back.icon}.png`" 
                  :alt="character.equipment.back.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -160,7 +160,7 @@
         <div class="equipment-slot-positioned wrist-slot wrist-1" data-slot="wrist1">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.wrist1 }">
             <img v-if="character.equipment?.wrist1" 
-                 :src="`/icons/items/${character.equipment.wrist1.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.wrist1.icon}.png`" 
                  :alt="character.equipment.wrist1.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -170,7 +170,7 @@
         <div class="equipment-slot-positioned wrist-slot wrist-2" data-slot="wrist2">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.wrist2 }">
             <img v-if="character.equipment?.wrist2" 
-                 :src="`/icons/items/${character.equipment.wrist2.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.wrist2.icon}.png`" 
                  :alt="character.equipment.wrist2.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -180,7 +180,7 @@
         <div class="equipment-slot-positioned range-slot" data-slot="range">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.range }">
             <img v-if="character.equipment?.range" 
-                 :src="`/icons/items/${character.equipment.range.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.range.icon}.png`" 
                  :alt="character.equipment.range.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -190,7 +190,7 @@
         <div class="equipment-slot-positioned hands-slot" data-slot="hands">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.hands }">
             <img v-if="character.equipment?.hands" 
-                 :src="`/icons/items/${character.equipment.hands.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.hands.icon}.png`" 
                  :alt="character.equipment.hands.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -200,7 +200,7 @@
         <div class="equipment-slot-positioned primary-slot" data-slot="primary">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.primary }">
             <img v-if="character.equipment?.primary" 
-                 :src="`/icons/items/${character.equipment.primary.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.primary.icon}.png`" 
                  :alt="character.equipment.primary.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -210,7 +210,7 @@
         <div class="equipment-slot-positioned secondary-slot" data-slot="secondary">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.secondary }">
             <img v-if="character.equipment?.secondary" 
-                 :src="`/icons/items/${character.equipment.secondary.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.secondary.icon}.png`" 
                  :alt="character.equipment.secondary.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -220,7 +220,7 @@
         <div class="equipment-slot-positioned ammo-bottom-slot" data-slot="ammo">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ammo }">
             <img v-if="character.equipment?.ammo" 
-                 :src="`/icons/items/${character.equipment.ammo.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.ammo.icon}.png`" 
                  :alt="character.equipment.ammo.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -230,7 +230,7 @@
         <div class="equipment-slot-positioned ring-slot ring-1" data-slot="ring1">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ring1 }">
             <img v-if="character.equipment?.ring1" 
-                 :src="`/icons/items/${character.equipment.ring1.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.ring1.icon}.png`" 
                  :alt="character.equipment.ring1.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -240,7 +240,7 @@
         <div class="equipment-slot-positioned ring-slot ring-2" data-slot="ring2">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ring2 }">
             <img v-if="character.equipment?.ring2" 
-                 :src="`/icons/items/${character.equipment.ring2.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.ring2.icon}.png`" 
                  :alt="character.equipment.ring2.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -250,7 +250,7 @@
         <div class="equipment-slot-positioned chest-slot" data-slot="chest">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.chest }">
             <img v-if="character.equipment?.chest" 
-                 :src="`/icons/items/${character.equipment.chest.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.chest.icon}.png`" 
                  :alt="character.equipment.chest.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -260,7 +260,7 @@
         <div class="equipment-slot-positioned legs-slot" data-slot="legs">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.legs }">
             <img v-if="character.equipment?.legs" 
-                 :src="`/icons/items/${character.equipment.legs.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.legs.icon}.png`" 
                  :alt="character.equipment.legs.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -270,7 +270,7 @@
         <div class="equipment-slot-positioned feet-slot" data-slot="feet">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.feet }">
             <img v-if="character.equipment?.feet" 
-                 :src="`/icons/items/${character.equipment.feet.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.feet.icon}.png`" 
                  :alt="character.equipment.feet.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -280,7 +280,7 @@
         <div class="equipment-slot-positioned waist-slot" data-slot="waist">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.waist }">
             <img v-if="character.equipment?.waist" 
-                 :src="`/icons/items/${character.equipment.waist.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.waist.icon}.png`" 
                  :alt="character.equipment.waist.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -290,7 +290,7 @@
         <div class="equipment-slot-positioned ammo-slot" data-slot="power_source">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.power_source }">
             <img v-if="character.equipment?.power_source" 
-                 :src="`/icons/items/${character.equipment.power_source.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.power_source.icon}.png`" 
                  :alt="character.equipment.power_source.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -300,7 +300,7 @@
         <div class="equipment-slot-positioned face-slot" data-slot="face">
           <div class="equipment-slot" :class="{ 'has-item': character.equipment?.face }">
             <img v-if="character.equipment?.face" 
-                 :src="`/icons/items/${character.equipment.face.icon}.gif`" 
+                 :src="`/icons/items/${character.equipment.face.icon}.png`" 
                  :alt="character.equipment.face.name"
                  class="item-icon" 
                  @error="handleImageError" />
@@ -404,14 +404,14 @@ export default {
     },
     
     handleImageError(event) {
-      // Try PNG version first, then fallback to default icon
+      // PNG-first strategy: Try GIF as fallback, then default icon
       const currentSrc = event.target.src
-      if (currentSrc.endsWith('.gif')) {
-        // Try PNG version
-        event.target.src = currentSrc.replace('.gif', '.png')
+      if (currentSrc.endsWith('.png')) {
+        // Try GIF as fallback
+        event.target.src = currentSrc.replace('.png', '.gif')
       } else {
-        // Fallback to default icon
-        event.target.src = '/icons/items/500.gif'
+        // Final fallback to default icon (PNG)
+        event.target.src = '/icons/items/500.png'
       }
     },
 

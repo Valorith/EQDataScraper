@@ -378,7 +378,7 @@
                 <div class="npc-spell-icon-container">
                   <img 
                     v-if="spell.icon && spell.icon !== 0" 
-                    :src="`/icons/items/${spell.icon}.gif`" 
+                    :src="`/icons/items/${spell.icon}.png`" 
                     :alt="spell.spell_name"
                     @error="handleIconError"
                     class="npc-spell-icon"
@@ -400,7 +400,7 @@
                 <div class="merchant-item-info">
                   <img 
                     v-if="item.icon" 
-                    :src="`/icons/items/${item.icon}.gif`" 
+                    :src="`/icons/items/${item.icon}.png`" 
                     :alt="item.item_name"
                     @error="handleIconError"
                     class="merchant-item-icon"
@@ -465,7 +465,7 @@
                     <div class="loot-item-icon-container">
                       <img 
                         v-if="item.icon" 
-                        :src="`/icons/items/${item.icon}.gif`" 
+                        :src="`/icons/items/${item.icon}.png`" 
                         :alt="item.item_name"
                         @error="handleIconError"
                         class="loot-item-icon"
