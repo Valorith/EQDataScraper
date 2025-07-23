@@ -102,7 +102,8 @@
             <img v-if="character.equipment?.ear1" 
                  :src="`/icons/items/${character.equipment.ear1.icon}.gif`" 
                  :alt="character.equipment.ear1.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">EAR</span>
           </div>
         </div>
@@ -111,7 +112,8 @@
             <img v-if="character.equipment?.ear2" 
                  :src="`/icons/items/${character.equipment.ear2.icon}.gif`" 
                  :alt="character.equipment.ear2.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">EAR</span>
           </div>
         </div>
@@ -120,7 +122,8 @@
             <img v-if="character.equipment?.neck" 
                  :src="`/icons/items/${character.equipment.neck.icon}.gif`" 
                  :alt="character.equipment.neck.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">NECK</span>
           </div>
         </div>
@@ -129,7 +132,8 @@
             <img v-if="character.equipment?.shoulder" 
                  :src="`/icons/items/${character.equipment.shoulder.icon}.gif`" 
                  :alt="character.equipment.shoulder.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">SHOULDER</span>
           </div>
         </div>
@@ -138,7 +142,8 @@
             <img v-if="character.equipment?.arms" 
                  :src="`/icons/items/${character.equipment.arms.icon}.gif`" 
                  :alt="character.equipment.arms.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">ARMS</span>
           </div>
         </div>
@@ -147,7 +152,8 @@
             <img v-if="character.equipment?.back" 
                  :src="`/icons/items/${character.equipment.back.icon}.gif`" 
                  :alt="character.equipment.back.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">BACK</span>
           </div>
         </div>
@@ -156,7 +162,8 @@
             <img v-if="character.equipment?.wrist1" 
                  :src="`/icons/items/${character.equipment.wrist1.icon}.gif`" 
                  :alt="character.equipment.wrist1.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">WRIST</span>
           </div>
         </div>
@@ -165,7 +172,8 @@
             <img v-if="character.equipment?.wrist2" 
                  :src="`/icons/items/${character.equipment.wrist2.icon}.gif`" 
                  :alt="character.equipment.wrist2.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">WRIST</span>
           </div>
         </div>
@@ -174,7 +182,8 @@
             <img v-if="character.equipment?.range" 
                  :src="`/icons/items/${character.equipment.range.icon}.gif`" 
                  :alt="character.equipment.range.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">RANGED</span>
           </div>
         </div>
@@ -183,7 +192,8 @@
             <img v-if="character.equipment?.hands" 
                  :src="`/icons/items/${character.equipment.hands.icon}.gif`" 
                  :alt="character.equipment.hands.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">HANDS</span>
           </div>
         </div>
@@ -192,7 +202,8 @@
             <img v-if="character.equipment?.primary" 
                  :src="`/icons/items/${character.equipment.primary.icon}.gif`" 
                  :alt="character.equipment.primary.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">MAIN HAND</span>
           </div>
         </div>
@@ -201,7 +212,8 @@
             <img v-if="character.equipment?.secondary" 
                  :src="`/icons/items/${character.equipment.secondary.icon}.gif`" 
                  :alt="character.equipment.secondary.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">OFF<br>HAND</span>
           </div>
         </div>
@@ -210,7 +222,8 @@
             <img v-if="character.equipment?.ammo" 
                  :src="`/icons/items/${character.equipment.ammo.icon}.gif`" 
                  :alt="character.equipment.ammo.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">AMMO</span>
           </div>
         </div>
@@ -219,7 +232,8 @@
             <img v-if="character.equipment?.ring1" 
                  :src="`/icons/items/${character.equipment.ring1.icon}.gif`" 
                  :alt="character.equipment.ring1.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">FINGER</span>
           </div>
         </div>
@@ -228,7 +242,8 @@
             <img v-if="character.equipment?.ring2" 
                  :src="`/icons/items/${character.equipment.ring2.icon}.gif`" 
                  :alt="character.equipment.ring2.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">FINGER</span>
           </div>
         </div>
@@ -237,7 +252,8 @@
             <img v-if="character.equipment?.chest" 
                  :src="`/icons/items/${character.equipment.chest.icon}.gif`" 
                  :alt="character.equipment.chest.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">CHEST</span>
           </div>
         </div>
@@ -246,7 +262,8 @@
             <img v-if="character.equipment?.legs" 
                  :src="`/icons/items/${character.equipment.legs.icon}.gif`" 
                  :alt="character.equipment.legs.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">LEGS</span>
           </div>
         </div>
@@ -255,7 +272,8 @@
             <img v-if="character.equipment?.feet" 
                  :src="`/icons/items/${character.equipment.feet.icon}.gif`" 
                  :alt="character.equipment.feet.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">FEET</span>
           </div>
         </div>
@@ -264,7 +282,8 @@
             <img v-if="character.equipment?.waist" 
                  :src="`/icons/items/${character.equipment.waist.icon}.gif`" 
                  :alt="character.equipment.waist.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">WAIST</span>
           </div>
         </div>
@@ -273,7 +292,8 @@
             <img v-if="character.equipment?.power_source" 
                  :src="`/icons/items/${character.equipment.power_source.icon}.gif`" 
                  :alt="character.equipment.power_source.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">POWER<br>SOURCE</span>
           </div>
         </div>
@@ -282,7 +302,8 @@
             <img v-if="character.equipment?.face" 
                  :src="`/icons/items/${character.equipment.face.icon}.gif`" 
                  :alt="character.equipment.face.name"
-                 class="item-icon" />
+                 class="item-icon" 
+                 @error="handleImageError" />
             <span v-else class="slot-label">FACE</span>
           </div>
         </div>
@@ -402,6 +423,9 @@ export default {
     normalizeClassName(className) {
       // Map level 60+ specialty class titles to base class names
       const classMapping = {
+        // Base class mappings (for spaced names)
+        'Shadow Knight': 'Shadowknight',
+        
         // Warrior specializations
         'Myrmidon': 'Warrior',
         'Champion': 'Warrior',

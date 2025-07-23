@@ -1015,7 +1015,7 @@ export default {
 
 .character-portrait {
   width: 60px;
-  height: 120px;
+  height: 156px;
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 0.5rem;
