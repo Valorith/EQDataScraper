@@ -559,7 +559,12 @@ const simpleTooltip = ref({
 let tooltipTimeout = null
 let requestCount = 0
 let lastRequestReset = Date.now()
-const MAX_REQUESTS_PER_MINUTE = 20 // Limit tooltip requests to prevent overwhelming backend
+const MAX_REQUESTS_PER_MINUTE = 10 // Reduced further to prevent overwhelming backend
+let backendHealthy = true
+let lastHealthCheck = 0
+const HEALTH_CHECK_INTERVAL = 10000 // Check backend health every 10 seconds
+let consecutiveFailures = 0
+const MAX_CONSECUTIVE_FAILURES = 3 // Disable API calls after 3 consecutive failures
 
 const showSimpleTooltip = async (event, item) => {
   if (!item) return
@@ -578,6 +583,34 @@ const showSimpleTooltip = async (event, item) => {
     
     // Only try to fetch detailed data if we don't already have it and haven't failed before
     if (!item.ac && !item.hp && !item.detailedDataLoaded && !item.detailedDataFailed) {
+      // Check if we've had too many consecutive failures
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.warn(`Too many consecutive failures (${consecutiveFailures}), disabling API calls for item ${item.name}`)
+        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+          simpleTooltip.value = {
+            ...simpleTooltip.value,
+            error: true,
+            errorMessage: 'API temporarily disabled - showing basic info'
+          }
+        }
+        return
+      }
+      
+      // Check backend health first
+      const isHealthy = await checkBackendHealth()
+      if (!isHealthy) {
+        console.warn(`Backend unhealthy, skipping API call for item ${item.name}`)
+        consecutiveFailures++
+        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+          simpleTooltip.value = {
+            ...simpleTooltip.value,
+            error: true,
+            errorMessage: 'Server unavailable - showing basic info'
+          }
+        }
+        return
+      }
+      
       // Rate limiting - reset counter every minute
       const now = Date.now()
       if (now - lastRequestReset > 60000) {
@@ -624,6 +657,9 @@ const showSimpleTooltip = async (event, item) => {
           // Mark item as having detailed data loaded
           item.detailedDataLoaded = true
           
+          // Reset consecutive failure counter on success
+          consecutiveFailures = 0
+          
           // Update tooltip with detailed data if still visible for same item
           if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
             simpleTooltip.value = {
@@ -639,18 +675,35 @@ const showSimpleTooltip = async (event, item) => {
       } catch (error) {
         console.warn(`Failed to load detailed item data for ${item.name} (ID: ${item.id}):`, error.name === 'AbortError' ? 'Request timeout' : error.message)
         
+        // Increment consecutive failures counter
+        consecutiveFailures++
+        
+        // If it's a connection error, mark backend as unhealthy
+        if (error.message.includes('fetch') || error.message.includes('Connection') || error.name === 'TypeError') {
+          console.warn('Connection error detected, marking backend as unhealthy')
+          backendHealthy = false
+          lastHealthCheck = Date.now()
+        }
+        
         // Show basic tooltip with error indicator
         if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
           simpleTooltip.value = {
             ...simpleTooltip.value,
             loading: false,
             error: true,
-            errorMessage: error.name === 'AbortError' ? 'Timeout loading details' : 'Failed to load details'
+            errorMessage: error.name === 'AbortError' ? 'Timeout loading details' : 'Connection failed - showing basic info'
           }
         }
         
-        // Mark item to prevent retrying failed requests
+        // Mark item to prevent retrying failed requests (temporarily)
         item.detailedDataFailed = true
+        
+        // Reset the failed flag after a delay to allow retry later, but only if consecutive failures are low
+        if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+          setTimeout(() => {
+            item.detailedDataFailed = false
+          }, 30000) // Retry after 30 seconds
+        }
       }
     }
   }, 200) // Reduced delay
@@ -659,6 +712,38 @@ const showSimpleTooltip = async (event, item) => {
 const hideSimpleTooltip = () => {
   clearTimeout(tooltipTimeout)
   simpleTooltip.value.visible = false
+}
+
+const checkBackendHealth = async () => {
+  const now = Date.now()
+  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL) {
+    return backendHealthy
+  }
+  
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 1000) // Very short timeout for health check
+    
+    const response = await fetch('http://localhost:5001/api/health', {
+      signal: controller.signal,
+      method: 'GET'
+    })
+    
+    clearTimeout(timeoutId)
+    backendHealthy = response.ok
+    lastHealthCheck = now
+    
+    if (!backendHealthy) {
+      console.warn('Backend health check failed, disabling tooltip API calls')
+    }
+    
+  } catch (error) {
+    console.warn('Backend health check failed:', error.message)
+    backendHealthy = false
+    lastHealthCheck = now
+  }
+  
+  return backendHealthy
 }
 
 const hasAnyStats = (item) => {
@@ -677,9 +762,25 @@ const hasAnyStats = (item) => {
   return false
 }
 
+// Recovery mechanism - reset circuit breaker after 2 minutes of no activity
+const resetCircuitBreaker = () => {
+  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    console.log('Resetting circuit breaker, attempting to re-enable API calls')
+    consecutiveFailures = 0
+    backendHealthy = true
+    lastHealthCheck = 0
+  }
+}
+
+// Set up recovery timer
+let recoveryTimer = setInterval(resetCircuitBreaker, 120000) // Every 2 minutes
+
 // Clean up tooltips when component unmounts
 onUnmounted(() => {
   clearTimeout(tooltipTimeout)
+  if (recoveryTimer) {
+    clearInterval(recoveryTimer)
+  }
 })
 
 const handleSlotClick = (slot) => {
