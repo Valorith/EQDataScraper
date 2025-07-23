@@ -289,6 +289,14 @@ if ENABLE_USER_ACCOUNTS:
         except ImportError as e:
             app.logger.warning(f"⚠️ Could not load character routes: {e}")
         
+        # Register item tooltip blueprints
+        try:
+            from routes.items import item_bp
+            app.register_blueprint(item_bp)
+            app.logger.info("✅ Item tooltip routes registered")
+        except ImportError as e:
+            app.logger.warning(f"⚠️ Could not load item routes: {e}")
+        
         # Initialize test data for dev mode after blueprints are registered
         initialize_test_data()
         

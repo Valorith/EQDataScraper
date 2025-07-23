@@ -168,8 +168,14 @@
         </div>
       </div>
 
+      <!-- Character Loading State -->
+      <div v-if="isLoadingCharacter" class="loading-section">
+        <div class="loading-spinner"></div>
+        <p>Loading character data...</p>
+      </div>
+      
       <!-- Character Inventory Display -->
-      <div v-if="selectedCharacter" class="inventory-section">
+      <div v-else-if="selectedCharacter" class="inventory-section">
         <div class="inventory-header">
           <h3>{{ selectedCharacter?.name || 'Character' }}'s Inventory</h3>
           <div class="inventory-source">
@@ -191,7 +197,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import CharacterInventory from '../components/CharacterInventory.vue'
 import { getApiBaseUrl } from '../config/api'
 import axios from 'axios'
@@ -224,6 +230,10 @@ export default {
     const searchModalType = ref('primary') // 'primary' or 'secondary'
     const modalSearchQuery = ref('')
     const modalSearchResults = ref([])
+    
+    // Character loading state and request management
+    const isLoadingCharacter = ref(false)
+    const currentCharacterRequest = ref(null)
 
     // Load user's saved main characters on page load
     const loadUserMainCharacters = async () => {
@@ -267,10 +277,13 @@ export default {
     }
 
     // Load full character details
-    const loadFullCharacterData = async (characterId) => {
+    const loadFullCharacterData = async (characterId, abortSignal = null) => {
       try {
-        // Load basic character data
-        const charResponse = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}`)
+        // Load basic character data with timeout and abort signal
+        const charResponse = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}`, {
+          timeout: 5000, // 5 second timeout for basic character data
+          signal: abortSignal
+        })
         const character = charResponse.data
         
         const fullCharacter = {
@@ -300,12 +313,31 @@ export default {
           inventory: []
         }
 
-        // Load additional data in parallel
-        await Promise.all([
-          loadCharacterInventory(characterId, fullCharacter),
-          loadCharacterCurrency(characterId, fullCharacter),
-          loadCharacterStats(characterId, fullCharacter)
-        ])
+        // Load additional data in parallel with timeout and abort signal
+        const timeout = (ms, signal) => new Promise((_, reject) => {
+          const timeoutId = setTimeout(() => reject(new Error('Request timeout')), ms)
+          signal?.addEventListener('abort', () => {
+            clearTimeout(timeoutId)
+            reject(new DOMException('Aborted', 'AbortError'))
+          })
+        })
+        
+        try {
+          await Promise.race([
+            Promise.all([
+              loadCharacterInventory(characterId, fullCharacter, abortSignal),
+              loadCharacterCurrency(characterId, fullCharacter, abortSignal),
+              loadCharacterStats(characterId, fullCharacter, abortSignal)
+            ]),
+            timeout(8000, abortSignal) // Reduced to 8 second timeout
+          ])
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            throw error // Re-throw abort errors
+          }
+          console.warn('Some character data failed to load:', error)
+          // Continue with partial data rather than failing completely
+        }
 
         return fullCharacter
       } catch (error) {
@@ -349,12 +381,36 @@ export default {
     
     // View a main character (Primary or Secondary)
     const viewCharacter = async (character, slotType) => {
+      if (isLoadingCharacter.value) {
+        console.log('Character loading already in progress, ignoring request')
+        return
+      }
+      
       try {
+        isLoadingCharacter.value = true
         activeSlot.value = slotType
-        const fullCharacter = await loadFullCharacterData(character.id)
+        
+        // Cancel any existing character loading request
+        if (currentCharacterRequest.value) {
+          currentCharacterRequest.value.abort()
+          currentCharacterRequest.value = null
+        }
+        
+        // Create new AbortController for this request
+        currentCharacterRequest.value = new AbortController()
+        
+        const fullCharacter = await loadFullCharacterData(character.id, currentCharacterRequest.value.signal)
         selectedCharacter.value = fullCharacter
       } catch (error) {
-        alert(`Failed to load ${character.name}'s data. Please try again.`)
+        if (error.name === 'AbortError') {
+          console.log('Character loading request was cancelled')
+          return
+        }
+        console.error(`Failed to load ${character.name}'s data:`, error)
+        alert(`Failed to load ${character.name}'s data. The server may be busy. Please try again.`)
+      } finally {
+        isLoadingCharacter.value = false
+        currentCharacterRequest.value = null
       }
     }
 
@@ -411,16 +467,40 @@ export default {
 
     // View a searched character (temporary lookup)
     const viewSearchedCharacter = async (character) => {
+      if (isLoadingCharacter.value) {
+        console.log('Character loading already in progress, ignoring request')
+        return
+      }
+      
       try {
+        isLoadingCharacter.value = true
         activeSlot.value = null // Clear active slot to indicate this is a lookup
-        const fullCharacter = await loadFullCharacterData(character.id)
+        
+        // Cancel any existing character loading request
+        if (currentCharacterRequest.value) {
+          currentCharacterRequest.value.abort()
+          currentCharacterRequest.value = null
+        }
+        
+        // Create new AbortController for this request
+        currentCharacterRequest.value = new AbortController()
+        
+        const fullCharacter = await loadFullCharacterData(character.id, currentCharacterRequest.value.signal)
         selectedCharacter.value = fullCharacter
         
         // Hide the dropdown after selection
         searchResults.value = []
         searchPerformed.value = false
       } catch (error) {
-        alert(`Failed to load ${character.name}'s data. Please try again.`)
+        if (error.name === 'AbortError') {
+          console.log('Character loading request was cancelled')
+          return
+        }
+        console.error(`Failed to load ${character.name}'s data:`, error)
+        alert(`Failed to load ${character.name}'s data. The server may be busy. Please try again.`)
+      } finally {
+        isLoadingCharacter.value = false
+        currentCharacterRequest.value = null
       }
     }
 
@@ -466,9 +546,12 @@ export default {
       }
     }
 
-    const loadCharacterInventory = async (characterId, character) => {
+    const loadCharacterInventory = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`, {
+          timeout: 6000, // Reduced to 6 second timeout
+          signal: abortSignal
+        })
         // Transform inventory data from EQEmu schema
         const equipmentData = response.data.equipment || {}
         const inventorySlots = response.data.inventory || []
@@ -558,9 +641,12 @@ export default {
     }
 
     // Load character currency from separate currency system
-    const loadCharacterCurrency = async (characterId, character) => {
+    const loadCharacterCurrency = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/currency`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/currency`, {
+          timeout: 6000, // Reduced to 6 second timeout
+          signal: abortSignal
+        })
         character.currency = {
           platinum: response.data.platinum || 0,
           gold: response.data.gold || 0,
@@ -574,9 +660,12 @@ export default {
     }
 
     // Load calculated character stats (AC, ATK, resistances, max HP/MP)
-    const loadCharacterStats = async (characterId, character) => {
+    const loadCharacterStats = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/stats`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/stats`, {
+          timeout: 6000, // Reduced to 6 second timeout
+          signal: abortSignal
+        })
         
         // Update calculated stats
         character.maxHp = response.data.maxHp || character.maxHp
@@ -745,6 +834,20 @@ export default {
     onMounted(async () => {
       await loadUserMainCharacters()
     })
+    
+    // Cleanup function to cancel pending requests
+    const cleanup = () => {
+      if (currentCharacterRequest.value) {
+        currentCharacterRequest.value.abort()
+        currentCharacterRequest.value = null
+      }
+      isLoadingCharacter.value = false
+    }
+    
+    // Cancel requests when component is unmounted
+    onUnmounted(() => {
+      cleanup()
+    })
 
     return {
       // Main character slots
@@ -769,6 +872,9 @@ export default {
       searchModalType,
       modalSearchQuery,
       modalSearchResults,
+      
+      // Character loading state
+      isLoadingCharacter,
       
       // UI Methods
       viewCharacter,
@@ -1532,5 +1638,40 @@ export default {
 
 .source-badge.lookup {
   background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+/* Loading Section */
+.loading-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  margin-top: 2rem;
+}
+
+.loading-section p {
+  color: white;
+  font-size: 1.1rem;
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-left: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style>

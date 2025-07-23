@@ -78,7 +78,10 @@
       <div class="equipment-area">
         <!-- Equipment slots positioned around character -->
         <div class="equipment-slot-positioned charm-slot" data-slot="charm">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.charm }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.charm }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.charm)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.charm" 
                  :src="`/icons/items/${character.equipment.charm.icon}.png`" 
                  :alt="character.equipment.charm.name"
@@ -88,7 +91,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned head-slot" data-slot="head">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.head }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.head }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.head)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.head" 
                  :src="`/icons/items/${character.equipment.head.icon}.png`" 
                  :alt="character.equipment.head.name"
@@ -98,7 +104,9 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ear-slot" data-slot="ear1">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ear1 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.ear1 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.ear1)" @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.ear1" 
                  :src="`/icons/items/${character.equipment.ear1.icon}.png`" 
                  :alt="character.equipment.ear1.name"
@@ -108,7 +116,9 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ear-slot ear-2" data-slot="ear2">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ear2 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.ear2 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.ear2)" @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.ear2" 
                  :src="`/icons/items/${character.equipment.ear2.icon}.png`" 
                  :alt="character.equipment.ear2.name"
@@ -118,7 +128,9 @@
           </div>
         </div>
         <div class="equipment-slot-positioned neck-slot" data-slot="neck">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.neck }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.neck }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.neck)" @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.neck" 
                  :src="`/icons/items/${character.equipment.neck.icon}.png`" 
                  :alt="character.equipment.neck.name"
@@ -128,7 +140,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned shoulder-slot" data-slot="shoulder">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.shoulder }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.shoulder }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.shoulder)" 
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.shoulder" 
                  :src="`/icons/items/${character.equipment.shoulder.icon}.png`" 
                  :alt="character.equipment.shoulder.name"
@@ -138,7 +153,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned arms-slot" data-slot="arms">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.arms }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.arms }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.arms)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.arms" 
                  :src="`/icons/items/${character.equipment.arms.icon}.png`" 
                  :alt="character.equipment.arms.name"
@@ -148,7 +166,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned back-slot" data-slot="back">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.back }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.back }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.back)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.back" 
                  :src="`/icons/items/${character.equipment.back.icon}.png`" 
                  :alt="character.equipment.back.name"
@@ -158,7 +179,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned wrist-slot wrist-1" data-slot="wrist1">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.wrist1 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.wrist1 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.wrist1)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.wrist1" 
                  :src="`/icons/items/${character.equipment.wrist1.icon}.png`" 
                  :alt="character.equipment.wrist1.name"
@@ -168,7 +192,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned wrist-slot wrist-2" data-slot="wrist2">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.wrist2 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.wrist2 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.wrist2)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.wrist2" 
                  :src="`/icons/items/${character.equipment.wrist2.icon}.png`" 
                  :alt="character.equipment.wrist2.name"
@@ -178,7 +205,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned range-slot" data-slot="range">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.range }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.range }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.range)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.range" 
                  :src="`/icons/items/${character.equipment.range.icon}.png`" 
                  :alt="character.equipment.range.name"
@@ -188,7 +218,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned hands-slot" data-slot="hands">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.hands }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.hands }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.hands)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.hands" 
                  :src="`/icons/items/${character.equipment.hands.icon}.png`" 
                  :alt="character.equipment.hands.name"
@@ -198,7 +231,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned primary-slot" data-slot="primary">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.primary }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.primary }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.primary)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.primary" 
                  :src="`/icons/items/${character.equipment.primary.icon}.png`" 
                  :alt="character.equipment.primary.name"
@@ -208,7 +244,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned secondary-slot" data-slot="secondary">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.secondary }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.secondary }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.secondary)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.secondary" 
                  :src="`/icons/items/${character.equipment.secondary.icon}.png`" 
                  :alt="character.equipment.secondary.name"
@@ -218,7 +257,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ammo-bottom-slot" data-slot="ammo">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ammo }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.ammo }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.ammo)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.ammo" 
                  :src="`/icons/items/${character.equipment.ammo.icon}.png`" 
                  :alt="character.equipment.ammo.name"
@@ -228,7 +270,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ring-slot ring-1" data-slot="ring1">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ring1 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.ring1 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.ring1)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.ring1" 
                  :src="`/icons/items/${character.equipment.ring1.icon}.png`" 
                  :alt="character.equipment.ring1.name"
@@ -238,7 +283,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ring-slot ring-2" data-slot="ring2">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.ring2 }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.ring2 }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.ring2)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.ring2" 
                  :src="`/icons/items/${character.equipment.ring2.icon}.png`" 
                  :alt="character.equipment.ring2.name"
@@ -248,7 +296,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned chest-slot" data-slot="chest">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.chest }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.chest }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.chest)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.chest" 
                  :src="`/icons/items/${character.equipment.chest.icon}.png`" 
                  :alt="character.equipment.chest.name"
@@ -258,7 +309,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned legs-slot" data-slot="legs">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.legs }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.legs }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.legs)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.legs" 
                  :src="`/icons/items/${character.equipment.legs.icon}.png`" 
                  :alt="character.equipment.legs.name"
@@ -268,7 +322,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned feet-slot" data-slot="feet">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.feet }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.feet }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.feet)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.feet" 
                  :src="`/icons/items/${character.equipment.feet.icon}.png`" 
                  :alt="character.equipment.feet.name"
@@ -278,7 +335,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned waist-slot" data-slot="waist">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.waist }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.waist }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.waist)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.waist" 
                  :src="`/icons/items/${character.equipment.waist.icon}.png`" 
                  :alt="character.equipment.waist.name"
@@ -288,7 +348,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned ammo-slot" data-slot="power_source">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.power_source }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.power_source }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.power_source)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.power_source" 
                  :src="`/icons/items/${character.equipment.power_source.icon}.png`" 
                  :alt="character.equipment.power_source.name"
@@ -298,7 +361,10 @@
           </div>
         </div>
         <div class="equipment-slot-positioned face-slot" data-slot="face">
-          <div class="equipment-slot" :class="{ 'has-item': character.equipment?.face }">
+          <div class="equipment-slot" 
+               :class="{ 'has-item': character.equipment?.face }"
+               @mouseenter="showSimpleTooltip($event, character.equipment?.face)"
+               @mouseleave="hideSimpleTooltip">
             <img v-if="character.equipment?.face" 
                  :src="`/icons/items/${character.equipment.face.icon}.png`" 
                  :alt="character.equipment.face.name"
@@ -357,6 +423,7 @@
               :key="slot.slot"
               class="bag-slot"
               :class="{ 'has-item': slot.item }"
+              
               @click="handleSlotClick(slot)"
             >
               <div v-if="slot.item" class="item-container">
@@ -383,46 +450,174 @@
       <button class="eq-button">Alt. Adv.</button>
       <button class="eq-button find-item">Find Item</button>
     </div>
+    
+    <!-- Simple Tooltip -->
+    <div v-if="simpleTooltip.visible" 
+         class="simple-tooltip"
+         :style="{ 
+           position: 'fixed', 
+           left: simpleTooltip.x + 'px', 
+           top: simpleTooltip.y + 'px',
+           zIndex: 9999
+         }">
+      <div class="tooltip-header">{{ simpleTooltip.item?.name }}</div>
+      <div v-if="simpleTooltip.loading" class="tooltip-loading">
+        Loading item details...
+      </div>
+      <div v-else class="tooltip-body">
+        <!-- Item Type -->
+        <div v-if="simpleTooltip.item?.itemtype_name" class="item-type">{{ simpleTooltip.item.itemtype_name }}</div>
+        
+        <!-- Combat Stats -->
+        <div v-if="simpleTooltip.item?.ac" class="stat">AC: {{ simpleTooltip.item.ac }}</div>
+        <div v-if="simpleTooltip.item?.hp" class="stat">HP: {{ simpleTooltip.item.hp }}</div>
+        <div v-if="simpleTooltip.item?.mana" class="stat">MP: {{ simpleTooltip.item.mana }}</div>
+        <div v-if="simpleTooltip.item?.endur" class="stat">Endurance: {{ simpleTooltip.item.endur }}</div>
+        <div v-if="simpleTooltip.item?.attack" class="stat">ATK: {{ simpleTooltip.item.attack }}</div>
+        
+        <!-- Weapon Stats -->
+        <div v-if="simpleTooltip.item?.damage" class="weapon-stat">Damage: {{ simpleTooltip.item.damage }}</div>
+        <div v-if="simpleTooltip.item?.delay" class="weapon-stat">Delay: {{ simpleTooltip.item.delay }}</div>
+        <div v-if="simpleTooltip.item?.ratio" class="weapon-stat">Ratio: {{ simpleTooltip.item.ratio }}</div>
+        
+        <!-- Attributes -->
+        <div v-if="simpleTooltip.item?.astr" class="attr">STR: +{{ simpleTooltip.item.astr }}</div>
+        <div v-if="simpleTooltip.item?.asta" class="attr">STA: +{{ simpleTooltip.item.asta }}</div>
+        <div v-if="simpleTooltip.item?.aagi" class="attr">AGI: +{{ simpleTooltip.item.aagi }}</div>
+        <div v-if="simpleTooltip.item?.adex" class="attr">DEX: +{{ simpleTooltip.item.adex }}</div>
+        <div v-if="simpleTooltip.item?.awis" class="attr">WIS: +{{ simpleTooltip.item.awis }}</div>
+        <div v-if="simpleTooltip.item?.aint" class="attr">INT: +{{ simpleTooltip.item.aint }}</div>
+        <div v-if="simpleTooltip.item?.acha" class="attr">CHA: +{{ simpleTooltip.item.acha }}</div>
+        
+        <!-- Resistances -->
+        <div v-if="simpleTooltip.item?.pr" class="resist">Poison Resist: +{{ simpleTooltip.item.pr }}</div>
+        <div v-if="simpleTooltip.item?.mr" class="resist">Magic Resist: +{{ simpleTooltip.item.mr }}</div>
+        <div v-if="simpleTooltip.item?.fr" class="resist">Fire Resist: +{{ simpleTooltip.item.fr }}</div>
+        <div v-if="simpleTooltip.item?.cr" class="resist">Cold Resist: +{{ simpleTooltip.item.cr }}</div>
+        <div v-if="simpleTooltip.item?.dr" class="resist">Disease Resist: +{{ simpleTooltip.item.dr }}</div>
+        <div v-if="simpleTooltip.item?.svcorruption" class="resist">Corruption Resist: +{{ simpleTooltip.item.svcorruption }}</div>
+        
+        <!-- Basic Info -->
+        <div v-if="simpleTooltip.item?.weight" class="basic">Weight: {{ simpleTooltip.item.weight }}</div>
+        <div v-if="simpleTooltip.item?.charges" class="basic">Charges: {{ simpleTooltip.item.charges }}</div>
+        
+        <!-- Flags -->
+        <div v-if="simpleTooltip.item?.magic" class="flag magic">MAGIC</div>
+        <div v-if="simpleTooltip.item?.lore" class="flag lore">LORE</div>
+        <div v-if="simpleTooltip.item?.nodrop || simpleTooltip.item?.isNoDrop" class="flag no-drop">NO DROP</div>
+      </div>
+    </div>
   </div>
 </template>
 
-<script>
-export default {
-  name: 'CharacterInventory',
-  props: {
-    character: {
-      type: Object,
-      required: true
+<script setup>
+import { onMounted, onUnmounted, ref } from 'vue'
+
+const props = defineProps({
+  character: {
+    type: Object,
+    required: true
+  }
+})
+
+// Simple tooltip state
+const simpleTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  item: null
+})
+
+let tooltipTimeout = null
+
+const showSimpleTooltip = async (event, item) => {
+  if (!item) return
+  
+  clearTimeout(tooltipTimeout)
+  tooltipTimeout = setTimeout(async () => {
+    // If item has full data, show it immediately
+    if (item.ac !== undefined || item.hp !== undefined) {
+      simpleTooltip.value = {
+        visible: true,
+        x: event.pageX + 20,
+        y: event.pageY + 20,
+        item: item,
+        loading: false
+      }
+    } else {
+      // Show loading tooltip first
+      simpleTooltip.value = {
+        visible: true,
+        x: event.pageX + 20,
+        y: event.pageY + 20,
+        item: item,
+        loading: true
+      }
+      
+      // Fetch detailed item data
+      try {
+        const response = await fetch(`http://localhost:5001/api/items/${item.id}/tooltip`, {
+          signal: AbortSignal.timeout(3000) // 3 second timeout
+        })
+        if (response.ok) {
+          const detailedItem = await response.json()
+          // Update tooltip with detailed data
+          if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+            simpleTooltip.value = {
+              ...simpleTooltip.value,
+              item: { ...item, ...detailedItem },
+              loading: false
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load detailed item data:', error)
+        // Keep showing basic tooltip
+        if (simpleTooltip.value.visible && simpleTooltip.value.item?.id === item.id) {
+          simpleTooltip.value.loading = false
+        }
+      }
     }
-  },
-  methods: {
-    handleSlotClick(slot) {
-      if (slot.item) {
-        console.log('Clicked item:', slot.item.name)
-        // TODO: Show item tooltip or details
-      }
-    },
+  }, 300)
+}
+
+const hideSimpleTooltip = () => {
+  clearTimeout(tooltipTimeout)
+  simpleTooltip.value.visible = false
+}
+
+// Clean up tooltips when component unmounts
+onUnmounted(() => {
+  clearTimeout(tooltipTimeout)
+})
+
+const handleSlotClick = (slot) => {
+  if (slot.item) {
+    console.log('Clicked item:', slot.item.name)
+    // Tooltips are now handled by the directive
+  }
+}
     
-    handleImageError(event) {
-      // PNG-first strategy: Try GIF as fallback, then default icon
-      const currentSrc = event.target.src
-      if (currentSrc.endsWith('.png')) {
-        // Try GIF as fallback
-        event.target.src = currentSrc.replace('.png', '.gif')
-      } else {
-        // Final fallback to default icon (PNG)
-        event.target.src = '/icons/items/500.png'
-      }
-    },
+const handleImageError = (event) => {
+  // PNG-first strategy: Try GIF as fallback, then default icon
+  const currentSrc = event.target.src
+  if (currentSrc.endsWith('.png')) {
+    // Try GIF as fallback
+    event.target.src = currentSrc.replace('.png', '.gif')
+  } else {
+    // Final fallback to default icon (PNG)
+    event.target.src = '/icons/items/500.png'
+  }
+}
 
-    formatCurrency(value) {
-      // Format currency with commas for readability
-      return value.toLocaleString()
-    },
+const formatCurrency = (value) => {
+  // Format currency with commas for readability
+  return value.toLocaleString()
+}
 
-    normalizeClassName(className) {
-      // Map level 60+ specialty class titles to base class names
-      const classMapping = {
+const normalizeClassName = (className) => {
+  // Map level 60+ specialty class titles to base class names
+  const classMapping = {
         // Base class mappings (for spaced names)
         'Shadow Knight': 'Shadowknight',
         
@@ -505,15 +700,45 @@ export default {
         'Rager': 'Berserker',
         'Fury': 'Berserker',
         'Rampager': 'Berserker'
-      }
-      
-      return classMapping[className] || className
-    }
   }
+  
+  return classMapping[className] || className
 }
 </script>
 
 <style scoped>
+/* Simple Tooltip Styling */
+.simple-tooltip {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid #666;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 12px;
+  color: white;
+  max-width: 250px;
+  pointer-events: none;
+}
+
+.tooltip-header {
+  color: #ffd700;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.tooltip-body div {
+  margin: 2px 0;
+}
+
+.no-drop {
+  color: #ff6b6b !important;
+  font-weight: bold;
+}
+
+.item-debug {
+  color: #888;
+  font-size: 10px;
+}
+
 .character-inventory {
   background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
   border: 3px outset #666;

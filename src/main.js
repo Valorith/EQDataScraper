@@ -6,6 +6,7 @@ import App from './App.vue'
 import './style.css'
 import './utils/authInterceptor' // Import auth interceptor for token handling (must be first)
 import './utils/axiosConfig' // Import axios configuration
+// import { installTooltipDirective } from './directives/itemTooltip'
 // DISABLED: Spell system temporarily disabled for redesign
 // import { useSpellsStore } from './stores/spells'
 
@@ -17,6 +18,9 @@ pinia.use(piniaPluginPersistedstate)
 
 app.use(pinia)
 app.use(router)
+
+// Install tooltip directive
+// installTooltipDirective(app) // DISABLED - using simple tooltips instead
 
 // Warmup backend connection as soon as the app is ready
 app.mount('#app')

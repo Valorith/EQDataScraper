@@ -367,6 +367,7 @@ def get_character_inventory(character_id):
     Returns:
     - Character inventory with item details
     """
+    connection = None
     try:
         # Get EQEmu database connection
         connection = get_eqemu_connection()
@@ -544,12 +545,14 @@ def get_character_inventory(character_id):
                         'stackable': row[13]
                     })
         
-        connection.close()
         return jsonify({'equipment': equipment, 'inventory': inventory}), 200
         
     except Exception as e:
         logger.error(f"Error getting inventory for character {character_id}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if connection:
+            connection.close()
 
 @character_bp.route('/characters/<int:character_id>/currency', methods=['GET'])
 def get_character_currency(character_id):
@@ -649,9 +652,9 @@ def get_character_stats(character_id):
         
         # Get base character data including any pre-calculated stats
         with connection.cursor() as cursor:
+            # Following Char Browser approach - base stats only (resistances calculated from equipment)
             char_query = """
-                SELECT cur_hp, mana, endurance, ac, pr, mr, fr, cr, dr, svcorruption,
-                       str, sta, agi, dex, wis, intel as int_col, cha, level, class
+                SELECT cur_hp, mana, endurance, str, sta, agi, dex, wis, `int`, cha, level, class
                 FROM character_data 
                 WHERE id = %s
             """
@@ -662,49 +665,43 @@ def get_character_stats(character_id):
                 connection.close()
                 return jsonify({'error': 'Character not found'}), 404
             
-            # Handle both dictionary and tuple cursor results
+            # Handle both dictionary and tuple cursor results - following Char Browser pattern
             if isinstance(char_result, dict):
                 base_hp = char_result['cur_hp'] or 0
                 base_mp = char_result['mana'] or 0
                 base_endurance = char_result['endurance'] or 0
-                base_ac = char_result['ac'] or 0
+                base_ac = 0  # AC calculated from equipment only
                 base_resistances = {
-                    'poison': char_result['pr'] or 0,
-                    'magic': char_result['mr'] or 0,
-                    'fire': char_result['fr'] or 0,
-                    'cold': char_result['cr'] or 0,
-                    'disease': char_result['dr'] or 0,
-                    'corrupt': char_result['svcorruption'] or 0
+                    'magic': 0, 'poison': 0, 'fire': 0, 'disease': 0, 'cold': 0, 'corrupt': 0
                 }
                 # Base stats for HP/MP calculations
                 base_str = char_result['str'] or 0
                 base_sta = char_result['sta'] or 0
+                base_agi = char_result['agi'] or 0
+                base_dex = char_result['dex'] or 0
                 base_wis = char_result['wis'] or 0
-                base_intel = char_result['int_col'] or 0
+                base_intel = char_result['int'] or 0
+                base_cha = char_result['cha'] or 0
                 char_level = char_result['level'] or 1
                 char_class = char_result['class'] or 1
             else:
                 base_hp = char_result[0] or 0
                 base_mp = char_result[1] or 0
                 base_endurance = char_result[2] or 0
-                base_ac = char_result[3] or 0
+                base_ac = 0  # AC calculated from equipment only
+                # Following Char Browser column order
+                base_str = char_result[3] or 0
+                base_sta = char_result[4] or 0  
+                base_agi = char_result[5] or 0
+                base_dex = char_result[6] or 0
+                base_wis = char_result[7] or 0
+                base_intel = char_result[8] or 0
+                base_cha = char_result[9] or 0
+                char_level = char_result[10] or 1
+                char_class = char_result[11] or 1
                 base_resistances = {
-                    'poison': char_result[4] or 0,
-                    'magic': char_result[5] or 0,
-                    'fire': char_result[6] or 0,
-                    'cold': char_result[7] or 0,
-                    'disease': char_result[8] or 0,
-                    'corrupt': char_result[9] or 0
+                    'magic': 0, 'poison': 0, 'fire': 0, 'disease': 0, 'cold': 0, 'corrupt': 0
                 }
-                base_str = char_result[10] or 0
-                base_sta = char_result[11] or 0
-                base_agi = char_result[12] or 0
-                base_dex = char_result[13] or 0
-                base_wis = char_result[14] or 0
-                base_intel = char_result[15] or 0
-                base_cha = char_result[16] or 0
-                char_level = char_result[17] or 1
-                char_class = char_result[18] or 1
         
             # Get equipped items and calculate bonuses (start with basic stats)
             equipment_query = """
