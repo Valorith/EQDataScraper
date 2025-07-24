@@ -107,13 +107,23 @@ if ENABLE_USER_ACCOUNTS:
     
     # Custom CORS origin checker
     def cors_origin_checker(origin):
+        # Log the origin being checked
+        print(f"🔍 CORS: Checking origin: {origin}")
+        
         # Always allow configured origins
         if origin in allowed_origins:
+            print(f"✅ CORS: Allowing configured origin: {origin}")
             return True
-        # In production, allow Railway domains
-        if os.environ.get('RAILWAY_ENVIRONMENT') or is_railway_domain(origin):
-            print(f"🌐 CORS: Allowing Railway origin: {origin}")
+            
+        # In production or Railway environment, allow Railway domains
+        is_railway_env = bool(os.environ.get('RAILWAY_ENVIRONMENT') or 
+                             os.environ.get('RAILWAY_PROJECT_ID') or
+                             os.environ.get('RAILWAY_SERVICE_ID'))
+        
+        if is_railway_env or is_railway_domain(origin):
+            print(f"🌐 CORS: Allowing Railway origin: {origin} (railway_env: {is_railway_env})")
             return True
+            
         print(f"🚫 CORS: Rejecting origin: {origin}")
         return False
     
@@ -124,12 +134,22 @@ if ENABLE_USER_ACCOUNTS:
     if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
     
-    CORS(app, 
-         origins=cors_origin_checker, 
-         supports_credentials=True, 
-         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
-         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-         automatic_options=True)
+    # Temporarily use permissive CORS for Railway production debugging
+    if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY_PROJECT_ID'):
+        print("🚀 Railway environment detected - using permissive CORS for debugging")
+        CORS(app, 
+             origins='*',  # Temporarily allow all origins in Railway
+             supports_credentials=True, 
+             allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+             methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+             automatic_options=True)
+    else:
+        CORS(app, 
+             origins=cors_origin_checker, 
+             supports_credentials=True, 
+             allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+             methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+             automatic_options=True)
 else:
     # Standard CORS for existing functionality
     CORS(app, 
