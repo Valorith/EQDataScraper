@@ -983,6 +983,60 @@ def get_item_details(item_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 # User main character management endpoints (requires authentication)
+def create_user_character_preferences_table(connection):
+    """
+    Create the user_character_preferences table if it doesn't exist.
+    Based on migration 006_add_character_preferences.sql
+    """
+    try:
+        with connection.cursor() as cursor:
+            # Create the table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_character_preferences (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    primary_character_id INTEGER,
+                    primary_character_name VARCHAR(64),
+                    secondary_character_id INTEGER, 
+                    secondary_character_name VARCHAR(64),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- Ensure one record per user
+                    CONSTRAINT unique_user_id UNIQUE (user_id)
+                );
+            """)
+            
+            # Create the trigger function
+            cursor.execute("""
+                CREATE OR REPLACE FUNCTION update_user_character_preferences_updated_at()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at = CURRENT_TIMESTAMP;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+            
+            # Create the trigger
+            cursor.execute("""
+                DROP TRIGGER IF EXISTS trigger_update_user_character_preferences_updated_at ON user_character_preferences;
+                CREATE TRIGGER trigger_update_user_character_preferences_updated_at
+                    BEFORE UPDATE ON user_character_preferences
+                    FOR EACH ROW EXECUTE FUNCTION update_user_character_preferences_updated_at();
+            """)
+            
+            # Create index
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_character_prefs ON user_character_preferences (user_id);
+            """)
+            
+            connection.commit()
+            
+    except Exception as e:
+        connection.rollback()
+        raise e
+
 @character_bp.route('/user/characters/mains', methods=['GET'])
 @rate_limit_by_ip(30, 150)
 def get_user_main_characters():
@@ -1145,17 +1199,63 @@ def get_user_main_characters():
             
         except psycopg2.Error as db_error:
             logger.error(f"Database error loading main characters: {db_error}")
-            logger.error("This usually means the user_character_preferences table doesn't exist")
-            logger.error("Run database migrations to create required tables")
-            connection.close()
-            return jsonify({
-                'success': True,
-                'data': {
-                    'primaryMain': None,
-                    'secondaryMain': None
-                },
-                'message': 'Database schema not initialized - returning empty results'
-            }), 200
+            
+            # Check if this is a missing table error
+            if "user_character_preferences" in str(db_error) and "does not exist" in str(db_error):
+                logger.info("user_character_preferences table does not exist, creating it...")
+                try:
+                    # Create the table
+                    create_user_character_preferences_table(connection)
+                    logger.info("Successfully created user_character_preferences table")
+                    
+                    # Retry the query
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT primary_character_id, primary_character_name,
+                                   secondary_character_id, secondary_character_name,
+                                   updated_at
+                            FROM user_character_preferences
+                            WHERE user_id = %s
+                        """, (user_id,))
+                        
+                        result = cursor.fetchone()
+                        
+                        data = {
+                            'primaryMain': None,
+                            'secondaryMain': None
+                        }
+                        
+                        # Since the table was just created, result will be None
+                        # Return empty data successfully
+                        connection.close()
+                        return jsonify({
+                            'success': True,
+                            'data': data,
+                            'message': 'Main characters loaded successfully (table created)'
+                        }), 200
+                        
+                except Exception as create_error:
+                    logger.error(f"Failed to create user_character_preferences table: {create_error}")
+                    connection.close()
+                    return jsonify({
+                        'success': True,
+                        'data': {
+                            'primaryMain': None,
+                            'secondaryMain': None
+                        },
+                        'message': 'Database schema initialization failed - returning empty results'
+                    }), 200
+            else:
+                logger.error("Database error is not related to missing table")
+                connection.close()
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'primaryMain': None,
+                        'secondaryMain': None
+                    },
+                    'message': 'Database error - returning empty results'
+                }), 200
         
     except Exception as e:
         logger.error(f"Error getting user main characters: {e}")
@@ -1220,19 +1320,52 @@ def set_primary_main():
             else:
                 return jsonify({'error': 'Database unavailable'}), 503
         
-        # Set primary main character
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO user_character_preferences (user_id, primary_character_id, primary_character_name)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (user_id)
-                DO UPDATE SET 
-                    primary_character_id = EXCLUDED.primary_character_id,
-                    primary_character_name = EXCLUDED.primary_character_name,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (user_id, character_id, character_name))
-        
-        connection.close()
+        # Set primary main character with table creation fallback
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO user_character_preferences (user_id, primary_character_id, primary_character_name)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET 
+                        primary_character_id = EXCLUDED.primary_character_id,
+                        primary_character_name = EXCLUDED.primary_character_name,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (user_id, character_id, character_name))
+            
+            connection.close()
+            
+        except psycopg2.Error as db_error:
+            # Check if this is a missing table error
+            if "user_character_preferences" in str(db_error) and "does not exist" in str(db_error):
+                logger.info("user_character_preferences table does not exist, creating it for primary main...")
+                try:
+                    # Create the table
+                    create_user_character_preferences_table(connection)
+                    logger.info("Successfully created user_character_preferences table")
+                    
+                    # Retry the operation
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            INSERT INTO user_character_preferences (user_id, primary_character_id, primary_character_name)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (user_id)
+                            DO UPDATE SET 
+                                primary_character_id = EXCLUDED.primary_character_id,
+                                primary_character_name = EXCLUDED.primary_character_name,
+                                updated_at = CURRENT_TIMESTAMP
+                        """, (user_id, character_id, character_name))
+                    
+                    connection.close()
+                    
+                except Exception as create_error:
+                    logger.error(f"Failed to create user_character_preferences table: {create_error}")
+                    connection.close()
+                    return jsonify({'error': 'Database schema initialization failed'}), 503
+            else:
+                logger.error(f"Database error setting primary main: {db_error}")
+                connection.close()
+                return jsonify({'error': 'Database error'}), 503
         
         return jsonify({
             'success': True,
@@ -1306,19 +1439,52 @@ def set_secondary_main():
             else:
                 return jsonify({'error': 'Database unavailable'}), 503
         
-        # Set secondary main character
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO user_character_preferences (user_id, secondary_character_id, secondary_character_name)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (user_id)
-                DO UPDATE SET 
-                    secondary_character_id = EXCLUDED.secondary_character_id,
-                    secondary_character_name = EXCLUDED.secondary_character_name,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (user_id, character_id, character_name))
-        
-        connection.close()
+        # Set secondary main character with table creation fallback
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO user_character_preferences (user_id, secondary_character_id, secondary_character_name)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET 
+                        secondary_character_id = EXCLUDED.secondary_character_id,
+                        secondary_character_name = EXCLUDED.secondary_character_name,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (user_id, character_id, character_name))
+            
+            connection.close()
+            
+        except psycopg2.Error as db_error:
+            # Check if this is a missing table error
+            if "user_character_preferences" in str(db_error) and "does not exist" in str(db_error):
+                logger.info("user_character_preferences table does not exist, creating it for secondary main...")
+                try:
+                    # Create the table
+                    create_user_character_preferences_table(connection)
+                    logger.info("Successfully created user_character_preferences table")
+                    
+                    # Retry the operation
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            INSERT INTO user_character_preferences (user_id, secondary_character_id, secondary_character_name)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (user_id)
+                            DO UPDATE SET 
+                                secondary_character_id = EXCLUDED.secondary_character_id,
+                                secondary_character_name = EXCLUDED.secondary_character_name,
+                                updated_at = CURRENT_TIMESTAMP
+                        """, (user_id, character_id, character_name))
+                    
+                    connection.close()
+                    
+                except Exception as create_error:
+                    logger.error(f"Failed to create user_character_preferences table: {create_error}")
+                    connection.close()
+                    return jsonify({'error': 'Database schema initialization failed'}), 503
+            else:
+                logger.error(f"Database error setting secondary main: {db_error}")
+                connection.close()
+                return jsonify({'error': 'Database error'}), 503
         
         return jsonify({
             'success': True,

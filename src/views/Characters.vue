@@ -503,11 +503,13 @@ export default {
             primaryMain.value = response.data.data.primaryMain
             console.log('✓ Loaded primary main:', response.data.data.primaryMain.name)
             console.log('Primary main data structure:', response.data.data.primaryMain)
+            console.log('Primary main reactive value after assignment:', primaryMain.value)
           }
           if (response.data.data?.secondaryMain) {
             secondaryMain.value = response.data.data.secondaryMain
             console.log('✓ Loaded secondary main:', response.data.data.secondaryMain.name)
             console.log('Secondary main data structure:', response.data.data.secondaryMain)
+            console.log('Secondary main reactive value after assignment:', secondaryMain.value)
           }
           
           if (!response.data.data?.primaryMain && !response.data.data?.secondaryMain) {
