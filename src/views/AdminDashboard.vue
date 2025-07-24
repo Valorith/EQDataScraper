@@ -1956,6 +1956,10 @@ const connectFromSavedConfig = async () => {
       cancelToken: requestManager.getCancelToken('connect-stored-config')
     })
     
+    if (import.meta.env.DEV) {
+      console.log('Connect from saved config response:', configRes.data)
+    }
+    
     if (configRes.data.success && configRes.data.data) {
       const config = configRes.data.data
       
@@ -1966,9 +1970,11 @@ const connectFromSavedConfig = async () => {
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
         database: config.database_name || '',
         username: config.username || '',
-        password: config.password || '', // This will likely be empty for security
+        password: '', // Password is never returned for security - user must enter it
         use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
       }
+      
+      showToast('Config Loaded', 'Configuration loaded from saved settings (password field cleared for security)', 'success')
       
       // Test the connection automatically
       const testResponse = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
@@ -2042,10 +2048,16 @@ const loadFieldFromConfig = async (fieldName) => {
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
         database: config.database_name,
         username: config.username,
-        password: config.password || '' // Usually empty for security
+        password: '' // Password is never returned for security
       }
       
-      if (fieldMapping[fieldName] !== undefined) {
+      // Special handling for password field
+      if (fieldName === 'password') {
+        showToast('Security Notice', 'Password is not stored in saved configuration for security reasons', 'warning')
+        return
+      }
+      
+      if (fieldMapping[fieldName] !== undefined && fieldMapping[fieldName] !== '') {
         databaseForm.value[fieldName] = fieldMapping[fieldName]
         showToast('Field Loaded', `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} loaded from saved config`, 'success')
       } else {
@@ -2084,6 +2096,11 @@ const checkStoredConfigAvailability = async () => {
     
     if (import.meta.env.DEV) {
       console.log('Stored config check response:', configRes.data)
+      console.log('Response structure:', {
+        success: configRes.data.success,
+        hasData: !!configRes.data.data,
+        dataKeys: configRes.data.data ? Object.keys(configRes.data.data) : 'no data'
+      })
     }
     
     hasStoredConfig.value = !!(configRes.data.success && configRes.data.data)
@@ -2099,6 +2116,13 @@ const checkStoredConfigAvailability = async () => {
         data: error.response?.data,
         message: error.message
       })
+      
+      // In development, if OAuth isn't configured, enable buttons anyway for testing
+      if (error.response?.status === 403 || error.response?.status === 401) {
+        console.log('OAuth not configured properly - enabling buttons for development testing')
+        hasStoredConfig.value = true
+        return
+      }
     }
     // If there's an error checking, assume no stored config is available
     hasStoredConfig.value = false
