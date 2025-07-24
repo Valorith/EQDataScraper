@@ -663,7 +663,7 @@
                       >
                         <div class="spell-item-icon">
                           <img 
-                            :src="`/icons/items/${item.icon}.gif`" 
+                            :src="`/icons/items/${item.icon}.png`" 
                             :alt="item.name"
                             @error="handleItemIconError"
                             class="item-icon-img"
@@ -1221,7 +1221,7 @@ export default {
         event.target.src = currentSrc.replace('.gif', '.png')
       } else {
         // Final fallback to default item icon
-        event.target.src = '/icons/items/0.gif'
+        event.target.src = '/icons/items/0.png'
       }
     },
 
@@ -1230,10 +1230,10 @@ export default {
       const iconId = (spell.new_icon && spell.new_icon !== 0) ? spell.new_icon : spell.icon
       if (iconId && iconId !== 0) {
         // Use the numbered icon files from /icons/items/
-        return `/icons/items/${iconId}.gif`
+        return `/icons/items/${iconId}.png`
       }
       // Fallback for spells without icons (icon 0 = blank scroll)
-      return '/icons/items/0.gif'
+      return '/icons/items/0.png'
     },
 
     // Helper method to check if spell has a valid icon
@@ -1249,7 +1249,7 @@ export default {
         event.target.src = currentSrc.replace('.gif', '.png')
       } else {
         // Final fallback to icon 0
-        event.target.src = '/icons/items/0.gif'
+        event.target.src = '/icons/items/0.png'
       }
     },
 

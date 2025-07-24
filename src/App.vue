@@ -47,6 +47,9 @@
     
     <!-- Backend Status Indicator -->
     <BackendStatus :always-show="!isProduction" />
+    
+    <!-- Tooltip Manager for item tooltips -->
+    <!-- <TooltipManager /> DISABLED - using simple tooltips -->
   </div>
 </template>
 
@@ -58,6 +61,7 @@ import UserMenu from './components/UserMenu.vue'
 import ToastNotification from './components/ToastNotification.vue'
 import ThreadMonitor from './components/ThreadMonitor.vue'
 import BackendStatus from './components/BackendStatus.vue'
+// import TooltipManager from './components/TooltipManager.vue'
 import { toastService } from './services/toastService'
 import { ref, watch, watchEffect, toRef, computed } from 'vue'
 import { useDevMode } from './composables/useDevMode'
@@ -74,6 +78,7 @@ export default {
     ToastNotification,
     ThreadMonitor,
     BackendStatus
+    // TooltipManager // DISABLED
   },
   setup() {
     const userStore = useUserStore()

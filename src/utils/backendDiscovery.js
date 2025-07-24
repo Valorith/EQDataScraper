@@ -7,9 +7,15 @@
 // Cache for discovered backend URL
 let discoveredBackendUrl = null;
 let lastDiscoveryTime = 0;
-const DISCOVERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const DISCOVERY_CACHE_TTL = 10 * 60 * 1000; // Increased to 10 minutes to reduce health check frequency
 let isDiscovering = false; // Prevent concurrent discoveries
 let discoveryPromise = null; // Store ongoing discovery promise
+
+// Circuit breaker for health checks to prevent backend overload
+let healthCheckFailures = 0;
+let lastHealthCheckFailure = 0;
+const MAX_HEALTH_CHECK_FAILURES = 5;
+const HEALTH_CHECK_COOLDOWN = 2 * 60 * 1000; // 2 minute cooldown after too many failures
 
 /**
  * Try to fetch config.json to get the configured backend port
@@ -28,12 +34,49 @@ async function getConfiguredPort() {
 }
 
 /**
+ * Check if health checks are currently blocked by circuit breaker
+ */
+function isHealthCheckBlocked() {
+  if (healthCheckFailures < MAX_HEALTH_CHECK_FAILURES) {
+    return false;
+  }
+  
+  const timeSinceLastFailure = Date.now() - lastHealthCheckFailure;
+  if (timeSinceLastFailure > HEALTH_CHECK_COOLDOWN) {
+    // Reset circuit breaker after cooldown
+    healthCheckFailures = 0;
+    lastHealthCheckFailure = 0;
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Record a health check failure for circuit breaker
+ */
+function recordHealthCheckFailure() {
+  healthCheckFailures++;
+  lastHealthCheckFailure = Date.now();
+  
+  if (healthCheckFailures === MAX_HEALTH_CHECK_FAILURES) {
+    console.warn(`Health check circuit breaker activated after ${MAX_HEALTH_CHECK_FAILURES} failures. Will retry in ${HEALTH_CHECK_COOLDOWN / 1000}s`);
+  }
+}
+
+/**
  * Check if a backend URL is responding
  */
 async function checkBackendHealth(url) {
+  // Circuit breaker: skip health checks if too many recent failures
+  if (isHealthCheckBlocked()) {
+    console.debug('Health check blocked by circuit breaker');
+    return false;
+  }
+  
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // Increased to 3 second timeout
     
     const response = await fetch(`${url}/api/health`, {
       signal: controller.signal,
@@ -47,9 +90,20 @@ async function checkBackendHealth(url) {
     
     if (response.ok) {
       const data = await response.json();
-      return data.status === 'healthy';
+      const isHealthy = data.status === 'healthy';
+      
+      if (isHealthy) {
+        // Reset failure count on successful health check
+        healthCheckFailures = 0;
+        lastHealthCheckFailure = 0;
+      }
+      
+      return isHealthy;
+    } else {
+      recordHealthCheckFailure();
     }
   } catch (error) {
+    recordHealthCheckFailure();
     // Silently fail - this is expected when trying different ports
   }
   return false;
@@ -61,6 +115,12 @@ async function checkBackendHealth(url) {
 async function verifyCachedUrl() {
   if (!discoveredBackendUrl) return false;
   
+  // Skip verification if health checks are blocked by circuit breaker
+  if (isHealthCheckBlocked()) {
+    console.debug('Skipping cached URL verification due to circuit breaker');
+    return true; // Assume it's still good if we can't check
+  }
+  
   try {
     const isHealthy = await checkBackendHealth(discoveredBackendUrl);
     if (!isHealthy) {
@@ -69,8 +129,9 @@ async function verifyCachedUrl() {
     }
     return isHealthy;
   } catch (error) {
-    clearDiscoveryCache();
-    return false;
+    console.debug('Error verifying cached URL:', error.message);
+    // Don't clear cache on error - might be temporary network issue
+    return true; // Keep using cached URL if verification fails
   }
 }
 
@@ -78,13 +139,27 @@ async function verifyCachedUrl() {
  * Discover the backend URL by trying multiple strategies
  */
 export async function discoverBackendUrl() {
-  // Return cached URL if still valid and responding
+  // Return cached URL if still valid and not expired
   if (discoveredBackendUrl && (Date.now() - lastDiscoveryTime) < DISCOVERY_CACHE_TTL) {
+    // Only verify cached URL occasionally to reduce health check load
+    const cacheAge = Date.now() - lastDiscoveryTime;
+    const shouldVerify = cacheAge > (DISCOVERY_CACHE_TTL / 2); // Verify only after half the TTL
+    
+    if (!shouldVerify) {
+      return discoveredBackendUrl;
+    }
+    
     // Quick verification that cached URL still works
     const stillValid = await verifyCachedUrl();
     if (stillValid) {
       return discoveredBackendUrl;
     }
+  }
+  
+  // Skip discovery if health checks are blocked by circuit breaker
+  if (isHealthCheckBlocked()) {
+    console.debug('Discovery blocked by health check circuit breaker');
+    return discoveredBackendUrl || 'http://localhost:5001'; // Return cached or fallback
   }
   
   // If already discovering, return the existing promise

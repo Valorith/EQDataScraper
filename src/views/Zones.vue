@@ -1006,7 +1006,7 @@ export default {
           itemMap.set(key, {
             ...item,
             drop_count: 1, // Track how many NPCs drop this item
-            icon_url: item.icon ? `/icons/items/${item.icon}.gif` : null
+            icon_url: item.icon ? `/icons/items/${item.icon}.png` : null
           })
         } else {
           // Additional occurrence - increment count

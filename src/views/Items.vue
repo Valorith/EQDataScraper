@@ -391,7 +391,7 @@
             <div class="card-icon-section">
               <img 
                 v-if="item.icon" 
-                :src="`/icons/items/${item.icon}.gif`" 
+                :src="`/icons/items/${item.icon}.png`" 
                 :alt="`${item.name} icon`"
                 class="item-icon-grid"
                 @error="handleIconError"
@@ -510,7 +510,7 @@
           <div class="item-icon-container">
             <img 
               v-if="item.icon" 
-              :src="`/icons/items/${item.icon}.gif`" 
+              :src="`/icons/items/${item.icon}.png`" 
               :alt="`${item.name} icon`"
               class="item-icon"
               @error="handleIconError"
@@ -634,7 +634,7 @@
             <div class="item-icon-modal-container">
               <img 
                 v-if="selectedItemDetail.icon" 
-                :src="`/icons/items/${selectedItemDetail.icon}.gif`" 
+                :src="`/icons/items/${selectedItemDetail.icon}.png`" 
                 :alt="`${selectedItemDetail.name} icon`"
                 class="item-icon-modal"
                 @error="handleIconError"
@@ -1060,7 +1060,7 @@
                         <div class="recipe-item-icon">
                           <img 
                             v-if="recipe.result_item_icon" 
-                            :src="`/icons/items/${recipe.result_item_icon}.gif`" 
+                            :src="`/icons/items/${recipe.result_item_icon}.png`" 
                             :alt="recipe.result_item_name || recipe.recipe_name"
                             @error="handleIconError"
                             class="item-icon-img"
@@ -1110,7 +1110,7 @@
                     <div class="recipe-item-icon">
                       <img 
                         v-if="recipe.result_item_icon" 
-                        :src="`/icons/items/${recipe.result_item_icon}.gif`" 
+                        :src="`/icons/items/${recipe.result_item_icon}.png`" 
                         :alt="recipe.result_item_name || recipe.recipe_name"
                         @error="handleIconError"
                         class="item-icon-img"
@@ -1176,7 +1176,7 @@
                 <div class="recipe-item-icon">
                   <img 
                     v-if="item.item_icon" 
-                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :src="`/icons/items/${item.item_icon}.png`" 
                     :alt="item.item_name"
                     @error="handleIconError"
                     class="item-icon-img"
@@ -1207,7 +1207,7 @@
                 <div class="recipe-item-icon">
                   <img 
                     v-if="item.item_icon" 
-                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :src="`/icons/items/${item.item_icon}.png`" 
                     :alt="item.item_name"
                     @error="handleIconError"
                     class="item-icon-img"
@@ -1238,7 +1238,7 @@
                 <div class="recipe-item-icon">
                   <img 
                     v-if="item.item_icon" 
-                    :src="`/icons/items/${item.item_icon}.gif`" 
+                    :src="`/icons/items/${item.item_icon}.png`" 
                     :alt="item.item_name"
                     @error="handleIconError"
                     class="item-icon-img"
@@ -2186,7 +2186,7 @@ const handleIconError = (event) => {
   // Try fallback to icon 0 (blank/default icon)
   if (!event.target.dataset.fallbackAttempted) {
     event.target.dataset.fallbackAttempted = 'true'
-    event.target.src = '/icons/items/0.gif'
+    event.target.src = '/icons/items/0.png'
   } else {
     // If fallback also fails, hide the image and show placeholder
     event.target.style.display = 'none'

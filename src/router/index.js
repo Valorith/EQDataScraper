@@ -5,6 +5,7 @@ import Items from '../views/Items.vue'
 import Spells from '../views/Spells.vue'
 import NPCs from '../views/NPCs.vue'
 import Zones from '../views/Zones.vue'
+import Characters from '../views/Characters.vue'
 
 // OAuth authentication components (lazy loaded)
 const AuthCallback = () => import('../views/AuthCallback.vue')
@@ -48,6 +49,11 @@ const routes = [
     path: '/zones',
     name: 'Zones',
     component: Zones
+  },
+  {
+    path: '/characters',
+    name: 'Characters',
+    component: Characters
   },
   // OAuth authentication routes
   {
@@ -108,8 +114,8 @@ router.beforeEach(async (to, from, next) => {
     console.log('Navigating to:', to.path, to.name)
   }
   
-  // Allow access to main page and auth callback without login
-  const publicRoutes = ['MainPage', 'AuthCallback', 'Items', 'NPCs', 'Spells', 'Zones']
+  // Allow access to main page and auth callback without login - all database routes require authentication
+  const publicRoutes = ['MainPage', 'AuthCallback', 'AuthCallbackDebug']
   
   // Check if the route is public
   if (publicRoutes.includes(to.name)) {

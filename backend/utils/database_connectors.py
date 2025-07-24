@@ -115,9 +115,9 @@ def get_mysql_connection(config):
         'password': config['password'],
         'charset': 'utf8mb4',
         'cursorclass': pymysql.cursors.DictCursor,
-        'connect_timeout': config.get('connect_timeout', 5),   # Reduced from 10
-        'read_timeout': config.get('read_timeout', 15),        # Reduced from 30
-        'write_timeout': config.get('write_timeout', 15),      # Reduced from 30
+        'connect_timeout': config.get('connect_timeout', 10),  # Increased back to 10 for stability
+        'read_timeout': config.get('read_timeout', 30),       # Increased back to 30 for complex queries
+        'write_timeout': config.get('write_timeout', 30),     # Increased back to 30
         'autocommit': config.get('autocommit', True)           # Enable autocommit to avoid transaction hangs
     }
     
