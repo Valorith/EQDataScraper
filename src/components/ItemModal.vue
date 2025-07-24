@@ -543,6 +543,7 @@ const openItemInNewTab = (itemId) => {
   // Open in new tab
   window.open(itemUrl, '_blank', 'noopener,noreferrer')
 }
+
 </script>
 
 <style scoped>

@@ -1044,20 +1044,97 @@ def get_user_main_characters():
                     'secondaryMain': None
                 }
                 
+                # Helper function to get complete character data from EQEmu database
+                def get_complete_character_data(character_id, character_name, set_at):
+                    try:
+                        from app import get_eqemu_db_connection
+                        eqemu_connection, db_type, error = get_eqemu_db_connection()
+                        if error or not eqemu_connection:
+                            # Fallback to basic data if EQEmu DB unavailable
+                            return {
+                                'id': character_id,
+                                'name': character_name,
+                                'level': 0,
+                                'class': 'Unknown',
+                                'race': 'Unknown',
+                                'setAt': set_at
+                            }
+                        
+                        with eqemu_connection.cursor() as eqemu_cursor:
+                            eqemu_cursor.execute("""
+                                SELECT id, name, level, class, race, last_login
+                                FROM character_data 
+                                WHERE id = %s
+                            """, (character_id,))
+                            
+                            char_result = eqemu_cursor.fetchone()
+                            if char_result:
+                                # Handle both dict and tuple result formats
+                                if isinstance(char_result, dict):
+                                    # DictCursor result
+                                    char_id = char_result['id']
+                                    char_name = char_result['name']
+                                    char_level = char_result['level']
+                                    char_class = char_result['class']
+                                    char_race = char_result['race']
+                                    char_last_login = char_result['last_login']
+                                else:
+                                    # Tuple result
+                                    char_id = char_result[0]
+                                    char_name = char_result[1]
+                                    char_level = char_result[2]
+                                    char_class = char_result[3]
+                                    char_race = char_result[4]
+                                    char_last_login = char_result[5]
+                                
+                                class_name = CLASS_NAMES.get(char_class, 'Unknown')
+                                race_name = RACE_NAMES.get(char_race, 'Unknown')
+                                
+                                # Handle timestamp conversion safely
+                                last_login_iso = None
+                                if char_last_login:
+                                    try:
+                                        if hasattr(char_last_login, 'isoformat'):
+                                            last_login_iso = char_last_login.isoformat()
+                                        else:
+                                            # Handle Unix timestamp
+                                            import datetime
+                                            last_login_iso = datetime.datetime.fromtimestamp(char_last_login).isoformat()
+                                    except Exception:
+                                        last_login_iso = str(char_last_login)
+                                
+                                return {
+                                    'id': char_id,
+                                    'name': char_name,
+                                    'level': char_level,
+                                    'class': class_name,
+                                    'race': race_name,
+                                    'lastLogin': last_login_iso,
+                                    'setAt': set_at
+                                }
+                        
+                        eqemu_connection.close()
+                    except Exception as e:
+                        logger.error(f"Error fetching complete character data for {character_id}: {e}")
+                    
+                    # Fallback to basic data
+                    return {
+                        'id': character_id,
+                        'name': character_name,
+                        'level': 0,
+                        'class': 'Unknown',
+                        'race': 'Unknown',
+                        'setAt': set_at
+                    }
+                
                 if result:
                     if result[0]:  # primary_character_id
-                        data['primaryMain'] = {
-                            'id': result[0],
-                            'name': result[1],
-                            'setAt': result[4].isoformat() if result[4] else None
-                        }
+                        set_at = result[4].isoformat() if result[4] else None
+                        data['primaryMain'] = get_complete_character_data(result[0], result[1], set_at)
                     
                     if result[2]:  # secondary_character_id
-                        data['secondaryMain'] = {
-                            'id': result[2],
-                            'name': result[3],
-                            'setAt': result[4].isoformat() if result[4] else None
-                        }
+                        set_at = result[4].isoformat() if result[4] else None
+                        data['secondaryMain'] = get_complete_character_data(result[2], result[3], set_at)
             
             connection.close()
             return jsonify({
