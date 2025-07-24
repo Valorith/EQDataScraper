@@ -1949,8 +1949,8 @@ const connectFromSavedConfig = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     
-    // Load stored configuration
-    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+    // Load stored configuration with password
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config?include_password=true`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
       cancelToken: requestManager.getCancelToken('connect-stored-config')
@@ -1970,11 +1970,11 @@ const connectFromSavedConfig = async () => {
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
         database: config.database_name || '',
         username: config.username || '',
-        password: '', // Password is never returned for security - user must enter it
+        password: config.password || '', // Load password from saved config
         use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
       }
       
-      showToast('Config Loaded', 'Configuration loaded from saved settings (password field cleared for security)', 'success')
+      showToast('Config Loaded', 'Configuration loaded from saved settings including password', 'success')
       
       // Test the connection automatically
       const testResponse = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
@@ -2032,8 +2032,8 @@ const loadFieldFromConfig = async (fieldName) => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     
-    // Load stored configuration
-    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+    // Load stored configuration with password for individual fields
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config?include_password=true`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
       cancelToken: requestManager.getCancelToken(`load-field-${fieldName}`)
@@ -2048,13 +2048,7 @@ const loadFieldFromConfig = async (fieldName) => {
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
         database: config.database_name,
         username: config.username,
-        password: '' // Password is never returned for security
-      }
-      
-      // Special handling for password field
-      if (fieldName === 'password') {
-        showToast('Security Notice', 'Password is not stored in saved configuration for security reasons', 'warning')
-        return
+        password: config.password || '' // Password loaded from saved config
       }
       
       if (fieldMapping[fieldName] !== undefined && fieldMapping[fieldName] !== '') {
@@ -2088,7 +2082,7 @@ const loadFieldFromConfig = async (fieldName) => {
 const checkStoredConfigAvailability = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config?include_password=true`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
       cancelToken: requestManager.getCancelToken('check-stored-config')

@@ -1484,6 +1484,10 @@ def get_stored_database_config():
         
         try:
             parsed = urlparse(db_url)
+            
+            # Check if password should be included
+            include_password = request.args.get('include_password', 'false').lower() == 'true'
+            
             config_data = {
                 'database_type': db_config.get('database_type', 'mysql'),
                 'host': parsed.hostname,
@@ -1493,6 +1497,10 @@ def get_stored_database_config():
                 'database_ssl': db_config.get('database_ssl', True),
                 'config_source': db_config.get('config_source', 'unknown')
             }
+            
+            # Include password if requested (admin UI functionality)
+            if include_password:
+                config_data['password'] = parsed.password or ''
             
             return jsonify({
                 'success': True,
