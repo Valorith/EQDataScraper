@@ -94,8 +94,30 @@ if ENABLE_USER_ACCOUNTS:
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:3002',
-        'https://eqdatascraper-frontend-production.up.railway.app'
+        'https://eqdatascraper-frontend-production.up.railway.app',
+        'https://eqdatascraper-production.up.railway.app'
     ]
+    
+    # In production, allow Railway domains dynamically
+    def is_railway_domain(origin):
+        return origin and (
+            origin.endswith('.up.railway.app') or
+            'railway' in origin.lower()
+        )
+    
+    # Custom CORS origin checker
+    def cors_origin_checker(origin):
+        # Always allow configured origins
+        if origin in allowed_origins:
+            return True
+        # In production, allow Railway domains
+        if os.environ.get('RAILWAY_ENVIRONMENT') or is_railway_domain(origin):
+            print(f"🌐 CORS: Allowing Railway origin: {origin}")
+            return True
+        print(f"🚫 CORS: Rejecting origin: {origin}")
+        return False
+    
+    # Use custom origin checker instead of static list
     
     # Add frontend URL from environment if set
     frontend_url = os.environ.get('FRONTEND_URL')
@@ -103,7 +125,7 @@ if ENABLE_USER_ACCOUNTS:
         allowed_origins.append(frontend_url)
     
     CORS(app, 
-         origins=allowed_origins, 
+         origins=cors_origin_checker, 
          supports_credentials=True, 
          allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
