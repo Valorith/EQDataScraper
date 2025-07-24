@@ -75,13 +75,12 @@
       </div>
 
       <!-- Center Equipment/Character Area -->
-      <div class="equipment-area">
+      <div class="equipment-area" @click="handleEquipmentClick">
         <!-- Equipment slots positioned around character -->
         <div class="equipment-slot-positioned charm-slot" data-slot="charm">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.charm }"
-               :data-tooltip="getItemTooltip(character.equipment?.charm)"
-               @click="selectItem(character.equipment?.charm)">
+               :data-tooltip="getItemTooltip(character.equipment?.charm)">
             <img v-if="character.equipment?.charm" 
                  :src="`/icons/items/${character.equipment.charm.icon}.png`" 
                  :alt="character.equipment.charm.name"
@@ -94,7 +93,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.head }"
                :data-tooltip="getItemTooltip(character.equipment?.head)"
-               @click="selectItem(character.equipment?.head)">
+>
             <img v-if="character.equipment?.head" 
                  :src="`/icons/items/${character.equipment.head.icon}.png`" 
                  :alt="character.equipment.head.name"
@@ -107,7 +106,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear1 }"
                :data-tooltip="getItemTooltip(character.equipment?.ear1)"
-               @click="selectItem(character.equipment?.ear1)">
+>
             <img v-if="character.equipment?.ear1" 
                  :src="`/icons/items/${character.equipment.ear1.icon}.png`" 
                  :alt="character.equipment.ear1.name"
@@ -120,7 +119,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear2 }"
                :data-tooltip="getItemTooltip(character.equipment?.ear2)"
-               @click="selectItem(character.equipment?.ear2)">
+>
             <img v-if="character.equipment?.ear2" 
                  :src="`/icons/items/${character.equipment.ear2.icon}.png`" 
                  :alt="character.equipment.ear2.name"
@@ -133,7 +132,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.neck }"
                :data-tooltip="getItemTooltip(character.equipment?.neck)"
-               @click="selectItem(character.equipment?.neck)">
+>
             <img v-if="character.equipment?.neck" 
                  :src="`/icons/items/${character.equipment.neck.icon}.png`" 
                  :alt="character.equipment.neck.name"
@@ -146,7 +145,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.shoulder }"
                :data-tooltip="getItemTooltip(character.equipment?.shoulder)"
-               @click="selectItem(character.equipment?.shoulder)">
+>
             <img v-if="character.equipment?.shoulder" 
                  :src="`/icons/items/${character.equipment.shoulder.icon}.png`" 
                  :alt="character.equipment.shoulder.name"
@@ -159,7 +158,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.arms }"
                :data-tooltip="getItemTooltip(character.equipment?.arms)"
-               @click="selectItem(character.equipment?.arms)">
+>
             <img v-if="character.equipment?.arms" 
                  :src="`/icons/items/${character.equipment.arms.icon}.png`" 
                  :alt="character.equipment.arms.name"
@@ -172,7 +171,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.back }"
                :data-tooltip="getItemTooltip(character.equipment?.back)"
-               @click="selectItem(character.equipment?.back)">
+>
             <img v-if="character.equipment?.back" 
                  :src="`/icons/items/${character.equipment.back.icon}.png`" 
                  :alt="character.equipment.back.name"
@@ -185,7 +184,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist1 }"
                :data-tooltip="getItemTooltip(character.equipment?.wrist1)"
-               @click="selectItem(character.equipment?.wrist1)">
+>
             <img v-if="character.equipment?.wrist1" 
                  :src="`/icons/items/${character.equipment.wrist1.icon}.png`" 
                  :alt="character.equipment.wrist1.name"
@@ -198,7 +197,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist2 }"
                :data-tooltip="getItemTooltip(character.equipment?.wrist2)"
-               @click="selectItem(character.equipment?.wrist2)">
+>
             <img v-if="character.equipment?.wrist2" 
                  :src="`/icons/items/${character.equipment.wrist2.icon}.png`" 
                  :alt="character.equipment.wrist2.name"
@@ -211,7 +210,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.range }"
                :data-tooltip="getItemTooltip(character.equipment?.range)"
-               @click="selectItem(character.equipment?.range)">
+>
             <img v-if="character.equipment?.range" 
                  :src="`/icons/items/${character.equipment.range.icon}.png`" 
                  :alt="character.equipment.range.name"
@@ -224,7 +223,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.hands }"
                :data-tooltip="getItemTooltip(character.equipment?.hands)"
-               @click="selectItem(character.equipment?.hands)">
+>
             <img v-if="character.equipment?.hands" 
                  :src="`/icons/items/${character.equipment.hands.icon}.png`" 
                  :alt="character.equipment.hands.name"
@@ -237,7 +236,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.primary }"
                :data-tooltip="getItemTooltip(character.equipment?.primary)"
-               @click="selectItem(character.equipment?.primary)">
+>
             <img v-if="character.equipment?.primary" 
                  :src="`/icons/items/${character.equipment.primary.icon}.png`" 
                  :alt="character.equipment.primary.name"
@@ -250,7 +249,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.secondary }"
                :data-tooltip="getItemTooltip(character.equipment?.secondary)"
-               @click="selectItem(character.equipment?.secondary)">
+>
             <img v-if="character.equipment?.secondary" 
                  :src="`/icons/items/${character.equipment.secondary.icon}.png`" 
                  :alt="character.equipment.secondary.name"
@@ -263,7 +262,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ammo }"
                :data-tooltip="getItemTooltip(character.equipment?.ammo)"
-               @click="selectItem(character.equipment?.ammo)">
+>
             <img v-if="character.equipment?.ammo" 
                  :src="`/icons/items/${character.equipment.ammo.icon}.png`" 
                  :alt="character.equipment.ammo.name"
@@ -276,7 +275,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring1 }"
                :data-tooltip="getItemTooltip(character.equipment?.ring1)"
-               @click="selectItem(character.equipment?.ring1)">
+>
             <img v-if="character.equipment?.ring1" 
                  :src="`/icons/items/${character.equipment.ring1.icon}.png`" 
                  :alt="character.equipment.ring1.name"
@@ -289,7 +288,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring2 }"
                :data-tooltip="getItemTooltip(character.equipment?.ring2)"
-               @click="selectItem(character.equipment?.ring2)">
+>
             <img v-if="character.equipment?.ring2" 
                  :src="`/icons/items/${character.equipment.ring2.icon}.png`" 
                  :alt="character.equipment.ring2.name"
@@ -302,7 +301,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.chest }"
                :data-tooltip="getItemTooltip(character.equipment?.chest)"
-               @click="selectItem(character.equipment?.chest)">
+>
             <img v-if="character.equipment?.chest" 
                  :src="`/icons/items/${character.equipment.chest.icon}.png`" 
                  :alt="character.equipment.chest.name"
@@ -315,7 +314,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.legs }"
                :data-tooltip="getItemTooltip(character.equipment?.legs)"
-               @click="selectItem(character.equipment?.legs)">
+>
             <img v-if="character.equipment?.legs" 
                  :src="`/icons/items/${character.equipment.legs.icon}.png`" 
                  :alt="character.equipment.legs.name"
@@ -328,7 +327,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.feet }"
                :data-tooltip="getItemTooltip(character.equipment?.feet)"
-               @click="selectItem(character.equipment?.feet)">
+>
             <img v-if="character.equipment?.feet" 
                  :src="`/icons/items/${character.equipment.feet.icon}.png`" 
                  :alt="character.equipment.feet.name"
@@ -341,7 +340,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.waist }"
                :data-tooltip="getItemTooltip(character.equipment?.waist)"
-               @click="selectItem(character.equipment?.waist)">
+>
             <img v-if="character.equipment?.waist" 
                  :src="`/icons/items/${character.equipment.waist.icon}.png`" 
                  :alt="character.equipment.waist.name"
@@ -354,7 +353,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.power_source }"
                :data-tooltip="getItemTooltip(character.equipment?.power_source)"
-               @click="selectItem(character.equipment?.power_source)">
+>
             <img v-if="character.equipment?.power_source" 
                  :src="`/icons/items/${character.equipment.power_source.icon}.png`" 
                  :alt="character.equipment.power_source.name"
@@ -367,7 +366,7 @@
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.face }"
                :data-tooltip="getItemTooltip(character.equipment?.face)"
-               @click="selectItem(character.equipment?.face)">
+>
             <img v-if="character.equipment?.face" 
                  :src="`/icons/items/${character.equipment.face.icon}.png`" 
                  :alt="character.equipment.face.name"
@@ -467,7 +466,7 @@
           <input 
             ref="findItemInput"
             v-model="searchQuery" 
-            @input="performSearch"
+            @input="debouncedSearch"
             @keyup.enter="findAndHighlight"
             @keyup.escape="closeFindItem"
             placeholder="Enter item name to search..."
@@ -564,10 +563,62 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onUnmounted, computed, watch } from 'vue'
 import LoadingModal from './LoadingModal.vue'
 import ItemModal from './ItemModal.vue'
 import { getApiBaseUrl } from '../config/api'
+import { resilientApi } from '../utils/resilientRequest'
+
+// Circuit breaker for item availability endpoint
+const availabilityCircuitBreaker = ref({
+  failures: 0,
+  lastFailure: null,
+  isOpen: false
+})
+
+const isAvailabilityCircuitOpen = () => {
+  if (availabilityCircuitBreaker.value.failures < 3) {
+    return false
+  }
+  
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+  if (availabilityCircuitBreaker.value.lastFailure && availabilityCircuitBreaker.value.lastFailure > fiveMinutesAgo) {
+    return true
+  } else {
+    // Reset after 5 minutes
+    availabilityCircuitBreaker.value.failures = 0
+    availabilityCircuitBreaker.value.lastFailure = null
+    availabilityCircuitBreaker.value.isOpen = false
+  }
+  return false
+}
+
+const recordAvailabilityFailure = () => {
+  availabilityCircuitBreaker.value.failures++
+  availabilityCircuitBreaker.value.lastFailure = Date.now()
+  
+  if (availabilityCircuitBreaker.value.failures >= 3) {
+    availabilityCircuitBreaker.value.isOpen = true
+    console.warn('Item availability circuit breaker opened after 3 failures')
+  }
+}
+
+const recordAvailabilitySuccess = () => {
+  availabilityCircuitBreaker.value.failures = 0
+  availabilityCircuitBreaker.value.lastFailure = null
+  availabilityCircuitBreaker.value.isOpen = false
+}
+
+// Debounce utility function with cancel capability
+const debounce = (func, delay) => {
+  let timeoutId
+  const debounced = (...args) => {
+    clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => func.apply(null, args), delay)
+  }
+  debounced.cancel = () => clearTimeout(timeoutId)
+  return debounced
+}
 
 const props = defineProps({
   character: {
@@ -579,9 +630,6 @@ const props = defineProps({
     default: () => []
   }
 })
-
-import { watch } from 'vue'
-
 
 // Item modal state
 const selectedItemDetail = ref(null)
@@ -620,6 +668,17 @@ const searchResults = ref([])
 const highlightedItems = ref(new Set())
 const findItemInput = ref(null)
 
+// Persistent highlighting state
+const persistentHighlights = ref({
+  items: new Set(),     // Set of highlighted item slot IDs
+  bags: new Set(),      // Set of highlighted bag slot IDs
+  blinking: new Set()   // Set of currently blinking elements
+})
+
+// API response cache for item details (5-minute TTL)
+const itemDetailsCache = new Map()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
 
 // Modal functions
 const selectItem = async (item) => {
@@ -628,16 +687,35 @@ const selectItem = async (item) => {
   loadingItemModal.value = true
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${item.id}/details`)
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    selectedItemDetail.value = data
+    // Check cache first
+    const cacheKey = `item-${item.id}`
+    const cachedData = itemDetailsCache.get(cacheKey)
     
-    // Load data availability after item details are loaded
-    await loadItemDataAvailability(item.id)
+    if (cachedData && (Date.now() - cachedData.timestamp) < CACHE_TTL) {
+      // Use cached data
+      selectedItemDetail.value = cachedData.data
+    } else {
+      // Fetch fresh data
+      const response = await resilientApi.get(`/api/items/${item.id}/details`)
+      selectedItemDetail.value = response.data
+      
+      // Cache the response
+      itemDetailsCache.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      })
+      
+      // Prevent cache from growing too large (LRU-style cleanup)
+      if (itemDetailsCache.size > 100) {
+        const firstKey = itemDetailsCache.keys().next().value
+        itemDetailsCache.delete(firstKey)
+      }
+    }
+    
+    // Load data availability after item details are loaded (non-blocking)
+    loadItemDataAvailability(item.id).catch(error => {
+      console.warn('Item availability loading failed but continuing:', error)
+    })
   } catch (error) {
     console.error('Error loading item details:', error)
     // Show basic item data even if API fails
@@ -687,6 +765,23 @@ const closeItemModal = () => {
   loadingAvailability.value = false
 }
 
+// Event delegation handler for equipment slots (replaces 22 individual click handlers)
+const handleEquipmentClick = (event) => {
+  // Find the closest equipment slot container
+  const slotContainer = event.target.closest('[data-slot]')
+  if (!slotContainer) return
+  
+  // Get the slot type from data-slot attribute
+  const slotType = slotContainer.dataset.slot
+  if (!slotType) return
+  
+  // Get the equipment item for this slot
+  const item = props.character.equipment?.[slotType]
+  
+  // Call the original selectItem function
+  selectItem(item)
+}
+
 const onItemModalTimeout = () => {
   console.warn('Item modal loading timed out')
   loadingItemModal.value = false
@@ -701,11 +796,9 @@ const loadDropSources = async () => {
   dropSourcesRequested.value = true
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.id}/drop-sources`)
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
+    const response = await resilientApi.get(`/api/items/${selectedItemDetail.value.id}/drop-sources`)
     // Backend returns {zones: [...]} but frontend expects array directly
-    dropSources.value = data.zones || []
+    dropSources.value = response.data.zones || []
   } catch (error) {
     console.error('Error loading drop sources:', error)
     dropSources.value = []
@@ -722,11 +815,9 @@ const loadMerchantSources = async () => {
   merchantSourcesRequested.value = true
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.id}/merchant-sources`)
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
+    const response = await resilientApi.get(`/api/items/${selectedItemDetail.value.id}/merchant-sources`)
     // Backend returns {zones: [...]} but frontend expects array directly
-    merchantSources.value = data.zones || []
+    merchantSources.value = response.data.zones || []
   } catch (error) {
     console.error('Error loading merchant sources:', error)
     merchantSources.value = []
@@ -739,21 +830,36 @@ const loadMerchantSources = async () => {
 const loadItemDataAvailability = async (itemId) => {
   if (!itemId) return
   
+  // Circuit breaker: skip if too many recent failures
+  if (isAvailabilityCircuitOpen()) {
+    console.log('Item availability circuit breaker active, skipping request')
+    itemDataAvailability.value = 'failed' // Show all buttons when circuit is open
+    return
+  }
+  
+  // Prevent multiple simultaneous requests for the same item
+  if (loadingAvailability.value) return
+  
   loadingAvailability.value = true
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${itemId}/availability`)
+    const response = await resilientApi.get(`/api/items/${itemId}/availability`, {
+      timeout: 8000 // Increased timeout for this endpoint
+    })
+    itemDataAvailability.value = response.data
     
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    itemDataAvailability.value = data
+    // Record success to reset circuit breaker
+    recordAvailabilitySuccess()
     
   } catch (error) {
-    console.error('Error loading item data availability:', error)
+    // Record failure for circuit breaker
+    recordAvailabilityFailure()
+    
+    console.error('Error loading item data availability:', {
+      itemId,
+      error: error.message,
+      status: error.response?.status
+    })
     // Fallback: Set to 'failed' state so we can show all buttons
     itemDataAvailability.value = 'failed'
   } finally {
@@ -837,8 +943,19 @@ const formatCurrency = (value) => {
   return value.toLocaleString()
 }
 
+// Tooltip memoization cache
+const tooltipCache = new Map()
+
 const getItemTooltip = (item, isInBagWindow = false) => {
   if (!item) return ''
+  
+  // Create cache key from item properties that affect tooltip
+  const cacheKey = `${item.id || 'unknown'}-${item.name || 'unknown'}-${item.containerSize || 0}-${isInBagWindow}`
+  
+  // Return cached result if available
+  if (tooltipCache.has(cacheKey)) {
+    return tooltipCache.get(cacheKey)
+  }
   
   const itemName = item.name || 'Unknown Item'
   const isContainer = item.containerSize && item.containerSize > 0
@@ -849,6 +966,15 @@ const getItemTooltip = (item, isInBagWindow = false) => {
     tooltip += `\n\nLeft click for info.\nRight click to open`
   } else {
     tooltip += `\n\nLeft click for info.`
+  }
+  
+  // Cache the result for future use
+  tooltipCache.set(cacheKey, tooltip)
+  
+  // Prevent cache from growing too large (LRU-style cleanup)
+  if (tooltipCache.size > 200) {
+    const firstKey = tooltipCache.keys().next().value
+    tooltipCache.delete(firstKey)
   }
   
   return tooltip
@@ -1177,6 +1303,9 @@ const endDrag = () => {
 
 // Find Item functions
 const toggleFindItem = () => {
+  // Clear any existing highlights when opening Find Item
+  clearAllHighlights()
+  
   showFindItem.value = !showFindItem.value
   if (showFindItem.value) {
     nextTick(() => {
@@ -1196,6 +1325,174 @@ const clearSearch = () => {
   searchQuery.value = ''
   searchResults.value = []
   highlightedItems.value.clear()
+  clearAllHighlights() // Clear persistent highlights when search is cleared
+}
+
+// Clear all persistent highlights
+const clearAllHighlights = () => {
+  console.log('=== CLEARING ALL HIGHLIGHTS ===')
+  console.log('Current highlights before clearing:', {
+    items: persistentHighlights.value.items.size,
+    bags: persistentHighlights.value.bags.size,
+    blinking: persistentHighlights.value.blinking.size,
+    itemsList: Array.from(persistentHighlights.value.items),
+    bagsList: Array.from(persistentHighlights.value.bags)
+  })
+  
+  // Remove highlight classes from all highlighted elements
+  persistentHighlights.value.items.forEach(slotId => {
+    const element = findElementBySlotId(slotId)
+    if (element) {
+      element.classList.remove('persistent-highlight', 'blinking-highlight')
+      console.log(`Cleared item highlight for slot ${slotId}`)
+    }
+  })
+  
+  console.log(`Attempting to clear ${persistentHighlights.value.bags.size} bag highlights...`)
+  persistentHighlights.value.bags.forEach(bagSlot => {
+    console.log(`Clearing bag slot ${bagSlot}...`)
+    const bagElement = findBagElementBySlot(bagSlot)
+    console.log(`Found bag element for slot ${bagSlot}:`, !!bagElement)
+    
+    if (bagElement) {
+      console.log(`Before clearing - styles:`, {
+        border: bagElement.style.border,
+        background: bagElement.style.background,
+        transform: bagElement.style.transform
+      })
+      
+      bagElement.classList.remove('persistent-highlight', 'blinking-highlight')
+      // Clear inline styles that were applied for bag highlighting
+      bagElement.style.border = ''
+      bagElement.style.background = ''
+      bagElement.style.transform = ''
+      bagElement.style.boxShadow = ''
+      bagElement.style.zIndex = ''
+      bagElement.style.position = ''
+      
+      console.log(`After clearing - styles:`, {
+        border: bagElement.style.border,
+        background: bagElement.style.background,
+        transform: bagElement.style.transform
+      })
+      
+      console.log(`Successfully cleared bag highlight for slot ${bagSlot}`)
+    } else {
+      console.warn(`Could not find bag element for slot ${bagSlot} during clearing`)
+    }
+  })
+  
+  // Also clear any remaining highlights by searching the DOM directly
+  const allHighlightedElements = document.querySelectorAll('.persistent-highlight, .blinking-highlight')
+  allHighlightedElements.forEach(element => {
+    element.classList.remove('persistent-highlight', 'blinking-highlight')
+    // Also clear inline styles for any remaining highlighted elements
+    element.style.border = ''
+    element.style.background = ''
+    element.style.transform = ''
+    element.style.boxShadow = ''
+    element.style.zIndex = ''
+    element.style.position = ''
+    console.log('Cleared remaining highlight from element:', element)
+  })
+  
+  // Nuclear option: Clear ALL bag slot inline styles
+  console.log('Nuclear cleanup: clearing ALL bag slot inline styles...')
+  const allBagSlots = document.querySelectorAll('.bag-slot')
+  console.log(`Found ${allBagSlots.length} bag slots for cleanup`)
+  
+  allBagSlots.forEach((bagSlot, index) => {
+    const hadStyles = bagSlot.style.border || bagSlot.style.background || bagSlot.style.transform
+    if (hadStyles) {
+      console.log(`Clearing styles from bag slot ${index}:`, {
+        before: {
+          border: bagSlot.style.border,
+          background: bagSlot.style.background,
+          transform: bagSlot.style.transform
+        }
+      })
+    }
+    
+    bagSlot.style.border = ''
+    bagSlot.style.background = ''
+    bagSlot.style.transform = ''
+    bagSlot.style.boxShadow = ''
+    bagSlot.style.zIndex = ''
+    bagSlot.style.position = ''
+    
+    if (hadStyles) {
+      console.log(`Cleared inline styles from bag slot ${index}`)
+    }
+  })
+  
+  // Clear the sets
+  persistentHighlights.value.items.clear()
+  persistentHighlights.value.bags.clear()
+  persistentHighlights.value.blinking.clear()
+  
+  console.log('All highlights cleared')
+}
+
+// Helper function to find element by slot ID
+const findElementBySlotId = (slotId) => {
+  // For main inventory slots (23-32), convert to UI slot (0-9)
+  let actualSlotToFind = slotId
+  if (slotId >= 23 && slotId <= 32) {
+    actualSlotToFind = slotId - 23 // Convert to UI slot (0-9)
+  }
+  
+  const selectors = [
+    `[data-slot="${slotId}"]`,
+    `[data-slot="${actualSlotToFind}"]`,
+    `.inventory-slot[data-slot="${slotId}"]`,
+    `.inventory-slot[data-slot="${actualSlotToFind}"]`,
+    `.equipment-slot[data-slot="${slotId}"]`,
+    `.bag-slot[data-slot="${slotId}"]`
+  ]
+  
+  console.log('Finding element for slot:', {
+    originalSlot: slotId,
+    actualSlot: actualSlotToFind,
+    selectors: selectors
+  })
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector)
+    if (element) {
+      console.log('Found element with selector:', selector)
+      return element
+    }
+  }
+  
+  console.warn('No element found for slot:', slotId)
+  return null
+}
+
+// Helper function to find bag element by slot
+const findBagElementBySlot = (bagSlot) => {
+  // Convert EQEmu slot (23-32) to UI slot (0-9) for bag elements
+  const uiSlot = getUISlotFromBagSlot(bagSlot)
+  
+  const selectors = [
+    // Try UI slot first (bag slots use 0-9)
+    `.bag-slot[data-slot="${uiSlot}"]`,
+    `[data-slot="${uiSlot}"]`,
+    // Try EQEmu slot as fallback
+    `[data-slot="${bagSlot}"]`,
+    `.inventory-slot[data-slot="${bagSlot}"]`,
+    `.bag-container[data-bagslot="${bagSlot}"]`
+  ]
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector)
+    if (element) {
+      console.log(`Found bag element with selector: ${selector}`)
+      return element
+    }
+  }
+  
+  console.warn(`Could not find bag element for bagSlot ${bagSlot} (UI slot ${uiSlot})`)
+  return null
 }
 
 const performSearch = () => {
@@ -1229,6 +1526,9 @@ const performSearch = () => {
   searchResults.value = results
 }
 
+// Create debounced version of search for input events
+const debouncedSearch = debounce(performSearch, 300)
+
 const findAndHighlight = () => {
   if (searchResults.value.length > 0) {
     highlightItem(searchResults.value[0])
@@ -1238,13 +1538,21 @@ const findAndHighlight = () => {
 const highlightItem = (result) => {
   const slotid = result.slotid
   
+  // Clear previous highlights
+  clearAllHighlights()
+  
   // Determine if item is in main inventory or bag
   if (slotid >= 23 && slotid <= 32) {
     // Main inventory slot - highlight directly
     highlightInventorySlot(slotid)
   } else if (slotid >= 251 && slotid <= 361) {
-    // Bag content - open bag first, then highlight
+    // Bag content - open bag first, then highlight both bag and item
     const bagSlot = getBagSlotForContentSlot(slotid)
+    
+    // Highlight the bag container first
+    highlightBagContainer(bagSlot)
+    
+    // Open bag if needed and highlight the item
     openBagIfClosed(bagSlot, () => {
       highlightBagItem(bagSlot, slotid)
     })
@@ -1255,49 +1563,273 @@ const highlightItem = (result) => {
 }
 
 const getBagSlotForContentSlot = (contentSlot) => {
-  // Calculate which bag this content slot belongs to
-  if (contentSlot >= 251 && contentSlot <= 260) return 23
-  if (contentSlot >= 261 && contentSlot <= 270) return 24
-  if (contentSlot >= 271 && contentSlot <= 280) return 25
-  if (contentSlot >= 281 && contentSlot <= 290) return 26
-  if (contentSlot >= 291 && contentSlot <= 300) return 27
-  if (contentSlot >= 301 && contentSlot <= 310) return 28
-  if (contentSlot >= 311 && contentSlot <= 320) return 29
-  if (contentSlot >= 321 && contentSlot <= 330) return 30
-  if (contentSlot >= 331 && contentSlot <= 340) return 31
-  if (contentSlot >= 341 && contentSlot <= 350) return 32
+  // Calculate which bag this content slot belongs to (EQEmu mapping)
+  if (contentSlot >= 251 && contentSlot <= 260) return 23  // Bag slot 0 (UI slot 23)
+  if (contentSlot >= 261 && contentSlot <= 270) return 24  // Bag slot 1 (UI slot 24)
+  if (contentSlot >= 271 && contentSlot <= 280) return 25  // Bag slot 2 (UI slot 25)
+  if (contentSlot >= 281 && contentSlot <= 290) return 26  // Bag slot 3 (UI slot 26)
+  if (contentSlot >= 291 && contentSlot <= 300) return 27  // Bag slot 4 (UI slot 27)
+  if (contentSlot >= 301 && contentSlot <= 310) return 28  // Bag slot 5 (UI slot 28)
+  if (contentSlot >= 311 && contentSlot <= 320) return 29  // Bag slot 6 (UI slot 29)
+  if (contentSlot >= 321 && contentSlot <= 330) return 30  // Bag slot 7 (UI slot 30)
+  if (contentSlot >= 331 && contentSlot <= 340) return 31  // Bag slot 8 (UI slot 31)
+  if (contentSlot >= 341 && contentSlot <= 350) return 32  // Bag slot 9 (UI slot 32)
   return null
+}
+
+const getUISlotFromBagSlot = (bagSlot) => {
+  // Convert EQEmu bag slot (23-32) to UI slot (0-9)
+  return bagSlot - 23
 }
 
 const openBagIfClosed = (bagSlot, callback) => {
   const bagWindow = openBagWindows.value.find(w => w.slotId === bagSlot)
   if (!bagWindow) {
     // Find bag in main inventory and open it
-    const slot = character.value?.inventory?.find(s => s.slot === bagSlot)
-    if (slot && slot.item) {
-      handleBagRightClick({ clientX: 400, clientY: 300 }, slot)
+    const uiSlot = getUISlotFromBagSlot(bagSlot)
+    const slot = props.character?.inventory?.find(s => s.slot === uiSlot)
+    
+    console.log('Opening bag:', {
+      bagSlot: bagSlot,
+      uiSlot: uiSlot,
+      slot: slot,
+      hasItem: !!(slot?.item)
+    })
+    
+    if (slot && slot.item && slot.item.containerSize > 0) {
+      // Calculate position to the right of the bags section
+      let baseX = 500 // Default fallback position (to the right)
+      let baseY = 150 // Default fallback position (middle of screen)
+      
+      try {
+        // Find the bags section for precise positioning
+        const bagsSection = document.querySelector('.bags-section')
+        
+        if (bagsSection) {
+          const bagsSectionRect = bagsSection.getBoundingClientRect()
+          
+          // Position to the right of the bags section with top alignment
+          baseX = bagsSectionRect.right + 15 // 15px gap from bags section
+          baseY = bagsSectionRect.top // Align with top of bag slot area
+          
+          // For multiple bags, stagger horizontally instead of vertically to maintain top alignment
+          if (openBagWindows.value.length > 0) {
+            baseX += (openBagWindows.value.length * 20) // Horizontal staggering
+          }
+          
+          // Ensure bag doesn't go off screen
+          const maxX = window.innerWidth - 300 // Assume bag window is ~300px wide
+          const maxY = window.innerHeight - 400 // Assume bag window is ~400px tall
+          
+          if (baseX > maxX) {
+            // If too far right, start a new row
+            baseX = bagsSectionRect.right + 15
+            baseY = bagsSectionRect.top + 30 // Move down for second row
+          }
+          if (baseY > maxY) baseY = Math.max(50, maxY)
+          
+          console.log('Calculated bag position (viewport relative):', {
+            baseX,
+            baseY,
+            bagsSectionRight: bagsSectionRect.right,
+            bagsSectionTop: bagsSectionRect.top,
+            bagCount: openBagWindows.value.length,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+          })
+        } else {
+          console.warn('Could not find .bags-section element, using fallback positioning')
+        }
+      } catch (error) {
+        console.warn('Could not calculate dynamic bag position, using fallback:', error)
+      }
+      
+      // Create bag window
+      const bagWindow = {
+        slotId: bagSlot,
+        x: baseX,
+        y: baseY,
+        zIndex: nextZIndex.value++,
+        contents: getBagContents(bagSlot, slot.item.containerSize)
+      }
+      
+      openBagWindows.value.push(bagWindow)
+      console.log('Bag opened successfully:', bagWindow)
+    } else {
+      console.warn('Cannot open bag - not a container or no item found:', { bagSlot, uiSlot, slot })
     }
   }
   
   // Execute callback after short delay to ensure bag is opened
-  setTimeout(callback, 100)
+  setTimeout(callback, 200) // Increased delay
 }
 
 const highlightInventorySlot = (slotid) => {
-  const slotElement = document.querySelector(`[data-slot="${slotid}"]`)
+  const slotElement = findElementBySlotId(slotid)
+  
+  console.log('Highlighting inventory slot:', {
+    slotid: slotid,
+    found: !!slotElement
+  })
+  
   if (slotElement) {
-    addHighlightEffect(slotElement)
+    addPersistentHighlight(slotElement, slotid, 'item')
+    // Scroll the element into view
+    slotElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  } else {
+    console.warn(`Could not find inventory slot ${slotid} for highlighting`)
+  }
+}
+
+// Add highlighting to bag container (the bag in main inventory)
+const highlightBagContainer = (bagSlot) => {
+  const uiSlot = getUISlotFromBagSlot(bagSlot)
+  const bagElement = findBagElementBySlot(bagSlot) // Use the improved bag element finder
+  
+  console.log('Highlighting bag container:', {
+    bagSlot: bagSlot,
+    uiSlot: uiSlot,
+    found: !!bagElement,
+    elementDetails: bagElement ? {
+      tagName: bagElement.tagName,
+      className: bagElement.className,
+      dataSlot: bagElement.getAttribute('data-slot')
+    } : null
+  })
+  
+  if (bagElement) {
+    addPersistentHighlight(bagElement, bagSlot, 'bag')
+    persistentHighlights.value.bags.add(bagSlot)
+    
+    // Force inline golden styles since CSS isn't working
+    bagElement.style.border = '6px solid #FFD700'
+    bagElement.style.background = 'rgba(255, 215, 0, 0.4)'
+    bagElement.style.transform = 'scale(1.05)'
+    bagElement.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.8)'
+    bagElement.style.zIndex = '1000'
+    bagElement.style.position = 'relative'
+    
+    // Verify styles were applied
+    setTimeout(() => {
+      console.log('Verifying applied styles after 100ms:', {
+        border: bagElement.style.border,
+        background: bagElement.style.background,
+        transform: bagElement.style.transform,
+        computedBorder: window.getComputedStyle(bagElement).border,
+        computedBackground: window.getComputedStyle(bagElement).background,
+        element: bagElement,
+        parentElement: bagElement.parentElement?.tagName,
+        isConnected: bagElement.isConnected
+      })
+    }, 100)
+    
+    // Store reference for repeated application
+    const applyGoldenStyles = () => {
+      bagElement.style.border = '6px solid #FFD700'
+      bagElement.style.background = 'rgba(255, 215, 0, 0.4)'
+      bagElement.style.transform = 'scale(1.05)'
+      bagElement.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.8)'
+      bagElement.style.zIndex = '1000'
+      bagElement.style.position = 'relative'
+    }
+    
+    // Apply styles multiple times to ensure they stick
+    applyGoldenStyles()
+    setTimeout(applyGoldenStyles, 50)
+    setTimeout(applyGoldenStyles, 150)
+    setTimeout(applyGoldenStyles, 300)
+    
+    console.log(`Successfully added highlight to bag container slot ${bagSlot} (UI slot ${uiSlot})`)
+    console.log('Applied inline golden styles to bag element')
+  } else {
+    console.warn(`Could not find bag container for slot ${bagSlot} (UI slot ${uiSlot})`)
+    
+    // Debug: List all available bag slots
+    const allBagSlots = document.querySelectorAll('.bag-slot[data-slot]')
+    console.log('Available bag slots:', Array.from(allBagSlots).map(el => ({
+      dataSlot: el.getAttribute('data-slot'),
+      className: el.className
+    })))
   }
 }
 
 const highlightBagItem = (bagSlot, contentSlot) => {
-  const bagWindow = openBagWindows.value.find(w => w.slotId === bagSlot)
-  if (bagWindow) {
-    const slotElement = document.querySelector(`[data-bag="${bagSlot}"][data-slot="${contentSlot}"]`)
-    if (slotElement) {
-      addHighlightEffect(slotElement)
+  console.log('Highlighting bag item:', {
+    bagSlot: bagSlot,
+    contentSlot: contentSlot,
+    openBags: openBagWindows.value.map(w => w.slotId)
+  })
+  
+  // Wait a moment for bag to open if needed
+  setTimeout(() => {
+    const bagWindow = openBagWindows.value.find(w => w.slotId === bagSlot)
+    if (bagWindow) {
+      // Try multiple selectors for bag items - use more specific combinations
+      const selectors = [
+        `[data-bag="${bagSlot}"][data-slot="${contentSlot}"]`,
+        `[data-bagslot="${bagSlot}"][data-slot="${contentSlot}"]`,
+        `.bag-window [data-slot="${contentSlot}"]`,
+        `.bag-slot[data-slot="${contentSlot}"]`
+      ]
+      
+      let slotElement = null
+      for (const selector of selectors) {
+        slotElement = document.querySelector(selector)
+        console.log(`Trying selector: ${selector}, found:`, !!slotElement)
+        if (slotElement) break
+      }
+      
+      if (slotElement) {
+        addPersistentHighlight(slotElement, contentSlot, 'item')
+        // Scroll the bag window to show the item
+        slotElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else {
+        console.warn(`Could not find bag item ${contentSlot} in bag ${bagSlot} for highlighting`)
+        // List all elements in the bag for debugging
+        const bagElements = document.querySelectorAll(`.bag-window [data-slot]`)
+        console.log('Available bag elements:', Array.from(bagElements).map(el => el.getAttribute('data-slot')))
+      }
+    } else {
+      console.warn(`Bag ${bagSlot} is not open, cannot highlight item ${contentSlot}`)
     }
+  }, 300) // Wait for bag to open and render
+}
+
+// Core function to add persistent highlighting with blinking
+const addPersistentHighlight = (element, slotId, type) => {
+  // Add the element to our tracking
+  if (type === 'item') {
+    persistentHighlights.value.items.add(slotId)
+  } else if (type === 'bag') {
+    persistentHighlights.value.bags.add(slotId)
   }
+  
+  // Add both blinking and persistent classes
+  element.classList.add('blinking-highlight', 'persistent-highlight')
+  persistentHighlights.value.blinking.add(slotId)
+  
+  // Debug: Verify CSS classes are applied
+  console.log(`Applied highlighting to ${type} slot ${slotId}:`, {
+    element: element.tagName + (element.className ? '.' + element.className.split(' ').join('.') : ''),
+    hasBlinking: element.classList.contains('blinking-highlight'),
+    hasPersistent: element.classList.contains('persistent-highlight'),
+    computedBorder: window.getComputedStyle(element).border,
+    computedOutline: window.getComputedStyle(element).outline
+  })
+  
+  // After 5 seconds, remove blinking but keep persistent highlight
+  setTimeout(() => {
+    element.classList.remove('blinking-highlight')
+    persistentHighlights.value.blinking.delete(slotId)
+    console.log(`Stopped blinking for ${type} slot ${slotId}, persistent border remains`)
+    console.log(`Post-blink CSS state:`, {
+      hasBlinking: element.classList.contains('blinking-highlight'),
+      hasPersistent: element.classList.contains('persistent-highlight'),
+      computedBorder: window.getComputedStyle(element).border
+    })
+  }, 5000)
+  
+  console.log(`Added persistent highlight to ${type} slot ${slotId}`)
 }
 
 const addHighlightEffect = (element) => {
@@ -1314,12 +1846,53 @@ const getLocationDescription = (result) => {
     return `Main inventory slot ${slotid}`
   } else if (slotid >= 251 && slotid <= 361) {
     const bagSlot = getBagSlotForContentSlot(slotid)
-    const bagName = character.value?.inventory?.find(s => s.slot === bagSlot)?.item?.name || 'Unknown Bag'
-    return `In ${bagName} (slot ${bagSlot})`
+    if (bagSlot) {
+      const uiSlot = getUISlotFromBagSlot(bagSlot)
+      const bagItem = props.character?.inventory?.find(s => s.slot === uiSlot)?.item
+      const bagName = bagItem?.name || 'Unknown Bag'
+      
+      // Debug logging to help troubleshoot
+      console.log('Bag lookup:', {
+        contentSlot: slotid,
+        bagSlot: bagSlot,
+        uiSlot: uiSlot,
+        bagItem: bagItem,
+        bagName: bagName,
+        inventory: props.character?.inventory
+      })
+      
+      return `In ${bagName} (slot ${uiSlot})`
+    }
+    return `Bag content slot ${slotid}`
   }
   
   return `Slot ${slotid}`
 }
+
+// Watch for character changes to clear highlights
+watch(() => props.character?.id, (newCharacterId, oldCharacterId) => {
+  if (newCharacterId !== oldCharacterId && oldCharacterId !== undefined) {
+    console.log('Character changed, clearing persistent highlights')
+    clearAllHighlights()
+  }
+})
+
+// Component cleanup to prevent memory leaks
+onUnmounted(() => {
+  // Clear highlights when component unmounts
+  clearAllHighlights()
+  
+  // Cleanup global drag event listeners that might persist
+  document.removeEventListener('mousemove', handleDrag)
+  document.removeEventListener('mouseup', endDrag)
+  
+  // Clear any pending timeouts from debounced search
+  debouncedSearch.cancel?.()
+  
+  // Clear caches to prevent memory leaks
+  tooltipCache.clear()
+  itemDetailsCache.clear()
+})
 </script>
 
 <style scoped>
@@ -1934,6 +2507,41 @@ const getLocationDescription = (result) => {
   aspect-ratio: 1;
 }
 
+/* CRITICAL: Override bag slot highlighting immediately after base definition */
+.inventory-bags .bag-slot.persistent-highlight,
+.bags-section .inventory-bags .bag-slot.persistent-highlight,
+.character-inventory .bags-section .inventory-bags .bag-slot.persistent-highlight,
+div.bag-slot.persistent-highlight,
+[data-slot].persistent-highlight {
+  border: 6px solid #FFD700 !important;
+  border-style: solid !important;
+  border-color: #FFD700 !important;
+  border-width: 6px !important;
+  background: rgba(255, 215, 0, 0.5) !important;
+  box-shadow: 0 0 30px rgba(255, 215, 0, 1.0) !important;
+  transform: scale(1.05) !important;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+/* Nuclear option: Pseudo-element overlay for bag highlighting */
+.inventory-bags .bag-slot.persistent-highlight::after,
+.bags-section .inventory-bags .bag-slot.persistent-highlight::after,
+div.bag-slot.persistent-highlight::after,
+[data-slot].persistent-highlight::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border: 3px solid #FFD700;
+  border-radius: 4px;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .bag-slot:hover {
   background: #333;
 }
@@ -2480,6 +3088,53 @@ const getLocationDescription = (result) => {
   animation: goldFlash 5s ease-in-out;
   position: relative;
   z-index: 10;
+}
+
+/* Persistent Highlight Styles */
+.persistent-highlight {
+  border: 3px solid #FFD700 !important;
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.8) !important;
+}
+
+/* Ensure bag slots show the highlight properly - use maximum specificity */
+.character-inventory .bag-slot.persistent-highlight,
+.inventory-bags .bag-slot.persistent-highlight,
+.bag-slot.persistent-highlight.has-item,
+.bag-slot.persistent-highlight {
+  border: 4px solid #FFD700 !important;
+  border-style: solid !important;
+  border-color: #FFD700 !important;
+  border-width: 4px !important;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 1.0) !important;
+  outline: 3px solid #FFA500 !important;
+  outline-offset: -1px !important;
+  background: rgba(255, 215, 0, 0.2) !important; /* More visible gold tint */
+}
+
+/* Ensure equipment slots show the highlight properly */
+.equipment-slot.persistent-highlight {
+  border: 3px solid #FFD700 !important;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.8) !important;
+}
+
+/* Blinking Highlight Animation */
+.blinking-highlight,
+.bag-slot.blinking-highlight,
+.equipment-slot.blinking-highlight {
+  animation: goldBlink 0.3s ease-in-out infinite alternate;
+}
+
+@keyframes goldBlink {
+  0% {
+    border-color: #FFD700 !important;
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.8) !important;
+  }
+  100% {
+    border-color: #FFA500 !important;
+    box-shadow: 0 0 20px rgba(255, 165, 0, 1) !important;
+  }
 }
 
 @keyframes goldFlash {

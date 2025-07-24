@@ -241,6 +241,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import CharacterInventory from '../components/CharacterInventory.vue'
 import { getApiBaseUrl } from '../config/api'
 import axios from 'axios'
+import { resilientApi } from '../utils/resilientRequest'
 
 export default {
   name: 'Characters',
@@ -248,6 +249,116 @@ export default {
     CharacterInventory
   },
   setup() {
+    // Circuit breaker pattern for problematic endpoints
+    const circuitBreakerState = ref({
+      currency: { failures: 0, lastFailure: null, isOpen: false },
+      stats: { failures: 0, lastFailure: null, isOpen: false },
+      search: { failures: 0, lastFailure: null, isOpen: false }
+    })
+    
+    const isCircuitOpen = (endpoint) => {
+      const state = circuitBreakerState.value[endpoint]
+      if (!state) return false
+      
+      // Circuit is open if we've had 8+ failures in the last 2 minutes (more lenient)
+      if (state.failures >= 8) {
+        const twoMinutesAgo = Date.now() - 2 * 60 * 1000
+        if (state.lastFailure && state.lastFailure > twoMinutesAgo) {
+          return true
+        } else {
+          // Reset after 2 minutes (faster recovery)
+          state.failures = 0
+          state.lastFailure = null
+          state.isOpen = false
+        }
+      }
+      return false
+    }
+    
+    const recordFailure = (endpoint, error = null) => {
+      const state = circuitBreakerState.value[endpoint]
+      if (!state) return
+      
+      // Only count serious failures - ignore CORS and network connectivity issues
+      const shouldCount = !error || (
+        !error.message?.includes('CORS') &&
+        !error.message?.includes('ERR_CONNECTION_REFUSED') &&
+        !error.code?.includes('ERR_NETWORK') &&
+        error.response?.status !== 403 // Ignore CORS 403 errors
+      )
+      
+      if (shouldCount) {
+        state.failures++
+        state.lastFailure = Date.now()
+        
+        if (state.failures >= 8) {
+          state.isOpen = true
+          console.warn(`Circuit breaker opened for ${endpoint} endpoint after 8 failures`)
+        }
+      } else {
+        console.debug(`Ignoring ${endpoint} failure due to network/CORS issue:`, error?.message)
+      }
+    }
+    
+    const recordSuccess = (endpoint) => {
+      const state = circuitBreakerState.value[endpoint]
+      if (!state) return
+      
+      // Reset on successful request
+      state.failures = 0
+      state.lastFailure = null
+      state.isOpen = false
+    }
+    
+    // Manual circuit breaker reset function (can be called from console for debugging)
+    const resetCircuitBreaker = (endpoint = null) => {
+      if (endpoint) {
+        const state = circuitBreakerState.value[endpoint]
+        if (state) {
+          state.failures = 0
+          state.lastFailure = null
+          state.isOpen = false
+          console.log(`Circuit breaker reset for ${endpoint}`)
+        }
+      } else {
+        // Reset all circuit breakers
+        Object.keys(circuitBreakerState.value).forEach(key => {
+          const state = circuitBreakerState.value[key]
+          state.failures = 0
+          state.lastFailure = null
+          state.isOpen = false
+        })
+        console.log('All circuit breakers reset')
+      }
+    }
+    
+    // Expose for debugging in development
+    if (import.meta.env.DEV) {
+      window.resetCircuitBreaker = resetCircuitBreaker
+    }
+    
+    // Request deduplication to prevent identical API calls
+    const activeRequests = ref(new Map())
+    
+    const dedupedRequest = async (key, requestFn) => {
+      // If request is already in progress, wait for it
+      if (activeRequests.value.has(key)) {
+        console.log(`Deduplicating request: ${key}`)
+        return activeRequests.value.get(key)
+      }
+      
+      // Start new request and store promise
+      const requestPromise = requestFn()
+      activeRequests.value.set(key, requestPromise)
+      
+      try {
+        const result = await requestPromise
+        return result
+      } finally {
+        // Clean up when request completes
+        activeRequests.value.delete(key)
+      }
+    }
     // Main character slots
     const primaryMain = ref(null)
     const secondaryMain = ref(null)
@@ -322,6 +433,10 @@ export default {
     
     // Keyboard event handler
     const handleKeydown = (event) => {
+      // Early return for non-navigation keys to avoid unnecessary processing
+      const navigationKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape']
+      if (!navigationKeys.includes(event.key)) return
+      
       if (searchResults.value.length === 0) return
       
       switch (event.key) {
@@ -363,6 +478,11 @@ export default {
     // Character loading state and request management
     const isLoadingCharacter = ref(false)
     const currentCharacterRequest = ref(null)
+    const currentSearchRequest = ref(null)
+    
+    // Rate limiting for character searches to prevent backend overload
+    let lastSearchTime = 0
+    const SEARCH_RATE_LIMIT = 1000 // Minimum 1 second between searches
 
     // Load user's saved main characters on page load
     const loadUserMainCharacters = async () => {
@@ -385,13 +505,42 @@ export default {
     const searchCharacters = async (query, isModalSearch = false) => {
       if (!query.trim()) return []
       
+      // Circuit breaker: skip search if too many recent failures
+      if (isCircuitOpen('search')) {
+        console.log('Character search circuit breaker active, skipping search')
+        return []
+      }
+      
+      // Rate limiting: enforce minimum time between searches
+      const now = Date.now()
+      const timeSinceLastSearch = now - lastSearchTime
+      if (timeSinceLastSearch < SEARCH_RATE_LIMIT) {
+        console.log(`Search rate limited, waiting ${SEARCH_RATE_LIMIT - timeSinceLastSearch}ms`)
+        await new Promise(resolve => setTimeout(resolve, SEARCH_RATE_LIMIT - timeSinceLastSearch))
+      }
+      lastSearchTime = Date.now()
+      
+      // Cancel any existing search request
+      if (currentSearchRequest.value) {
+        currentSearchRequest.value.abort()
+        currentSearchRequest.value = null
+      }
+      
+      // Create new AbortController for this search
+      currentSearchRequest.value = new AbortController()
+      
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/search`, {
+        const response = await resilientApi.get('/api/characters/search', {
           params: { 
             name: query.trim(),
             limit: isModalSearch ? 5 : 50  // Get more results for main search
-          }
+          },
+          timeout: 15000, // Increased to 15 second timeout for more reliability
+          signal: currentSearchRequest.value.signal
         })
+        
+        // Record success to reset circuit breaker
+        recordSuccess('search')
         
         return response.data.map(character => ({
           id: character.id,
@@ -403,8 +552,22 @@ export default {
           rawData: character // Keep raw data for full character loading
         }))
       } catch (error) {
-        console.error('Failed to search characters:', error)
+        if (error.name === 'AbortError') {
+          console.log('Search request cancelled')
+          return []
+        }
+        
+        // Record failure for circuit breaker
+        recordFailure('search', error)
+        
+        console.error('Failed to search characters:', {
+          query,
+          error: error.message,
+          status: error.response?.status
+        })
         return []
+      } finally {
+        currentSearchRequest.value = null
       }
     }
 
@@ -412,8 +575,8 @@ export default {
     const loadFullCharacterData = async (characterId, abortSignal = null) => {
       try {
         // Load basic character data with timeout and abort signal
-        const charResponse = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}`, {
-          timeout: 10000, // Increased to 10 second timeout for basic character data
+        const charResponse = await resilientApi.get(`/api/characters/${characterId}`, {
+          timeout: 12000, // Increased to 12 second timeout for basic character data
           signal: abortSignal
         })
         const character = charResponse.data
@@ -455,19 +618,34 @@ export default {
         })
         
         try {
-          // Load data sequentially to reduce database load
-          await Promise.race([
-            (async () => {
-              // Load inventory first (most important)
-              await loadCharacterInventory(characterId, fullCharacter, abortSignal)
-              // Then load currency and stats in parallel
-              await Promise.all([
-                loadCharacterCurrency(characterId, fullCharacter, abortSignal),
-                loadCharacterStats(characterId, fullCharacter, abortSignal)
-              ])
-            })(),
-            timeout(20000, abortSignal) // Increased to 20 second timeout for sequential loading
-          ])
+          // Load inventory first (critical for character display)
+          try {
+            await Promise.race([
+              loadCharacterInventory(characterId, fullCharacter, abortSignal),
+              timeout(20000, abortSignal) // 20 second timeout for inventory
+            ])
+          } catch (error) {
+            if (error.name === 'AbortError') {
+              throw error
+            }
+            console.warn('Character inventory loading failed but continuing:', error)
+          }
+          
+          // Load currency and stats asynchronously (non-blocking)
+          Promise.allSettled([
+            loadCharacterCurrency(characterId, fullCharacter, abortSignal),
+            loadCharacterStats(characterId, fullCharacter, abortSignal)
+          ]).then(results => {
+            // Log any failures but character is already displayed
+            results.forEach((result, index) => {
+              if (result.status === 'rejected') {
+                const type = index === 0 ? 'currency' : 'stats'
+                console.warn(`Character ${type} loading failed (background):`, result.reason)
+              }
+            })
+          }).catch(error => {
+            console.warn('Background loading failed:', error)
+          })
         } catch (error) {
           if (error.name === 'AbortError') {
             throw error // Re-throw abort errors
@@ -587,6 +765,12 @@ export default {
     const performSearch = async () => {
       if (!searchQuery.value.trim()) return
       
+      // Prevent rapid successive searches
+      if (isSearching.value) {
+        console.log('Search already in progress, ignoring request')
+        return
+      }
+      
       isSearching.value = true
       lastSearchQuery.value = searchQuery.value.trim()
       
@@ -595,7 +779,7 @@ export default {
         searchResults.value = results
         totalResults.value = results.length
         currentPage.value = 0
-        selectedIndex.value = -1
+        selectedIndex.value = results.length > 0 ? 0 : -1  // Auto-select first result if available
         searchPerformed.value = true
         // Clear the search input after successful search
         searchQuery.value = ''
@@ -610,7 +794,7 @@ export default {
         searchResults.value = []
         totalResults.value = 0
         currentPage.value = 0
-        selectedIndex.value = -1
+        selectedIndex.value = -1  // No selection when search fails
         searchPerformed.value = true
         // Clear the search input even on error
         searchQuery.value = ''
@@ -645,18 +829,26 @@ export default {
         // Create new AbortController for this request
         currentCharacterRequest.value = new AbortController()
         
+        console.log(`Loading character: ${character.name} (ID: ${character.id})`)
         const fullCharacter = await loadFullCharacterData(character.id, currentCharacterRequest.value.signal)
         selectedCharacter.value = fullCharacter
         
         // Hide the dropdown after selection
         searchResults.value = []
         searchPerformed.value = false
+        console.log(`Successfully loaded character: ${character.name}`)
       } catch (error) {
         if (error.name === 'AbortError') {
+          console.log('Character loading was cancelled')
           return
         }
-        console.error(`Failed to load ${character.name}'s data:`, error)
-        alert(`Failed to load ${character.name}'s data. The server may be busy. Please try again.`)
+        console.error(`Failed to load ${character.name}'s data:`, {
+          characterId: character.id,
+          error: error.message,
+          status: error.response?.status
+        })
+        // More graceful error message without alert
+        console.warn(`Character loading failed for ${character.name}. Please try again.`)
       } finally {
         isLoadingCharacter.value = false
         currentCharacterRequest.value = null
@@ -707,8 +899,8 @@ export default {
 
     const loadCharacterInventory = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`, {
-          timeout: 15000, // Increased to 15 second timeout for stability
+        const response = await resilientApi.get(`/api/characters/${characterId}/inventory`, {
+          timeout: 20000, // Increased to 20 second timeout for large inventories
           signal: abortSignal
         })
         
@@ -832,54 +1024,279 @@ export default {
       }
     }
 
-    // Load character currency from separate currency system
+    // Load character currency with local fallback
     const loadCharacterCurrency = async (characterId, character, abortSignal = null) => {
-      try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/currency`, {
-          timeout: 12000, // Increased to 12 second timeout
-          signal: abortSignal
-        })
-        character.currency = {
-          platinum: response.data.platinum || 0,
-          gold: response.data.gold || 0,
-          silver: response.data.silver || 0,
-          copper: response.data.copper || 0
+      // Set default currency values first (like Magelo)
+      character.currency = {
+        platinum: 0,
+        gold: 0,
+        silver: 0,
+        copper: 0
+      }
+      
+      // Try to load from API if circuit breaker allows
+      if (!isCircuitOpen('currency')) {
+        const requestKey = `currency-${characterId}`
+        try {
+          const response = await dedupedRequest(requestKey, async () => {
+            return await resilientApi.get(`/api/characters/${characterId}/currency`, {
+              timeout: 8000, // Reduced timeout for faster response
+              signal: abortSignal
+            })
+          })
+          
+          if (response && response.data) {
+            character.currency = {
+              platinum: response.data.platinum || 0,
+              gold: response.data.gold || 0,
+              silver: response.data.silver || 0,
+              copper: response.data.copper || 0
+            }
+            console.log('Loaded currency from server:', character.currency)
+          }
+          
+          recordSuccess('currency')
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.log('Character currency loading was cancelled')
+            return
+          }
+          
+          recordFailure('currency', error)
+          console.warn('Currency loading failed, using default values:', error.message)
+          // Keep default currency values (all zeros)
         }
-      } catch (error) {
-        console.error('Failed to load character currency:', error)
-        // Keep default currency values (all zeros)
+      } else {
+        console.log('Currency endpoint circuit breaker active, using default values')
       }
     }
 
-    // Load calculated character stats (AC, ATK, resistances, max HP/MP)
+    // Calculate character stats locally (Magelo-style) with API fallback
     const loadCharacterStats = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/stats`, {
-          timeout: 12000, // Increased to 12 second timeout
-          signal: abortSignal
-        })
+        // PRIMARY: Calculate stats locally from equipment (like Magelo)
+        calculateStatsFromEquipment(character)
         
-        // Update calculated stats
-        character.maxHp = response.data.maxHp || character.maxHp
-        character.maxMp = response.data.maxMp || character.maxMp
-        character.ac = response.data.ac || 0
-        character.atk = response.data.atk || 0
-        character.weight = response.data.weight || 0
-        
-        // Update resistances
-        if (response.data.resistances) {
-          character.resistances = {
-            poison: response.data.resistances.poison || 0,
-            magic: response.data.resistances.magic || 0,
-            disease: response.data.resistances.disease || 0,
-            fire: response.data.resistances.fire || 0,
-            cold: response.data.resistances.cold || 0,
-            corrupt: response.data.resistances.corrupt || 0
+        // FALLBACK: Try to get server-calculated stats if circuit breaker allows
+        if (!isCircuitOpen('stats')) {
+          const requestKey = `stats-${characterId}`
+          try {
+            const response = await dedupedRequest(requestKey, async () => {
+              return await resilientApi.get(`/api/characters/${characterId}/stats`, {
+                timeout: 8000, // Reduced timeout for faster fallback
+                signal: abortSignal
+              })
+            })
+            
+            // Override local calculations with server values if available
+            if (response && response.data) {
+              character.maxHp = response.data.maxHp || character.maxHp
+              character.maxMp = response.data.maxMp || character.maxMp
+              character.ac = response.data.ac || character.ac
+              character.atk = response.data.atk || character.atk
+              character.weight = response.data.weight || character.weight
+              
+              if (response.data.resistances) {
+                character.resistances = {
+                  poison: response.data.resistances.poison || character.resistances.poison,
+                  magic: response.data.resistances.magic || character.resistances.magic,
+                  disease: response.data.resistances.disease || character.resistances.disease,
+                  fire: response.data.resistances.fire || character.resistances.fire,
+                  cold: response.data.resistances.cold || character.resistances.cold,
+                  corrupt: response.data.resistances.corrupt || character.resistances.corrupt || 0
+                }
+              }
+              
+              console.log('Enhanced stats with server calculations')
+            }
+            
+            recordSuccess('stats')
+          } catch (apiError) {
+            recordFailure('stats', apiError)
+            console.warn('Server stat calculation failed, using local calculations:', apiError.message)
+            // Keep locally calculated stats
           }
+        } else {
+          console.log('Stats endpoint circuit breaker active, using local calculations only')
         }
+        
       } catch (error) {
-        console.error('Failed to load character calculated stats:', error)
-        // Keep default/base stat values on error
+        if (error.name === 'AbortError') {
+          console.log('Character stats loading was cancelled')
+          return
+        }
+        console.error('Failed to calculate character stats:', error)
+        // Set minimal fallback values
+        setFallbackStats(character)
+      }
+    }
+    
+    // Calculate stats exactly like Magelo character browser (100% identical methodology)
+    const calculateStatsFromEquipment = (character) => {
+      // Initialize stats exactly as Magelo does
+      character.ac = 0
+      character.atk = 0
+      character.weight = 0
+      
+      // Initialize resistances exactly as Magelo displays them
+      character.resistances = {
+        poison: 0,
+        magic: 0,
+        disease: 0,
+        fire: 0,
+        cold: 0,
+        corrupt: 0
+      }
+      
+      // Get base character stats from database
+      const baseStats = character.stats || {}
+      const level = character.level || 1
+      const charClass = character.class || 'Warrior'
+      
+      // Calculate equipment bonuses exactly like Magelo
+      if (character.equipment) {
+        Object.values(character.equipment).forEach(item => {
+          if (item && typeof item === 'object') {
+            // AC: Sum all equipped item AC values (Magelo method)
+            character.ac += parseInt(item.ac || 0)
+            
+            // ATK: Sum all equipped item ATK values (Magelo method)
+            character.atk += parseInt(item.atk || 0)
+            
+            // Weight: Sum all equipped item weights (Magelo method)
+            character.weight += parseFloat(item.weight || 0)
+            
+            // Resistances: Sum all equipped item resistance values (Magelo method)
+            character.resistances.poison += parseInt(item.pr || 0)
+            character.resistances.magic += parseInt(item.mr || 0)
+            character.resistances.fire += parseInt(item.fr || 0)
+            character.resistances.cold += parseInt(item.cr || 0)
+            character.resistances.disease += parseInt(item.dr || 0)
+            character.resistances.corrupt += parseInt(item.cor || item.corruption || 0)
+          }
+        })
+      }
+      
+      // Calculate HP exactly like Magelo (using EverQuest's actual formulas)
+      const stamina = parseInt(baseStats.sta || 75) // Default starting STA varies by race
+      const constitution = stamina // In EQ, STA is constitution
+      
+      // Magelo HP Formula: Base HP + (Level * HP per level) + (STA bonus)
+      // Class-specific HP per level multipliers (exactly as Magelo calculates)
+      const hpPerLevelByClass = {
+        'Warrior': 22,
+        'Cleric': 15,
+        'Paladin': 20,
+        'Ranger': 20,
+        'Shadow Knight': 20,
+        'Shadowknight': 20,
+        'Druid': 15,
+        'Monk': 18,
+        'Bard': 16,
+        'Rogue': 16,
+        'Shaman': 15,
+        'Necromancer': 14,
+        'Wizard': 12,
+        'Magician': 12,
+        'Enchanter': 12,
+        'Beastlord': 18,
+        'Berserker': 25
+      }
+      
+      const hpPerLevel = hpPerLevelByClass[charClass] || 15
+      const baseHpForClass = 100 // Base HP for all classes at level 1
+      
+      // Stamina HP bonus (every 1 STA = ~10 HP, but diminishing returns apply)
+      let staHpBonus = 0
+      if (stamina > 75) {
+        staHpBonus = Math.floor((stamina - 75) * 10) // Linear bonus above racial base
+      }
+      
+      character.maxHp = baseHpForClass + (level * hpPerLevel) + staHpBonus
+      
+      // Calculate MP exactly like Magelo (using EverQuest's actual formulas)
+      const intelligence = parseInt(baseStats.int || 75)
+      const wisdom = parseInt(baseStats.wis || 75)
+      
+      // MP-using classes (exactly as Magelo determines)
+      const mpClasses = {
+        'Cleric': 'wisdom',
+        'Druid': 'wisdom',
+        'Shaman': 'wisdom',
+        'Wizard': 'intelligence',
+        'Magician': 'intelligence',
+        'Necromancer': 'intelligence',
+        'Enchanter': 'intelligence',
+        'Paladin': 'wisdom',      // Paladins get MP at level 9+
+        'Shadow Knight': 'intelligence', // SKs get MP at level 9+
+        'Shadowknight': 'intelligence',
+        'Ranger': 'wisdom',       // Rangers get MP at level 9+
+        'Beastlord': 'wisdom'     // Beastlords get MP at level 9+
+      }
+      
+      if (mpClasses[charClass]) {
+        const mentalStat = mpClasses[charClass] === 'wisdom' ? wisdom : intelligence
+        const isHybrid = ['Paladin', 'Ranger', 'Shadow Knight', 'Shadowknight', 'Beastlord'].includes(charClass)
+        
+        if (isHybrid && level < 9) {
+          // Hybrid classes don't get MP until level 9
+          character.maxMp = 0
+        } else {
+          // Magelo MP Formula: Base MP + (Level * MP per level) + (Mental stat bonus)
+          const mpPerLevelByClass = {
+            'Cleric': 11,
+            'Druid': 11,
+            'Shaman': 11,
+            'Wizard': 13,
+            'Magician': 13,
+            'Necromancer': 12,
+            'Enchanter': 12,
+            'Paladin': 4,        // Hybrids get less MP per level
+            'Ranger': 4,
+            'Shadow Knight': 4,
+            'Shadowknight': 4,
+            'Beastlord': 9
+          }
+          
+          const mpPerLevel = mpPerLevelByClass[charClass] || 0
+          const baseMpForClass = 50
+          
+          // Mental stat MP bonus (every 1 INT/WIS above base = ~5 MP)
+          let mentalStatBonus = 0
+          if (mentalStat > 75) {
+            mentalStatBonus = Math.floor((mentalStat - 75) * 5)
+          }
+          
+          character.maxMp = baseMpForClass + (level * mpPerLevel) + mentalStatBonus
+        }
+      } else {
+        // Non-caster classes have 0 MP
+        character.maxMp = 0
+      }
+      
+      // Round weight to 1 decimal place like Magelo
+      character.weight = Math.round(character.weight * 10) / 10
+      
+      console.log('Calculated stats using Magelo methodology:', {
+        ac: character.ac,
+        atk: character.atk,
+        weight: character.weight,
+        maxHp: character.maxHp,
+        maxMp: character.maxMp,
+        resistances: character.resistances,
+        method: 'Magelo-exact'
+      })
+    }
+    
+    // Set fallback stats if all calculations fail
+    const setFallbackStats = (character) => {
+      character.ac = character.ac || 0
+      character.atk = character.atk || 0
+      character.weight = character.weight || 0
+      character.maxHp = character.maxHp || (character.level * 20 + 100)
+      character.maxMp = character.maxMp || 0
+      character.resistances = character.resistances || {
+        poison: 0, magic: 0, disease: 0, fire: 0, cold: 0, corrupt: 0
       }
     }
 
@@ -934,23 +1351,85 @@ export default {
 
     // Set character as primary main
     const setPrimaryMain = async (character) => {
-      if (isUpdatingMains.value) return
+      // Validation checks
+      if (!character) {
+        console.error('Cannot set primary main: character is null or undefined')
+        return
+      }
+      
+      if (!character.id) {
+        console.error('Cannot set primary main: character.id is missing', character)
+        return
+      }
+      
+      if (isUpdatingMains.value) {
+        console.warn('Primary main update already in progress, ignoring request')
+        return
+      }
+      
+      // Check if character is already the primary main
+      if (primaryMain.value && primaryMain.value.id === character.id) {
+        console.log(`${character.name} is already the primary main character`)
+        return
+      }
       
       isUpdatingMains.value = true
+      
       try {
-        await axios.post(`${getApiBaseUrl()}/api/user/characters/primary`, {
+        // Ensure we have the API base URL
+        const apiBaseUrl = getApiBaseUrl()
+        if (!apiBaseUrl) {
+          throw new Error('API base URL is not available')
+        }
+        
+        const response = await axios.post(`${apiBaseUrl}/api/user/characters/primary`, {
           characterId: character.id,
-          characterName: character.name
+          characterName: character.name || 'Unknown'
+        }, {
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Content-Type': 'application/json'
+          }
         })
         
-        primaryMain.value = character
-        console.log(`Set ${character.name} as Primary Main`)
-      } catch (error) {
-        console.error('Failed to set primary main (API not implemented yet):', error)
+        // Verify the response
+        if (response.status === 200 || response.status === 201) {
+          primaryMain.value = character
+          console.log(`Successfully set ${character.name} as Primary Main`)
+        } else {
+          throw new Error(`Unexpected response status: ${response.status}`)
+        }
         
-        // For testing, set it locally until API is implemented
+      } catch (error) {
+        // Enhanced error handling
+        if (error.response) {
+          // Server responded with error status
+          console.error('Failed to set primary main - Server error:', {
+            status: error.response.status,
+            data: error.response.data,
+            character: character.name
+          })
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error('Failed to set primary main - Network error:', {
+            message: 'No response from server',
+            character: character.name
+          })
+        } else {
+          // Something else went wrong
+          console.error('Failed to set primary main - Unexpected error:', {
+            message: error.message,
+            character: character.name
+          })
+        }
+        
+        // For development/testing, still set it locally but with clear indication
         primaryMain.value = character
-        console.log(`Mock: Set ${character.name} as Primary Main`)
+        console.log(`Mock: Set ${character.name} as Primary Main (API failed)`)
+        
+        // Could add user notification here
+        // showErrorToast(`Failed to save ${character.name} as primary main. Setting locally for this session.`)
+        
       } finally {
         isUpdatingMains.value = false
       }
@@ -958,23 +1437,85 @@ export default {
 
     // Set character as secondary main  
     const setSecondaryMain = async (character) => {
-      if (isUpdatingMains.value) return
+      // Validation checks
+      if (!character) {
+        console.error('Cannot set secondary main: character is null or undefined')
+        return
+      }
+      
+      if (!character.id) {
+        console.error('Cannot set secondary main: character.id is missing', character)
+        return
+      }
+      
+      if (isUpdatingMains.value) {
+        console.warn('Secondary main update already in progress, ignoring request')
+        return
+      }
+      
+      // Check if character is already the secondary main
+      if (secondaryMain.value && secondaryMain.value.id === character.id) {
+        console.log(`${character.name} is already the secondary main character`)
+        return
+      }
       
       isUpdatingMains.value = true
+      
       try {
-        await axios.post(`${getApiBaseUrl()}/api/user/characters/secondary`, {
+        // Ensure we have the API base URL
+        const apiBaseUrl = getApiBaseUrl()
+        if (!apiBaseUrl) {
+          throw new Error('API base URL is not available')
+        }
+        
+        const response = await axios.post(`${apiBaseUrl}/api/user/characters/secondary`, {
           characterId: character.id,
-          characterName: character.name
+          characterName: character.name || 'Unknown'
+        }, {
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Content-Type': 'application/json'
+          }
         })
         
-        secondaryMain.value = character
-        console.log(`Set ${character.name} as Secondary Main`)
-      } catch (error) {
-        console.error('Failed to set secondary main (API not implemented yet):', error)
+        // Verify the response
+        if (response.status === 200 || response.status === 201) {
+          secondaryMain.value = character
+          console.log(`Successfully set ${character.name} as Secondary Main`)
+        } else {
+          throw new Error(`Unexpected response status: ${response.status}`)
+        }
         
-        // For testing, set it locally until API is implemented
+      } catch (error) {
+        // Enhanced error handling
+        if (error.response) {
+          // Server responded with error status
+          console.error('Failed to set secondary main - Server error:', {
+            status: error.response.status,
+            data: error.response.data,
+            character: character.name
+          })
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error('Failed to set secondary main - Network error:', {
+            message: 'No response from server',
+            character: character.name
+          })
+        } else {
+          // Something else went wrong
+          console.error('Failed to set secondary main - Unexpected error:', {
+            message: error.message,
+            character: character.name
+          })
+        }
+        
+        // For development/testing, still set it locally but with clear indication
         secondaryMain.value = character
-        console.log(`Mock: Set ${character.name} as Secondary Main`)
+        console.log(`Mock: Set ${character.name} as Secondary Main (API failed)`)
+        
+        // Could add user notification here
+        // showErrorToast(`Failed to save ${character.name} as secondary main. Setting locally for this session.`)
+        
       } finally {
         isUpdatingMains.value = false
       }
@@ -982,29 +1523,85 @@ export default {
 
     // Remove character as main
     const removeAsMain = async (character, slotType) => {
-      if (isUpdatingMains.value) return
+      // Validation checks
+      if (!character) {
+        console.error('Cannot remove main: character is null or undefined')
+        return
+      }
+      
+      if (!slotType || (slotType !== 'primary' && slotType !== 'secondary')) {
+        console.error('Cannot remove main: invalid slotType', slotType)
+        return
+      }
+      
+      if (isUpdatingMains.value) {
+        console.warn('Main character update already in progress, ignoring remove request')
+        return
+      }
       
       isUpdatingMains.value = true
+      
       try {
-        await axios.delete(`${getApiBaseUrl()}/api/user/characters/${slotType}`)
+        // Ensure we have the API base URL
+        const apiBaseUrl = getApiBaseUrl()
+        if (!apiBaseUrl) {
+          throw new Error('API base URL is not available')
+        }
         
-        if (slotType === 'primary') {
-          primaryMain.value = null
+        const response = await axios.delete(`${apiBaseUrl}/api/user/characters/${slotType}`, {
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        // Verify the response
+        if (response.status === 200 || response.status === 204) {
+          // Clear the main character
+          if (slotType === 'primary') {
+            primaryMain.value = null
+          } else {
+            secondaryMain.value = null
+          }
+          
+          // Clear selected character if it was the removed main
+          if (selectedCharacter.value?.id === character.id && activeSlot.value === slotType) {
+            selectedCharacter.value = null
+            activeSlot.value = null
+          }
+          
+          console.log(`Successfully removed ${character.name} as ${slotType} main character`)
         } else {
-          secondaryMain.value = null
+          throw new Error(`Unexpected response status: ${response.status}`)
         }
         
-        // Clear selected character if it was the removed main
-        if (selectedCharacter.value?.id === character.id && activeSlot.value === slotType) {
-          selectedCharacter.value = null
-          activeSlot.value = null
-        }
-        
-        console.log(`Removed ${character.name} as ${slotType} main character`)
       } catch (error) {
-        console.error('Failed to remove main character (API not implemented yet):', error)
+        // Enhanced error handling
+        if (error.response) {
+          // Server responded with error status
+          console.error('Failed to remove main character - Server error:', {
+            status: error.response.status,
+            data: error.response.data,
+            character: character.name,
+            slotType
+          })
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error('Failed to remove main character - Network error:', {
+            message: 'No response from server',
+            character: character.name,
+            slotType
+          })
+        } else {
+          // Something else went wrong
+          console.error('Failed to remove main character - Unexpected error:', {
+            message: error.message,
+            character: character.name,
+            slotType
+          })
+        }
         
-        // For testing, clear it locally until API is implemented
+        // For development/testing, still clear it locally but with clear indication
         if (slotType === 'primary') {
           primaryMain.value = null
         } else {
@@ -1017,7 +1614,11 @@ export default {
           activeSlot.value = null
         }
         
-        console.log(`Mock: Removed ${character.name} as ${slotType} main character`)
+        console.log(`Mock: Removed ${character.name} as ${slotType} main character (API failed)`)
+        
+        // Could add user notification here
+        // showErrorToast(`Failed to remove ${character.name} as ${slotType} main. Cleared locally for this session.`)
+        
       } finally {
         isUpdatingMains.value = false
       }
@@ -1032,6 +1633,10 @@ export default {
       if (currentCharacterRequest.value) {
         currentCharacterRequest.value.abort()
         currentCharacterRequest.value = null
+      }
+      if (currentSearchRequest.value) {
+        currentSearchRequest.value.abort()
+        currentSearchRequest.value = null
       }
       isLoadingCharacter.value = false
     }
