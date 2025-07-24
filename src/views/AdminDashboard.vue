@@ -1894,8 +1894,8 @@ const connectFromSavedConfig = async () => {
       cancelToken: requestManager.getCancelToken('connect-stored-config')
     })
     
-    if (configRes.data.success && configRes.data.data?.config) {
-      const config = configRes.data.data.config
+    if (configRes.data.success && configRes.data.data) {
+      const config = configRes.data.data
       
       // Populate the form with stored config
       databaseForm.value = {
@@ -1955,7 +1955,7 @@ const checkStoredConfigAvailability = async () => {
       console.log('Stored config check response:', configRes.data)
     }
     
-    hasStoredConfig.value = !!(configRes.data.success && configRes.data.data?.config)
+    hasStoredConfig.value = !!(configRes.data.success && configRes.data.data)
     
     if (import.meta.env.DEV) {
       console.log('hasStoredConfig set to:', hasStoredConfig.value)
