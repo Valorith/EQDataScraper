@@ -809,14 +809,24 @@
             <div class="form-group">
               <label for="db-password">Password</label>
               <div class="input-with-loader">
-                <input 
-                  id="db-password"
-                  v-model="databaseForm.password" 
-                  type="password" 
-                  class="form-input"
-                  placeholder="Enter password"
-                  required
-                />
+                <div class="password-input-container">
+                  <input 
+                    id="db-password"
+                    v-model="databaseForm.password" 
+                    :type="showPassword ? 'text' : 'password'" 
+                    class="form-input password-input"
+                    placeholder="Enter password"
+                    required
+                  />
+                  <button 
+                    type="button"
+                    @click="showPassword = !showPassword"
+                    class="password-visibility-button"
+                    :title="showPassword ? 'Hide password' : 'Show password'"
+                  >
+                    <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                  </button>
+                </div>
                 <button 
                   type="button"
                   @click="loadFieldFromConfig('password')"
@@ -1064,6 +1074,7 @@ const loadingFields = ref({
   username: false,
   password: false
 })
+const showPassword = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -1958,6 +1969,8 @@ const connectFromSavedConfig = async () => {
     
     if (import.meta.env.DEV) {
       console.log('Connect from saved config response:', configRes.data)
+      console.log('API URL called:', `${getOAuthApiBaseUrl()}/api/admin/database/stored-config?include_password=true`)
+      console.log('Token being used:', token ? `${token.substring(0, 20)}...` : 'No token')
     }
     
     if (configRes.data.success && configRes.data.data) {
@@ -1972,6 +1985,10 @@ const connectFromSavedConfig = async () => {
         username: config.username || '',
         password: config.password || '', // Load password from saved config
         use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
+      }
+      
+      if (import.meta.env.DEV) {
+        console.log('Populated form data:', databaseForm.value)
       }
       
       showToast('Config Loaded', 'Configuration loaded from saved settings including password', 'success')
@@ -3442,6 +3459,36 @@ onUnmounted(() => {
 
 .field-loader-button i.fa-spin {
   animation: spin 1s linear infinite;
+}
+
+.password-input-container {
+  position: relative;
+  flex: 1;
+}
+
+.password-input-container .password-input {
+  padding-right: 48px; /* Make room for the eye icon */
+}
+
+.password-visibility-button {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.3s ease;
+  font-size: 1rem;
+}
+
+.password-visibility-button:hover {
+  color: #e5e7eb;
 }
 
 .checkbox-group {
