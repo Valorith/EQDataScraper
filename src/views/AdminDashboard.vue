@@ -881,8 +881,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS, getApiBaseUrl } from '../config/api'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS, getApiBaseUrl, getOAuthApiBaseUrl } from '../config/api'
 import { api } from '../utils/apiClient'
 import { resilientApi } from '../utils/resilientRequest'
 import { requestManager } from '../utils/requestManager'
@@ -1699,7 +1700,7 @@ const runDiagnostics = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await api.get('/api/admin/database/diagnostics', {
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/diagnostics`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 30000, // 30 second timeout for diagnostics (may need more time)
       cancelToken: requestManager.getCancelToken('database-diagnostics')
