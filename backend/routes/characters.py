@@ -96,67 +96,8 @@ def _format_timestamp(timestamp):
     
     return None
 
-def get_eqemu_connection():
-    """Get connection to EQEmu MySQL database using direct connection."""
-    try:
-        from utils.persistent_config import get_persistent_config
-        import pymysql
-        from urllib.parse import urlparse
-        
-        # Get database configuration with environment variable fallback
-        config = get_persistent_config()
-        db_config = config.get_database_config()
-        
-        if db_config:
-            database_url = db_config.get('production_database_url', '')
-            logger.info(f"Database config source: {db_config.get('config_source', 'unknown')}")
-        else:
-            database_url = ''
-        
-        if not database_url:
-            logger.error("No database URL configured")
-            return None
-            
-        # Parse the database URL
-        parsed = urlparse(database_url)
-        if not parsed.hostname:
-            logger.error("Invalid database URL format")
-            return None
-            
-        logger.info(f"Attempting direct connection to {parsed.hostname}:{parsed.port}")
-        
-        # Create direct connection
-        connection = pymysql.connect(
-            host=parsed.hostname,
-            port=parsed.port or 3306,
-            user=parsed.username,
-            password=parsed.password,
-            database=parsed.path.lstrip('/'),
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor,
-            connect_timeout=10,
-            read_timeout=30,
-            write_timeout=30,
-            autocommit=True
-        )
-        
-        # Test the connection
-        cursor = connection.cursor()
-        cursor.execute("SELECT 1 as test")
-        result = cursor.fetchone()
-        cursor.close()
-        
-        if result and result.get('test') == 1:
-            logger.info("Direct database connection successful")
-            return connection
-        else:
-            logger.error("Database connection test failed")
-            connection.close()
-            return None
-            
-    except Exception as e:
-        logger.error(f"Failed to create direct database connection: {type(e).__name__}: {e}")
-        return None
+# Note: get_eqemu_connection() function removed - now using get_eqemu_db_connection() from app.py
+# This ensures all routes use the same proven database connection method
 
 def get_user_db_connection():
     """Get connection to user accounts PostgreSQL database with enhanced error handling."""
@@ -437,10 +378,11 @@ def get_character_inventory(character_id):
     try:
         logger.info(f"Starting inventory request for character {character_id}")
         
-        # Get EQEmu database connection with timeout
-        connection = get_eqemu_connection()
-        if not connection:
-            logger.error(f"No EQEmu database connection available for character {character_id}")
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for character {character_id}: {error}")
             return jsonify({'error': 'Database connection unavailable - please try again later'}), 503
             
         logger.info(f"Connection obtained for character {character_id}, proceeding with queries")
@@ -665,10 +607,11 @@ def get_character_currency(character_id):
     - Character currency amounts (platinum, gold, silver, copper)
     """
     try:
-        # Get EQEmu database connection
-        connection = get_eqemu_connection()
-        if not connection:
-            logger.error("No EQEmu database connection available")
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for currency: {error}")
             return jsonify({'error': 'Database connection unavailable'}), 503
         
         logger.info(f"Currency request for character {character_id}")
@@ -741,10 +684,11 @@ def get_character_stats(character_id):
     - Calculated character statistics
     """
     try:
-        # Get EQEmu database connection
-        connection = get_eqemu_connection()
-        if not connection:
-            logger.error("No EQEmu database connection available")
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for stats: {error}")
             return jsonify({'error': 'Database connection unavailable'}), 503
             
         logger.info(f"Stats request for character {character_id}")
@@ -967,19 +911,12 @@ def get_item_details(item_id):
     - Complete item data from items table
     """
     try:
-        # Get EQEmu database connection
-        connection = get_eqemu_connection()
-        if not connection:
-            # Return mock item data for testing
-            logger.warning("No EQEmu database - returning mock item data")
-            return jsonify({
-                'id': item_id,
-                'Name': f'Mock Item {item_id}',
-                'icon': 500 + (item_id % 100),
-                'ac': 10,
-                'hp': 50,
-                'mana': 25
-            }), 200
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for item details: {error}")
+            return jsonify({'error': 'Database connection unavailable'}), 503
         
         # Get item data
         with connection.cursor() as cursor:
