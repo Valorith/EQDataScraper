@@ -1935,7 +1935,23 @@ const connectFromSavedConfig = async () => {
     }
   } catch (error) {
     console.error('Connect from saved config error:', error)
-    showToast('Connection Error', error.response?.data?.message || 'Failed to load saved configuration', 'error')
+    console.error('Error details:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message
+    })
+    
+    let errorMessage = 'Failed to load saved configuration'
+    if (error.response?.status === 403) {
+      errorMessage = 'Access denied. Admin authentication required.'
+    } else if (error.response?.status === 404) {
+      errorMessage = 'No saved configuration found'
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    showToast('Connection Error', errorMessage, 'error')
   } finally {
     connectingSaved.value = false
   }
@@ -1962,7 +1978,12 @@ const checkStoredConfigAvailability = async () => {
     }
   } catch (error) {
     if (import.meta.env.DEV) {
-      console.log('Stored config check error:', error.response?.status, error.response?.data || error.message)
+      console.log('Stored config check error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      })
     }
     // If there's an error checking, assume no stored config is available
     hasStoredConfig.value = false
@@ -3356,9 +3377,10 @@ onUnmounted(() => {
 
 .modal-footer {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   padding: 20px 30px 30px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-wrap: wrap;
 }
 
 .test-button, .save-button, .cancel-button {
@@ -3377,7 +3399,8 @@ onUnmounted(() => {
 .test-button {
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 120px;
 }
 
 .test-button:hover:not(:disabled) {
@@ -3389,7 +3412,8 @@ onUnmounted(() => {
 .save-button {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .save-button:hover:not(:disabled) {
@@ -3417,8 +3441,8 @@ onUnmounted(() => {
 .connect-saved-button {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   color: white;
-  flex: 0 1 auto;
-  min-width: 120px;
+  flex: 1 1 auto;
+  min-width: 100px;
 }
 
 .connect-saved-button:hover:not(:disabled) {
