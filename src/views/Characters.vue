@@ -11,7 +11,7 @@
           <div class="main-slot primary" :class="{ active: activeSlot === 'primary' }">
             <div class="slot-header">
               <h3>Primary Main</h3>
-              <div class="slot-badge primary">1st</div>
+              <div class="slot-badge primary">1</div>
             </div>
             
             <div v-if="primaryMain" class="slot-character" @click="viewCharacter(primaryMain, 'primary')">
@@ -41,7 +41,7 @@
           <div class="main-slot secondary" :class="{ active: activeSlot === 'secondary' }">
             <div class="slot-header">
               <h3>Secondary Main</h3>
-              <div class="slot-badge secondary">2nd</div>
+              <div class="slot-badge secondary">2</div>
             </div>
             
             <div v-if="secondaryMain" class="slot-character" @click="viewCharacter(secondaryMain, 'secondary')">
@@ -486,18 +486,51 @@ export default {
 
     // Load user's saved main characters on page load
     const loadUserMainCharacters = async () => {
+      console.log('🔄 Loading user main characters...')
+      
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/user/characters/mains`)
-        if (response.data.primaryMain) {
-          primaryMain.value = response.data.primaryMain
+        const response = await axios.get(`${getApiBaseUrl()}/api/user/characters/mains`, {
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Accept': 'application/json'
+          }
+        })
+        
+        console.log('✅ Main characters API response:', response.data)
+        
+        if (response.data && response.data.success) {
+          if (response.data.data?.primaryMain) {
+            primaryMain.value = response.data.data.primaryMain
+            console.log('✓ Loaded primary main:', response.data.data.primaryMain.name)
+          }
+          if (response.data.data?.secondaryMain) {
+            secondaryMain.value = response.data.data.secondaryMain
+            console.log('✓ Loaded secondary main:', response.data.data.secondaryMain.name)
+          }
+          
+          if (!response.data.data?.primaryMain && !response.data.data?.secondaryMain) {
+            console.log('ℹ️ No main characters saved yet')
+          }
+        } else {
+          console.log('⚠️ API returned success=false or no data field')
         }
-        if (response.data.secondaryMain) {
-          secondaryMain.value = response.data.secondaryMain
-        }
+        
       } catch (error) {
-        console.error('Failed to load user main characters:', error)
-        // Not a critical error - user just hasn't set mains yet
-        // For now, use empty state since API endpoints don't exist yet
+        if (error.code === 'ECONNABORTED') {
+          console.warn('⏱️ Main characters loading timed out')
+        } else if (error.response?.status === 404) {
+          console.log('ℹ️ Main characters endpoint not found (expected in development)')
+        } else if (error.response?.status === 401) {
+          console.log('🔒 User not authenticated, skipping main character loading')
+        } else {
+          console.error('❌ Failed to load user main characters:', {
+            message: error.message,
+            status: error.response?.status,
+            data: error.response?.data
+          })
+        }
+        
+        // No fallback - let the error state remain
       }
     }
 
@@ -1423,12 +1456,8 @@ export default {
           })
         }
         
-        // For development/testing, still set it locally but with clear indication
-        primaryMain.value = character
-        console.log(`Mock: Set ${character.name} as Primary Main (API failed)`)
-        
-        // Could add user notification here
-        // showErrorToast(`Failed to save ${character.name} as primary main. Setting locally for this session.`)
+        // Do not set mock data - let the error propagate
+        throw error
         
       } finally {
         isUpdatingMains.value = false
@@ -1509,9 +1538,8 @@ export default {
           })
         }
         
-        // For development/testing, still set it locally but with clear indication
-        secondaryMain.value = character
-        console.log(`Mock: Set ${character.name} as Secondary Main (API failed)`)
+        // Do not set mock data - let the error propagate
+        throw error
         
         // Could add user notification here
         // showErrorToast(`Failed to save ${character.name} as secondary main. Setting locally for this session.`)
@@ -1601,23 +1629,8 @@ export default {
           })
         }
         
-        // For development/testing, still clear it locally but with clear indication
-        if (slotType === 'primary') {
-          primaryMain.value = null
-        } else {
-          secondaryMain.value = null
-        }
-        
-        // Clear selected character if it was the removed main
-        if (selectedCharacter.value?.id === character.id && activeSlot.value === slotType) {
-          selectedCharacter.value = null
-          activeSlot.value = null
-        }
-        
-        console.log(`Mock: Removed ${character.name} as ${slotType} main character (API failed)`)
-        
-        // Could add user notification here
-        // showErrorToast(`Failed to remove ${character.name} as ${slotType} main. Cleared locally for this session.`)
+        // Do not set mock data - let the error propagate
+        throw error
         
       } finally {
         isUpdatingMains.value = false
@@ -1627,6 +1640,37 @@ export default {
     onMounted(async () => {
       await loadUserMainCharacters()
     })
+    
+    // Development testing functions - expose to window for console testing
+    if (import.meta.env.DEV) {
+      window.testMainCharacters = {
+        // Test loading main characters from API
+        testLoad: async () => {
+          console.log('🧪 Testing loadUserMainCharacters')
+          await loadUserMainCharacters()
+        },
+        
+        // Reset main characters state
+        reset: () => {
+          primaryMain.value = null
+          secondaryMain.value = null
+          console.log('🧹 Reset main characters state')
+        },
+        
+        // Show current state
+        showState: () => {
+          console.log('📊 Current main characters state:', {
+            primary: primaryMain.value,
+            secondary: secondaryMain.value
+          })
+        }
+      }
+      
+      console.log('🧪 Development testing functions available:')
+      console.log('  window.testMainCharacters.testLoad() - Test loading main characters')
+      console.log('  window.testMainCharacters.reset() - Reset main characters state')
+      console.log('  window.testMainCharacters.showState() - Show current state')
+    }
     
     // Cleanup function to cancel pending requests
     const cleanup = () => {
@@ -2046,19 +2090,37 @@ export default {
 }
 
 .slot-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: bold;
-  color: white;
+  padding: 0;
+  border-radius: 0;
+  font-size: 3rem;
+  font-weight: 900;
+  font-family: 'Arial Black', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
 }
 
 .slot-badge.primary {
-  background: linear-gradient(135deg, #FFD700, #FFA500);
+  background: linear-gradient(135deg, #FFD700, #FF8C00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4));
 }
 
 .slot-badge.secondary {
-  background: linear-gradient(135deg, #C0C0C0, #A9A9A9);
+  background: linear-gradient(135deg, #FFD700, #FF8C00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4));
+}
+
+.slot-badge:hover {
+  transform: scale(1.1);
 }
 
 /* Character Display in Slots */
