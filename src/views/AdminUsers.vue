@@ -310,7 +310,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { API_BASE_URL, getOAuthApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 
 const router = useRouter()
@@ -349,7 +349,7 @@ const loadUsers = async () => {
       params.search = searchQuery.value
     }
 
-    const response = await axios.get(`${API_BASE_URL}/api/admin/users`, {
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/users`, {
       headers: { Authorization: `Bearer ${userStore.accessToken}` },
       params
     })
@@ -399,7 +399,7 @@ const loadUsers = async () => {
     
     // Load stats separately - but don't fail the whole page if stats fail
     try {
-      const statsResponse = await axios.get(`${API_BASE_URL}/api/admin/stats`, {
+      const statsResponse = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/stats`, {
         headers: { Authorization: `Bearer ${userStore.accessToken}` }
       })
       // Handle both possible response formats
@@ -437,7 +437,7 @@ const viewUserDetails = async (user) => {
     closeActionsModal()
   }
   try {
-    const response = await axios.get(`${API_BASE_URL}/api/admin/users/${user.id}`, {
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/users/${user.id}`, {
       headers: { Authorization: `Bearer ${userStore.accessToken}` }
     })
     userDetails.value = response.data.data

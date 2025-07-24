@@ -1003,7 +1003,7 @@ const loadDashboardDataRaw = async () => {
     // Use Promise.allSettled to load data in parallel without failing if one request fails
     const results = await Promise.allSettled([
       // Load stats with resilient API client
-      api.get('/api/admin/stats', {
+      axios.get(`${getOAuthApiBaseUrl()}/api/admin/stats`, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 5000, // 5 second timeout
         cancelToken: requestManager.getCancelToken('admin-stats')
@@ -1011,7 +1011,7 @@ const loadDashboardDataRaw = async () => {
       
       // Load database config with resilient API client
       apiFailureCount.value.database < maxFailures ? 
-        api.get('/api/admin/database/config', {
+        axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/config`, {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 5000, // 5 second timeout
           cancelToken: requestManager.getCancelToken('admin-database-config')
@@ -1147,7 +1147,7 @@ const loadDashboardDataRaw = async () => {
     if (userStore.user?.role === 'admin') {
       try {
         const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-        const metricsRes = await api.get('/api/admin/system/metrics', {
+        const metricsRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/system/metrics`, {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 3000, // 3 second timeout
           cancelToken: requestManager.getCancelToken('admin-metrics')
@@ -1205,7 +1205,7 @@ const loadDashboardDataRaw = async () => {
     if (apiFailureCount.value.activities < maxFailures) {
       try {
         const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-        const activitiesRes = await api.get('/api/admin/activities', {
+        const activitiesRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/activities`, {
           headers: { Authorization: `Bearer ${token}` },
           params: {
             limit: 10  // Show last 10 activities
@@ -1279,7 +1279,7 @@ const loadDashboardDataRaw = async () => {
 const loadUserStatsOnly = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await api.get('/api/admin/stats', {
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/stats`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 3000, // Shorter timeout for faster feedback
       cancelToken: requestManager.getCancelToken('admin-stats-fast')
@@ -1442,7 +1442,7 @@ const openDatabaseModal = async () => {
   // Try to load stored configuration even if database is disconnected
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const configRes = await api.get('/api/admin/database/stored-config', {
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
       cancelToken: requestManager.getCancelToken('get-stored-config')
@@ -1501,7 +1501,7 @@ const testDatabaseConnection = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await api.post('/api/admin/database/test', {
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
       db_type: databaseForm.value.db_type,
       host: databaseForm.value.host,
       port: databaseForm.value.port,
@@ -1555,7 +1555,7 @@ const refreshConnection = async () => {
   try {
     // First, try to refresh the database configuration
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const dbConfigRes = await api.get('/api/admin/database/config', {
+    const dbConfigRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/config`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
       cancelToken: requestManager.getCancelToken('refresh-db-config')
@@ -1585,7 +1585,7 @@ const refreshConnection = async () => {
       
       // Force backend to reconnect by invalidating cache
       try {
-        await api.post('/api/admin/database/reconnect', {}, {
+        await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/reconnect`, {}, {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 5000,
           cancelToken: requestManager.getCancelToken('db-reconnect')
@@ -1818,7 +1818,7 @@ const saveDatabaseConfig = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await api.post('/api/admin/database/config', {
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/config`, {
       db_type: databaseForm.value.db_type,
       host: databaseForm.value.host,
       port: databaseForm.value.port,
@@ -2161,7 +2161,7 @@ const resolveMismatch = async (field) => {
     console.log('Request data:', requestData)
     console.log('Authorization token exists:', !!token)
     
-    const response = await api.post('/api/admin/database/resolve-mismatch', requestData, {
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/resolve-mismatch`, requestData, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -2229,7 +2229,7 @@ const runNetworkTest = async () => {
   
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-    const response = await api.post('/api/admin/network/test', {
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/network/test`, {
       host: networkTestForm.value.host,
       port: networkTestForm.value.port,
       test_type: networkTestForm.value.test_type,
@@ -2300,7 +2300,7 @@ onMounted(async () => {
   activityRefreshInterval = setInterval(async () => {
     try {
       const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
-      const activitiesRes = await api.get('/api/admin/activities', {
+      const activitiesRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/activities`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { limit: 10 },
         timeout: 5000,

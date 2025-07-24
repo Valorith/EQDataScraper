@@ -216,7 +216,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { API_BASE_URL, getOAuthApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 import ToastNotification from '../components/ToastNotification.vue'
 
@@ -403,7 +403,7 @@ const loadLogs = async () => {
     const headers = userStore.accessToken ? 
       { Authorization: `Bearer ${userStore.accessToken}` } : {}
     
-    const response = await axios.get(`${API_BASE_URL}/api/logs`, {
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/logs`, {
       headers,
       params: { 
         level: filters.value.level || 'all',
@@ -427,7 +427,7 @@ const loadLogs = async () => {
       oauthEnabled.value = false
       // Try to get minimal logs from admin_minimal endpoint
       try {
-        const minimalResponse = await axios.get(`${API_BASE_URL}/api/admin/system/logs`)
+        const minimalResponse = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/system/logs`)
         if (minimalResponse.data.success) {
           logs.value = minimalResponse.data.data.logs || []
         }
@@ -455,7 +455,7 @@ const clearLogs = async () => {
     const headers = userStore.accessToken ? 
       { Authorization: `Bearer ${userStore.accessToken}` } : {}
     
-    const response = await axios.post(`${API_BASE_URL}/api/logs/clear`, {}, {
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/logs/clear`, {}, {
       headers
     })
     

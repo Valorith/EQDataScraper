@@ -504,7 +504,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/userStore'
-import { getApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { getApiBaseUrl, getOAuthApiBaseUrl, buildApiUrl, API_ENDPOINTS } from '../config/api'
 import axios from 'axios'
 import { requestManager } from '../utils/requestManager'
 
@@ -781,7 +781,7 @@ const loadSystemStats = async () => {
       headers['Authorization'] = `Bearer ${token}`
     }
     
-    const metricsResponse = await requestManager.get(`${getApiBaseUrl()}/api/admin/system/metrics`, { 
+    const metricsResponse = await requestManager.get(`${getOAuthApiBaseUrl()}/api/admin/system/metrics`, { 
       headers,
       timeout: 15000 // 15 second timeout for admin metrics to match other endpoints
     }, 'system-metrics')
@@ -930,7 +930,7 @@ const loadEndpointsStatus = async () => {
       headers['Authorization'] = `Bearer ${token}`
     }
     
-    const endpointsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/endpoints`, { 
+    const endpointsResponse = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/system/endpoints`, { 
       headers,
       timeout: 15000 // 15 second timeout for endpoint metrics
     })
@@ -989,7 +989,7 @@ const loadSystemLogs = async () => {
       limit: 50
     }
     
-    const logsResponse = await axios.get(`${getApiBaseUrl()}/api/admin/system/logs`, { 
+    const logsResponse = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/system/logs`, { 
       headers, 
       params,
       timeout: 15000 // 15 second timeout for logs
@@ -1644,7 +1644,7 @@ const resetDatabaseMetrics = async () => {
     
     console.log('Resetting database performance metrics...')
     
-    const response = await axios.post(`${getApiBaseUrl()}/api/admin/system/metrics/reset`, {}, { 
+    const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/system/metrics/reset`, {}, { 
       headers,
       timeout: 10000
     })
@@ -1696,7 +1696,7 @@ const showTableBreakdown = async (tableName) => {
       'Authorization': `Bearer ${token}`
     }
     
-    const response = await axios.get(`${getApiBaseUrl()}/api/admin/database/table-sources/${tableName}`, { 
+    const response = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/table-sources/${tableName}`, { 
       headers,
       timeout: 15000 // Increased timeout to match other endpoints
     })
