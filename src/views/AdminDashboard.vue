@@ -714,64 +714,119 @@
             
             <div class="form-group">
               <label for="db-host">Host</label>
-              <input 
-                id="db-host"
-                v-model="databaseForm.host" 
-                type="text" 
-                class="form-input"
-                placeholder="localhost"
-                required
-              />
+              <div class="input-with-loader">
+                <input 
+                  id="db-host"
+                  v-model="databaseForm.host" 
+                  type="text" 
+                  class="form-input"
+                  placeholder="localhost"
+                  required
+                />
+                <button 
+                  type="button"
+                  @click="loadFieldFromConfig('host')"
+                  class="field-loader-button"
+                  :disabled="loadingFields.host || !hasStoredConfig"
+                  :title="hasStoredConfig ? 'Load host from saved config' : 'No saved configuration available'"
+                >
+                  <i class="fas fa-download" :class="{ 'fa-spin': loadingFields.host }"></i>
+                </button>
+              </div>
             </div>
             
             <div class="form-group">
               <label for="db-port">Port</label>
-              <input 
-                id="db-port"
-                v-model="databaseForm.port" 
-                type="number" 
-                class="form-input"
-                placeholder="5432"
-                min="1"
-                max="65535"
-                required
-              />
+              <div class="input-with-loader">
+                <input 
+                  id="db-port"
+                  v-model="databaseForm.port" 
+                  type="number" 
+                  class="form-input"
+                  placeholder="5432"
+                  min="1"
+                  max="65535"
+                  required
+                />
+                <button 
+                  type="button"
+                  @click="loadFieldFromConfig('port')"
+                  class="field-loader-button"
+                  :disabled="loadingFields.port || !hasStoredConfig"
+                  :title="hasStoredConfig ? 'Load port from saved config' : 'No saved configuration available'"
+                >
+                  <i class="fas fa-download" :class="{ 'fa-spin': loadingFields.port }"></i>
+                </button>
+              </div>
             </div>
             
             <div class="form-group">
               <label for="db-name">Database Name</label>
-              <input 
-                id="db-name"
-                v-model="databaseForm.database" 
-                type="text" 
-                class="form-input"
-                placeholder="eqdata"
-                required
-              />
+              <div class="input-with-loader">
+                <input 
+                  id="db-name"
+                  v-model="databaseForm.database" 
+                  type="text" 
+                  class="form-input"
+                  placeholder="eqdata"
+                  required
+                />
+                <button 
+                  type="button"
+                  @click="loadFieldFromConfig('database')"
+                  class="field-loader-button"
+                  :disabled="loadingFields.database || !hasStoredConfig"
+                  :title="hasStoredConfig ? 'Load database name from saved config' : 'No saved configuration available'"
+                >
+                  <i class="fas fa-download" :class="{ 'fa-spin': loadingFields.database }"></i>
+                </button>
+              </div>
             </div>
             
             <div class="form-group">
               <label for="db-username">Username</label>
-              <input 
-                id="db-username"
-                v-model="databaseForm.username" 
-                type="text" 
-                class="form-input"
-                placeholder="postgres"
-                required
-              />
+              <div class="input-with-loader">
+                <input 
+                  id="db-username"
+                  v-model="databaseForm.username" 
+                  type="text" 
+                  class="form-input"
+                  placeholder="postgres"
+                  required
+                />
+                <button 
+                  type="button"
+                  @click="loadFieldFromConfig('username')"
+                  class="field-loader-button"
+                  :disabled="loadingFields.username || !hasStoredConfig"
+                  :title="hasStoredConfig ? 'Load username from saved config' : 'No saved configuration available'"
+                >
+                  <i class="fas fa-download" :class="{ 'fa-spin': loadingFields.username }"></i>
+                </button>
+              </div>
             </div>
             
             <div class="form-group">
               <label for="db-password">Password</label>
-              <input 
-                id="db-password"
-                v-model="databaseForm.password" 
-                type="password" 
-                class="form-input"
-                placeholder="Enter password"
-                required
-              />
+              <div class="input-with-loader">
+                <input 
+                  id="db-password"
+                  v-model="databaseForm.password" 
+                  type="password" 
+                  class="form-input"
+                  placeholder="Enter password"
+                  required
+                />
+                <button 
+                  type="button"
+                  @click="loadFieldFromConfig('password')"
+                  class="field-loader-button"
+                  :disabled="loadingFields.password || !hasStoredConfig"
+                  :title="hasStoredConfig ? 'Load password from saved config' : 'No saved configuration available'"
+                >
+                  <i class="fas fa-download" :class="{ 'fa-spin': loadingFields.password }"></i>
+                </button>
+              </div>
             </div>
             
             <div class="form-group checkbox-group">
@@ -1002,6 +1057,13 @@ const testingConnection = ref(false)
 const savingConfig = ref(false)
 const connectingSaved = ref(false)
 const hasStoredConfig = ref(false)
+const loadingFields = ref({
+  host: false,
+  port: false,
+  database: false,
+  username: false,
+  password: false
+})
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -1954,6 +2016,59 @@ const connectFromSavedConfig = async () => {
     showToast('Connection Error', errorMessage, 'error')
   } finally {
     connectingSaved.value = false
+  }
+}
+
+// Load individual field from stored config
+const loadFieldFromConfig = async (fieldName) => {
+  loadingFields.value[fieldName] = true
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    
+    // Load stored configuration
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken(`load-field-${fieldName}`)
+    })
+    
+    if (configRes.data.success && configRes.data.data) {
+      const config = configRes.data.data
+      
+      // Map field names to config properties
+      const fieldMapping = {
+        host: config.host,
+        port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
+        database: config.database_name,
+        username: config.username,
+        password: config.password || '' // Usually empty for security
+      }
+      
+      if (fieldMapping[fieldName] !== undefined) {
+        databaseForm.value[fieldName] = fieldMapping[fieldName]
+        showToast('Field Loaded', `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} loaded from saved config`, 'success')
+      } else {
+        showToast('Field Not Found', `No saved value found for ${fieldName}`, 'warning')
+      }
+    } else {
+      showToast('No Stored Config', 'No saved configuration found', 'warning')
+    }
+  } catch (error) {
+    console.error(`Load field ${fieldName} error:`, error)
+    
+    let errorMessage = `Failed to load ${fieldName} from saved configuration`
+    if (error.response?.status === 403) {
+      errorMessage = 'Access denied. Admin authentication required.'
+    } else if (error.response?.status === 404) {
+      errorMessage = 'No saved configuration found'
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    showToast('Load Error', errorMessage, 'error')
+  } finally {
+    loadingFields.value[fieldName] = false
   }
 }
 
@@ -3267,6 +3382,48 @@ onUnmounted(() => {
 
 .form-input::placeholder {
   color: #9ca3af;
+}
+
+.input-with-loader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-with-loader .form-input {
+  flex: 1;
+}
+
+.field-loader-button {
+  padding: 12px;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+}
+
+.field-loader-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.field-loader-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.field-loader-button i.fa-spin {
+  animation: spin 1s linear infinite;
 }
 
 .checkbox-group {
