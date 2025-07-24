@@ -823,6 +823,16 @@
         
         <div class="modal-footer">
           <button 
+            @click="connectFromSavedConfig" 
+            class="connect-saved-button"
+            :disabled="connectingSaved || !hasStoredConfig"
+            :title="hasStoredConfig ? 'Connect using previously saved configuration' : 'No saved configuration available'"
+          >
+            <i class="fas fa-database" :class="{ 'fa-spin': connectingSaved }"></i>
+            {{ connectingSaved ? 'Connecting...' : 'Connect from Saved Config' }}
+          </button>
+          
+          <button 
             @click="testDatabaseConnection" 
             class="test-button"
             :disabled="testingConnection"
@@ -990,6 +1000,8 @@ const databaseForm = ref({
 const databaseTestResult = ref(null)
 const testingConnection = ref(false)
 const savingConfig = ref(false)
+const connectingSaved = ref(false)
+const hasStoredConfig = ref(false)
 
 let refreshInterval = null
 let activityRefreshInterval = null
@@ -1867,6 +1879,85 @@ const saveDatabaseConfig = async () => {
   }
 }
 
+// Connect from saved config function
+const connectFromSavedConfig = async () => {
+  connectingSaved.value = true
+  databaseTestResult.value = null
+  
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    
+    // Load stored configuration
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken('connect-stored-config')
+    })
+    
+    if (configRes.data.success && configRes.data.data?.config) {
+      const config = configRes.data.data.config
+      
+      // Populate the form with stored config
+      databaseForm.value = {
+        db_type: config.database_type || 'mysql',
+        host: config.host || '',
+        port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
+        database: config.database_name || '',
+        username: config.username || '',
+        password: config.password || '', // This will likely be empty for security
+        use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
+      }
+      
+      // Test the connection automatically
+      const testResponse = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
+        db_type: databaseForm.value.db_type,
+        host: databaseForm.value.host,
+        port: databaseForm.value.port,
+        database: databaseForm.value.database,
+        username: databaseForm.value.username,
+        password: databaseForm.value.password,
+        use_ssl: databaseForm.value.use_ssl
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000,
+        cancelToken: requestManager.getCancelToken('test-stored-config')
+      })
+      
+      databaseTestResult.value = testResponse.data
+      
+      if (testResponse.data.success) {
+        showToast('Connection Successful', 'Successfully connected using saved configuration', 'success')
+      } else {
+        showToast('Connection Failed', testResponse.data.message || 'Failed to connect with saved configuration', 'error')
+      }
+    } else {
+      showToast('No Stored Config', 'No saved configuration found', 'warning')
+    }
+  } catch (error) {
+    console.error('Connect from saved config error:', error)
+    showToast('Connection Error', error.response?.data?.message || 'Failed to load saved configuration', 'error')
+  } finally {
+    connectingSaved.value = false
+  }
+}
+
+// Check if stored configuration is available
+const checkStoredConfigAvailability = async () => {
+  try {
+    const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
+    const configRes = await axios.get(`${getOAuthApiBaseUrl()}/api/admin/database/stored-config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken('check-stored-config')
+    })
+    
+    hasStoredConfig.value = !!(configRes.data.success && configRes.data.data?.config)
+  } catch (error) {
+    // If there's an error checking, assume no stored config is available
+    hasStoredConfig.value = false
+  }
+}
+
 // Remove mock data generation - we'll use real data from the API
 
 // Toast notification functions
@@ -2289,6 +2380,9 @@ const handleBackendChanged = async (newUrl) => {
 onMounted(async () => {
   // Load user stats immediately for instant feedback
   loadUserStatsOnly()
+  
+  // Check if stored configuration is available for database connection
+  checkStoredConfigAvailability()
   
   // Load full dashboard data (this will also update stats with complete data)
   await loadDashboardData()
@@ -3309,7 +3403,19 @@ onUnmounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.test-button:disabled, .save-button:disabled {
+.connect-saved-button {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  flex: 1;
+}
+
+.connect-saved-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.3);
+}
+
+.test-button:disabled, .save-button:disabled, .connect-saved-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
