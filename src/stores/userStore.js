@@ -308,7 +308,7 @@ export const useUserStore = defineStore('user', {
       this.loginError = null
 
       try {
-        const response = await axios.get(buildApiUrl(API_ENDPOINTS.AUTH_GOOGLE_LOGIN))
+        const response = await axios.get(`${getOAuthApiBaseUrl()}${API_ENDPOINTS.AUTH_GOOGLE_LOGIN}`)
         
         if (response.data.success) {
           const { auth_url, state } = response.data.data
@@ -350,7 +350,7 @@ export const useUserStore = defineStore('user', {
         //   throw new Error('Invalid state parameter - possible CSRF attack')
         // }
 
-        const response = await axios.post(buildApiUrl(API_ENDPOINTS.AUTH_GOOGLE_CALLBACK), {
+        const response = await axios.post(`${getOAuthApiBaseUrl()}${API_ENDPOINTS.AUTH_GOOGLE_CALLBACK}`, {
           code,
           state
         })
@@ -454,7 +454,7 @@ export const useUserStore = defineStore('user', {
       if (!this.accessToken) return false
 
       try {
-        const response = await axios.get(buildApiUrl(API_ENDPOINTS.AUTH_STATUS), {
+        const response = await axios.get(`${getOAuthApiBaseUrl()}${API_ENDPOINTS.AUTH_STATUS}`, {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           },
