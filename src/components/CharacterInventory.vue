@@ -427,7 +427,7 @@
               :class="{ 'has-item': slot.item }"
               :data-tooltip="getItemTooltip(slot.item)"
               :data-slot="slot.slot"
-              @click="selectItem(slot.item)"
+              @click="openItemInNewTab(slot.item)"
               @contextmenu.prevent="handleBagRightClick($event, slot)"
             >
               <div v-if="slot.item" class="item-container">
@@ -520,440 +520,8 @@
     />
 
     <!-- Item Details Modal -->
-    <div v-if="selectedItemDetail && !loadingItemModal" class="modal-overlay" @click="closeItemModal">
-      <div class="modal-content item-modal" @click.stop>
-        <div class="modal-header">
-          <div class="modal-header-content">
-            <div class="item-icon-modal-container">
-              <img 
-                v-if="selectedItemDetail.icon" 
-                :src="`/icons/items/${selectedItemDetail.icon}.png`" 
-                :alt="`${selectedItemDetail.name} icon`"
-                class="item-icon-modal"
-                @error="handleIconError"
-              />
-              <div v-else class="item-icon-placeholder-modal">
-                <i class="fas fa-cube"></i>
-              </div>
-            </div>
-            <div class="item-header-info">
-              <h3>{{ selectedItemDetail.name }}</h3>
-              <div class="item-header-meta">
-                <span class="item-type-badge">{{ getItemTypeDisplay(selectedItemDetail.itemtype) }}</span>
-                <span v-if="selectedItemDetail.magic" class="property-badge magic">Magic</span>
-                <span v-if="selectedItemDetail.lore" class="property-badge lore">Lore</span>
-                <span v-if="selectedItemDetail.nodrop" class="property-badge nodrop">No Drop</span>
-                <span v-if="selectedItemDetail.norent" class="property-badge norent">No Rent</span>
-              </div>
-            </div>
-          </div>
-          <button @click="closeItemModal" class="modal-close">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="item-details">
-            <!-- Primary Stats -->
-            <div v-if="selectedItemDetail.damage || selectedItemDetail.ac || selectedItemDetail.hp || selectedItemDetail.mana" class="detail-section primary-stats">
-              <h4>Primary Stats</h4>
-              <div class="primary-stats-grid">
-                <div v-if="selectedItemDetail.damage && selectedItemDetail.delay" class="primary-stat-item weapon">
-                  <div class="stat-icon"><i class="fas fa-sword"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ selectedItemDetail.damage }} / {{ selectedItemDetail.delay }}</span>
-                    <span class="stat-label">Damage / Delay</span>
-                    <span class="stat-extra">Ratio: {{ getWeaponRatio(selectedItemDetail.damage, selectedItemDetail.delay) }}</span>
-                  </div>
-                </div>
-                <div v-if="selectedItemDetail.ac" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-shield-alt"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">{{ selectedItemDetail.ac }}</span>
-                    <span class="stat-label">Armor Class</span>
-                  </div>
-                </div>
-                <div v-if="selectedItemDetail.hp" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-heart"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">+{{ selectedItemDetail.hp }}</span>
-                    <span class="stat-label">Hit Points</span>
-                  </div>
-                </div>
-                <div v-if="selectedItemDetail.mana" class="primary-stat-item">
-                  <div class="stat-icon"><i class="fas fa-star"></i></div>
-                  <div class="stat-info">
-                    <span class="stat-value">+{{ selectedItemDetail.mana }}</span>
-                    <span class="stat-label">Mana</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Attributes -->
-            <div v-if="hasAnyStats(selectedItemDetail)" class="detail-section">
-              <h4>Attributes</h4>
-              <div class="attributes-grid">
-                <div v-if="selectedItemDetail.str" class="attribute-item">
-                  <span class="attr-label">STR</span>
-                  <span class="attr-value">+{{ selectedItemDetail.str }}</span>
-                </div>
-                <div v-if="selectedItemDetail.sta" class="attribute-item">
-                  <span class="attr-label">STA</span>
-                  <span class="attr-value">+{{ selectedItemDetail.sta }}</span>
-                </div>
-                <div v-if="selectedItemDetail.agi" class="attribute-item">
-                  <span class="attr-label">AGI</span>
-                  <span class="attr-value">+{{ selectedItemDetail.agi }}</span>
-                </div>
-                <div v-if="selectedItemDetail.dex" class="attribute-item">
-                  <span class="attr-label">DEX</span>
-                  <span class="attr-value">+{{ selectedItemDetail.dex }}</span>
-                </div>
-                <div v-if="selectedItemDetail.wis" class="attribute-item">
-                  <span class="attr-label">WIS</span>
-                  <span class="attr-value">+{{ selectedItemDetail.wis }}</span>
-                </div>
-                <div v-if="selectedItemDetail.int" class="attribute-item">
-                  <span class="attr-label">INT</span>
-                  <span class="attr-value">+{{ selectedItemDetail.int }}</span>
-                </div>
-                <div v-if="selectedItemDetail.cha" class="attribute-item">
-                  <span class="attr-label">CHA</span>
-                  <span class="attr-value">+{{ selectedItemDetail.cha }}</span>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Resistances -->
-            <div v-if="hasResistValues(selectedItemDetail)" class="detail-section">
-              <h4>Resistances</h4>
-              <div class="resistances-grid">
-                <div v-if="(selectedItemDetail.resistances?.fire || selectedItemDetail.fr) && (selectedItemDetail.resistances?.fire || selectedItemDetail.fr) !== 0" class="resist-item fire">
-                  <span class="resist-label">Fire</span>
-                  <span class="resist-value">+{{ selectedItemDetail.resistances?.fire || selectedItemDetail.fr }}</span>
-                </div>
-                <div v-if="(selectedItemDetail.resistances?.cold || selectedItemDetail.cr) && (selectedItemDetail.resistances?.cold || selectedItemDetail.cr) !== 0" class="resist-item cold">
-                  <span class="resist-label">Cold</span>
-                  <span class="resist-value">+{{ selectedItemDetail.resistances?.cold || selectedItemDetail.cr }}</span>
-                </div>
-                <div v-if="(selectedItemDetail.resistances?.magic || selectedItemDetail.mr) && (selectedItemDetail.resistances?.magic || selectedItemDetail.mr) !== 0" class="resist-item magic">
-                  <span class="resist-label">Magic</span>
-                  <span class="resist-value">+{{ selectedItemDetail.resistances?.magic || selectedItemDetail.mr }}</span>
-                </div>
-                <div v-if="(selectedItemDetail.resistances?.disease || selectedItemDetail.dr) && (selectedItemDetail.resistances?.disease || selectedItemDetail.dr) !== 0" class="resist-item disease">
-                  <span class="resist-label">Disease</span>
-                  <span class="resist-value">+{{ selectedItemDetail.resistances?.disease || selectedItemDetail.dr }}</span>
-                </div>
-                <div v-if="(selectedItemDetail.resistances?.poison || selectedItemDetail.pr) && (selectedItemDetail.resistances?.poison || selectedItemDetail.pr) !== 0" class="resist-item poison">
-                  <span class="resist-label">Poison</span>
-                  <span class="resist-value">+{{ selectedItemDetail.resistances?.poison || selectedItemDetail.pr }}</span>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Requirements & Restrictions -->
-            <div class="detail-section">
-              <h4>Requirements & Restrictions</h4>
-              <div class="requirements-grid">
-                <div v-if="selectedItemDetail.classes" class="requirement-item">
-                  <span class="req-label">Classes:</span>
-                  <span class="req-value">{{ getClassDisplay(selectedItemDetail.classes) }}</span>
-                </div>
-                <div v-if="selectedItemDetail.races" class="requirement-item">
-                  <span class="req-label">Races:</span>
-                  <span class="req-value">{{ getRaceDisplay(selectedItemDetail.races) }}</span>
-                </div>
-                <div v-if="selectedItemDetail.slots" class="requirement-item">
-                  <span class="req-label">Slot:</span>
-                  <span class="req-value">{{ getSlotDisplay(selectedItemDetail.slots) }}</span>
-                </div>
-                <div v-if="selectedItemDetail.reqlevel" class="requirement-item">
-                  <span class="req-label">Required Level:</span>
-                  <span class="req-value">{{ selectedItemDetail.reqlevel }}</span>
-                </div>
-                <div v-if="selectedItemDetail.weight" class="requirement-item">
-                  <span class="req-label">Weight:</span>
-                  <span class="req-value">{{ (selectedItemDetail.weight / 10).toFixed(1) }}</span>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Effects -->
-            <div v-if="hasEffects(selectedItemDetail)" class="detail-section">
-              <h4>Effects</h4>
-              <div class="effects-list">
-                <div v-if="selectedItemDetail.effects?.click && selectedItemDetail.effects.click !== -1" class="effect-item">
-                  <span class="effect-type">Click:</span>
-                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.click }}</span>
-                </div>
-                <div v-if="selectedItemDetail.effects?.proc && selectedItemDetail.effects.proc !== -1" class="effect-item">
-                  <span class="effect-type">Proc:</span>
-                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.proc }}</span>
-                </div>
-                <div v-if="selectedItemDetail.effects?.worn && selectedItemDetail.effects.worn !== -1" class="effect-item">
-                  <span class="effect-type">Worn:</span>
-                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.worn }}</span>
-                </div>
-                <div v-if="selectedItemDetail.effects?.focus && selectedItemDetail.effects.focus !== -1" class="effect-item">
-                  <span class="effect-type">Focus:</span>
-                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.focus }}</span>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Drop Sources Section -->
-            <div v-if="shouldShowDropSources" class="detail-section drop-sources-section">
-              <div class="drop-sources-header">
-                <h4>Where does this drop?</h4>
-                <button 
-                  v-if="!dropSourcesRequested"
-                  @click="loadDropSources" 
-                  class="drop-sources-button"
-                >
-                  <i class="fas fa-map-marked-alt"></i>
-                  <span>Show Drop Sources</span>
-                </button>
-              </div>
-              
-              <!-- Loading state -->
-              <div v-if="loadingDropSources" class="loading-sources">
-                <i class="fas fa-spinner fa-spin"></i>
-                <span>Loading drop sources...</span>
-              </div>
-              
-              <!-- Drop Sources Results -->
-              <div v-else-if="dropSources && dropSourcesRequested" class="drop-sources-results">
-                <div v-if="dropSources.length === 0" class="no-drop-sources">
-                  <i class="fas fa-exclamation-circle"></i>
-                  <span>No drop sources found for this item</span>
-                </div>
-                
-                <div v-else class="zones-list">
-                  <div v-for="zone in dropSources" :key="zone.zone_short" class="zone-section">
-                    <div class="zone-header">
-                      <i class="fas fa-map-marker-alt"></i>
-                      <span class="zone-name">{{ zone.zone_name }}</span>
-                      <span class="npc-count">({{ zone.npcs.length }} NPCs)</span>
-                    </div>
-                    
-                    <div class="npcs-list">
-                      <div 
-                        v-for="npc in zone.npcs" 
-                        :key="npc.npc_id" 
-                        class="npc-item"
-                      >
-                        <span 
-                          class="npc-name clickable-npc" 
-                          @click="handleNPCClick(npc.npc_id, npc.npc_name)"
-                          :title="`Click to view ${npc.npc_name} in NPC database (opens in new tab)`"
-                        >
-                          {{ npc.npc_name }}
-                        </span>
-                        <span class="drop-chance">{{ (npc.drop_chance || npc.chance || 0) }}%</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Merchant Sources Section -->
-            <div v-if="shouldShowMerchantSources" class="detail-section merchant-sources-section">
-              <div class="merchant-sources-header">
-                <h4>Where can this be bought?</h4>
-                <button 
-                  v-if="!merchantSourcesRequested"
-                  @click="loadMerchantSources" 
-                  class="merchant-sources-button"
-                >
-                  <i class="fas fa-coins"></i>
-                  <span>Show Merchant Sources</span>
-                </button>
-              </div>
-              
-              <!-- Loading state -->
-              <div v-if="loadingMerchantSources" class="loading-sources">
-                <i class="fas fa-spinner fa-spin"></i>
-                <span>Loading merchant sources...</span>
-              </div>
-              
-              <!-- Merchant Sources Results -->
-              <div v-else-if="merchantSources && merchantSourcesRequested" class="merchant-sources-results">
-                <div v-if="merchantSources.length === 0" class="no-merchant-sources">
-                  <i class="fas fa-exclamation-circle"></i>
-                  <span>No merchant sources found for this item</span>
-                </div>
-                
-                <div v-else class="zones-list">
-                  <div v-for="zone in merchantSources" :key="zone.zone_short" class="zone-section">
-                    <div class="zone-header">
-                      <i class="fas fa-map-marker-alt"></i>
-                      <span class="zone-name">{{ zone.zone_name }}</span>
-                      <span class="merchant-count">({{ zone.merchants.length }} merchants)</span>
-                    </div>
-                    
-                    <div class="merchants-list">
-                      <div 
-                        v-for="merchant in zone.merchants" 
-                        :key="merchant.npc_id" 
-                        class="merchant-item"
-                      >
-                        <span 
-                          class="merchant-name clickable-npc" 
-                          @click="handleNPCClick(merchant.npc_id, merchant.npc_name)"
-                          :title="`Click to view ${merchant.npc_name} in NPC database (opens in new tab)`"
-                        >
-                          {{ merchant.npc_name }}
-                        </span>
-                        <span class="merchant-price">{{ formatMerchantPrice(merchant) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Tradeskill Recipes Section -->
-            <div v-if="shouldShowTradeskillRecipes" class="detail-section tradeskill-recipes-section">
-              <div class="tradeskill-recipes-header">
-                <h4>Used in Tradeskill Recipes</h4>
-                <button 
-                  v-if="!tradeskillRecipesRequested"
-                  @click="loadTradeskillRecipes" 
-                  class="tradeskill-recipes-button"
-                >
-                  <i class="fas fa-hammer"></i>
-                  <span>Show tradeskill recipes</span>
-                </button>
-              </div>
-              
-              <!-- Loading state -->
-              <div v-if="loadingTradeskillRecipes" class="loading-sources">
-                <i class="fas fa-spinner fa-spin"></i>
-                <span>Loading tradeskill recipes...</span>
-              </div>
-              
-              <!-- Tradeskill Recipes Results -->
-              <div v-else-if="tradeskillRecipes && tradeskillRecipesRequested" class="tradeskill-recipes-results">
-                <div v-if="tradeskillRecipes.length === 0" class="no-tradeskill-recipes">
-                  <i class="fas fa-exclamation-circle"></i>
-                  <span>No tradeskill recipes found for this item</span>
-                </div>
-                
-                <div v-else class="tradeskill-skills-list">
-                  <div v-for="skill in tradeskillRecipes" :key="skill.skill_name" class="tradeskill-skill-section">
-                    <div class="skill-header">
-                      <i class="fas fa-tools"></i>
-                      <span class="skill-name">{{ skill.skill_name }}</span>
-                      <span class="recipe-count">({{ skill.recipes.length }} recipes)</span>
-                    </div>
-                    
-                    <div class="recipes-list">
-                      <div v-for="recipe in skill.recipes" :key="recipe.recipe_id" class="recipe-list-item">
-                        <div class="recipe-item-icon">
-                          <img 
-                            v-if="recipe.result_item_icon" 
-                            :src="`/icons/items/${recipe.result_item_icon}.png`" 
-                            :alt="recipe.result_item_name || recipe.recipe_name"
-                            class="item-icon-img"
-                            @error="handleImageError"
-                          />
-                          <div v-else class="item-icon-placeholder">
-                            <i class="fas fa-cube"></i>
-                          </div>
-                        </div>
-                        <div class="recipe-item-info">
-                          <span 
-                            class="recipe-name clickable" 
-                            @click="loadRecipeDetails(recipe.recipe_id)"
-                            :title="`Click to view recipe details for ${recipe.recipe_name}`"
-                          >
-                            {{ recipe.recipe_name }}
-                          </span>
-                          <div class="recipe-item-badges">
-                            <span v-if="recipe.component_count > 1" class="component-count">{{ recipe.component_count }} needed</span>
-                            <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Created By Recipes Section -->
-            <div v-if="shouldShowCreatedByRecipes" class="detail-section created-by-recipes-section">
-              <div class="created-by-recipes-header">
-                <h4>Created by Tradeskill Recipes</h4>
-                <button 
-                  v-if="!createdByRecipesRequested"
-                  @click="loadCreatedByRecipes" 
-                  class="created-by-recipes-button"
-                >
-                  <i class="fas fa-magic"></i>
-                  <span>Show creation recipes</span>
-                </button>
-              </div>
-              
-              <!-- Loading state -->
-              <div v-if="loadingCreatedByRecipes" class="loading-sources">
-                <i class="fas fa-spinner fa-spin"></i>
-                <span>Loading creation recipes...</span>
-              </div>
-              
-              <!-- Created By Recipes Results -->
-              <div v-else-if="createdByRecipes && createdByRecipesRequested" class="created-by-recipes-results">
-                <div v-if="createdByRecipes.length === 0" class="no-created-by-recipes">
-                  <i class="fas fa-exclamation-circle"></i>
-                  <span>This item is not created by any tradeskill recipes</span>
-                </div>
-                
-                <div v-else class="creation-recipes-list">
-                  <div v-for="recipe in createdByRecipes" :key="recipe.recipe_id" class="creation-recipe-item">
-                    <div class="recipe-item-icon">
-                      <img 
-                        v-if="recipe.result_item_icon" 
-                        :src="`/icons/items/${recipe.result_item_icon}.png`" 
-                        :alt="recipe.result_item_name || recipe.recipe_name"
-                        class="item-icon-img"
-                        @error="handleImageError"
-                      />
-                      <div v-else class="item-icon-placeholder">
-                        <i class="fas fa-cube"></i>
-                      </div>
-                    </div>
-                    <div class="recipe-item-info">
-                      <span 
-                        class="recipe-name clickable" 
-                        @click="loadRecipeDetails(recipe.recipe_id)"
-                        :title="`Click to view recipe details for ${recipe.recipe_name}`"
-                      >
-                        {{ recipe.recipe_name }}
-                      </span>
-                      <div class="recipe-item-badges">
-                        <span class="tradeskill-badge">{{ recipe.tradeskill_name }}</span>
-                        <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Lore Text -->
-            <div v-if="selectedItemDetail.lore" class="detail-section lore-section">
-              <h4>Lore</h4>
-              <div class="lore-text">{{ selectedItemDetail.lore }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Loading Modal -->
-    <LoadingModal :visible="loadingItemModal" text="Loading item details..." @timeout="onItemModalTimeout" />
+    <!-- Item modal removed - items now open in new tabs -->
+    <!-- Item modal template completely removed -->
     
     <!-- Recipe Modal -->
     <div v-if="selectedRecipe && !loadingRecipeDetails" class="modal-overlay" @click="closeRecipeModal">
@@ -1106,7 +674,7 @@
             :data-tooltip="getItemTooltip(bagSlot.item, true)"
             :data-bag="bagWindow.slotId"
             :data-slot="bagSlot.slotid"
-            @click="selectItem(bagSlot.item)"
+            @click="openItemInNewTab(bagSlot.item)"
           >
             <div v-if="bagSlot.item" class="item-container">
               <img 
@@ -1194,23 +762,7 @@ const props = defineProps({
   }
 })
 
-// Item modal state
-const selectedItemDetail = ref(null)
-const loadingItemModal = ref(false)
-
-// Drop sources state
-const dropSources = ref(null)
-const loadingDropSources = ref(false)
-const dropSourcesRequested = ref(false)
-
-// Merchant sources state
-const merchantSources = ref(null)
-const loadingMerchantSources = ref(false)
-const merchantSourcesRequested = ref(false)
-
-// Item data availability state
-const itemDataAvailability = ref(null)
-const loadingAvailability = ref(false)
+// Item modal state removed - items now open in new tabs instead
 
 // Recipe state
 const tradeskillRecipes = ref(null)
@@ -1224,62 +776,9 @@ const createdByRecipesRequested = ref(false)
 const selectedRecipe = ref(null)
 const loadingRecipeDetails = ref(false)
 
-// Computed properties for section visibility - Only show when data exists
-const shouldShowDropSources = computed(() => {
-  // Hide while loading availability check
-  if (loadingAvailability.value) return false
-  
-  // Hide if no availability data yet (initial state) 
-  if (!itemDataAvailability.value) return false
-  
-  // Hide failed checks - don't show sections that would be empty
-  if (itemDataAvailability.value === 'failed') return false
-  
-  // Only show if data exists (> 0)
-  return itemDataAvailability.value.drop_sources > 0
-})
+// Computed properties for item modal removed since items now open in new tabs
 
-const shouldShowMerchantSources = computed(() => {
-  // Hide while loading availability check
-  if (loadingAvailability.value) return false
-  
-  // Hide if no availability data yet (initial state)
-  if (!itemDataAvailability.value) return false
-  
-  // Hide failed checks - don't show sections that would be empty
-  if (itemDataAvailability.value === 'failed') return false
-  
-  // Only show if data exists (> 0)
-  return itemDataAvailability.value.merchant_sources > 0
-})
-
-const shouldShowTradeskillRecipes = computed(() => {
-  // Hide while loading availability check
-  if (loadingAvailability.value) return false
-  
-  // Hide if no availability data yet (initial state)
-  if (!itemDataAvailability.value) return false
-  
-  // Hide failed checks - don't show sections that would be empty
-  if (itemDataAvailability.value === 'failed') return false
-  
-  // Only show if data exists (> 0)
-  return itemDataAvailability.value.tradeskill_recipes > 0
-})
-
-const shouldShowCreatedByRecipes = computed(() => {
-  // Hide while loading availability check
-  if (loadingAvailability.value) return false
-  
-  // Hide if no availability data yet (initial state)
-  if (!itemDataAvailability.value) return false
-  
-  // Hide failed checks - don't show sections that would be empty
-  if (itemDataAvailability.value === 'failed') return false
-  
-  // Only show if data exists (> 0)
-  return itemDataAvailability.value.created_by_recipes > 0
-})
+// Recipe computed properties also removed since recipe modal is contained within item modal
 
 // Check if character has any bags
 const hasBags = computed(() => {
@@ -1320,64 +819,17 @@ const persistentHighlights = ref({
 
 
 // Modal functions
-const selectItem = async (item) => {
-  if (!item) return
+const openItemInNewTab = (item) => {
+  if (!item || !item.id) return
   
-  // Start loading modal
-  loadingItemModal.value = true
+  // Create URL to open Items page with specific item
+  const itemUrl = `/items?item=${item.id}`
   
-  // Clear all source states when selecting a new item
-  dropSources.value = null
-  loadingDropSources.value = false
-  dropSourcesRequested.value = false
-  merchantSources.value = null
-  loadingMerchantSources.value = false
-  merchantSourcesRequested.value = false
-  itemDataAvailability.value = null
-  loadingAvailability.value = false
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${item.id}`)
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    selectedItemDetail.value = data.item
-    
-    // Load data availability after item details are loaded
-    await loadItemDataAvailability(item.id)
-  } catch (error) {
-    console.error('Error loading item details:', error)
-    // Show error message but don't use toastService since it may not be available
-    console.warn('Failed to load item details:', error.message)
-  } finally {
-    // Stop loading modal only after both item details and availability are loaded
-    loadingItemModal.value = false
-  }
+  // Open in new tab
+  window.open(itemUrl, '_blank')
 }
 
-const closeItemModal = () => {
-  selectedItemDetail.value = null
-  // Clear drop sources when closing modal
-  dropSources.value = null
-  loadingDropSources.value = false
-  dropSourcesRequested.value = false
-  merchantSources.value = null
-  loadingMerchantSources.value = false
-  merchantSourcesRequested.value = false
-  itemDataAvailability.value = null
-  loadingAvailability.value = false
-  // Clear recipe data when closing modal  
-  tradeskillRecipes.value = null
-  loadingTradeskillRecipes.value = false
-  tradeskillRecipesRequested.value = false
-  createdByRecipes.value = null
-  loadingCreatedByRecipes.value = false
-  createdByRecipesRequested.value = false
-  // Clear item modal loading state
-  loadingItemModal.value = false  
-}
+// closeItemModal function removed since items now open in new tabs
 
 const closeRecipeModal = () => {
   selectedRecipe.value = null
@@ -1695,8 +1147,8 @@ const handleEquipmentClick = (event) => {
   // Get the equipment item for this slot
   const item = props.character.equipment?.[slotType]
   
-  // Call the original selectItem function
-  selectItem(item)
+  // Open item in new tab
+  openItemInNewTab(item)
 }
 
 const onItemModalTimeout = () => {
