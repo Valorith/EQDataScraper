@@ -442,6 +442,16 @@
                 </span>
               </div>
             </div>
+            
+            <!-- Small Icon Toggle Button -->
+            <button 
+              class="bag-toggle-icon" 
+              @click="toggleAllBags"
+              :disabled="!hasBags"
+              :title="openBagWindows.length > 0 ? 'Close All Bags' : 'Open All Bags'"
+            >
+              {{ openBagWindows.length > 0 ? '⊟' : '⊞' }}
+            </button>
           </div>
         </div>
       </div>
@@ -733,7 +743,13 @@
                         :key="npc.npc_id" 
                         class="npc-item"
                       >
-                        <span class="npc-name">{{ npc.npc_name }}</span>
+                        <span 
+                          class="npc-name clickable-npc" 
+                          @click="handleNPCClick(npc.npc_id, npc.npc_name)"
+                          :title="`Click to view ${npc.npc_name} in NPC database (opens in new tab)`"
+                        >
+                          {{ npc.npc_name }}
+                        </span>
                         <span class="drop-chance">{{ (npc.drop_chance || npc.chance || 0) }}%</span>
                       </div>
                     </div>
@@ -783,8 +799,142 @@
                         :key="merchant.npc_id" 
                         class="merchant-item"
                       >
-                        <span class="merchant-name">{{ merchant.npc_name }}</span>
+                        <span 
+                          class="merchant-name clickable-npc" 
+                          @click="handleNPCClick(merchant.npc_id, merchant.npc_name)"
+                          :title="`Click to view ${merchant.npc_name} in NPC database (opens in new tab)`"
+                        >
+                          {{ merchant.npc_name }}
+                        </span>
                         <span class="merchant-price">{{ formatMerchantPrice(merchant) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tradeskill Recipes Section -->
+            <div v-if="shouldShowTradeskillRecipes" class="detail-section tradeskill-recipes-section">
+              <div class="tradeskill-recipes-header">
+                <h4>Used in Tradeskill Recipes</h4>
+                <button 
+                  v-if="!tradeskillRecipesRequested"
+                  @click="loadTradeskillRecipes" 
+                  class="tradeskill-recipes-button"
+                >
+                  <i class="fas fa-hammer"></i>
+                  <span>Show tradeskill recipes</span>
+                </button>
+              </div>
+              
+              <!-- Loading state -->
+              <div v-if="loadingTradeskillRecipes" class="loading-sources">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Loading tradeskill recipes...</span>
+              </div>
+              
+              <!-- Tradeskill Recipes Results -->
+              <div v-else-if="tradeskillRecipes && tradeskillRecipesRequested" class="tradeskill-recipes-results">
+                <div v-if="tradeskillRecipes.length === 0" class="no-tradeskill-recipes">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No tradeskill recipes found for this item</span>
+                </div>
+                
+                <div v-else class="tradeskill-skills-list">
+                  <div v-for="skill in tradeskillRecipes" :key="skill.skill_name" class="tradeskill-skill-section">
+                    <div class="skill-header">
+                      <i class="fas fa-tools"></i>
+                      <span class="skill-name">{{ skill.skill_name }}</span>
+                      <span class="recipe-count">({{ skill.recipes.length }} recipes)</span>
+                    </div>
+                    
+                    <div class="recipes-list">
+                      <div v-for="recipe in skill.recipes" :key="recipe.recipe_id" class="recipe-list-item">
+                        <div class="recipe-item-icon">
+                          <img 
+                            v-if="recipe.result_item_icon" 
+                            :src="`/icons/items/${recipe.result_item_icon}.png`" 
+                            :alt="recipe.result_item_name || recipe.recipe_name"
+                            class="item-icon-img"
+                            @error="handleImageError"
+                          />
+                          <div v-else class="item-icon-placeholder">
+                            <i class="fas fa-cube"></i>
+                          </div>
+                        </div>
+                        <div class="recipe-item-info">
+                          <span 
+                            class="recipe-name clickable" 
+                            @click="loadRecipeDetails(recipe.recipe_id)"
+                            :title="`Click to view recipe details for ${recipe.recipe_name}`"
+                          >
+                            {{ recipe.recipe_name }}
+                          </span>
+                          <div class="recipe-item-badges">
+                            <span v-if="recipe.component_count > 1" class="component-count">{{ recipe.component_count }} needed</span>
+                            <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Created By Recipes Section -->
+            <div v-if="shouldShowCreatedByRecipes" class="detail-section created-by-recipes-section">
+              <div class="created-by-recipes-header">
+                <h4>Created by Tradeskill Recipes</h4>
+                <button 
+                  v-if="!createdByRecipesRequested"
+                  @click="loadCreatedByRecipes" 
+                  class="created-by-recipes-button"
+                >
+                  <i class="fas fa-magic"></i>
+                  <span>Show creation recipes</span>
+                </button>
+              </div>
+              
+              <!-- Loading state -->
+              <div v-if="loadingCreatedByRecipes" class="loading-sources">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Loading creation recipes...</span>
+              </div>
+              
+              <!-- Created By Recipes Results -->
+              <div v-else-if="createdByRecipes && createdByRecipesRequested" class="created-by-recipes-results">
+                <div v-if="createdByRecipes.length === 0" class="no-created-by-recipes">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>This item is not created by any tradeskill recipes</span>
+                </div>
+                
+                <div v-else class="creation-recipes-list">
+                  <div v-for="recipe in createdByRecipes" :key="recipe.recipe_id" class="creation-recipe-item">
+                    <div class="recipe-item-icon">
+                      <img 
+                        v-if="recipe.result_item_icon" 
+                        :src="`/icons/items/${recipe.result_item_icon}.png`" 
+                        :alt="recipe.result_item_name || recipe.recipe_name"
+                        class="item-icon-img"
+                        @error="handleImageError"
+                      />
+                      <div v-else class="item-icon-placeholder">
+                        <i class="fas fa-cube"></i>
+                      </div>
+                    </div>
+                    <div class="recipe-item-info">
+                      <span 
+                        class="recipe-name clickable" 
+                        @click="loadRecipeDetails(recipe.recipe_id)"
+                        :title="`Click to view recipe details for ${recipe.recipe_name}`"
+                      >
+                        {{ recipe.recipe_name }}
+                      </span>
+                      <div class="recipe-item-badges">
+                        <span class="tradeskill-badge">{{ recipe.tradeskill_name }}</span>
+                        <span class="trivial-level">Trivial: {{ recipe.trivial_level }}</span>
                       </div>
                     </div>
                   </div>
@@ -804,6 +954,135 @@
     
     <!-- Loading Modal -->
     <LoadingModal :visible="loadingItemModal" text="Loading item details..." @timeout="onItemModalTimeout" />
+    
+    <!-- Recipe Modal -->
+    <div v-if="selectedRecipe && !loadingRecipeDetails" class="modal-overlay" @click="closeRecipeModal">
+      <div class="modal-content recipe-modal" @click.stop>
+        <div class="modal-header">
+          <h3>Recipe Details</h3>
+          <button @click="closeRecipeModal" class="modal-close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div v-if="selectedRecipe" class="recipe-details">
+            
+            <div class="recipe-header">
+              <h4>{{ selectedRecipe.recipe.recipe_name }}</h4>
+              <div class="recipe-info">
+                <span class="tradeskill-badge">{{ selectedRecipe.recipe.tradeskill_name }}</span>
+                <span class="trivial-level">Trivial: {{ selectedRecipe.recipe.trivial_level }}</span>
+              </div>
+            </div>
+            
+            <!-- Creates Section -->
+            <div v-if="selectedRecipe.creates && selectedRecipe.creates.length > 0" class="recipe-section creates-section">
+              <h5><i class="fas fa-arrow-right"></i> Creates</h5>
+              <div class="items-grid">
+                <div 
+                  v-for="item in selectedRecipe.creates" 
+                  :key="item.item_id"
+                  :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                  @click="item.is_discovered ? handleItemClick(item.item_id, item.item_name) : null"
+                >
+                  <div class="recipe-item-icon">
+                    <img 
+                      v-if="item.item_icon" 
+                      :src="`/icons/items/${item.item_icon}.png`" 
+                      :alt="item.item_name"
+                      class="item-icon-img"
+                      @error="handleImageError"
+                    />
+                    <i v-else class="fas fa-cube item-icon-placeholder"></i>
+                  </div>
+                  <div class="recipe-item-info">
+                    <span class="item-name">{{ item.item_name }}</span>
+                    <div class="recipe-item-badges">
+                      <span v-if="item.count > 1" class="item-count">{{ item.count }}x</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Requires Section -->
+            <div v-if="selectedRecipe.requires && selectedRecipe.requires.length > 0" class="recipe-section requires-section">
+              <h5><i class="fas fa-arrow-left"></i> Requires</h5>
+              <div class="items-grid">
+                <div 
+                  v-for="item in selectedRecipe.requires" 
+                  :key="item.item_id"
+                  :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                  @click="item.is_discovered ? handleItemClick(item.item_id, item.item_name) : null"
+                >
+                  <div class="recipe-item-icon">
+                    <img 
+                      v-if="item.item_icon" 
+                      :src="`/icons/items/${item.item_icon}.png`" 
+                      :alt="item.item_name"
+                      class="item-icon-img"
+                      @error="handleImageError"
+                    />
+                    <i v-else class="fas fa-cube item-icon-placeholder"></i>
+                  </div>
+                  <div class="recipe-item-info">
+                    <span class="item-name">{{ item.item_name }}</span>
+                    <div class="recipe-item-badges">
+                      <span v-if="item.count > 1" class="item-count">{{ item.count }}x</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Containers Section -->
+            <div v-if="selectedRecipe.containers && selectedRecipe.containers.length > 0" class="recipe-section containers-section">
+              <h5><i class="fas fa-box"></i> Containers</h5>
+              <div class="items-grid">
+                <div 
+                  v-for="item in selectedRecipe.containers" 
+                  :key="item.item_id"
+                  :class="['recipe-item', { 'clickable': item.is_discovered, 'undiscovered': !item.is_discovered }]"
+                  @click="item.is_discovered ? handleItemClick(item.item_id, item.item_name) : null"
+                >
+                  <div class="recipe-item-icon">
+                    <img 
+                      v-if="item.item_icon" 
+                      :src="`/icons/items/${item.item_icon}.png`" 
+                      :alt="item.item_name"
+                      class="item-icon-img"
+                      @error="handleImageError"
+                    />
+                    <i v-else class="fas fa-cube item-icon-placeholder"></i>
+                  </div>
+                  <div class="recipe-item-info">
+                    <span class="item-name">{{ item.item_name }}</span>
+                    <div class="recipe-item-badges">
+                      <span v-if="item.count > 1" class="item-count">{{ item.count }}x</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Notes Section -->
+            <div v-if="selectedRecipe.recipe.notes" class="recipe-section notes-section">
+              <h5><i class="fas fa-sticky-note"></i> Notes</h5>
+              <div class="recipe-notes">{{ selectedRecipe.recipe.notes }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Recipe Loading Modal -->
+    <LoadingModal 
+      :visible="loadingRecipeDetails" 
+      text="Loading recipe details..." 
+      :randomClassIcon="true"
+      :fullScreen="true"
+    />
     
     <!-- Bag Windows -->
     <div 
@@ -933,33 +1212,80 @@ const merchantSourcesRequested = ref(false)
 const itemDataAvailability = ref(null)
 const loadingAvailability = ref(false)
 
+// Recipe state
+const tradeskillRecipes = ref(null)
+const loadingTradeskillRecipes = ref(false)
+const tradeskillRecipesRequested = ref(false)
+const createdByRecipes = ref(null)
+const loadingCreatedByRecipes = ref(false)
+const createdByRecipesRequested = ref(false)
+
+// Recipe modal state
+const selectedRecipe = ref(null)
+const loadingRecipeDetails = ref(false)
+
 // Computed properties for section visibility - Only show when data exists
 const shouldShowDropSources = computed(() => {
-  // Show while loading availability check
+  // Hide while loading availability check
   if (loadingAvailability.value) return false
   
-  // Show all if availability check failed (fallback)
-  if (itemDataAvailability.value === 'failed') return true
-  
-  // Show if no availability data yet (initial state)
+  // Hide if no availability data yet (initial state) 
   if (!itemDataAvailability.value) return false
   
-  // Only show if data exists
+  // Hide failed checks - don't show sections that would be empty
+  if (itemDataAvailability.value === 'failed') return false
+  
+  // Only show if data exists (> 0)
   return itemDataAvailability.value.drop_sources > 0
 })
 
 const shouldShowMerchantSources = computed(() => {
-  // Show while loading availability check
+  // Hide while loading availability check
   if (loadingAvailability.value) return false
   
-  // Show all if availability check failed (fallback)
-  if (itemDataAvailability.value === 'failed') return true
-  
-  // Show if no availability data yet (initial state)
+  // Hide if no availability data yet (initial state)
   if (!itemDataAvailability.value) return false
   
-  // Only show if data exists
+  // Hide failed checks - don't show sections that would be empty
+  if (itemDataAvailability.value === 'failed') return false
+  
+  // Only show if data exists (> 0)
   return itemDataAvailability.value.merchant_sources > 0
+})
+
+const shouldShowTradeskillRecipes = computed(() => {
+  // Hide while loading availability check
+  if (loadingAvailability.value) return false
+  
+  // Hide if no availability data yet (initial state)
+  if (!itemDataAvailability.value) return false
+  
+  // Hide failed checks - don't show sections that would be empty
+  if (itemDataAvailability.value === 'failed') return false
+  
+  // Only show if data exists (> 0)
+  return itemDataAvailability.value.tradeskill_recipes > 0
+})
+
+const shouldShowCreatedByRecipes = computed(() => {
+  // Hide while loading availability check
+  if (loadingAvailability.value) return false
+  
+  // Hide if no availability data yet (initial state)
+  if (!itemDataAvailability.value) return false
+  
+  // Hide failed checks - don't show sections that would be empty
+  if (itemDataAvailability.value === 'failed') return false
+  
+  // Only show if data exists (> 0)
+  return itemDataAvailability.value.created_by_recipes > 0
+})
+
+// Check if character has any bags
+const hasBags = computed(() => {
+  return props.character.inventory && props.character.inventory.some(slot => 
+    slot.item && slot.item.containerSize && slot.item.containerSize > 0
+  )
 })
 
 // Duplicate declarations removed - already declared above
@@ -1042,8 +1368,20 @@ const closeItemModal = () => {
   merchantSourcesRequested.value = false
   itemDataAvailability.value = null
   loadingAvailability.value = false
+  // Clear recipe data when closing modal  
+  tradeskillRecipes.value = null
+  loadingTradeskillRecipes.value = false
+  tradeskillRecipesRequested.value = false
+  createdByRecipes.value = null
+  loadingCreatedByRecipes.value = false
+  createdByRecipesRequested.value = false
   // Clear item modal loading state
-  loadingItemModal.value = false
+  loadingItemModal.value = false  
+}
+
+const closeRecipeModal = () => {
+  selectedRecipe.value = null
+  loadingRecipeDetails.value = false
 }
 
 // onItemModalTimeout function moved to line 1324 to avoid duplication
@@ -1094,6 +1432,76 @@ const loadMerchantSources = async () => {
     merchantSources.value = []
   } finally {
     loadingMerchantSources.value = false
+  }
+}
+
+// Recipe loading functions
+const loadTradeskillRecipes = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  tradeskillRecipesRequested.value = true
+  loadingTradeskillRecipes.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/tradeskill-recipes`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    tradeskillRecipes.value = data.skills || []
+  } catch (error) {
+    console.error('Error loading tradeskill recipes:', error)
+    tradeskillRecipes.value = []
+  } finally {
+    loadingTradeskillRecipes.value = false
+  }
+}
+
+const loadCreatedByRecipes = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  createdByRecipesRequested.value = true
+  loadingCreatedByRecipes.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/created-by-recipes`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    createdByRecipes.value = data.recipes || []
+  } catch (error) {
+    console.error('Error loading created by recipes:', error)
+    createdByRecipes.value = []
+  } finally {
+    loadingCreatedByRecipes.value = false
+  }
+}
+
+const loadRecipeDetails = async (recipeId) => {
+  if (!recipeId) return
+  
+  loadingRecipeDetails.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/recipes/${recipeId}`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    selectedRecipe.value = data
+  } catch (error) {
+    console.error('Error loading recipe details:', error)
+  } finally {
+    loadingRecipeDetails.value = false
   }
 }
 
@@ -1315,10 +1723,14 @@ const loadItemDataAvailability = async (itemId) => {
   loadingAvailability.value = true
   
   try {
-    const response = await resilientApi.get(`/api/items/${itemId}/availability`, {
-      timeout: 8000 // Increased timeout for this endpoint
-    })
-    itemDataAvailability.value = response.data
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${itemId}/availability`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    itemDataAvailability.value = data
     
     // Record success to reset circuit breaker
     recordAvailabilitySuccess()
@@ -1356,6 +1768,30 @@ const handleImageError = (event) => {
     // Final fallback to default icon (PNG)
     event.target.src = '/icons/items/500.png'
   }
+}
+
+// Function to handle NPC clicks - opens NPC page in new tab
+const handleNPCClick = (npcId, npcName) => {
+  if (!npcId) return
+  
+  // Create URL to open NPC page with specific NPC
+  const npcUrl = `/npcs?npc=${npcId}`
+  
+  // Open in new tab
+  window.open(npcUrl, '_blank')
+  
+}
+
+// Function to handle item clicks - opens Items page in new tab
+const handleItemClick = (itemId, itemName) => {
+  if (!itemId) return
+  
+  // Create URL to open Items page with specific item
+  const itemUrl = `/items?item=${itemId}`
+  
+  // Open in new tab
+  window.open(itemUrl, '_blank')
+  
 }
 
 const formatCurrency = (value) => {
@@ -1692,6 +2128,60 @@ const bringBagToFront = (slotId) => {
   }
 }
 
+const toggleAllBags = () => {
+  if (openBagWindows.value.length > 0) {
+    // Close all bags
+    openBagWindows.value = []
+  } else {
+    // Open all bags in organized layout
+    openAllBagsOrganized()
+  }
+}
+
+const openAllBagsOrganized = () => {
+  if (!props.character.inventory) return
+  
+  // Find all bag items
+  const bags = props.character.inventory.filter(slot => 
+    slot.item && slot.item.containerSize && slot.item.containerSize > 0
+  )
+  
+  if (bags.length === 0) return
+  
+  // Calculate organized positioning based on actual bag window size
+  const bagWidth = 160  // Actual bag window width
+  const bagHeight = 280 // Actual bag window height (significantly increased for vertical spacing) 
+  const gapX = 15 // Horizontal gap between bags
+  const gapY = 60 // Vertical gap between rows (significantly increased to prevent overlap)
+  const startX = 100 // Starting X position
+  const startY = 120 // Starting Y position (moved up slightly)
+  
+  // Calculate grid layout based on number of bags
+  const bagsPerRow = 3 // Max 3 bags per row to prevent overlap
+  
+  bags.forEach((slot, index) => {
+    const row = Math.floor(index / bagsPerRow)
+    const col = index % bagsPerRow
+    
+    const x = startX + (col * (bagWidth + gapX))
+    const y = startY + (row * (bagHeight + gapY))
+    
+    const bagContents = getBagContents(slot.slotid, slot.item.containerSize)
+    
+    const bagWindow = {
+      slotId: slot.slotid,
+      bagName: slot.item.name,
+      containerSize: slot.item.containerSize,
+      x: x,
+      y: y,
+      zIndex: nextZIndex.value++,
+      contents: bagContents
+    }
+    
+    openBagWindows.value.push(bagWindow)
+  })
+}
+
 const startDrag = (event, bagWindow) => {
   dragState.value = {
     isDragging: true,
@@ -1771,13 +2261,6 @@ const clearAllHighlights = () => {
     // Found bag element
     
     if (bagElement) {
-      if (import.meta.env.DEV) {
-        console.log(`Before clearing - styles:`, {
-          border: bagElement.style.border,
-          background: bagElement.style.background,
-          transform: bagElement.style.transform
-        })
-      }
       
       bagElement.classList.remove('persistent-highlight', 'blinking-highlight')
       // Clear inline styles that were applied for bag highlighting
@@ -1788,13 +2271,6 @@ const clearAllHighlights = () => {
       bagElement.style.zIndex = ''
       bagElement.style.position = ''
       
-      if (import.meta.env.DEV) {
-        console.log(`After clearing - styles:`, {
-          border: bagElement.style.border,
-          background: bagElement.style.background,
-          transform: bagElement.style.transform
-        })
-      }
       
       // Successfully cleared bag highlight
     } else {
@@ -1819,19 +2295,9 @@ const clearAllHighlights = () => {
   // Nuclear option: Clear ALL bag slot inline styles
   // Nuclear cleanup: clearing ALL bag slot inline styles
   const allBagSlots = document.querySelectorAll('.bag-slot')
-  if (import.meta.env.DEV) console.log(`Found ${allBagSlots.length} bag slots for cleanup`)
   
   allBagSlots.forEach((bagSlot, index) => {
     const hadStyles = bagSlot.style.border || bagSlot.style.background || bagSlot.style.transform
-    if (hadStyles && import.meta.env.DEV) {
-      console.log(`Clearing styles from bag slot ${index}:`, {
-        before: {
-          border: bagSlot.style.border,
-          background: bagSlot.style.background,
-          transform: bagSlot.style.transform
-        }
-      })
-    }
     
     bagSlot.style.border = ''
     bagSlot.style.background = ''
@@ -1840,9 +2306,6 @@ const clearAllHighlights = () => {
     bagSlot.style.zIndex = ''
     bagSlot.style.position = ''
     
-    if (hadStyles && import.meta.env.DEV) {
-      console.log(`Cleared inline styles from bag slot ${index}`)
-    }
   })
   
   // Clear the sets
@@ -1870,11 +2333,6 @@ const findElementBySlotId = (slotId) => {
     `.bag-slot[data-slot="${slotId}"]`
   ]
   
-  if (import.meta.env.DEV) console.log('Finding element for slot:', {
-    originalSlot: slotId,
-    actualSlot: actualSlotToFind,
-    selectors: selectors
-  })
   
   for (const selector of selectors) {
     const element = document.querySelector(selector)
@@ -1906,7 +2364,6 @@ const findBagElementBySlot = (bagSlot) => {
   for (const selector of selectors) {
     const element = document.querySelector(selector)
     if (element) {
-      if (import.meta.env.DEV) console.log(`Found bag element with selector: ${selector}`)
       return element
     }
   }
@@ -2074,10 +2531,6 @@ const openBagIfClosed = (bagSlot, callback) => {
 const highlightInventorySlot = (slotid) => {
   const slotElement = findElementBySlotId(slotid)
   
-  if (import.meta.env.DEV) console.log('Highlighting inventory slot:', {
-    slotid: slotid,
-    found: !!slotElement
-  })
   
   if (slotElement) {
     addPersistentHighlight(slotElement, slotid, 'item')
@@ -2093,16 +2546,6 @@ const highlightBagContainer = (bagSlot) => {
   const uiSlot = getUISlotFromBagSlot(bagSlot)
   const bagElement = findBagElementBySlot(bagSlot) // Use the improved bag element finder
   
-  if (import.meta.env.DEV) console.log('Highlighting bag container:', {
-    bagSlot: bagSlot,
-    uiSlot: uiSlot,
-    found: !!bagElement,
-    elementDetails: bagElement ? {
-      tagName: bagElement.tagName,
-      className: bagElement.className,
-      dataSlot: bagElement.getAttribute('data-slot')
-    } : null
-  })
   
   if (bagElement) {
     addPersistentHighlight(bagElement, bagSlot, 'bag')
@@ -2116,19 +2559,6 @@ const highlightBagContainer = (bagSlot) => {
     bagElement.style.zIndex = '1000'
     bagElement.style.position = 'relative'
     
-    // Verify styles were applied
-    setTimeout(() => {
-      if (import.meta.env.DEV) console.log('Verifying applied styles after 100ms:', {
-        border: bagElement.style.border,
-        background: bagElement.style.background,
-        transform: bagElement.style.transform,
-        computedBorder: window.getComputedStyle(bagElement).border,
-        computedBackground: window.getComputedStyle(bagElement).background,
-        element: bagElement,
-        parentElement: bagElement.parentElement?.tagName,
-        isConnected: bagElement.isConnected
-      })
-    }, 100)
     
     // Store reference for repeated application
     const applyGoldenStyles = () => {
@@ -2153,19 +2583,10 @@ const highlightBagContainer = (bagSlot) => {
     
     // Debug: List all available bag slots
     const allBagSlots = document.querySelectorAll('.bag-slot[data-slot]')
-    if (import.meta.env.DEV) console.log('Available bag slots:', Array.from(allBagSlots).map(el => ({
-      dataSlot: el.getAttribute('data-slot'),
-      className: el.className
-    })))
   }
 }
 
 const highlightBagItem = (bagSlot, contentSlot) => {
-  if (import.meta.env.DEV) console.log('Highlighting bag item:', {
-    bagSlot: bagSlot,
-    contentSlot: contentSlot,
-    openBags: openBagWindows.value.map(w => w.slotId)
-  })
   
   // Wait a moment for bag to open if needed
   setTimeout(() => {
@@ -2215,25 +2636,11 @@ const addPersistentHighlight = (element, slotId, type) => {
   element.classList.add('blinking-highlight', 'persistent-highlight')
   persistentHighlights.value.blinking.add(slotId)
   
-  // Debug: Verify CSS classes are applied
-  if (import.meta.env.DEV) console.log(`Applied highlighting to ${type} slot ${slotId}:`, {
-    element: element.tagName + (element.className ? '.' + element.className.split(' ').join('.') : ''),
-    hasBlinking: element.classList.contains('blinking-highlight'),
-    hasPersistent: element.classList.contains('persistent-highlight'),
-    computedBorder: window.getComputedStyle(element).border,
-    computedOutline: window.getComputedStyle(element).outline
-  })
-  
   // After 5 seconds, remove blinking but keep persistent highlight
   setTimeout(() => {
     element.classList.remove('blinking-highlight')
     persistentHighlights.value.blinking.delete(slotId)
     // Stopped blinking, persistent border remains
-    if (import.meta.env.DEV) console.log(`Post-blink CSS state:`, {
-      hasBlinking: element.classList.contains('blinking-highlight'),
-      hasPersistent: element.classList.contains('persistent-highlight'),
-      computedBorder: window.getComputedStyle(element).border
-    })
   }, 5000)
   
   // Added persistent highlight to slot
@@ -2257,16 +2664,6 @@ const getLocationDescription = (result) => {
       const uiSlot = getUISlotFromBagSlot(bagSlot)
       const bagItem = props.character?.inventory?.find(s => s.slot === uiSlot)?.item
       const bagName = bagItem?.name || 'Unknown Bag'
-      
-      // Debug logging to help troubleshoot
-      if (import.meta.env.DEV) console.log('Bag lookup:', {
-        contentSlot: slotid,
-        bagSlot: bagSlot,
-        uiSlot: uiSlot,
-        bagItem: bagItem,
-        bagName: bagName,
-        inventory: props.character?.inventory
-      })
       
       return `In ${bagName} (slot ${uiSlot})`
     }
@@ -2581,7 +2978,7 @@ onUnmounted(() => {
   height: calc(100% - 80px);
   padding: 4px;
   gap: 4px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Stats Panel (Left) */
@@ -2888,8 +3285,8 @@ onUnmounted(() => {
   background: rgba(20, 20, 20, 0.9);
   border: 1px inset #666;
   padding: 8px;
-  overflow: hidden;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -4007,6 +4404,18 @@ div.bag-slot.persistent-highlight::after,
   font-weight: 500;
 }
 
+.clickable-npc {
+  cursor: pointer;
+  color: #60a5fa !important; /* Light blue to indicate clickability */
+  transition: color 0.2s ease;
+  text-decoration: underline;
+}
+
+.clickable-npc:hover {
+  color: #93c5fd !important; /* Lighter blue on hover */
+  text-decoration: underline;
+}
+
 .drop-chance {
   color: #68d391;
   font-weight: 600;
@@ -4027,5 +4436,460 @@ div.bag-slot.persistent-highlight::after,
   font-style: italic;
   line-height: 1.6;
   padding: 8px 0;
+}
+
+/* Recipe Styles */
+.tradeskill-recipes-section {
+  margin-top: 20px;
+}
+
+.tradeskill-recipes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.tradeskill-recipes-header h4 {
+  margin: 0;
+  color: #f7fafc;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tradeskill-recipes-button {
+  background: linear-gradient(135deg, #8b5a2b, #a0622d);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.tradeskill-recipes-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a0622d, #b8732f);
+  transform: translateY(-1px);
+}
+
+.tradeskill-recipes-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.tradeskill-recipes-results {
+  margin-top: 10px;
+}
+
+.no-tradeskill-recipes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a0aec0;
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tradeskill-skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.tradeskill-skill-section {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.skill-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;  
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.skill-name {
+  color: #f7fafc;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.recipe-count {
+  color: #a0aec0;
+  font-size: 0.85rem;
+}
+
+.recipes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recipe-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.recipe-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(2px);
+}
+
+.recipe-list-item .recipe-name {
+  color: #f7fafc;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.recipe-list-item .recipe-name.clickable {
+  color: #60a5fa;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.recipe-list-item .recipe-name.clickable:hover {
+  color: #93c5fd;
+}
+
+.recipe-item-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recipe-item-icon .item-icon-img {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  border-radius: 2px;
+}
+
+.recipe-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recipe-item-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipe-section .item-count {
+  background: #1a365d;
+  color: #63b3ed;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.recipe-modal {
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.recipe-details {
+  padding: 0;
+}
+
+.recipe-header {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recipe-header h4 {
+  color: #f7fafc;
+  margin: 0 0 10px 0;
+  font-size: 1.3rem;
+}
+
+.recipe-info {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tradeskill-badge {
+  background: linear-gradient(135deg, #8b5a2b, #a0622d);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.trivial-level {
+  background: #1a365d;
+  color: #63b3ed;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.recipe-section {
+  margin-bottom: 25px;
+}
+
+.recipe-section h5 {
+  color: #e2e8f0;
+  font-size: 1rem;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recipe-section h5 i {
+  color: #60a5fa;
+  font-size: 0.9rem;
+}
+
+.recipe-section .items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.recipe-section .recipe-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.recipe-section .recipe-item.clickable {
+  cursor: pointer;
+}
+
+.recipe-section .recipe-item.clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.recipe-section .item-name {
+  color: #f7fafc;
+  font-weight: 500;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.recipe-section .recipe-item.undiscovered {
+  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.recipe-section .recipe-item.undiscovered .item-name {
+  color: #a0aec0;
+}
+
+.recipe-section .recipe-item.undiscovered:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.component-count {
+  background: #553c9a;
+  color: #c4b5fd;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.recipe-notes {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  padding: 12px;
+  border-radius: 6px;
+  font-style: italic;
+  line-height: 1.5;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.created-by-recipes-section {
+  margin-top: 20px;
+}
+
+.created-by-recipes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.created-by-recipes-button {
+  background: linear-gradient(135deg, #553c9a, #6d28d9);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.created-by-recipes-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  transform: translateY(-1px);
+}
+
+.created-by-recipes-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.created-by-recipes-results {
+  margin-top: 10px;
+}
+
+.no-created-by-recipes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a0aec0;
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.creation-recipes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.creation-recipe-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.creation-recipe-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(2px);
+}
+
+.creation-recipe-item .recipe-name {
+  color: #60a5fa;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.creation-recipe-item .recipe-name:hover {
+  color: #93c5fd;
+}
+
+/* Bag Controls */
+.bag-toggle-icon {
+  position: absolute;
+  bottom: -30px;
+  left: 0;
+  width: 141px;
+  height: 24px;
+  background: #374151;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 2px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.bag-toggle-icon:hover:not(:disabled) {
+  background: #4b5563;
+}
+
+.bag-toggle-icon:disabled {
+  background: #4a5568;
+  color: #a0aec0;
+  cursor: not-allowed;
+}
+
+.inventory-bags {
+  position: relative;
+}
+
+.bag-toggle-all {
+  background: #374151;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 2px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bag-toggle-all:hover:not(:disabled) {
+  background: #4b5563;
+  transform: none;
+  box-shadow: none;
+}
+
+.bag-toggle-all:disabled {
+  background: #4a5568;
+  color: #a0aec0;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 </style>
