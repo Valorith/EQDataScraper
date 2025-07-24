@@ -783,7 +783,7 @@ const loadSystemStats = async () => {
     
     const metricsResponse = await requestManager.get(`${getApiBaseUrl()}/api/admin/system/metrics`, { 
       headers,
-      timeout: 5000 // 5 second timeout for admin metrics
+      timeout: 15000 // 15 second timeout for admin metrics to match other endpoints
     }, 'system-metrics')
     
     // Check if request was cancelled
