@@ -502,10 +502,12 @@ export default {
           if (response.data.data?.primaryMain) {
             primaryMain.value = response.data.data.primaryMain
             console.log('✓ Loaded primary main:', response.data.data.primaryMain.name)
+            console.log('Primary main data structure:', response.data.data.primaryMain)
           }
           if (response.data.data?.secondaryMain) {
             secondaryMain.value = response.data.data.secondaryMain
             console.log('✓ Loaded secondary main:', response.data.data.secondaryMain.name)
+            console.log('Secondary main data structure:', response.data.data.secondaryMain)
           }
           
           if (!response.data.data?.primaryMain && !response.data.data?.secondaryMain) {
@@ -1435,6 +1437,7 @@ export default {
         if (response.status === 200 || response.status === 201) {
           primaryMain.value = character
           console.log(`Successfully set ${character.name} as Primary Main`)
+          console.log('Primary main character data:', character)
         } else {
           throw new Error(`Unexpected response status: ${response.status}`)
         }
@@ -1517,6 +1520,7 @@ export default {
         if (response.status === 200 || response.status === 201) {
           secondaryMain.value = character
           console.log(`Successfully set ${character.name} as Secondary Main`)
+          console.log('Secondary main character data:', character)
         } else {
           throw new Error(`Unexpected response status: ${response.status}`)
         }
