@@ -539,14 +539,14 @@ def get_character_inventory(character_id):
                                 }
                             }
         
-            # Get inventory data (main bag slots 23-32 + bag contents 262-361) 
+            # Get inventory data (main bag slots 23-32 + ALL bag contents 251-361) 
             inventory_query = """
                 SELECT inv.slotid, inv.itemid, inv.charges, inv.color, inv.instnodrop,
                        inv.augslot1, inv.augslot2, inv.augslot3, inv.augslot4, inv.augslot5, inv.augslot6,
                        items.Name, items.icon, items.stackable, items.size, items.itemtype, items.bagslots, items.bagtype
                 FROM inventory inv
                 LEFT JOIN items ON inv.itemid = items.id
-                WHERE inv.charid = %s AND (inv.slotid BETWEEN 23 AND 32 OR inv.slotid BETWEEN 262 AND 361)
+                WHERE inv.charid = %s AND (inv.slotid BETWEEN 23 AND 32 OR inv.slotid BETWEEN 251 AND 361)
                 ORDER BY inv.slotid
             """
             

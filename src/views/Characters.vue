@@ -519,14 +519,12 @@ export default {
     // View a main character (Primary or Secondary)
     const viewCharacter = async (character, slotType) => {
       if (isLoadingCharacter.value) {
-        console.log('Character loading already in progress, ignoring request')
         return
       }
       
       // Throttle character loading to prevent rapid successive requests
       const now = Date.now()
       if (window.lastCharacterLoadTime && now - window.lastCharacterLoadTime < 3000) {
-        console.log('Character loading throttled, please wait 3 seconds between requests')
         return
       }
       window.lastCharacterLoadTime = now
@@ -548,7 +546,6 @@ export default {
         selectedCharacter.value = fullCharacter
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Character loading request was cancelled')
           return
         }
         console.error(`Failed to load ${character.name}'s data:`, error)
@@ -625,14 +622,12 @@ export default {
     // View a searched character (temporary lookup)
     const viewSearchedCharacter = async (character) => {
       if (isLoadingCharacter.value) {
-        console.log('Character loading already in progress, ignoring request')
         return
       }
       
       // Throttle character loading to prevent rapid successive requests
       const now = Date.now()
       if (window.lastCharacterLoadTime && now - window.lastCharacterLoadTime < 3000) {
-        console.log('Character loading throttled, please wait 3 seconds between requests')
         return
       }
       window.lastCharacterLoadTime = now
@@ -658,7 +653,6 @@ export default {
         searchPerformed.value = false
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Character loading request was cancelled')
           return
         }
         console.error(`Failed to load ${character.name}'s data:`, error)
@@ -713,7 +707,6 @@ export default {
 
     const loadCharacterInventory = async (characterId, character, abortSignal = null) => {
       try {
-        console.log(`Loading inventory for character ${characterId}`)
         const response = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`, {
           timeout: 15000, // Increased to 15 second timeout for stability
           signal: abortSignal
@@ -729,11 +722,8 @@ export default {
         
         // Store inventory data directly on character object for bag contents
         character.rawInventoryData = [...inventorySlots]
-        console.log('character.rawInventoryData set to:', character.rawInventoryData.length, 'items')
-        // Debug: Check what bag content slots we received (simplified)
-        console.log('Total inventory slots received:', inventorySlots.length)
+        // Store raw inventory for bag mapping functionality
         const bagContentSlots = inventorySlots.filter(slot => slot.slotid >= 262 && slot.slotid <= 361)
-        console.log('Bag content slots (262-361):', bagContentSlots.length)
         
         // Set equipped items
         character.equipment = equipmentData
@@ -771,13 +761,8 @@ export default {
           }
         }
         
-        console.log('Loaded character equipment:', equipmentData)
-        console.log('Raw inventory slots from backend:', inventorySlots.length, inventorySlots)
-        console.log('Processed inventory slots:', character.inventory.length, character.inventory)
-        console.log('Character class for icon:', character.class)
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Character inventory loading was cancelled')
           return
         }
         console.error(`Failed to load inventory for character ${characterId}:`, error)

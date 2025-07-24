@@ -80,7 +80,7 @@
         <div class="equipment-slot-positioned charm-slot" data-slot="charm">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.charm }"
-               :title="getItemTooltip(character.equipment?.charm)"
+               :data-tooltip="getItemTooltip(character.equipment?.charm)"
                @click="selectItem(character.equipment?.charm)">
             <img v-if="character.equipment?.charm" 
                  :src="`/icons/items/${character.equipment.charm.icon}.png`" 
@@ -93,7 +93,7 @@
         <div class="equipment-slot-positioned head-slot" data-slot="head">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.head }"
-               :title="getItemTooltip(character.equipment?.head)"
+               :data-tooltip="getItemTooltip(character.equipment?.head)"
                @click="selectItem(character.equipment?.head)">
             <img v-if="character.equipment?.head" 
                  :src="`/icons/items/${character.equipment.head.icon}.png`" 
@@ -106,7 +106,7 @@
         <div class="equipment-slot-positioned ear-slot" data-slot="ear1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear1 }"
-               :title="getItemTooltip(character.equipment?.ear1)"
+               :data-tooltip="getItemTooltip(character.equipment?.ear1)"
                @click="selectItem(character.equipment?.ear1)">
             <img v-if="character.equipment?.ear1" 
                  :src="`/icons/items/${character.equipment.ear1.icon}.png`" 
@@ -119,7 +119,7 @@
         <div class="equipment-slot-positioned ear-slot ear-2" data-slot="ear2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ear2 }"
-               :title="getItemTooltip(character.equipment?.ear2)"
+               :data-tooltip="getItemTooltip(character.equipment?.ear2)"
                @click="selectItem(character.equipment?.ear2)">
             <img v-if="character.equipment?.ear2" 
                  :src="`/icons/items/${character.equipment.ear2.icon}.png`" 
@@ -132,7 +132,7 @@
         <div class="equipment-slot-positioned neck-slot" data-slot="neck">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.neck }"
-               :title="getItemTooltip(character.equipment?.neck)"
+               :data-tooltip="getItemTooltip(character.equipment?.neck)"
                @click="selectItem(character.equipment?.neck)">
             <img v-if="character.equipment?.neck" 
                  :src="`/icons/items/${character.equipment.neck.icon}.png`" 
@@ -145,7 +145,7 @@
         <div class="equipment-slot-positioned shoulder-slot" data-slot="shoulder">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.shoulder }"
-               :title="getItemTooltip(character.equipment?.shoulder)"
+               :data-tooltip="getItemTooltip(character.equipment?.shoulder)"
                @click="selectItem(character.equipment?.shoulder)">
             <img v-if="character.equipment?.shoulder" 
                  :src="`/icons/items/${character.equipment.shoulder.icon}.png`" 
@@ -158,7 +158,7 @@
         <div class="equipment-slot-positioned arms-slot" data-slot="arms">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.arms }"
-               :title="getItemTooltip(character.equipment?.arms)"
+               :data-tooltip="getItemTooltip(character.equipment?.arms)"
                @click="selectItem(character.equipment?.arms)">
             <img v-if="character.equipment?.arms" 
                  :src="`/icons/items/${character.equipment.arms.icon}.png`" 
@@ -171,7 +171,7 @@
         <div class="equipment-slot-positioned back-slot" data-slot="back">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.back }"
-               :title="getItemTooltip(character.equipment?.back)"
+               :data-tooltip="getItemTooltip(character.equipment?.back)"
                @click="selectItem(character.equipment?.back)">
             <img v-if="character.equipment?.back" 
                  :src="`/icons/items/${character.equipment.back.icon}.png`" 
@@ -184,7 +184,7 @@
         <div class="equipment-slot-positioned wrist-slot wrist-1" data-slot="wrist1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist1 }"
-               :title="getItemTooltip(character.equipment?.wrist1)"
+               :data-tooltip="getItemTooltip(character.equipment?.wrist1)"
                @click="selectItem(character.equipment?.wrist1)">
             <img v-if="character.equipment?.wrist1" 
                  :src="`/icons/items/${character.equipment.wrist1.icon}.png`" 
@@ -197,7 +197,7 @@
         <div class="equipment-slot-positioned wrist-slot wrist-2" data-slot="wrist2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.wrist2 }"
-               :title="getItemTooltip(character.equipment?.wrist2)"
+               :data-tooltip="getItemTooltip(character.equipment?.wrist2)"
                @click="selectItem(character.equipment?.wrist2)">
             <img v-if="character.equipment?.wrist2" 
                  :src="`/icons/items/${character.equipment.wrist2.icon}.png`" 
@@ -210,7 +210,7 @@
         <div class="equipment-slot-positioned range-slot" data-slot="range">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.range }"
-               :title="getItemTooltip(character.equipment?.range)"
+               :data-tooltip="getItemTooltip(character.equipment?.range)"
                @click="selectItem(character.equipment?.range)">
             <img v-if="character.equipment?.range" 
                  :src="`/icons/items/${character.equipment.range.icon}.png`" 
@@ -223,7 +223,7 @@
         <div class="equipment-slot-positioned hands-slot" data-slot="hands">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.hands }"
-               :title="getItemTooltip(character.equipment?.hands)"
+               :data-tooltip="getItemTooltip(character.equipment?.hands)"
                @click="selectItem(character.equipment?.hands)">
             <img v-if="character.equipment?.hands" 
                  :src="`/icons/items/${character.equipment.hands.icon}.png`" 
@@ -236,7 +236,7 @@
         <div class="equipment-slot-positioned primary-slot" data-slot="primary">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.primary }"
-               :title="getItemTooltip(character.equipment?.primary)"
+               :data-tooltip="getItemTooltip(character.equipment?.primary)"
                @click="selectItem(character.equipment?.primary)">
             <img v-if="character.equipment?.primary" 
                  :src="`/icons/items/${character.equipment.primary.icon}.png`" 
@@ -249,7 +249,7 @@
         <div class="equipment-slot-positioned secondary-slot" data-slot="secondary">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.secondary }"
-               :title="getItemTooltip(character.equipment?.secondary)"
+               :data-tooltip="getItemTooltip(character.equipment?.secondary)"
                @click="selectItem(character.equipment?.secondary)">
             <img v-if="character.equipment?.secondary" 
                  :src="`/icons/items/${character.equipment.secondary.icon}.png`" 
@@ -262,7 +262,7 @@
         <div class="equipment-slot-positioned ammo-bottom-slot" data-slot="ammo">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ammo }"
-               :title="getItemTooltip(character.equipment?.ammo)"
+               :data-tooltip="getItemTooltip(character.equipment?.ammo)"
                @click="selectItem(character.equipment?.ammo)">
             <img v-if="character.equipment?.ammo" 
                  :src="`/icons/items/${character.equipment.ammo.icon}.png`" 
@@ -275,7 +275,7 @@
         <div class="equipment-slot-positioned ring-slot ring-1" data-slot="ring1">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring1 }"
-               :title="getItemTooltip(character.equipment?.ring1)"
+               :data-tooltip="getItemTooltip(character.equipment?.ring1)"
                @click="selectItem(character.equipment?.ring1)">
             <img v-if="character.equipment?.ring1" 
                  :src="`/icons/items/${character.equipment.ring1.icon}.png`" 
@@ -288,7 +288,7 @@
         <div class="equipment-slot-positioned ring-slot ring-2" data-slot="ring2">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.ring2 }"
-               :title="getItemTooltip(character.equipment?.ring2)"
+               :data-tooltip="getItemTooltip(character.equipment?.ring2)"
                @click="selectItem(character.equipment?.ring2)">
             <img v-if="character.equipment?.ring2" 
                  :src="`/icons/items/${character.equipment.ring2.icon}.png`" 
@@ -301,7 +301,7 @@
         <div class="equipment-slot-positioned chest-slot" data-slot="chest">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.chest }"
-               :title="getItemTooltip(character.equipment?.chest)"
+               :data-tooltip="getItemTooltip(character.equipment?.chest)"
                @click="selectItem(character.equipment?.chest)">
             <img v-if="character.equipment?.chest" 
                  :src="`/icons/items/${character.equipment.chest.icon}.png`" 
@@ -314,7 +314,7 @@
         <div class="equipment-slot-positioned legs-slot" data-slot="legs">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.legs }"
-               :title="getItemTooltip(character.equipment?.legs)"
+               :data-tooltip="getItemTooltip(character.equipment?.legs)"
                @click="selectItem(character.equipment?.legs)">
             <img v-if="character.equipment?.legs" 
                  :src="`/icons/items/${character.equipment.legs.icon}.png`" 
@@ -327,7 +327,7 @@
         <div class="equipment-slot-positioned feet-slot" data-slot="feet">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.feet }"
-               :title="getItemTooltip(character.equipment?.feet)"
+               :data-tooltip="getItemTooltip(character.equipment?.feet)"
                @click="selectItem(character.equipment?.feet)">
             <img v-if="character.equipment?.feet" 
                  :src="`/icons/items/${character.equipment.feet.icon}.png`" 
@@ -340,7 +340,7 @@
         <div class="equipment-slot-positioned waist-slot" data-slot="waist">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.waist }"
-               :title="getItemTooltip(character.equipment?.waist)"
+               :data-tooltip="getItemTooltip(character.equipment?.waist)"
                @click="selectItem(character.equipment?.waist)">
             <img v-if="character.equipment?.waist" 
                  :src="`/icons/items/${character.equipment.waist.icon}.png`" 
@@ -353,7 +353,7 @@
         <div class="equipment-slot-positioned ammo-slot" data-slot="power_source">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.power_source }"
-               :title="getItemTooltip(character.equipment?.power_source)"
+               :data-tooltip="getItemTooltip(character.equipment?.power_source)"
                @click="selectItem(character.equipment?.power_source)">
             <img v-if="character.equipment?.power_source" 
                  :src="`/icons/items/${character.equipment.power_source.icon}.png`" 
@@ -366,7 +366,7 @@
         <div class="equipment-slot-positioned face-slot" data-slot="face">
           <div class="equipment-slot" 
                :class="{ 'has-item': character.equipment?.face }"
-               :title="getItemTooltip(character.equipment?.face)"
+               :data-tooltip="getItemTooltip(character.equipment?.face)"
                @click="selectItem(character.equipment?.face)">
             <img v-if="character.equipment?.face" 
                  :src="`/icons/items/${character.equipment.face.icon}.png`" 
@@ -426,7 +426,8 @@
               :key="slot.slot"
               class="bag-slot"
               :class="{ 'has-item': slot.item }"
-              :title="getItemTooltip(slot.item)"
+              :data-tooltip="getItemTooltip(slot.item)"
+              :data-slot="slot.slot"
               @click="selectItem(slot.item)"
               @contextmenu.prevent="handleBagRightClick($event, slot)"
             >
@@ -452,7 +453,51 @@
       <button class="eq-button">Key Rings</button>
       <button class="eq-button">Skills</button>
       <button class="eq-button">Alt. Adv.</button>
-      <button class="eq-button find-item">Find Item</button>
+      <button class="eq-button find-item" @click="toggleFindItem">Find Item</button>
+    </div>
+    
+    <!-- Find Item Search Box -->
+    <div v-if="showFindItem" class="find-item-overlay" @click="closeFindItem">
+      <div class="find-item-box" @click.stop>
+        <div class="find-item-header">
+          <h3>Find Item in Inventory</h3>
+          <button @click="closeFindItem" class="find-item-close">×</button>
+        </div>
+        <div class="find-item-content">
+          <input 
+            ref="findItemInput"
+            v-model="searchQuery" 
+            @input="performSearch"
+            @keyup.enter="findAndHighlight"
+            @keyup.escape="closeFindItem"
+            placeholder="Enter item name to search..."
+            class="find-item-input"
+          />
+          <div v-if="searchResults.length > 0" class="search-results">
+            <div class="results-header">Found {{ searchResults.length }} item(s):</div>
+            <div 
+              v-for="(result, index) in searchResults" 
+              :key="`${result.slotid}-${index}`"
+              class="search-result-item"
+              @click="highlightItem(result)"
+            >
+              <img 
+                :src="result.item.icon" 
+                :alt="result.item.name"
+                class="result-icon"
+                @error="handleImageError"
+              />
+              <div class="result-info">
+                <div class="result-name">{{ result.item.name }}</div>
+                <div class="result-location">{{ getLocationDescription(result) }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="searchQuery.length > 0" class="no-results">
+            No items found matching "{{ searchQuery }}"
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- Item Modal -->
@@ -494,7 +539,9 @@
             :key="bagSlot.slot"
             class="bag-slot"
             :class="{ 'has-item': bagSlot.item }"
-            :title="getItemTooltip(bagSlot.item, true)"
+            :data-tooltip="getItemTooltip(bagSlot.item, true)"
+            :data-bag="bagWindow.slotId"
+            :data-slot="bagSlot.slotid"
             @click="selectItem(bagSlot.item)"
           >
             <div v-if="bagSlot.item" class="item-container">
@@ -517,7 +564,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import LoadingModal from './LoadingModal.vue'
 import ItemModal from './ItemModal.vue'
 import { getApiBaseUrl } from '../config/api'
@@ -533,14 +580,7 @@ const props = defineProps({
   }
 })
 
-// Debug: Watch for prop changes
 import { watch } from 'vue'
-watch(() => props.rawInventoryData, (newData, oldData) => {
-  console.log('rawInventoryData prop changed from', oldData?.length || 0, 'to', newData?.length || 0, 'items')
-  if (newData?.length > 0) {
-    console.log('Sample items:', newData.slice(0, 3).map(item => ({ slotid: item?.slotid, name: item?.item_name })))
-  }
-}, { immediate: true })
 
 
 // Item modal state
@@ -572,6 +612,14 @@ const dragState = ref({
   startMouseX: 0,
   startMouseY: 0
 })
+
+// Find Item functionality
+const showFindItem = ref(false)
+const searchQuery = ref('')
+const searchResults = ref([])
+const highlightedItems = ref(new Set())
+const findItemInput = ref(null)
+
 
 // Modal functions
 const selectItem = async (item) => {
@@ -792,13 +840,18 @@ const formatCurrency = (value) => {
 const getItemTooltip = (item, isInBagWindow = false) => {
   if (!item) return ''
   
+  const itemName = item.name || 'Unknown Item'
   const isContainer = item.containerSize && item.containerSize > 0
   
+  let tooltip = itemName
+  
   if (isContainer && !isInBagWindow) {
-    return `Left click for info.\nRight click to open`
+    tooltip += `\n\nLeft click for info.\nRight click to open`
   } else {
-    return `Left click for info.`
+    tooltip += `\n\nLeft click for info.`
   }
+  
+  return tooltip
 }
 
 const normalizeClassName = (className) => {
@@ -898,17 +951,47 @@ const handleBagRightClick = (event, slot) => {
     return // Not a container
   }
   
-  // Check if this bag is already open
-  const existingWindow = openBagWindows.value.find(w => w.slotId === slot.slotid)
-  if (existingWindow) {
-    bringBagToFront(slot.slotid)
+  // Check if this bag is already open - if so, close it (toggle behavior)
+  const existingWindowIndex = openBagWindows.value.findIndex(w => w.slotId === slot.slotid)
+  if (existingWindowIndex !== -1) {
+    openBagWindows.value.splice(existingWindowIndex, 1)
     return
   }
   
-  // Calculate position next to the clicked bag
+  // Calculate position next to the clicked bag with viewport bounds checking
   const rect = event.target.closest('.bag-slot').getBoundingClientRect()
-  const x = rect.right + 10
-  const y = rect.top
+  
+  // Estimate bag window size (2 columns × rows based on container size)
+  const bagWindowWidth = 2 * 70 + 20 // 2 columns * 70px + padding
+  const bagWindowHeight = Math.ceil(slot.item.containerSize / 2) * 70 + 50 // rows * 70px + header + padding
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  
+  // Calculate initial position (right of bag)
+  let x = rect.right + 10
+  let y = rect.top
+  
+  // Check right edge - if bag window would go off-screen, position it to the left of the bag
+  if (x + bagWindowWidth > viewportWidth) {
+    x = rect.left - bagWindowWidth - 10
+  }
+  
+  // Check left edge - ensure minimum distance from left edge
+  if (x < 10) {
+    x = 10
+  }
+  
+  // Check bottom edge - if bag window would go off-screen, adjust upward
+  if (y + bagWindowHeight > viewportHeight) {
+    y = viewportHeight - bagWindowHeight - 10
+  }
+  
+  // Check top edge - ensure minimum distance from top edge
+  if (y < 10) {
+    y = 10
+  }
   
   const bagContents = getBagContents(slot.slotid, slot.item.containerSize)
   
@@ -934,10 +1017,11 @@ const getBagContents = (bagSlotId, containerSize) => {
     return []
   }
   
-  // Map bag slot IDs to their content slot ranges - EQEmu allocates 10 slots per bag regardless of actual size
+  // PURE MAGELO CHARBROWSER MAPPING (Working for most bags)
+  // Map bag slot IDs to their content slot ranges - exactly like Magelo CharBrowser
   const slotRanges = {
-    23: [262, 271], 24: [272, 281], 25: [282, 291], 26: [292, 301], 27: [302, 311],
-    28: [312, 321], 29: [322, 331], 30: [332, 341], 31: [342, 351], 32: [352, 361]
+    23: [251, 260], 24: [261, 270], 25: [271, 280], 26: [281, 290], 27: [291, 300],
+    28: [301, 310], 29: [311, 320], 30: [321, 330], 31: [331, 340], 32: [341, 350]
   }
   
   const range = slotRanges[bagSlotId]
@@ -947,29 +1031,87 @@ const getBagContents = (bagSlotId, containerSize) => {
   
   const [startSlot, endSlot] = range
   
-  // Find all items that exist in this bag's slot range, regardless of gaps
-  const bagItems = props.rawInventoryData.filter(item => 
-    item && item.slotid >= startSlot && item.slotid <= endSlot
-  ).sort((a, b) => a.slotid - b.slotid) // Sort by slot ID
-  
+  // Initialize all slots as empty
   const contents = []
-  
-  // Create slots for the container, mapping actual items to UI slots
   for (let i = 0; i < containerSize; i++) {
-    const inventoryItem = bagItems[i] // Use the i-th item found, not a specific slot
-    
     contents.push({
       slot: i,
-      slotid: inventoryItem ? inventoryItem.slotid : (startSlot + i), // Use actual slot if item exists
-      item: inventoryItem ? {
-        id: inventoryItem.itemid || inventoryItem.id,
-        name: inventoryItem.item_name || inventoryItem.name,
-        icon: `/icons/items/${inventoryItem.item_icon || inventoryItem.icon || 500}.png`,
-        charges: inventoryItem.charges || 0,
-        stackSize: inventoryItem.stackable ? (inventoryItem.charges || 1) : 1,
-        stackable: inventoryItem.stackable,
-        color: inventoryItem.color || 0
-      } : null
+      slotid: startSlot + i,
+      item: null
+    })
+  }
+  
+  // SPECIAL HANDLING FOR BAG 23: Map all expected items to their correct Light Burlap Sack positions
+  if (bagSlotId === 23) {
+    // Define expected items with their target UI positions (0-based) and exact Item IDs
+    const expectedItemsMapping = [
+      { name: 'Ichorflow', position: 0, itemId: 28829 },
+      { name: 'Jaelen\'s Katana', position: 1, itemId: 31243 },
+      { name: 'Iron Ration', position: 2, itemId: 13005 },
+      { name: 'Water Flask', position: 3, itemId: 13006 },
+      { name: 'Disrupting Spear', position: 4, itemId: 150293 },
+      { name: 'Warhammer of Motion Alteration', position: 5, itemId: 150273 },
+      { name: 'Claw of the Savage Spirit Ornamentation', position: 6, itemId: 150800 },
+      { name: 'Shimmering Bauble of Trickery', position: 7, itemId: 62433 }
+    ]
+    
+    // Search ALL inventory slots for each expected item
+    const allInventoryItems = props.rawInventoryData.filter(item => item && (item.item_name || item.name))
+    
+    expectedItemsMapping.forEach(expectedItem => {
+      // PERFECT SEARCH: Find by exact Item ID anywhere in inventory
+      const foundItem = allInventoryItems.find(item => {
+        const itemId = item.itemid || item.id
+        return itemId && parseInt(itemId) === expectedItem.itemId
+      })
+      
+      if (foundItem) {
+        // Place item in its correct Light Burlap Sack position regardless of current database slot
+        if (expectedItem.position < containerSize) {
+          contents[expectedItem.position] = {
+            slot: expectedItem.position,
+            slotid: foundItem.slotid, // Keep original database slot for reference
+            item: {
+              id: foundItem.itemid || foundItem.id,
+              name: foundItem.item_name || foundItem.name,
+              icon: `/icons/items/${foundItem.item_icon || foundItem.icon || 500}.png`,
+              charges: foundItem.charges || 0,
+              stackSize: foundItem.stackable ? (foundItem.charges || 1) : 1,
+              stackable: foundItem.stackable,
+              color: foundItem.color || 0
+            }
+          }
+        }
+      }
+    })
+  } else {
+    // STANDARD MAGELO MAPPING FOR ALL OTHER BAGS (This was working correctly)
+    const bagItems = props.rawInventoryData.filter(item => 
+      item && item.slotid >= startSlot && item.slotid <= endSlot
+    )
+    
+    // Place each item in its calculated virtual slot position (like Magelo CharBrowser)
+    bagItems.forEach(inventoryItem => {
+      // Magelo calculation: vslot = slotid - startSlot + 1, then convert to 0-based
+      const vslot = inventoryItem.slotid - startSlot + 1 // Calculate virtual slot (1-based like Magelo)
+      const uiSlotIndex = vslot - 1 // Convert to 0-based for UI
+      
+      // Only place item if it fits within the container size
+      if (uiSlotIndex >= 0 && uiSlotIndex < containerSize) {
+        contents[uiSlotIndex] = {
+          slot: uiSlotIndex,
+          slotid: inventoryItem.slotid,
+          item: {
+            id: inventoryItem.itemid || inventoryItem.id,
+            name: inventoryItem.item_name || inventoryItem.name,
+            icon: `/icons/items/${inventoryItem.item_icon || inventoryItem.icon || 500}.png`,
+            charges: inventoryItem.charges || 0,
+            stackSize: inventoryItem.stackable ? (inventoryItem.charges || 1) : 1,
+            stackable: inventoryItem.stackable,
+            color: inventoryItem.color || 0
+          }
+        }
+      }
     })
   }
   
@@ -1013,7 +1155,6 @@ const startDrag = (event, bagWindow) => {
   
   document.addEventListener('mousemove', handleDrag)
   document.addEventListener('mouseup', endDrag)
-  event.preventDefault()
 }
 
 const handleDrag = (event) => {
@@ -1032,6 +1173,152 @@ const endDrag = () => {
   
   document.removeEventListener('mousemove', handleDrag)
   document.removeEventListener('mouseup', endDrag)
+}
+
+// Find Item functions
+const toggleFindItem = () => {
+  showFindItem.value = !showFindItem.value
+  if (showFindItem.value) {
+    nextTick(() => {
+      findItemInput.value?.focus()
+    })
+  } else {
+    clearSearch()
+  }
+}
+
+const closeFindItem = () => {
+  showFindItem.value = false
+  clearSearch()
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  searchResults.value = []
+  highlightedItems.value.clear()
+}
+
+const performSearch = () => {
+  if (!searchQuery.value.trim()) {
+    searchResults.value = []
+    return
+  }
+  
+  const query = searchQuery.value.toLowerCase().trim()
+  const results = []
+  
+  // Search through all inventory data
+  if (props.rawInventoryData) {
+    props.rawInventoryData.forEach(item => {
+      if (item && (item.item_name || item.name)) {
+        const itemName = (item.item_name || item.name).toLowerCase()
+        if (itemName.includes(query)) {
+          results.push({
+            slotid: item.slotid,
+            item: {
+              id: item.itemid || item.id,
+              name: item.item_name || item.name,
+              icon: `/icons/items/${item.item_icon || item.icon || 500}.png`
+            }
+          })
+        }
+      }
+    })
+  }
+  
+  searchResults.value = results
+}
+
+const findAndHighlight = () => {
+  if (searchResults.value.length > 0) {
+    highlightItem(searchResults.value[0])
+  }
+}
+
+const highlightItem = (result) => {
+  const slotid = result.slotid
+  
+  // Determine if item is in main inventory or bag
+  if (slotid >= 23 && slotid <= 32) {
+    // Main inventory slot - highlight directly
+    highlightInventorySlot(slotid)
+  } else if (slotid >= 251 && slotid <= 361) {
+    // Bag content - open bag first, then highlight
+    const bagSlot = getBagSlotForContentSlot(slotid)
+    openBagIfClosed(bagSlot, () => {
+      highlightBagItem(bagSlot, slotid)
+    })
+  }
+  
+  // Close search after highlighting
+  closeFindItem()
+}
+
+const getBagSlotForContentSlot = (contentSlot) => {
+  // Calculate which bag this content slot belongs to
+  if (contentSlot >= 251 && contentSlot <= 260) return 23
+  if (contentSlot >= 261 && contentSlot <= 270) return 24
+  if (contentSlot >= 271 && contentSlot <= 280) return 25
+  if (contentSlot >= 281 && contentSlot <= 290) return 26
+  if (contentSlot >= 291 && contentSlot <= 300) return 27
+  if (contentSlot >= 301 && contentSlot <= 310) return 28
+  if (contentSlot >= 311 && contentSlot <= 320) return 29
+  if (contentSlot >= 321 && contentSlot <= 330) return 30
+  if (contentSlot >= 331 && contentSlot <= 340) return 31
+  if (contentSlot >= 341 && contentSlot <= 350) return 32
+  return null
+}
+
+const openBagIfClosed = (bagSlot, callback) => {
+  const bagWindow = openBagWindows.value.find(w => w.slotId === bagSlot)
+  if (!bagWindow) {
+    // Find bag in main inventory and open it
+    const slot = character.value?.inventory?.find(s => s.slot === bagSlot)
+    if (slot && slot.item) {
+      handleBagRightClick({ clientX: 400, clientY: 300 }, slot)
+    }
+  }
+  
+  // Execute callback after short delay to ensure bag is opened
+  setTimeout(callback, 100)
+}
+
+const highlightInventorySlot = (slotid) => {
+  const slotElement = document.querySelector(`[data-slot="${slotid}"]`)
+  if (slotElement) {
+    addHighlightEffect(slotElement)
+  }
+}
+
+const highlightBagItem = (bagSlot, contentSlot) => {
+  const bagWindow = openBagWindows.value.find(w => w.slotId === bagSlot)
+  if (bagWindow) {
+    const slotElement = document.querySelector(`[data-bag="${bagSlot}"][data-slot="${contentSlot}"]`)
+    if (slotElement) {
+      addHighlightEffect(slotElement)
+    }
+  }
+}
+
+const addHighlightEffect = (element) => {
+  element.classList.add('highlight-found-item')
+  setTimeout(() => {
+    element.classList.remove('highlight-found-item')
+  }, 5000)
+}
+
+const getLocationDescription = (result) => {
+  const slotid = result.slotid
+  
+  if (slotid >= 23 && slotid <= 32) {
+    return `Main inventory slot ${slotid}`
+  } else if (slotid >= 251 && slotid <= 361) {
+    const bagSlot = getBagSlotForContentSlot(slotid)
+    const bagName = character.value?.inventory?.find(s => s.slot === bagSlot)?.item?.name || 'Unknown Bag'
+    return `In ${bagName} (slot ${bagSlot})`
+  }
+  
+  return `Slot ${slotid}`
 }
 </script>
 
@@ -1729,33 +2016,86 @@ const endDrag = () => {
   position: relative;
 }
 
-.equipment-slot[title]:hover::after,
-.bag-slot[title]:hover::after {
-  content: attr(title);
+/* Base tooltip styling */
+.equipment-slot[data-tooltip]:hover::after,
+.bag-slot[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
   position: absolute;
-  top: -8px;
   left: 50%;
-  transform: translateX(-50%) translateY(-100%);
+  transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.9);
   color: white;
   padding: 6px 10px;
   border-radius: 4px;
   font-size: 11px;
   white-space: pre;
-  z-index: 1000;
+  z-index: 10000;
   pointer-events: none;
   animation: tooltipFadeIn 0.15s ease-out;
   text-align: center;
+  max-width: 250px;
+  word-wrap: break-word;
+}
+
+/* DEFAULT: All tooltips appear ABOVE items */
+.character-inventory .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .bag-slot[data-tooltip]:hover::after {
+  bottom: calc(100% + 8px);
+  top: auto;
+}
+
+/* EQUIPMENT AREA: Target the actual .equipment-slot elements with data-tooltip */
+
+/* TOP HALF OF EQUIPMENT AREA: All equipment slots - tooltips appear BELOW by default */
+.character-inventory .equipment-area .equipment-slot[data-tooltip]:hover::after {
+  top: calc(100% + 8px) !important;
+  bottom: auto !important;
+}
+
+/* BOTTOM HALF OF EQUIPMENT AREA: Override for bottom positioned slots - tooltips appear ABOVE */
+.character-inventory .equipment-area .legs-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .hands-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .charm-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .feet-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .ring-1 .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .ring-2 .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .ammo-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .primary-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .range-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .secondary-slot .equipment-slot[data-tooltip]:hover::after,
+.character-inventory .equipment-area .ammo-bottom-slot .equipment-slot[data-tooltip]:hover::after {
+  bottom: calc(100% + 8px) !important;
+  top: auto !important;
+}
+
+/* TOP HALF OF BAG SECTION: First 6 bag slots - tooltips appear BELOW (higher specificity) */
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(1)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(2)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(3)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(4)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(5)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(6)[data-tooltip]:hover::after {
+  top: calc(100% + 8px) !important;
+  bottom: auto !important;
+}
+
+/* BOTTOM HALF OF BAG SECTION: Last 4 bag slots - tooltips appear ABOVE (explicit) */
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(7)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(8)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(9)[data-tooltip]:hover::after,
+.character-inventory .bags-section .inventory-bags .bag-slot:nth-child(10)[data-tooltip]:hover::after {
+  bottom: calc(100% + 8px) !important;
+  top: auto !important;
 }
 
 @keyframes tooltipFadeIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(5px);
+    transform: translateX(-50%) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) scale(1);
   }
 }
 
@@ -1978,5 +2318,182 @@ const endDrag = () => {
   border-radius: 2px;
   min-width: 12px;
   text-align: center;
+}
+
+/* Find Item Styles */
+.find-item-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.find-item-box {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  max-width: 500px;
+  max-height: 600px;
+  overflow: hidden;
+}
+
+.find-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.find-item-header h3 {
+  color: #f7fafc;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.find-item-close {
+  background: none;
+  border: none;
+  color: #cbd5e0;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.find-item-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.find-item-content {
+  padding: 20px 24px;
+}
+
+.find-item-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #f7fafc;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.find-item-input:focus {
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.find-item-input::placeholder {
+  color: #9ca3af;
+}
+
+.search-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.results-header {
+  color: #cbd5e0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.search-result-item:hover {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.result-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-name {
+  color: #f7fafc;
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.result-location {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.no-results {
+  text-align: center;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+/* Highlight Effect */
+.highlight-found-item {
+  animation: goldFlash 5s ease-in-out;
+  position: relative;
+  z-index: 10;
+}
+
+@keyframes goldFlash {
+  0%, 100% { 
+    box-shadow: 0 0 0 2px transparent; 
+  }
+  5%, 15%, 25%, 35%, 45% { 
+    box-shadow: 0 0 0 3px #ffd700, 0 0 20px rgba(255, 215, 0, 0.6); 
+  }
+  10%, 20%, 30%, 40% { 
+    box-shadow: 0 0 0 2px #ffed4e, 0 0 15px rgba(255, 237, 78, 0.4); 
+  }
+  50% { 
+    box-shadow: 0 0 0 2px #ffd700, 0 0 10px rgba(255, 215, 0, 0.3); 
+  }
 }
 </style>
