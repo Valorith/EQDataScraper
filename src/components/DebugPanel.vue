@@ -98,7 +98,7 @@
 
 <script>
 // Spell store removed
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '../config/api'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS, getApiBaseUrl } from '../config/api'
 import axios from 'axios'
 
 export default {

@@ -749,7 +749,7 @@
 
 <script>
 import axios from 'axios'
-import { API_BASE_URL } from '../config/api'
+import { getApiBaseUrl } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
 import { toastService } from '../services/toastService'
 
@@ -908,7 +908,7 @@ export default {
         
         console.log('Searching with params:', params.toString())
         
-        const response = await axios.get(`${API_BASE_URL}/api/spells/search?${params.toString()}`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/search?${params.toString()}`)
         
         // Check if API returned HTML instead of JSON (proxy routing issue)
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1096,7 +1096,7 @@ export default {
         this.loadingSpellDetails = true
         
         // Fetch detailed spell information first
-        const response = await axios.get(`${API_BASE_URL}/api/spells/${spell.spell_id}/details`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spell.spell_id}/details`)
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1146,7 +1146,7 @@ export default {
         
         // Fetch spell details directly by ID
         console.log('Fetching spell details from API...')
-        const response = await axios.get(`${API_BASE_URL}/api/spells/${spellId}/details`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spellId}/details`)
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1185,7 +1185,7 @@ export default {
         this.loadingSpellItems = true
         this.spellItemsRequested = true
         
-        const response = await axios.get(`${API_BASE_URL}/api/spells/${this.selectedSpellDetail.spell_id}/items`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${this.selectedSpellDetail.spell_id}/items`)
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {

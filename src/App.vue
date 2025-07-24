@@ -66,7 +66,7 @@ import { toastService } from './services/toastService'
 import { ref, watch, watchEffect, toRef, computed } from 'vue'
 import { useDevMode } from './composables/useDevMode'
 import axios from 'axios'
-import { API_BASE_URL } from './config/api'
+import { getApiBaseUrl } from './config/api'
 import { threadManager, trackAsync } from './utils/threadManager'
 
 export default {
@@ -154,14 +154,14 @@ export default {
       const performCleanup = async () => {
         try {
           // Use fetch with keepalive for better reliability
-          const healthCheck = await fetch(`${API_BASE_URL}/api/health`, {
+          const healthCheck = await fetch(`${getApiBaseUrl()}/api/health`, {
             method: 'GET',
             signal: AbortSignal.timeout(1000) // 1 second timeout
           });
           
           if (healthCheck.ok) {
             // Backend is available, call cleanup with keepalive
-            fetch(`${API_BASE_URL}/api/cleanup`, {
+            fetch(`${getApiBaseUrl()}/api/cleanup`, {
               method: 'POST',
               keepalive: true,
               body: JSON.stringify({}),
@@ -324,7 +324,7 @@ export default {
     const handleBeforeUnload = () => {
       try {
         // Send cleanup request on page unload using sendBeacon for reliability
-        navigator.sendBeacon(`${API_BASE_URL}/api/cleanup`, '{}')
+        navigator.sendBeacon(`${getApiBaseUrl()}/api/cleanup`, '{}')
       } catch (error) {
         // Silently ignore
       }

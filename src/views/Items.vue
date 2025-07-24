@@ -1269,7 +1269,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { API_BASE_URL } from '../config/api'
+import { getApiBaseUrl } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
 import { toastService } from '../services/toastService'
 
@@ -1534,7 +1534,7 @@ const performSearch = async (page = 1) => {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 28000) // 28s timeout (under Railway's 30s)
     
-    const response = await fetch(`${API_BASE_URL}/api/items/search?${params}`, {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/search?${params}`, {
       signal: controller.signal
     })
     clearTimeout(timeoutId)
@@ -1743,7 +1743,7 @@ const selectItem = async (item) => {
   loadingAvailability.value = false
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${item.item_id}`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${item.item_id}`)
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
       throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
@@ -1768,7 +1768,7 @@ const loadItemDataAvailability = async (itemId) => {
   loadingAvailability.value = true
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${itemId}/availability`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${itemId}/availability`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -1831,7 +1831,7 @@ const loadDropSources = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -1878,7 +1878,7 @@ const loadMerchantSources = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -1918,7 +1918,7 @@ const loadGroundSpawns = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/ground-spawns`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/ground-spawns`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -1957,7 +1957,7 @@ const loadForageSources = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/forage-sources`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/forage-sources`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -1996,7 +1996,7 @@ const loadTradeskillRecipes = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/tradeskill-recipes`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/tradeskill-recipes`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -2035,7 +2035,7 @@ const loadCreatedByRecipes = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/items/${selectedItemDetail.value.item_id}/created-by-recipes`)
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/created-by-recipes`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -2131,7 +2131,7 @@ const loadRecipeDetails = async (recipeId) => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/recipes/${recipeId}`)
+    const response = await fetch(`${getApiBaseUrl()}/api/recipes/${recipeId}`)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))

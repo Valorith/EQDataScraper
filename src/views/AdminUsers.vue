@@ -461,7 +461,7 @@ const handleRoleChange = async (event) => {
   
   if (confirm(`Change ${actionUser.value.first_name} ${actionUser.value.last_name}'s role to ${newRole}?`)) {
     try {
-      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+      await axios.put(`${getOAuthApiBaseUrl()}/api/admin/users/${actionUser.value.id}`, 
         { role: newRole },
         { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
       )
@@ -483,7 +483,7 @@ const handleRoleChange = async (event) => {
 const logoutUser = async () => {
   if (confirm(`Force logout ${actionUser.value.first_name} ${actionUser.value.last_name} from all devices?`)) {
     try {
-      await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}/sessions`, {
+      await axios.delete(`${getOAuthApiBaseUrl()}/api/admin/users/${actionUser.value.id}/sessions`, {
         headers: { Authorization: `Bearer ${userStore.accessToken}` }
       })
       alert('User has been logged out from all devices')
@@ -499,7 +499,7 @@ const toggleBanUser = async () => {
   const action = actionUser.value.is_banned ? 'unban' : 'ban'
   if (confirm(`Are you sure you want to ${action} ${actionUser.value.first_name} ${actionUser.value.last_name}?`)) {
     try {
-      await axios.put(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, 
+      await axios.put(`${getOAuthApiBaseUrl()}/api/admin/users/${actionUser.value.id}`, 
         { is_banned: !actionUser.value.is_banned },
         { headers: { Authorization: `Bearer ${userStore.accessToken}` } }
       )
@@ -516,7 +516,7 @@ const deleteUser = async () => {
   if (confirm(`⚠️ WARNING: This action cannot be undone!\n\nAre you sure you want to permanently delete ${actionUser.value.first_name} ${actionUser.value.last_name} and all their data?`)) {
     if (confirm(`Please confirm once more: Delete user ${actionUser.value.email}?`)) {
       try {
-        await axios.delete(`${API_BASE_URL}/api/admin/users/${actionUser.value.id}`, {
+        await axios.delete(`${getOAuthApiBaseUrl()}/api/admin/users/${actionUser.value.id}`, {
           headers: { Authorization: `Bearer ${userStore.accessToken}` }
         })
         await loadUsers()
