@@ -160,6 +160,58 @@ def get_current_user_id():
     # This would integrate with the existing auth system
     return "dev_user"
 
+@character_bp.route('/database/status', methods=['GET'])
+def check_database_status():
+    """
+    Check the status of the EQEmu database connection.
+    
+    Returns:
+    - Database connection status and configuration info
+    """
+    try:
+        from app import get_eqemu_db_connection
+        from utils.db_config_manager import db_config_manager
+        
+        # Get configuration status
+        config = db_config_manager.get_config()
+        config_status = {
+            'configured': config is not None and config.get('production_database_url') is not None,
+            'database_type': config.get('database_type', 'unknown') if config else 'not_set',
+            'database_host': config.get('database_host', 'not_set') if config else 'not_set',
+            'database_name': config.get('database_name', 'not_set') if config else 'not_set',
+            'ssl_enabled': config.get('database_ssl', False) if config else False,
+            'config_source': config.get('config_source', 'unknown') if config else 'unknown'
+        }
+        
+        # Test connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if connection:
+            connection.close()
+            connection_status = {
+                'connected': True,
+                'database_type': db_type,
+                'error': None
+            }
+        else:
+            connection_status = {
+                'connected': False,
+                'database_type': None,
+                'error': str(error) if error else 'Unknown connection error'
+            }
+        
+        return jsonify({
+            'config': config_status,
+            'connection': connection_status,
+            'status': 'ok' if connection_status['connected'] else 'error'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error checking database status: {e}")
+        return jsonify({
+            'error': 'Failed to check database status',
+            'message': str(e)
+        }), 500
+
 @character_bp.route('/characters/search', methods=['GET'])
 def search_characters():
     """
@@ -189,7 +241,20 @@ def search_characters():
         if error or not connection:
             logger.error(f"No EQEmu database connection available for character search: {error}")
             logger.error("This usually means the content database is not configured properly")
-            return jsonify({'error': 'Database connection unavailable'}), 503
+            
+            # Provide helpful error message for users
+            if "Database not configured" in str(error):
+                return jsonify({
+                    'error': 'Content database not configured',
+                    'message': 'The EverQuest content database connection has not been set up. Please contact an administrator to configure the database connection through the admin panel.',
+                    'code': 'DB_NOT_CONFIGURED'
+                }), 503
+            else:
+                return jsonify({
+                    'error': 'Database connection unavailable',
+                    'message': 'Unable to connect to the EverQuest database. Please try again later.',
+                    'code': 'DB_CONNECTION_FAILED'
+                }), 503
         
         # Search characters in database
         with connection.cursor() as cursor:
