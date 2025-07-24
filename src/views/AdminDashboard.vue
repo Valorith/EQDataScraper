@@ -828,8 +828,8 @@
             :disabled="connectingSaved || !hasStoredConfig"
             :title="hasStoredConfig ? 'Connect using previously saved configuration' : 'No saved configuration available'"
           >
-            <i class="fas fa-database" :class="{ 'fa-spin': connectingSaved }"></i>
-            {{ connectingSaved ? 'Connecting...' : 'Connect from Saved Config' }}
+            <i class="fas fa-history" :class="{ 'fa-spin': connectingSaved }"></i>
+            {{ connectingSaved ? 'Loading...' : 'Load Saved' }}
           </button>
           
           <button 
@@ -1951,8 +1951,19 @@ const checkStoredConfigAvailability = async () => {
       cancelToken: requestManager.getCancelToken('check-stored-config')
     })
     
+    if (import.meta.env.DEV) {
+      console.log('Stored config check response:', configRes.data)
+    }
+    
     hasStoredConfig.value = !!(configRes.data.success && configRes.data.data?.config)
+    
+    if (import.meta.env.DEV) {
+      console.log('hasStoredConfig set to:', hasStoredConfig.value)
+    }
   } catch (error) {
+    if (import.meta.env.DEV) {
+      console.log('Stored config check error:', error.response?.status, error.response?.data || error.message)
+    }
     // If there's an error checking, assume no stored config is available
     hasStoredConfig.value = false
   }
@@ -3406,7 +3417,8 @@ onUnmounted(() => {
 .connect-saved-button {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   color: white;
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 120px;
 }
 
 .connect-saved-button:hover:not(:disabled) {
@@ -3519,6 +3531,14 @@ onUnmounted(() => {
   
   .modal-footer {
     flex-direction: column;
+    gap: 12px;
+  }
+  
+  .modal-footer .connect-saved-button,
+  .modal-footer .test-button,
+  .modal-footer .save-button {
+    flex: none;
+    width: 100%;
   }
 }
 
