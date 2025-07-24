@@ -1,5 +1,5 @@
 // Worker Manager for handling Web Worker communications
-import { API_BASE_URL } from '@/config/api';
+import { getOAuthApiBaseUrl } from '@/config/api';
 
 class WorkerManager {
   constructor() {
@@ -95,7 +95,7 @@ class WorkerManager {
     try {
       const result = await this.sendMessage('VERIFY_TOKEN', {
         token,
-        apiBaseUrl: API_BASE_URL
+        apiBaseUrl: getOAuthApiBaseUrl()
       });
       return result;
     } catch (error) {
@@ -109,7 +109,7 @@ class WorkerManager {
     try {
       const result = await this.sendMessage('REFRESH_TOKEN', {
         refreshToken,
-        apiBaseUrl: API_BASE_URL
+        apiBaseUrl: getOAuthApiBaseUrl()
       });
       return result;
     } catch (error) {

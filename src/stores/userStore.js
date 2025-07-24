@@ -522,7 +522,7 @@ export const useUserStore = defineStore('user', {
       }
 
       try {
-        const response = await axios.put(`${API_BASE_URL}/api/user/profile`, profileData, {
+        const response = await axios.put(`${getOAuthApiBaseUrl()}/api/user/profile`, profileData, {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           }
@@ -549,7 +549,7 @@ export const useUserStore = defineStore('user', {
       }
 
       try {
-        const response = await axios.put(`${API_BASE_URL}/api/user/preferences`, newPreferences, {
+        const response = await axios.put(`${getOAuthApiBaseUrl()}/api/user/preferences`, newPreferences, {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           }
@@ -576,7 +576,7 @@ export const useUserStore = defineStore('user', {
       }
 
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/user/profile`, {
+        const response = await axios.get(`${getOAuthApiBaseUrl()}/api/user/profile`, {
           headers: {
             'Authorization': `Bearer ${this.accessToken}`
           }
