@@ -153,16 +153,45 @@ def get_eqemu_connection():
         return None
 
 def get_user_db_connection():
-    """Get connection to user accounts PostgreSQL database."""
-    if not ENABLE_USER_ACCOUNTS or not DATABASE_URL:
+    """Get connection to user accounts PostgreSQL database with enhanced error handling."""
+    # Check if user accounts are enabled
+    if not ENABLE_USER_ACCOUNTS:
+        logger.info("User accounts disabled - ENABLE_USER_ACCOUNTS not set to true")
+        return None
+        
+    # Check if DATABASE_URL is configured
+    if not DATABASE_URL:
+        logger.error("DATABASE_URL not configured for user accounts")
+        logger.error("Production environment variables may not be properly set")
         return None
         
     try:
-        connection = psycopg2.connect(DATABASE_URL)
+        # Log connection attempt for debugging
+        logger.info(f"Attempting PostgreSQL connection for user accounts...")
+        logger.debug(f"DATABASE_URL starts with: {DATABASE_URL[:20]}...")
+        
+        connection = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         connection.autocommit = True
+        
+        # Test the connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            
+        logger.info("✅ User database connection successful")
         return connection
+        
+    except psycopg2.OperationalError as e:
+        logger.error(f"❌ PostgreSQL connection failed: {e}")
+        logger.error("This usually means:")
+        logger.error("1. DATABASE_URL is incorrect")
+        logger.error("2. PostgreSQL server is not accessible")
+        logger.error("3. Network connectivity issues")
+        return None
+        
     except Exception as e:
-        logger.error(f"Failed to connect to user database: {e}")
+        logger.error(f"❌ Unexpected error connecting to user database: {type(e).__name__}: {e}")
+        logger.error("Check production environment configuration")
         return None
 
 def require_auth():
@@ -210,8 +239,13 @@ def search_characters():
         # Get EQEmu database connection
         connection = get_eqemu_connection()
         if not connection:
-            logger.error("No EQEmu database connection available")
-            return jsonify({'error': 'Database connection unavailable'}), 503
+            logger.error("No EQEmu database connection available for character search")
+            logger.error("This usually means the content database is not configured properly")
+            return jsonify({
+                'success': True,
+                'data': [],
+                'message': 'Character search unavailable - database not configured'
+            }), 200
         
         # Search characters in database
         with connection.cursor() as cursor:
@@ -249,13 +283,21 @@ def search_characters():
                     })
         
         connection.close()
-        return jsonify(characters), 200
+        return jsonify({
+            'success': True,
+            'data': characters,
+            'message': f'Found {len(characters)} character{"s" if len(characters) != 1 else ""} matching "{name}"'
+        }), 200
         
     except Exception as e:
         logger.error(f"Error searching characters: {e}")
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({
+            'success': False,
+            'data': [],
+            'message': 'Character search failed due to server error'
+        }), 500
 
 @character_bp.route('/characters/<int:character_id>', methods=['GET'])
 def get_character(character_id):
@@ -269,8 +311,13 @@ def get_character(character_id):
         # Get EQEmu database connection
         connection = get_eqemu_connection()
         if not connection:
-            logger.error("No EQEmu database connection available")
-            return jsonify({'error': 'Database connection unavailable'}), 503
+            logger.error("No EQEmu database connection available for character details")
+            logger.error("This usually means the content database is not configured properly")
+            return jsonify({
+                'success': False,
+                'data': None,
+                'message': 'Character details unavailable - database not configured'
+            }), 503
         
         # Get character data from database
         with connection.cursor() as cursor:
@@ -287,7 +334,11 @@ def get_character(character_id):
             
             if not result:
                 connection.close()
-                return jsonify({'error': 'Character not found'}), 404
+                return jsonify({
+                    'success': False,
+                    'data': None,
+                    'message': f'Character {character_id} not found'
+                }), 404
             
             # Handle both dictionary and tuple cursor results
             if isinstance(result, dict):
@@ -374,11 +425,19 @@ def get_character(character_id):
                 }
         
         connection.close()
-        return jsonify(character), 200
+        return jsonify({
+            'success': True,
+            'data': character,
+            'message': f'Character details for {character["name"]} loaded successfully'
+        }), 200
         
     except Exception as e:
         logger.error(f"Error getting character {character_id}: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({
+            'success': False,
+            'data': None,
+            'message': f'Failed to load character {character_id} due to server error'
+        }), 500
 
 @character_bp.route('/characters/<int:character_id>/inventory', methods=['GET'])
 def get_character_inventory(character_id):
@@ -1026,57 +1085,83 @@ def get_user_main_characters():
         
         if not ENABLE_USER_ACCOUNTS:
             # Return empty when user accounts disabled
+            logger.info("User accounts disabled - returning empty main characters")
             return jsonify({
-                'primaryMain': None,
-                'secondaryMain': None
+                'success': True,
+                'data': {
+                    'primaryMain': None,
+                    'secondaryMain': None
+                },
+                'message': 'User accounts disabled'
             }), 200
         
         # Get user database connection
         connection = get_user_db_connection()
         if not connection:
-            if DEV_MODE_AUTH_BYPASS:
-                logger.warning("No user database - returning empty main characters in dev mode")
-            else:
-                logger.warning("No user database - returning empty main characters")
+            logger.warning("No user database connection - returning empty main characters")
+            logger.warning("This usually means DATABASE_URL is not configured properly in production")
             return jsonify({
-                'primaryMain': None,
-                'secondaryMain': None
+                'success': True,
+                'data': {
+                    'primaryMain': None,
+                    'secondaryMain': None
+                },
+                'message': 'User database not available'
             }), 200
         
-        # Get user's main characters
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT primary_character_id, primary_character_name,
-                       secondary_character_id, secondary_character_name,
-                       updated_at
-                FROM user_character_preferences
-                WHERE user_id = %s
-            """, (user_id,))
-            
-            result = cursor.fetchone()
-            
-            response = {
-                'primaryMain': None,
-                'secondaryMain': None
-            }
-            
-            if result:
-                if result[0]:  # primary_character_id
-                    response['primaryMain'] = {
-                        'characterId': result[0],
-                        'characterName': result[1],
-                        'setAt': result[4].isoformat() if result[4] else None
-                    }
+        # Get user's main characters with enhanced error handling
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT primary_character_id, primary_character_name,
+                           secondary_character_id, secondary_character_name,
+                           updated_at
+                    FROM user_character_preferences
+                    WHERE user_id = %s
+                """, (user_id,))
                 
-                if result[2]:  # secondary_character_id
-                    response['secondaryMain'] = {
-                        'characterId': result[2],
-                        'characterName': result[3],
-                        'setAt': result[4].isoformat() if result[4] else None
-                    }
-        
-        connection.close()
-        return jsonify(response), 200
+                result = cursor.fetchone()
+                
+                data = {
+                    'primaryMain': None,
+                    'secondaryMain': None
+                }
+                
+                if result:
+                    if result[0]:  # primary_character_id
+                        data['primaryMain'] = {
+                            'id': result[0],
+                            'name': result[1],
+                            'setAt': result[4].isoformat() if result[4] else None
+                        }
+                    
+                    if result[2]:  # secondary_character_id
+                        data['secondaryMain'] = {
+                            'id': result[2],
+                            'name': result[3],
+                            'setAt': result[4].isoformat() if result[4] else None
+                        }
+            
+            connection.close()
+            return jsonify({
+                'success': True,
+                'data': data,
+                'message': 'Main characters loaded successfully'
+            }), 200
+            
+        except psycopg2.Error as db_error:
+            logger.error(f"Database error loading main characters: {db_error}")
+            logger.error("This usually means the user_character_preferences table doesn't exist")
+            logger.error("Run database migrations to create required tables")
+            connection.close()
+            return jsonify({
+                'success': True,
+                'data': {
+                    'primaryMain': None,
+                    'secondaryMain': None
+                },
+                'message': 'Database schema not initialized - returning empty results'
+            }), 200
         
     except Exception as e:
         logger.error(f"Error getting user main characters: {e}")
