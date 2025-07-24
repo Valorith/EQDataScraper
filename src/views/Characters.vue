@@ -563,7 +563,7 @@ export default {
       currentSearchRequest.value = new AbortController()
       
       try {
-        const response = await resilientApi.get('/api/characters/search', {
+        const response = await axios.get(`${getOAuthApiBaseUrl()}/api/characters/search`, {
           params: { 
             name: query.trim(),
             limit: isModalSearch ? 5 : 50  // Get more results for main search
@@ -608,7 +608,7 @@ export default {
     const loadFullCharacterData = async (characterId, abortSignal = null) => {
       try {
         // Load basic character data with timeout and abort signal
-        const charResponse = await resilientApi.get(`/api/characters/${characterId}`, {
+        const charResponse = await axios.get(`${getOAuthApiBaseUrl()}/api/characters/${characterId}`, {
           timeout: 12000, // Increased to 12 second timeout for basic character data
           signal: abortSignal
         })
@@ -932,7 +932,7 @@ export default {
 
     const loadCharacterInventory = async (characterId, character, abortSignal = null) => {
       try {
-        const response = await resilientApi.get(`/api/characters/${characterId}/inventory`, {
+        const response = await axios.get(`${getOAuthApiBaseUrl()}/api/characters/${characterId}/inventory`, {
           timeout: 20000, // Increased to 20 second timeout for large inventories
           signal: abortSignal
         })
@@ -1072,7 +1072,7 @@ export default {
         const requestKey = `currency-${characterId}`
         try {
           const response = await dedupedRequest(requestKey, async () => {
-            return await resilientApi.get(`/api/characters/${characterId}/currency`, {
+            return await axios.get(`${getOAuthApiBaseUrl()}/api/characters/${characterId}/currency`, {
               timeout: 8000, // Reduced timeout for faster response
               signal: abortSignal
             })
@@ -1115,7 +1115,7 @@ export default {
           const requestKey = `stats-${characterId}`
           try {
             const response = await dedupedRequest(requestKey, async () => {
-              return await resilientApi.get(`/api/characters/${characterId}/stats`, {
+              return await axios.get(`${getOAuthApiBaseUrl()}/api/characters/${characterId}/stats`, {
                 timeout: 8000, // Reduced timeout for faster fallback
                 signal: abortSignal
               })
