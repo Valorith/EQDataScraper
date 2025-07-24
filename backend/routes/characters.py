@@ -103,9 +103,15 @@ def get_eqemu_connection():
         import pymysql
         from urllib.parse import urlparse
         
-        # Get database configuration
+        # Get database configuration with environment variable fallback
         config = get_persistent_config()
-        database_url = config.get('production_database_url', '')
+        db_config = config.get_database_config()
+        
+        if db_config:
+            database_url = db_config.get('production_database_url', '')
+            logger.info(f"Database config source: {db_config.get('config_source', 'unknown')}")
+        else:
+            database_url = ''
         
         if not database_url:
             logger.error("No database URL configured")
@@ -241,11 +247,7 @@ def search_characters():
         if not connection:
             logger.error("No EQEmu database connection available for character search")
             logger.error("This usually means the content database is not configured properly")
-            return jsonify({
-                'success': True,
-                'data': [],
-                'message': 'Character search unavailable - database not configured'
-            }), 200
+            return jsonify({'error': 'Database connection unavailable'}), 503
         
         # Search characters in database
         with connection.cursor() as cursor:
@@ -283,21 +285,13 @@ def search_characters():
                     })
         
         connection.close()
-        return jsonify({
-            'success': True,
-            'data': characters,
-            'message': f'Found {len(characters)} character{"s" if len(characters) != 1 else ""} matching "{name}"'
-        }), 200
+        return jsonify(characters), 200
         
     except Exception as e:
         logger.error(f"Error searching characters: {e}")
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'data': [],
-            'message': 'Character search failed due to server error'
-        }), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 @character_bp.route('/characters/<int:character_id>', methods=['GET'])
 def get_character(character_id):

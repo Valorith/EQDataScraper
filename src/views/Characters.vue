@@ -575,9 +575,7 @@ export default {
         // Record success to reset circuit breaker
         recordSuccess('search')
         
-        // Handle new API response format with success/data/message structure
-        const characters = response.data.data || response.data || []
-        return characters.map(character => ({
+        return response.data.map(character => ({
           id: character.id,
           name: character.name,
           level: character.level,
@@ -614,8 +612,7 @@ export default {
           timeout: 12000, // Increased to 12 second timeout for basic character data
           signal: abortSignal
         })
-        // Handle new API response format with success/data/message structure
-        const character = charResponse.data.data || charResponse.data
+        const character = charResponse.data
         
         const fullCharacter = {
           id: character.id,
