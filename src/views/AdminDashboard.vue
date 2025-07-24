@@ -1587,12 +1587,12 @@ const testDatabaseConnection = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
-      db_type: databaseForm.value.db_type,
-      host: databaseForm.value.host,
+      db_type: databaseForm.value.db_type.trim(),
+      host: databaseForm.value.host.trim(),
       port: databaseForm.value.port,
-      database: databaseForm.value.database,
-      username: databaseForm.value.username,
-      password: databaseForm.value.password,
+      database: databaseForm.value.database.trim(),
+      username: databaseForm.value.username.trim(),
+      password: databaseForm.value.password.trim(),
       use_ssl: databaseForm.value.use_ssl
     }, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1904,12 +1904,12 @@ const saveDatabaseConfig = async () => {
   try {
     const token = userStore.accessToken || localStorage.getItem('accessToken') || ''
     const response = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/config`, {
-      db_type: databaseForm.value.db_type,
-      host: databaseForm.value.host,
+      db_type: databaseForm.value.db_type.trim(),
+      host: databaseForm.value.host.trim(),
       port: databaseForm.value.port,
-      database: databaseForm.value.database,
-      username: databaseForm.value.username,
-      password: databaseForm.value.password,
+      database: databaseForm.value.database.trim(),
+      username: databaseForm.value.username.trim(),
+      password: databaseForm.value.password.trim(),
       use_ssl: databaseForm.value.use_ssl
     }, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1976,14 +1976,14 @@ const connectFromSavedConfig = async () => {
     if (configRes.data.success && configRes.data.data) {
       const config = configRes.data.data
       
-      // Populate the form with stored config
+      // Populate the form with stored config (trim all string fields)
       databaseForm.value = {
-        db_type: config.database_type || 'mysql',
-        host: config.host || '',
+        db_type: (config.database_type || 'mysql').trim(),
+        host: (config.host || '').trim(),
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
-        database: config.database_name || '',
-        username: config.username || '',
-        password: config.password || '', // Load password from saved config
+        database: (config.database_name || '').trim(),
+        username: (config.username || '').trim(),
+        password: (config.password || '').trim(), // Trim password to remove leading/trailing spaces
         use_ssl: config.database_ssl !== undefined ? config.database_ssl : true
       }
       
@@ -1993,14 +1993,14 @@ const connectFromSavedConfig = async () => {
       
       showToast('Config Loaded', 'Configuration loaded from saved settings including password', 'success')
       
-      // Test the connection automatically
+      // Test the connection automatically with trimmed data
       const testResponse = await axios.post(`${getOAuthApiBaseUrl()}/api/admin/database/test`, {
-        db_type: databaseForm.value.db_type,
-        host: databaseForm.value.host,
+        db_type: databaseForm.value.db_type.trim(),
+        host: databaseForm.value.host.trim(),
         port: databaseForm.value.port,
-        database: databaseForm.value.database,
-        username: databaseForm.value.username,
-        password: databaseForm.value.password,
+        database: databaseForm.value.database.trim(),
+        username: databaseForm.value.username.trim(),
+        password: databaseForm.value.password.trim(),
         use_ssl: databaseForm.value.use_ssl
       }, {
         headers: { Authorization: `Bearer ${token}` },
@@ -2059,13 +2059,13 @@ const loadFieldFromConfig = async (fieldName) => {
     if (configRes.data.success && configRes.data.data) {
       const config = configRes.data.data
       
-      // Map field names to config properties
+      // Map field names to config properties (trim string values)
       const fieldMapping = {
-        host: config.host,
+        host: (config.host || '').trim(),
         port: config.port || (config.database_type === 'mysql' ? 3306 : config.database_type === 'mssql' ? 1433 : 5432),
-        database: config.database_name,
-        username: config.username,
-        password: config.password || '' // Password loaded from saved config
+        database: (config.database_name || '').trim(),
+        username: (config.username || '').trim(),
+        password: (config.password || '').trim() // Trim password to remove leading/trailing spaces
       }
       
       if (fieldMapping[fieldName] !== undefined && fieldMapping[fieldName] !== '') {
