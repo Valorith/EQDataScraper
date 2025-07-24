@@ -242,10 +242,11 @@ def search_characters():
         # Sanitize search input
         name = sanitize_search_input(name)
         
-        # Get EQEmu database connection
-        connection = get_eqemu_connection()
-        if not connection:
-            logger.error("No EQEmu database connection available for character search")
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for character search: {error}")
             logger.error("This usually means the content database is not configured properly")
             return jsonify({'error': 'Database connection unavailable'}), 503
         
@@ -302,16 +303,13 @@ def get_character(character_id):
     - Complete character data from character_data table
     """
     try:
-        # Get EQEmu database connection
-        connection = get_eqemu_connection()
-        if not connection:
-            logger.error("No EQEmu database connection available for character details")
+        # Get EQEmu database connection using the same method as other working routes
+        from app import get_eqemu_db_connection
+        connection, db_type, error = get_eqemu_db_connection()
+        if error or not connection:
+            logger.error(f"No EQEmu database connection available for character details: {error}")
             logger.error("This usually means the content database is not configured properly")
-            return jsonify({
-                'success': False,
-                'data': None,
-                'message': 'Character details unavailable - database not configured'
-            }), 503
+            return jsonify({'error': 'Database connection unavailable'}), 503
         
         # Get character data from database
         with connection.cursor() as cursor:
@@ -328,11 +326,7 @@ def get_character(character_id):
             
             if not result:
                 connection.close()
-                return jsonify({
-                    'success': False,
-                    'data': None,
-                    'message': f'Character {character_id} not found'
-                }), 404
+                return jsonify({'error': 'Character not found'}), 404
             
             # Handle both dictionary and tuple cursor results
             if isinstance(result, dict):
@@ -419,19 +413,11 @@ def get_character(character_id):
                 }
         
         connection.close()
-        return jsonify({
-            'success': True,
-            'data': character,
-            'message': f'Character details for {character["name"]} loaded successfully'
-        }), 200
+        return jsonify(character), 200
         
     except Exception as e:
         logger.error(f"Error getting character {character_id}: {e}")
-        return jsonify({
-            'success': False,
-            'data': None,
-            'message': f'Failed to load character {character_id} due to server error'
-        }), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 @character_bp.route('/characters/<int:character_id>/inventory', methods=['GET'])
 def get_character_inventory(character_id):
