@@ -239,7 +239,7 @@
 <script>
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import CharacterInventory from '../components/CharacterInventory.vue'
-import { getApiBaseUrl } from '../config/api'
+import { getApiBaseUrl, getOAuthApiBaseUrl } from '../config/api'
 import axios from 'axios'
 import { resilientApi } from '../utils/resilientRequest'
 
@@ -489,7 +489,7 @@ export default {
       console.log('🔄 Loading user main characters...')
       
       try {
-        const response = await axios.get(`${getApiBaseUrl()}/api/user/characters/mains`, {
+        const response = await axios.get(`${getOAuthApiBaseUrl()}/api/user/characters/mains`, {
           timeout: 10000, // 10 second timeout
           headers: {
             'Accept': 'application/json'
@@ -1410,7 +1410,7 @@ export default {
       
       try {
         // Ensure we have the API base URL
-        const apiBaseUrl = getApiBaseUrl()
+        const apiBaseUrl = getOAuthApiBaseUrl()
         if (!apiBaseUrl) {
           throw new Error('API base URL is not available')
         }
@@ -1492,7 +1492,7 @@ export default {
       
       try {
         // Ensure we have the API base URL
-        const apiBaseUrl = getApiBaseUrl()
+        const apiBaseUrl = getOAuthApiBaseUrl()
         if (!apiBaseUrl) {
           throw new Error('API base URL is not available')
         }
@@ -1571,7 +1571,7 @@ export default {
       
       try {
         // Ensure we have the API base URL
-        const apiBaseUrl = getApiBaseUrl()
+        const apiBaseUrl = getOAuthApiBaseUrl()
         if (!apiBaseUrl) {
           throw new Error('API base URL is not available')
         }
