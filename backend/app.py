@@ -98,58 +98,26 @@ if ENABLE_USER_ACCOUNTS:
         'https://eqdatascraper-production.up.railway.app'
     ]
     
-    # In production, allow Railway domains dynamically
-    def is_railway_domain(origin):
-        return origin and (
-            origin.endswith('.up.railway.app') or
-            'railway' in origin.lower()
-        )
-    
-    # Custom CORS origin checker
-    def cors_origin_checker(origin):
-        # Log the origin being checked
-        print(f"🔍 CORS: Checking origin: {origin}")
-        
-        # Always allow configured origins
-        if origin in allowed_origins:
-            print(f"✅ CORS: Allowing configured origin: {origin}")
-            return True
-            
-        # In production or Railway environment, allow Railway domains
-        is_railway_env = bool(os.environ.get('RAILWAY_ENVIRONMENT') or 
-                             os.environ.get('RAILWAY_PROJECT_ID') or
-                             os.environ.get('RAILWAY_SERVICE_ID'))
-        
-        if is_railway_env or is_railway_domain(origin):
-            print(f"🌐 CORS: Allowing Railway origin: {origin} (railway_env: {is_railway_env})")
-            return True
-            
-        print(f"🚫 CORS: Rejecting origin: {origin}")
-        return False
-    
-    # Use custom origin checker instead of static list
     
     # Add frontend URL from environment if set
     frontend_url = os.environ.get('FRONTEND_URL')
     if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
     
-    # Temporarily use permissive CORS for Railway production debugging
+    # Use permissive CORS for Railway production, strict for development
     if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY_PROJECT_ID'):
-        print("🚀 Railway environment detected - using permissive CORS for debugging")
-        CORS(app, 
-             origins='*',  # Temporarily allow all origins in Railway
-             supports_credentials=True, 
-             allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
-             methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-             automatic_options=True)
+        print("🚀 Railway environment detected - using permissive CORS")
+        cors_origins = '*'  # Allow all origins in Railway production
     else:
-        CORS(app, 
-             origins=cors_origin_checker, 
-             supports_credentials=True, 
-             allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
-             methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-             automatic_options=True)
+        # Use configured origins for development
+        cors_origins = allowed_origins
+    
+    CORS(app, 
+         origins=cors_origins, 
+         supports_credentials=True, 
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         automatic_options=True)
 else:
     # Standard CORS for existing functionality
     CORS(app, 
