@@ -7,7 +7,7 @@
             <img 
               v-if="selectedItemDetail.icon" 
               :src="`/icons/items/${selectedItemDetail.icon}.png`" 
-              :alt="`${selectedItemDetail.name || selectedItemDetail.Name} icon`"
+              :alt="`${selectedItemDetail.name || selectedItemDetail.Name || 'Unknown Item'} icon`"
               class="item-icon-modal"
               @error="handleIconError"
             />
@@ -17,7 +17,7 @@
           </div>
           <div class="item-header-info">
             <div class="item-title-row">
-              <h3>{{ selectedItemDetail.name || selectedItemDetail.Name }}</h3>
+              <h3>{{ selectedItemDetail.name || selectedItemDetail.Name || 'Unknown Item' }}</h3>
               <button 
                 v-if="selectedItemDetail.id"
                 @click="openItemInNewTab(selectedItemDetail.id)"
@@ -379,8 +379,13 @@ const handleIconError = (event) => {
   const currentSrc = event.target.src
   if (currentSrc.endsWith('.png')) {
     event.target.src = currentSrc.replace('.png', '.gif')
-  } else {
+  } else if (currentSrc.endsWith('.gif')) {
+    // If gif also fails, try the default icon
     event.target.src = '/icons/items/500.png'
+  } else {
+    // Last resort - use a generic placeholder
+    event.target.style.display = 'none'
+    event.target.parentElement.innerHTML = '<div class="item-icon-placeholder-modal"><i class="fas fa-cube"></i></div>'
   }
 }
 

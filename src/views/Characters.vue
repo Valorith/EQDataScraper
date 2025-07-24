@@ -296,7 +296,7 @@ export default {
           console.warn(`Circuit breaker opened for ${endpoint} endpoint after 8 failures`)
         }
       } else {
-        console.debug(`Ignoring ${endpoint} failure due to network/CORS issue:`, error?.message)
+        if (import.meta.env.DEV) console.debug(`Ignoring ${endpoint} failure due to network/CORS issue:`, error?.message)
       }
     }
     
@@ -343,7 +343,7 @@ export default {
     const dedupedRequest = async (key, requestFn) => {
       // If request is already in progress, wait for it
       if (activeRequests.value.has(key)) {
-        console.log(`Deduplicating request: ${key}`)
+        if (import.meta.env.DEV) console.log(`Deduplicating request: ${key}`)
         return activeRequests.value.get(key)
       }
       
@@ -486,7 +486,7 @@ export default {
 
     // Load user's saved main characters on page load
     const loadUserMainCharacters = async () => {
-      console.log('🔄 Loading user main characters...')
+      if (import.meta.env.DEV) console.log('🔄 Loading user main characters...')
       
       try {
         const response = await axios.get(`${getOAuthApiBaseUrl()}/api/user/characters/mains`, {
@@ -496,36 +496,36 @@ export default {
           }
         })
         
-        console.log('✅ Main characters API response:', response.data)
+        if (import.meta.env.DEV) console.log('✅ Main characters API response:', response.data)
         
         if (response.data && response.data.success) {
           if (response.data.data?.primaryMain) {
             primaryMain.value = response.data.data.primaryMain
-            console.log('✓ Loaded primary main:', response.data.data.primaryMain.name)
-            console.log('Primary main data structure:', response.data.data.primaryMain)
-            console.log('Primary main reactive value after assignment:', primaryMain.value)
+            if (import.meta.env.DEV) {
+              console.log('✓ Loaded primary main:', response.data.data.primaryMain.name)
+            }
           }
           if (response.data.data?.secondaryMain) {
             secondaryMain.value = response.data.data.secondaryMain
-            console.log('✓ Loaded secondary main:', response.data.data.secondaryMain.name)
-            console.log('Secondary main data structure:', response.data.data.secondaryMain)
-            console.log('Secondary main reactive value after assignment:', secondaryMain.value)
+            if (import.meta.env.DEV) {
+              console.log('✓ Loaded secondary main:', response.data.data.secondaryMain.name)
+            }
           }
           
           if (!response.data.data?.primaryMain && !response.data.data?.secondaryMain) {
-            console.log('ℹ️ No main characters saved yet')
+            if (import.meta.env.DEV) console.log('ℹ️ No main characters saved yet')
           }
         } else {
-          console.log('⚠️ API returned success=false or no data field')
+          if (import.meta.env.DEV) console.log('⚠️ API returned success=false or no data field')
         }
         
       } catch (error) {
         if (error.code === 'ECONNABORTED') {
           console.warn('⏱️ Main characters loading timed out')
         } else if (error.response?.status === 404) {
-          console.log('ℹ️ Main characters endpoint not found (expected in development)')
+          if (import.meta.env.DEV) console.log('ℹ️ Main characters endpoint not found (expected in development)')
         } else if (error.response?.status === 401) {
-          console.log('🔒 User not authenticated, skipping main character loading')
+          if (import.meta.env.DEV) console.log('🔒 User not authenticated, skipping main character loading')
         } else {
           console.error('❌ Failed to load user main characters:', {
             message: error.message,
@@ -544,7 +544,7 @@ export default {
       
       // Circuit breaker: skip search if too many recent failures
       if (isCircuitOpen('search')) {
-        console.log('Character search circuit breaker active, skipping search')
+        if (import.meta.env.DEV) console.log('Character search circuit breaker active, skipping search')
         return []
       }
       
@@ -552,7 +552,7 @@ export default {
       const now = Date.now()
       const timeSinceLastSearch = now - lastSearchTime
       if (timeSinceLastSearch < SEARCH_RATE_LIMIT) {
-        console.log(`Search rate limited, waiting ${SEARCH_RATE_LIMIT - timeSinceLastSearch}ms`)
+        if (import.meta.env.DEV) console.log(`Search rate limited, waiting ${SEARCH_RATE_LIMIT - timeSinceLastSearch}ms`)
         await new Promise(resolve => setTimeout(resolve, SEARCH_RATE_LIMIT - timeSinceLastSearch))
       }
       lastSearchTime = Date.now()
@@ -590,7 +590,7 @@ export default {
         }))
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Search request cancelled')
+          if (import.meta.env.DEV) console.log('Search request cancelled')
           return []
         }
         
@@ -665,7 +665,7 @@ export default {
             if (error.name === 'AbortError') {
               throw error
             }
-            console.warn('Character inventory loading failed but continuing:', error)
+            if (import.meta.env.DEV) console.warn('Character inventory loading failed but continuing:', error)
           }
           
           // Load currency and stats asynchronously (non-blocking)
@@ -677,7 +677,7 @@ export default {
             results.forEach((result, index) => {
               if (result.status === 'rejected') {
                 const type = index === 0 ? 'currency' : 'stats'
-                console.warn(`Character ${type} loading failed (background):`, result.reason)
+                if (import.meta.env.DEV) console.warn(`Character ${type} loading failed (background):`, result.reason)
               }
             })
             
@@ -687,13 +687,13 @@ export default {
               selectedCharacter.value = { ...fullCharacter }
             }
           }).catch(error => {
-            console.warn('Background loading failed:', error)
+            if (import.meta.env.DEV) console.warn('Background loading failed:', error)
           })
         } catch (error) {
           if (error.name === 'AbortError') {
             throw error // Re-throw abort errors
           }
-          console.warn('Some character data failed to load:', error)
+          if (import.meta.env.DEV) console.warn('Some character data failed to load:', error)
           // Continue with partial data rather than failing completely
         }
 
@@ -810,7 +810,7 @@ export default {
       
       // Prevent rapid successive searches
       if (isSearching.value) {
-        console.log('Search already in progress, ignoring request')
+        if (import.meta.env.DEV) console.log('Search already in progress, ignoring request')
         return
       }
       
@@ -872,17 +872,17 @@ export default {
         // Create new AbortController for this request
         currentCharacterRequest.value = new AbortController()
         
-        console.log(`Loading character: ${character.name} (ID: ${character.id})`)
+        if (import.meta.env.DEV) console.log(`Loading character: ${character.name} (ID: ${character.id})`)
         const fullCharacter = await loadFullCharacterData(character.id, currentCharacterRequest.value.signal)
         selectedCharacter.value = fullCharacter
         
         // Hide the dropdown after selection
         searchResults.value = []
         searchPerformed.value = false
-        console.log(`Successfully loaded character: ${character.name}`)
+        if (import.meta.env.DEV) console.log(`Successfully loaded character: ${character.name}`)
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Character loading was cancelled')
+          if (import.meta.env.DEV) console.log('Character loading was cancelled')
           return
         }
         console.error(`Failed to load ${character.name}'s data:`, {
@@ -891,7 +891,7 @@ export default {
           status: error.response?.status
         })
         // More graceful error message without alert
-        console.warn(`Character loading failed for ${character.name}. Please try again.`)
+        if (import.meta.env.DEV) console.warn(`Character loading failed for ${character.name}. Please try again.`)
       } finally {
         isLoadingCharacter.value = false
         currentCharacterRequest.value = null
@@ -949,7 +949,7 @@ export default {
         
         // Handle partial data warnings from backend
         if (response.data.warning) {
-          console.warn(`Character ${characterId} inventory warning:`, response.data.warning)
+          if (import.meta.env.DEV) console.warn(`Character ${characterId} inventory warning:`, response.data.warning)
         }
         // Transform inventory data from EQEmu schema
         const equipmentData = response.data.equipment || {}
@@ -1004,7 +1004,7 @@ export default {
         
         // Check if it's a timeout error and provide specific feedback
         if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-          console.warn('Character inventory loading timed out - server may be overloaded')
+          if (import.meta.env.DEV) console.warn('Character inventory loading timed out - server may be overloaded')
         }
         
         // Set empty equipment and inventory on error for graceful degradation
@@ -1095,22 +1095,22 @@ export default {
               silver: response.data.silver || 0,
               copper: response.data.copper || 0
             }
-            console.log('Loaded currency from server:', character.currency)
+            if (import.meta.env.DEV) console.log('Loaded currency from server:', character.currency)
           }
           
           recordSuccess('currency')
         } catch (error) {
           if (error.name === 'AbortError') {
-            console.log('Character currency loading was cancelled')
+            if (import.meta.env.DEV) console.log('Character currency loading was cancelled')
             return
           }
           
           recordFailure('currency', error)
-          console.warn('Currency loading failed, using default values:', error.message)
+          if (import.meta.env.DEV) console.warn('Currency loading failed, using default values:', error.message)
           // Keep default currency values (all zeros)
         }
       } else {
-        console.log('Currency endpoint circuit breaker active, using default values')
+        if (import.meta.env.DEV) console.log('Currency endpoint circuit breaker active, using default values')
       }
     }
 
@@ -1150,22 +1150,22 @@ export default {
                 }
               }
               
-              console.log('Enhanced stats with server calculations')
+              if (import.meta.env.DEV) console.log('Enhanced stats with server calculations')
             }
             
             recordSuccess('stats')
           } catch (apiError) {
             recordFailure('stats', apiError)
-            console.warn('Server stat calculation failed, using local calculations:', apiError.message)
+            if (import.meta.env.DEV) console.warn('Server stat calculation failed, using local calculations:', apiError.message)
             // Keep locally calculated stats
           }
         } else {
-          console.log('Stats endpoint circuit breaker active, using local calculations only')
+          if (import.meta.env.DEV) console.log('Stats endpoint circuit breaker active, using local calculations only')
         }
         
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('Character stats loading was cancelled')
+          if (import.meta.env.DEV) console.log('Character stats loading was cancelled')
           return
         }
         console.error('Failed to calculate character stats:', error)
@@ -1320,15 +1320,17 @@ export default {
       // Round weight to 1 decimal place like Magelo
       character.weight = Math.round(character.weight * 10) / 10
       
-      console.log('Calculated stats using Magelo methodology:', {
-        ac: character.ac,
-        atk: character.atk,
-        weight: character.weight,
-        maxHp: character.maxHp,
-        maxMp: character.maxMp,
-        resistances: character.resistances,
-        method: 'Magelo-exact'
-      })
+      if (import.meta.env.DEV) {
+        console.log('Calculated stats using Magelo methodology:', {
+          ac: character.ac,
+          atk: character.atk,
+          weight: character.weight,
+          maxHp: character.maxHp,
+          maxMp: character.maxMp,
+          resistances: character.resistances,
+          method: 'Magelo-exact'
+        })
+      }
     }
     
     // Set fallback stats if all calculations fail
@@ -1412,7 +1414,7 @@ export default {
       
       // Check if character is already the primary main
       if (primaryMain.value && primaryMain.value.id === character.id) {
-        console.log(`${character.name} is already the primary main character`)
+        if (import.meta.env.DEV) console.log(`${character.name} is already the primary main character`)
         return
       }
       
@@ -1438,8 +1440,9 @@ export default {
         // Verify the response
         if (response.status === 200 || response.status === 201) {
           primaryMain.value = character
-          console.log(`Successfully set ${character.name} as Primary Main`)
-          console.log('Primary main character data:', character)
+          if (import.meta.env.DEV) {
+            console.log(`Successfully set ${character.name} as Primary Main`)
+          }
         } else {
           throw new Error(`Unexpected response status: ${response.status}`)
         }
@@ -1495,7 +1498,7 @@ export default {
       
       // Check if character is already the secondary main
       if (secondaryMain.value && secondaryMain.value.id === character.id) {
-        console.log(`${character.name} is already the secondary main character`)
+        if (import.meta.env.DEV) console.log(`${character.name} is already the secondary main character`)
         return
       }
       
@@ -1521,8 +1524,9 @@ export default {
         // Verify the response
         if (response.status === 200 || response.status === 201) {
           secondaryMain.value = character
-          console.log(`Successfully set ${character.name} as Secondary Main`)
-          console.log('Secondary main character data:', character)
+          if (import.meta.env.DEV) {
+            console.log(`Successfully set ${character.name} as Secondary Main`)
+          }
         } else {
           throw new Error(`Unexpected response status: ${response.status}`)
         }
@@ -1610,7 +1614,9 @@ export default {
             activeSlot.value = null
           }
           
-          console.log(`Successfully removed ${character.name} as ${slotType} main character`)
+          if (import.meta.env.DEV) {
+            console.log(`Successfully removed ${character.name} as ${slotType} main character`)
+          }
         } else {
           throw new Error(`Unexpected response status: ${response.status}`)
         }
@@ -1658,7 +1664,7 @@ export default {
       window.testMainCharacters = {
         // Test loading main characters from API
         testLoad: async () => {
-          console.log('🧪 Testing loadUserMainCharacters')
+          // Testing loadUserMainCharacters
           await loadUserMainCharacters()
         },
         
@@ -1666,22 +1672,19 @@ export default {
         reset: () => {
           primaryMain.value = null
           secondaryMain.value = null
-          console.log('🧹 Reset main characters state')
+          // Reset main characters state
         },
         
         // Show current state
         showState: () => {
-          console.log('📊 Current main characters state:', {
+          return {
             primary: primaryMain.value,
             secondary: secondaryMain.value
-          })
+          }
         }
       }
       
-      console.log('🧪 Development testing functions available:')
-      console.log('  window.testMainCharacters.testLoad() - Test loading main characters')
-      console.log('  window.testMainCharacters.reset() - Reset main characters state')
-      console.log('  window.testMainCharacters.showState() - Show current state')
+      // Development testing functions available in console
     }
     
     // Cleanup function to cancel pending requests

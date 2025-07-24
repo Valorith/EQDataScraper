@@ -499,22 +499,308 @@
       </div>
     </div>
     
-    <!-- Item Modal -->
-    <ItemModal 
-      :selectedItemDetail="selectedItemDetail"
-      :loadingItemModal="loadingItemModal"
-      :dropSources="dropSources"
-      :loadingDropSources="loadingDropSources"
-      :dropSourcesRequested="dropSourcesRequested"
-      :merchantSources="merchantSources"
-      :loadingMerchantSources="loadingMerchantSources"
-      :merchantSourcesRequested="merchantSourcesRequested"
-      :itemDataAvailability="itemDataAvailability"
-      :loadingAvailability="loadingAvailability"
-      @close="closeItemModal"
-      @loadDropSources="loadDropSources"
-      @loadMerchantSources="loadMerchantSources"
+    <!-- Item Modal Loading Modal -->
+    <LoadingModal 
+      :visible="loadingItemModal"
+      text="Loading item details..."
+      :randomClassIcon="true"
+      :fullScreen="true"
+      :timeoutMs="10000"
+      @timeout="onItemModalTimeout"
     />
+
+    <!-- Item Details Modal -->
+    <div v-if="selectedItemDetail && !loadingItemModal" class="modal-overlay" @click="closeItemModal">
+      <div class="modal-content item-modal" @click.stop>
+        <div class="modal-header">
+          <div class="modal-header-content">
+            <div class="item-icon-modal-container">
+              <img 
+                v-if="selectedItemDetail.icon" 
+                :src="`/icons/items/${selectedItemDetail.icon}.png`" 
+                :alt="`${selectedItemDetail.name} icon`"
+                class="item-icon-modal"
+                @error="handleIconError"
+              />
+              <div v-else class="item-icon-placeholder-modal">
+                <i class="fas fa-cube"></i>
+              </div>
+            </div>
+            <div class="item-header-info">
+              <h3>{{ selectedItemDetail.name }}</h3>
+              <div class="item-header-meta">
+                <span class="item-type-badge">{{ getItemTypeDisplay(selectedItemDetail.itemtype) }}</span>
+                <span v-if="selectedItemDetail.magic" class="property-badge magic">Magic</span>
+                <span v-if="selectedItemDetail.lore" class="property-badge lore">Lore</span>
+                <span v-if="selectedItemDetail.nodrop" class="property-badge nodrop">No Drop</span>
+                <span v-if="selectedItemDetail.norent" class="property-badge norent">No Rent</span>
+              </div>
+            </div>
+          </div>
+          <button @click="closeItemModal" class="modal-close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="item-details">
+            <!-- Primary Stats -->
+            <div v-if="selectedItemDetail.damage || selectedItemDetail.ac || selectedItemDetail.hp || selectedItemDetail.mana" class="detail-section primary-stats">
+              <h4>Primary Stats</h4>
+              <div class="primary-stats-grid">
+                <div v-if="selectedItemDetail.damage && selectedItemDetail.delay" class="primary-stat-item weapon">
+                  <div class="stat-icon"><i class="fas fa-sword"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">{{ selectedItemDetail.damage }} / {{ selectedItemDetail.delay }}</span>
+                    <span class="stat-label">Damage / Delay</span>
+                    <span class="stat-extra">Ratio: {{ getWeaponRatio(selectedItemDetail.damage, selectedItemDetail.delay) }}</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.ac" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-shield-alt"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">{{ selectedItemDetail.ac }}</span>
+                    <span class="stat-label">Armor Class</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.hp" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-heart"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">+{{ selectedItemDetail.hp }}</span>
+                    <span class="stat-label">Hit Points</span>
+                  </div>
+                </div>
+                <div v-if="selectedItemDetail.mana" class="primary-stat-item">
+                  <div class="stat-icon"><i class="fas fa-star"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-value">+{{ selectedItemDetail.mana }}</span>
+                    <span class="stat-label">Mana</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Attributes -->
+            <div v-if="hasAnyStats(selectedItemDetail)" class="detail-section">
+              <h4>Attributes</h4>
+              <div class="attributes-grid">
+                <div v-if="selectedItemDetail.str" class="attribute-item">
+                  <span class="attr-label">STR</span>
+                  <span class="attr-value">+{{ selectedItemDetail.str }}</span>
+                </div>
+                <div v-if="selectedItemDetail.sta" class="attribute-item">
+                  <span class="attr-label">STA</span>
+                  <span class="attr-value">+{{ selectedItemDetail.sta }}</span>
+                </div>
+                <div v-if="selectedItemDetail.agi" class="attribute-item">
+                  <span class="attr-label">AGI</span>
+                  <span class="attr-value">+{{ selectedItemDetail.agi }}</span>
+                </div>
+                <div v-if="selectedItemDetail.dex" class="attribute-item">
+                  <span class="attr-label">DEX</span>
+                  <span class="attr-value">+{{ selectedItemDetail.dex }}</span>
+                </div>
+                <div v-if="selectedItemDetail.wis" class="attribute-item">
+                  <span class="attr-label">WIS</span>
+                  <span class="attr-value">+{{ selectedItemDetail.wis }}</span>
+                </div>
+                <div v-if="selectedItemDetail.int" class="attribute-item">
+                  <span class="attr-label">INT</span>
+                  <span class="attr-value">+{{ selectedItemDetail.int }}</span>
+                </div>
+                <div v-if="selectedItemDetail.cha" class="attribute-item">
+                  <span class="attr-label">CHA</span>
+                  <span class="attr-value">+{{ selectedItemDetail.cha }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Resistances -->
+            <div v-if="hasResistValues(selectedItemDetail)" class="detail-section">
+              <h4>Resistances</h4>
+              <div class="resistances-grid">
+                <div v-if="(selectedItemDetail.resistances?.fire || selectedItemDetail.fr) && (selectedItemDetail.resistances?.fire || selectedItemDetail.fr) !== 0" class="resist-item fire">
+                  <span class="resist-label">Fire</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.fire || selectedItemDetail.fr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.cold || selectedItemDetail.cr) && (selectedItemDetail.resistances?.cold || selectedItemDetail.cr) !== 0" class="resist-item cold">
+                  <span class="resist-label">Cold</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.cold || selectedItemDetail.cr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.magic || selectedItemDetail.mr) && (selectedItemDetail.resistances?.magic || selectedItemDetail.mr) !== 0" class="resist-item magic">
+                  <span class="resist-label">Magic</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.magic || selectedItemDetail.mr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.disease || selectedItemDetail.dr) && (selectedItemDetail.resistances?.disease || selectedItemDetail.dr) !== 0" class="resist-item disease">
+                  <span class="resist-label">Disease</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.disease || selectedItemDetail.dr }}</span>
+                </div>
+                <div v-if="(selectedItemDetail.resistances?.poison || selectedItemDetail.pr) && (selectedItemDetail.resistances?.poison || selectedItemDetail.pr) !== 0" class="resist-item poison">
+                  <span class="resist-label">Poison</span>
+                  <span class="resist-value">+{{ selectedItemDetail.resistances?.poison || selectedItemDetail.pr }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Requirements & Restrictions -->
+            <div class="detail-section">
+              <h4>Requirements & Restrictions</h4>
+              <div class="requirements-grid">
+                <div v-if="selectedItemDetail.classes" class="requirement-item">
+                  <span class="req-label">Classes:</span>
+                  <span class="req-value">{{ getClassDisplay(selectedItemDetail.classes) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.races" class="requirement-item">
+                  <span class="req-label">Races:</span>
+                  <span class="req-value">{{ getRaceDisplay(selectedItemDetail.races) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.slots" class="requirement-item">
+                  <span class="req-label">Slot:</span>
+                  <span class="req-value">{{ getSlotDisplay(selectedItemDetail.slots) }}</span>
+                </div>
+                <div v-if="selectedItemDetail.reqlevel" class="requirement-item">
+                  <span class="req-label">Required Level:</span>
+                  <span class="req-value">{{ selectedItemDetail.reqlevel }}</span>
+                </div>
+                <div v-if="selectedItemDetail.weight" class="requirement-item">
+                  <span class="req-label">Weight:</span>
+                  <span class="req-value">{{ (selectedItemDetail.weight / 10).toFixed(1) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Effects -->
+            <div v-if="hasEffects(selectedItemDetail)" class="detail-section">
+              <h4>Effects</h4>
+              <div class="effects-list">
+                <div v-if="selectedItemDetail.effects?.click && selectedItemDetail.effects.click !== -1" class="effect-item">
+                  <span class="effect-type">Click:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.click }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.proc && selectedItemDetail.effects.proc !== -1" class="effect-item">
+                  <span class="effect-type">Proc:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.proc }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.worn && selectedItemDetail.effects.worn !== -1" class="effect-item">
+                  <span class="effect-type">Worn:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.worn }}</span>
+                </div>
+                <div v-if="selectedItemDetail.effects?.focus && selectedItemDetail.effects.focus !== -1" class="effect-item">
+                  <span class="effect-type">Focus:</span>
+                  <span class="effect-value">Effect #{{ selectedItemDetail.effects.focus }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Drop Sources Section -->
+            <div v-if="shouldShowDropSources" class="detail-section drop-sources-section">
+              <div class="drop-sources-header">
+                <h4>Where does this drop?</h4>
+                <button 
+                  v-if="!dropSourcesRequested"
+                  @click="loadDropSources" 
+                  class="drop-sources-button"
+                >
+                  <i class="fas fa-map-marked-alt"></i>
+                  <span>Show Drop Sources</span>
+                </button>
+              </div>
+              
+              <!-- Loading state -->
+              <div v-if="loadingDropSources" class="loading-sources">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Loading drop sources...</span>
+              </div>
+              
+              <!-- Drop Sources Results -->
+              <div v-else-if="dropSources && dropSourcesRequested" class="drop-sources-results">
+                <div v-if="dropSources.length === 0" class="no-drop-sources">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No drop sources found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in dropSources" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="npc-count">({{ zone.npcs.length }} NPCs)</span>
+                    </div>
+                    
+                    <div class="npcs-list">
+                      <div 
+                        v-for="npc in zone.npcs" 
+                        :key="npc.npc_id" 
+                        class="npc-item"
+                      >
+                        <span class="npc-name">{{ npc.npc_name }}</span>
+                        <span class="drop-chance">{{ (npc.drop_chance || npc.chance || 0) }}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Merchant Sources Section -->
+            <div v-if="shouldShowMerchantSources" class="detail-section merchant-sources-section">
+              <div class="merchant-sources-header">
+                <h4>Where can this be bought?</h4>
+                <button 
+                  v-if="!merchantSourcesRequested"
+                  @click="loadMerchantSources" 
+                  class="merchant-sources-button"
+                >
+                  <i class="fas fa-coins"></i>
+                  <span>Show Merchant Sources</span>
+                </button>
+              </div>
+              
+              <!-- Loading state -->
+              <div v-if="loadingMerchantSources" class="loading-sources">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Loading merchant sources...</span>
+              </div>
+              
+              <!-- Merchant Sources Results -->
+              <div v-else-if="merchantSources && merchantSourcesRequested" class="merchant-sources-results">
+                <div v-if="merchantSources.length === 0" class="no-merchant-sources">
+                  <i class="fas fa-exclamation-circle"></i>
+                  <span>No merchant sources found for this item</span>
+                </div>
+                
+                <div v-else class="zones-list">
+                  <div v-for="zone in merchantSources" :key="zone.zone_short" class="zone-section">
+                    <div class="zone-header">
+                      <i class="fas fa-map-marker-alt"></i>
+                      <span class="zone-name">{{ zone.zone_name }}</span>
+                      <span class="merchant-count">({{ zone.merchants.length }} merchants)</span>
+                    </div>
+                    
+                    <div class="merchants-list">
+                      <div 
+                        v-for="merchant in zone.merchants" 
+                        :key="merchant.npc_id" 
+                        class="merchant-item"
+                      >
+                        <span class="merchant-name">{{ merchant.npc_name }}</span>
+                        <span class="merchant-price">{{ formatMerchantPrice(merchant) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Lore Text -->
+            <div v-if="selectedItemDetail.lore" class="detail-section lore-section">
+              <h4>Lore</h4>
+              <div class="lore-text">{{ selectedItemDetail.lore }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- Loading Modal -->
     <LoadingModal :visible="loadingItemModal" text="Loading item details..." @timeout="onItemModalTimeout" />
@@ -565,9 +851,7 @@
 <script setup>
 import { ref, nextTick, onUnmounted, computed, watch } from 'vue'
 import LoadingModal from './LoadingModal.vue'
-import ItemModal from './ItemModal.vue'
 import { getApiBaseUrl } from '../config/api'
-import { resilientApi } from '../utils/resilientRequest'
 
 // Circuit breaker for item availability endpoint
 const availabilityCircuitBreaker = ref({
@@ -645,9 +929,40 @@ const merchantSources = ref(null)
 const loadingMerchantSources = ref(false)
 const merchantSourcesRequested = ref(false)
 
-// Data availability state
+// Item data availability state
 const itemDataAvailability = ref(null)
 const loadingAvailability = ref(false)
+
+// Computed properties for section visibility - Only show when data exists
+const shouldShowDropSources = computed(() => {
+  // Show while loading availability check
+  if (loadingAvailability.value) return false
+  
+  // Show all if availability check failed (fallback)
+  if (itemDataAvailability.value === 'failed') return true
+  
+  // Show if no availability data yet (initial state)
+  if (!itemDataAvailability.value) return false
+  
+  // Only show if data exists
+  return itemDataAvailability.value.drop_sources > 0
+})
+
+const shouldShowMerchantSources = computed(() => {
+  // Show while loading availability check
+  if (loadingAvailability.value) return false
+  
+  // Show all if availability check failed (fallback)
+  if (itemDataAvailability.value === 'failed') return true
+  
+  // Show if no availability data yet (initial state)
+  if (!itemDataAvailability.value) return false
+  
+  // Only show if data exists
+  return itemDataAvailability.value.merchant_sources > 0
+})
+
+// Duplicate declarations removed - already declared above
 
 // Bag window state
 const openBagWindows = ref([])
@@ -675,94 +990,288 @@ const persistentHighlights = ref({
   blinking: new Set()   // Set of currently blinking elements
 })
 
-// API response cache for item details (5-minute TTL)
-const itemDetailsCache = new Map()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+// Item modal functionality now uses direct API calls like Items page
 
 
 // Modal functions
 const selectItem = async (item) => {
   if (!item) return
   
+  // Start loading modal
   loadingItemModal.value = true
   
-  try {
-    // Check cache first
-    const cacheKey = `item-${item.id}`
-    const cachedData = itemDetailsCache.get(cacheKey)
-    
-    if (cachedData && (Date.now() - cachedData.timestamp) < CACHE_TTL) {
-      // Use cached data
-      selectedItemDetail.value = cachedData.data
-    } else {
-      // Fetch fresh data
-      const response = await resilientApi.get(`/api/items/${item.id}/details`)
-      selectedItemDetail.value = response.data
-      
-      // Cache the response
-      itemDetailsCache.set(cacheKey, {
-        data: response.data,
-        timestamp: Date.now()
-      })
-      
-      // Prevent cache from growing too large (LRU-style cleanup)
-      if (itemDetailsCache.size > 100) {
-        const firstKey = itemDetailsCache.keys().next().value
-        itemDetailsCache.delete(firstKey)
-      }
-    }
-    
-    // Load data availability after item details are loaded (non-blocking)
-    loadItemDataAvailability(item.id).catch(error => {
-      console.warn('Item availability loading failed but continuing:', error)
-    })
-  } catch (error) {
-    console.error('Error loading item details:', error)
-    // Show basic item data even if API fails
-    selectedItemDetail.value = {
-      id: item.id,
-      Name: item.name,
-      icon: item.icon,
-      weight: item.weight || 0,
-      ac: item.ac || 0,
-      hp: item.hp || 0,
-      mana: item.mana || 0,
-      damage: item.damage || 0,
-      delay: item.delay || 0,
-      astr: item.astr || 0,
-      asta: item.asta || 0,
-      aagi: item.aagi || 0,
-      adex: item.adex || 0,
-      awis: item.awis || 0,
-      aint: item.aint || 0,
-      acha: item.acha || 0,
-      pr: item.pr || 0,
-      mr: item.mr || 0,
-      fr: item.fr || 0,
-      cr: item.cr || 0,
-      dr: item.dr || 0,
-      magic: item.magic || false,
-      lore: item.lore || false,
-      nodrop: item.nodrop || false
-    }
-  } finally {
-    loadingItemModal.value = false
-  }
-}
-
-const closeItemModal = () => {
-  selectedItemDetail.value = null
-  loadingItemModal.value = false
-  // Reset drop/merchant sources when closing modal
+  // Clear all source states when selecting a new item
   dropSources.value = null
   loadingDropSources.value = false
   dropSourcesRequested.value = false
   merchantSources.value = null
   loadingMerchantSources.value = false
   merchantSourcesRequested.value = false
-  // Clear availability data when closing modal
   itemDataAvailability.value = null
   loadingAvailability.value = false
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${item.id}`)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    selectedItemDetail.value = data.item
+    
+    // Load data availability after item details are loaded
+    await loadItemDataAvailability(item.id)
+  } catch (error) {
+    console.error('Error loading item details:', error)
+    // Show error message but don't use toastService since it may not be available
+    console.warn('Failed to load item details:', error.message)
+  } finally {
+    // Stop loading modal only after both item details and availability are loaded
+    loadingItemModal.value = false
+  }
+}
+
+const closeItemModal = () => {
+  selectedItemDetail.value = null
+  // Clear drop sources when closing modal
+  dropSources.value = null
+  loadingDropSources.value = false
+  dropSourcesRequested.value = false
+  merchantSources.value = null
+  loadingMerchantSources.value = false
+  merchantSourcesRequested.value = false
+  itemDataAvailability.value = null
+  loadingAvailability.value = false
+  // Clear item modal loading state
+  loadingItemModal.value = false
+}
+
+// onItemModalTimeout function moved to line 1324 to avoid duplication
+
+
+const loadDropSources = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  dropSourcesRequested.value = true
+  loadingDropSources.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    dropSources.value = data.zones || []
+  } catch (error) {
+    console.error('Error loading drop sources:', error)
+    dropSources.value = []
+  } finally {
+    loadingDropSources.value = false
+  }
+}
+
+const loadMerchantSources = async () => {
+  if (!selectedItemDetail.value?.item_id) return
+  
+  // Set flags immediately to hide button and show loading
+  merchantSourcesRequested.value = true
+  loadingMerchantSources.value = true
+  
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
+    const data = await response.json()
+    merchantSources.value = data.zones || []
+  } catch (error) {
+    console.error('Error loading merchant sources:', error)
+    merchantSources.value = []
+  } finally {
+    loadingMerchantSources.value = false
+  }
+}
+
+// Utility functions for item display
+const getItemTypeDisplay = (itemtype) => {
+  const typeMap = {
+    0: '1H Slashing',
+    1: '2H Slashing',
+    2: '1H Piercing',
+    3: '1H Blunt',
+    4: '2H Blunt',
+    5: 'Archery',
+    7: 'Throwing',
+    8: 'Shield',
+    10: 'Armor',
+    11: 'Tradeskill Item',
+    12: 'Lockpicking',
+    14: 'Food',
+    15: 'Drink',
+    16: 'Light Source',
+    17: 'Common Inventory Item',
+    18: 'Bind Wound',
+    19: 'Thrown Casting Item',
+    20: 'Spells / Song Sheets',
+    21: 'Potions',
+    22: 'Fletched Arrows',
+    23: 'Wind Instrument',
+    24: 'Stringed Instrument',
+    25: 'Brass Instrument',
+    26: 'Percussion Instrument',
+    27: 'Ammo',
+    29: 'Jewelry',
+    31: 'Readable Note/Scroll',
+    32: 'Readable Book',
+    33: 'Key',
+    34: 'Odd Item',
+    35: '2H Piercing',
+    36: 'Fishing Pole',
+    37: 'Fishing Bait',
+    38: 'Alcoholic Beverage',
+    39: 'More Keys',
+    40: 'Compass',
+    42: 'Poison',
+    45: 'Hand to Hand',
+    52: 'Charm',
+    53: 'Dye',
+    54: 'Augment',
+    55: 'Augment Solvent',
+    56: 'Augment Distiller',
+    58: 'Fellowship Banner Material',
+    60: 'Cultural Armor Manual',
+    63: 'New Currency',
+  }
+  return typeMap[itemtype] || `Type ${itemtype}`
+}
+
+const getSlotDisplay = (slots) => {
+  if (!slots) return null
+  const slotMap = {
+    1: 'Charm', 2: 'Ear', 4: 'Head', 8: 'Face',
+    16: 'Ear', 32: 'Neck', 64: 'Shoulders', 128: 'Arms',
+    256: 'Back', 512: 'Wrist', 1024: 'Wrist', 2048: 'Range',
+    4096: 'Hands', 8192: 'Primary', 16384: 'Secondary',
+    32768: 'Fingers', 65536: 'Chest', 131072: 'Legs',
+    262144: 'Feet', 524288: 'Waist', 1048576: 'Power Source',
+    2097152: 'Ammo'
+  }
+  
+  const slotNames = []
+  for (let [bit, name] of Object.entries(slotMap)) {
+    if (slots & parseInt(bit)) {
+      slotNames.push(name)
+    }
+  }
+  
+  // Remove duplicates using Set
+  const uniqueSlots = [...new Set(slotNames)]
+  
+  return uniqueSlots.length > 0 ? uniqueSlots.join(', ') : null
+}
+
+const getClassDisplay = (classes) => {
+  if (!classes || classes === 0) return 'None'
+  
+  // Check for all classes - 65535 is the bitmask for all 16 classes
+  if (classes === 65535) return 'ALL'
+  
+  const classMap = {
+    1: 'WAR', 2: 'CLR', 4: 'PAL', 8: 'RNG',
+    16: 'SHD', 32: 'DRU', 64: 'MNK', 128: 'BRD',
+    256: 'ROG', 512: 'SHM', 1024: 'NEC', 2048: 'WIZ',
+    4096: 'MAG', 8192: 'ENC', 16384: 'BST', 32768: 'BER'
+  }
+  
+  const classNames = []
+  for (let [bit, name] of Object.entries(classMap)) {
+    if (classes & parseInt(bit)) {
+      classNames.push(name)
+    }
+  }
+  
+  return classNames.length > 0 ? classNames.join(', ') : 'None'
+}
+
+const getRaceDisplay = (races) => {
+  if (!races || races === 0) return 'None'
+  
+  // Check for all races
+  if (races === 65535) return 'ALL'
+  
+  const raceMap = {
+    1: 'HUM', 2: 'BAR', 4: 'ERU', 8: 'ELF',
+    16: 'HIE', 32: 'DEF', 64: 'HEF', 128: 'DWF',
+    256: 'TRL', 512: 'OGR', 1024: 'HFL', 2048: 'GNM',
+    4096: 'IKS', 8192: 'VAH', 16384: 'FRG', 32768: 'DRK'
+  }
+  
+  const raceNames = []
+  for (let [bit, name] of Object.entries(raceMap)) {
+    if (races & parseInt(bit)) {
+      raceNames.push(name)
+    }
+  }
+  
+  return raceNames.length > 0 ? raceNames.join(', ') : 'None'
+}
+
+const hasAnyStats = (item) => {
+  return item && (item.str || item.sta || item.agi || item.dex || item.wis || item.int || item.cha)
+}
+
+const hasResistValues = (item) => {
+  if (!item) return false
+  return (item.resistances?.fire || item.fr) ||
+         (item.resistances?.cold || item.cr) ||
+         (item.resistances?.magic || item.mr) ||
+         (item.resistances?.disease || item.dr) ||
+         (item.resistances?.poison || item.pr)
+}
+
+const hasEffects = (item) => {
+  if (!item || !item.effects) return false
+  return (item.effects.click && item.effects.click !== -1) ||
+         (item.effects.proc && item.effects.proc !== -1) ||
+         (item.effects.worn && item.effects.worn !== -1) ||
+         (item.effects.focus && item.effects.focus !== -1)
+}
+
+const formatMerchantPrice = (merchant) => {
+  if (!merchant || !merchant.price) return '0pp'
+  
+  const price = merchant.price
+  const pp = Math.floor(price / 1000)
+  const gp = Math.floor((price % 1000) / 100)
+  const sp = Math.floor((price % 100) / 10)
+  const cp = price % 10
+  
+  const parts = []
+  if (pp > 0) parts.push(`${pp}pp`)
+  if (gp > 0) parts.push(`${gp}gp`)
+  if (sp > 0) parts.push(`${sp}sp`)
+  if (cp > 0) parts.push(`${cp}cp`)
+  
+  return parts.length > 0 ? parts.join(' ') : '0pp'
+}
+
+const handleIconError = (event) => {
+  const currentSrc = event.target.src
+  if (currentSrc.endsWith('.png')) {
+    event.target.src = currentSrc.replace('.png', '.gif')
+  } else if (currentSrc.endsWith('.gif')) {
+    // If gif also fails, try the default icon
+    event.target.src = '/icons/items/500.png'
+  } else {
+    // Last resort - use a generic placeholder
+    event.target.style.display = 'none'
+    event.target.parentElement.innerHTML = '<div class="item-icon-placeholder-modal"><i class="fas fa-cube"></i></div>'
+  }
 }
 
 // Event delegation handler for equipment slots (replaces 22 individual click handlers)
@@ -783,48 +1292,11 @@ const handleEquipmentClick = (event) => {
 }
 
 const onItemModalTimeout = () => {
-  console.warn('Item modal loading timed out')
+  if (import.meta.env.DEV) console.warn('Item modal loading timed out')
   loadingItemModal.value = false
   selectedItemDetail.value = null
 }
 
-// Drop sources functions
-const loadDropSources = async () => {
-  if (!selectedItemDetail.value?.id || loadingDropSources.value || dropSourcesRequested.value) return
-  
-  loadingDropSources.value = true
-  dropSourcesRequested.value = true
-  
-  try {
-    const response = await resilientApi.get(`/api/items/${selectedItemDetail.value.id}/drop-sources`)
-    // Backend returns {zones: [...]} but frontend expects array directly
-    dropSources.value = response.data.zones || []
-  } catch (error) {
-    console.error('Error loading drop sources:', error)
-    dropSources.value = []
-  } finally {
-    loadingDropSources.value = false
-  }
-}
-
-// Merchant sources functions
-const loadMerchantSources = async () => {
-  if (!selectedItemDetail.value?.id || loadingMerchantSources.value || merchantSourcesRequested.value) return
-  
-  loadingMerchantSources.value = true
-  merchantSourcesRequested.value = true
-  
-  try {
-    const response = await resilientApi.get(`/api/items/${selectedItemDetail.value.id}/merchant-sources`)
-    // Backend returns {zones: [...]} but frontend expects array directly
-    merchantSources.value = response.data.zones || []
-  } catch (error) {
-    console.error('Error loading merchant sources:', error)
-    merchantSources.value = []
-  } finally {
-    loadingMerchantSources.value = false
-  }
-}
 
 // Item data availability function
 const loadItemDataAvailability = async (itemId) => {
@@ -832,7 +1304,7 @@ const loadItemDataAvailability = async (itemId) => {
   
   // Circuit breaker: skip if too many recent failures
   if (isAvailabilityCircuitOpen()) {
-    if (import.meta.env.DEV) console.log('Item availability circuit breaker active, skipping request')
+    // Item availability circuit breaker active, skipping request
     itemDataAvailability.value = 'failed' // Show all buttons when circuit is open
     return
   }
@@ -855,7 +1327,7 @@ const loadItemDataAvailability = async (itemId) => {
     // Record failure for circuit breaker
     recordAvailabilityFailure()
     
-    console.error('Error loading item data availability:', {
+    if (import.meta.env.DEV) console.error('Error loading item data availability:', {
       itemId,
       error: error.message,
       status: error.response?.status
@@ -867,64 +1339,12 @@ const loadItemDataAvailability = async (itemId) => {
   }
 }
 
-// Helper functions for modal display
-const getItemTypeDisplay = (itemtype) => {
-  const ITEM_TYPES = {
-    0: 'Common Item',
-    1: '1H Slashing',
-    2: '2H Slashing', 
-    3: '1H Piercing',
-    4: '1H Blunt',
-    5: '2H Blunt',
-    7: 'Archery',
-    8: 'Shield',
-    10: 'Armor',
-    11: 'Miscellaneous',
-    14: 'Food',
-    15: 'Drink',
-    16: 'Light',
-    17: 'Combinable',
-    18: 'Bandage',
-    19: 'Throwing',
-    20: 'Spell',
-    21: 'Potion',
-    22: 'Wind Instrument',
-    23: 'String Instrument',
-    24: 'Brass Instrument',
-    25: 'Drum',
-    26: 'Arrow',
-    27: 'Jewelry',
-    29: 'Skill Tome',
-    35: 'Note'
-  }
-  return ITEM_TYPES[itemtype] || 'Unknown'
-}
 
 const getWeaponRatio = (damage, delay) => {
   if (!damage || !delay) return '0.0'
   return (damage / (delay / 10)).toFixed(1)
 }
 
-const hasAnyStats = (item) => {
-  if (!item) return false
-  return item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha ||
-         item.stats?.ac || item.stats?.hp || item.stats?.mana || item.stats?.endur || item.stats?.attack ||
-         item.attributes?.str || item.attributes?.sta || item.attributes?.agi || item.attributes?.dex ||
-         item.attributes?.wis || item.attributes?.int || item.attributes?.cha ||
-         item.resistances?.poison || item.resistances?.magic || item.resistances?.fire || 
-         item.resistances?.cold || item.resistances?.disease || item.resistances?.corruption ||
-         item.weight || item.charges
-}
-
-const hasResistValues = (item) => {
-  if (!item) return false
-  return item.fr || item.cr || item.mr || item.dr || item.pr || item.svcorruption
-}
-
-const hasAttributeValues = (item) => {
-  if (!item) return false
-  return item.astr || item.asta || item.aagi || item.adex || item.awis || item.aint || item.acha
-}
     
 const handleImageError = (event) => {
   // PNG-first strategy: Try GIF as fallback, then default icon
@@ -1142,7 +1562,7 @@ const handleBagRightClick = (event, slot) => {
 const getBagContents = (bagSlotId, containerSize) => {
   // Safety check for props
   if (!props.rawInventoryData || !Array.isArray(props.rawInventoryData)) {
-    console.warn('rawInventoryData is not available or not an array:', props.rawInventoryData)
+    if (import.meta.env.DEV) console.warn('rawInventoryData is not available or not an array:', props.rawInventoryData)
     return []
   }
   
@@ -1333,29 +1753,22 @@ const clearSearch = () => {
 
 // Clear all persistent highlights
 const clearAllHighlights = () => {
-  if (import.meta.env.DEV) console.log('=== CLEARING ALL HIGHLIGHTS ===')
-  if (import.meta.env.DEV) console.log('Current highlights before clearing:', {
-    items: persistentHighlights.value.items.size,
-    bags: persistentHighlights.value.bags.size,
-    blinking: persistentHighlights.value.blinking.size,
-    itemsList: Array.from(persistentHighlights.value.items),
-    bagsList: Array.from(persistentHighlights.value.bags)
-  })
+  // Clearing all highlights
   
   // Remove highlight classes from all highlighted elements
   persistentHighlights.value.items.forEach(slotId => {
     const element = findElementBySlotId(slotId)
     if (element) {
       element.classList.remove('persistent-highlight', 'blinking-highlight')
-      if (import.meta.env.DEV) console.log(`Cleared item highlight for slot ${slotId}`)
+      // Cleared item highlight
     }
   })
   
-  if (import.meta.env.DEV) console.log(`Attempting to clear ${persistentHighlights.value.bags.size} bag highlights...`)
+  // Clearing bag highlights
   persistentHighlights.value.bags.forEach(bagSlot => {
-    if (import.meta.env.DEV) console.log(`Clearing bag slot ${bagSlot}...`)
+    // Clearing bag slot
     const bagElement = findBagElementBySlot(bagSlot)
-    if (import.meta.env.DEV) console.log(`Found bag element for slot ${bagSlot}:`, !!bagElement)
+    // Found bag element
     
     if (bagElement) {
       if (import.meta.env.DEV) {
@@ -1383,9 +1796,9 @@ const clearAllHighlights = () => {
         })
       }
       
-      if (import.meta.env.DEV) console.log(`Successfully cleared bag highlight for slot ${bagSlot}`)
+      // Successfully cleared bag highlight
     } else {
-      if (import.meta.env.DEV) console.warn(`Could not find bag element for slot ${bagSlot} during clearing`)
+      // Could not find bag element during clearing
     }
   })
   
@@ -1400,11 +1813,11 @@ const clearAllHighlights = () => {
     element.style.boxShadow = ''
     element.style.zIndex = ''
     element.style.position = ''
-    if (import.meta.env.DEV) console.log('Cleared remaining highlight from element:', element)
+    // Cleared remaining highlight from element
   })
   
   // Nuclear option: Clear ALL bag slot inline styles
-  if (import.meta.env.DEV) console.log('Nuclear cleanup: clearing ALL bag slot inline styles...')
+  // Nuclear cleanup: clearing ALL bag slot inline styles
   const allBagSlots = document.querySelectorAll('.bag-slot')
   if (import.meta.env.DEV) console.log(`Found ${allBagSlots.length} bag slots for cleanup`)
   
@@ -1437,7 +1850,7 @@ const clearAllHighlights = () => {
   persistentHighlights.value.bags.clear()
   persistentHighlights.value.blinking.clear()
   
-  if (import.meta.env.DEV) console.log('All highlights cleared')
+  // All highlights cleared
 }
 
 // Helper function to find element by slot ID
@@ -1466,12 +1879,12 @@ const findElementBySlotId = (slotId) => {
   for (const selector of selectors) {
     const element = document.querySelector(selector)
     if (element) {
-      if (import.meta.env.DEV) console.log('Found element with selector:', selector)
+      // Found element with selector
       return element
     }
   }
   
-  console.warn('No element found for slot:', slotId)
+  if (import.meta.env.DEV) console.warn('No element found for slot:', slotId)
   return null
 }
 
@@ -1498,7 +1911,7 @@ const findBagElementBySlot = (bagSlot) => {
     }
   }
   
-  console.warn(`Could not find bag element for bagSlot ${bagSlot} (UI slot ${uiSlot})`)
+  if (import.meta.env.DEV) console.warn(`Could not find bag element for bagSlot ${bagSlot} (UI slot ${uiSlot})`)
   return null
 }
 
@@ -1596,12 +2009,7 @@ const openBagIfClosed = (bagSlot, callback) => {
     const uiSlot = getUISlotFromBagSlot(bagSlot)
     const slot = props.character?.inventory?.find(s => s.slot === uiSlot)
     
-    if (import.meta.env.DEV) console.log('Opening bag:', {
-      bagSlot: bagSlot,
-      uiSlot: uiSlot,
-      slot: slot,
-      hasItem: !!(slot?.item)
-    })
+    // Opening bag
     
     if (slot && slot.item && slot.item.containerSize > 0) {
       // Calculate position to the right of the bags section
@@ -1635,20 +2043,12 @@ const openBagIfClosed = (bagSlot, callback) => {
           }
           if (baseY > maxY) baseY = Math.max(50, maxY)
           
-          if (import.meta.env.DEV) console.log('Calculated bag position (viewport relative):', {
-            baseX,
-            baseY,
-            bagsSectionRight: bagsSectionRect.right,
-            bagsSectionTop: bagsSectionRect.top,
-            bagCount: openBagWindows.value.length,
-            viewportWidth: window.innerWidth,
-            viewportHeight: window.innerHeight
-          })
+          // Calculated bag position
         } else {
-          console.warn('Could not find .bags-section element, using fallback positioning')
+          if (import.meta.env.DEV) console.warn('Could not find .bags-section element, using fallback positioning')
         }
       } catch (error) {
-        console.warn('Could not calculate dynamic bag position, using fallback:', error)
+        if (import.meta.env.DEV) console.warn('Could not calculate dynamic bag position, using fallback:', error)
       }
       
       // Create bag window
@@ -1661,9 +2061,9 @@ const openBagIfClosed = (bagSlot, callback) => {
       }
       
       openBagWindows.value.push(bagWindow)
-      if (import.meta.env.DEV) console.log('Bag opened successfully:', bagWindow)
+      // Bag opened successfully
     } else {
-      console.warn('Cannot open bag - not a container or no item found:', { bagSlot, uiSlot, slot })
+      if (import.meta.env.DEV) console.warn('Cannot open bag - not a container or no item found:', { bagSlot, uiSlot, slot })
     }
   }
   
@@ -1684,7 +2084,7 @@ const highlightInventorySlot = (slotid) => {
     // Scroll the element into view
     slotElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } else {
-    console.warn(`Could not find inventory slot ${slotid} for highlighting`)
+    if (import.meta.env.DEV) console.warn(`Could not find inventory slot ${slotid} for highlighting`)
   }
 }
 
@@ -1746,10 +2146,10 @@ const highlightBagContainer = (bagSlot) => {
     setTimeout(applyGoldenStyles, 150)
     setTimeout(applyGoldenStyles, 300)
     
-    if (import.meta.env.DEV) console.log(`Successfully added highlight to bag container slot ${bagSlot} (UI slot ${uiSlot})`)
-    if (import.meta.env.DEV) console.log('Applied inline golden styles to bag element')
+    // Successfully added highlight to bag container
+    // Applied inline golden styles to bag element
   } else {
-    console.warn(`Could not find bag container for slot ${bagSlot} (UI slot ${uiSlot})`)
+    if (import.meta.env.DEV) console.warn(`Could not find bag container for slot ${bagSlot} (UI slot ${uiSlot})`)
     
     // Debug: List all available bag slots
     const allBagSlots = document.querySelectorAll('.bag-slot[data-slot]')
@@ -1782,7 +2182,7 @@ const highlightBagItem = (bagSlot, contentSlot) => {
       let slotElement = null
       for (const selector of selectors) {
         slotElement = document.querySelector(selector)
-        if (import.meta.env.DEV) console.log(`Trying selector: ${selector}, found:`, !!slotElement)
+        // Trying selector
         if (slotElement) break
       }
       
@@ -1791,13 +2191,13 @@ const highlightBagItem = (bagSlot, contentSlot) => {
         // Scroll the bag window to show the item
         slotElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       } else {
-        console.warn(`Could not find bag item ${contentSlot} in bag ${bagSlot} for highlighting`)
+        if (import.meta.env.DEV) console.warn(`Could not find bag item ${contentSlot} in bag ${bagSlot} for highlighting`)
         // List all elements in the bag for debugging
         const bagElements = document.querySelectorAll(`.bag-window [data-slot]`)
-        if (import.meta.env.DEV) console.log('Available bag elements:', Array.from(bagElements).map(el => el.getAttribute('data-slot')))
+        // Available bag elements logged for debugging
       }
     } else {
-      console.warn(`Bag ${bagSlot} is not open, cannot highlight item ${contentSlot}`)
+      if (import.meta.env.DEV) console.warn(`Bag ${bagSlot} is not open, cannot highlight item ${contentSlot}`)
     }
   }, 300) // Wait for bag to open and render
 }
@@ -1828,7 +2228,7 @@ const addPersistentHighlight = (element, slotId, type) => {
   setTimeout(() => {
     element.classList.remove('blinking-highlight')
     persistentHighlights.value.blinking.delete(slotId)
-    if (import.meta.env.DEV) console.log(`Stopped blinking for ${type} slot ${slotId}, persistent border remains`)
+    // Stopped blinking, persistent border remains
     if (import.meta.env.DEV) console.log(`Post-blink CSS state:`, {
       hasBlinking: element.classList.contains('blinking-highlight'),
       hasPersistent: element.classList.contains('persistent-highlight'),
@@ -1836,7 +2236,7 @@ const addPersistentHighlight = (element, slotId, type) => {
     })
   }, 5000)
   
-  if (import.meta.env.DEV) console.log(`Added persistent highlight to ${type} slot ${slotId}`)
+  // Added persistent highlight to slot
 }
 
 const addHighlightEffect = (element) => {
@@ -1879,7 +2279,7 @@ const getLocationDescription = (result) => {
 // Watch for character changes to clear highlights
 watch(() => props.character?.id, (newCharacterId, oldCharacterId) => {
   if (newCharacterId !== oldCharacterId && oldCharacterId !== undefined) {
-    if (import.meta.env.DEV) console.log('Character changed, clearing persistent highlights')
+    // Character changed, clearing persistent highlights
     clearAllHighlights()
   }
 })
@@ -1898,7 +2298,6 @@ onUnmounted(() => {
   
   // Clear caches to prevent memory leaks
   tooltipCache.clear()
-  itemDetailsCache.clear()
 })
 </script>
 
@@ -3157,5 +3556,476 @@ div.bag-slot.persistent-highlight::after,
   50% { 
     box-shadow: 0 0 0 2px #ffd700, 0 0 10px rgba(255, 215, 0, 0.3); 
   }
+}
+
+/* Item Modal Styles (from Items.vue) */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, rgba(26, 32, 44, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px 30px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-header h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f7fafc;
+  margin: 0;
+}
+
+.item-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-header-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.item-icon-modal-container {
+  flex-shrink: 0;
+}
+
+.item-icon-modal {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  image-rendering: pixelated;
+}
+
+.item-icon-placeholder-modal {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  color: #666;
+  font-size: 24px;
+}
+
+.item-type-badge {
+  background: rgba(102, 126, 234, 0.2);
+  color: #a78bfa;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.property-badge {
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.property-badge.magic {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.property-badge.lore {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.property-badge.nodrop {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.property-badge.norent {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+  border-color: rgba(156, 163, 175, 0.3);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.modal-body {
+  padding: 30px;
+}
+
+.item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-section {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detail-section h4 {
+  color: #f7fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.primary-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.primary-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-icon {
+  color: #60a5fa;
+  font-size: 1.2rem;
+  width: 20px;
+  text-align: center;
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-value {
+  color: #f7fafc;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.stat-label {
+  color: #cbd5e0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-extra {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.attributes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 12px;
+}
+
+.attribute-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.attr-label {
+  color: #cbd5e0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.attr-value {
+  color: #68d391;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.resistances-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+.resist-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.resist-label {
+  color: #cbd5e0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.resist-value {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.resist-item.fire .resist-value { color: #f56565; }
+.resist-item.cold .resist-value { color: #63b3ed; }
+.resist-item.magic .resist-value { color: #9f7aea; }
+.resist-item.disease .resist-value { color: #68d391; }
+.resist-item.poison .resist-value { color: #48bb78; }
+
+.requirements-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requirement-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.requirement-item:last-child {
+  border-bottom: none;
+}
+
+.req-label {
+  color: #cbd5e0;
+  font-weight: 500;
+}
+
+.req-value {
+  color: #f7fafc;
+  font-weight: 600;
+}
+
+.effects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.effect-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.effect-type {
+  color: #cbd5e0;
+  font-weight: 500;
+}
+
+.effect-value {
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+.drop-sources-header, .merchant-sources-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.drop-sources-button, .merchant-sources-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.drop-sources-button:hover, .merchant-sources-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.loading-sources {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: #cbd5e0;
+}
+
+.no-drop-sources, .no-merchant-sources {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.zones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zone-section {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.zone-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #f7fafc;
+  font-weight: 600;
+}
+
+.zone-name {
+  color: #60a5fa;
+}
+
+.npc-count, .merchant-count {
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.npcs-list, .merchants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.npc-item, .merchant-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.npc-name, .merchant-name {
+  color: #f7fafc;
+  font-weight: 500;
+}
+
+.drop-chance {
+  color: #68d391;
+  font-weight: 600;
+}
+
+.merchant-price {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.lore-section {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.lore-text {
+  color: #fbbf24;
+  font-style: italic;
+  line-height: 1.6;
+  padding: 8px 0;
 }
 </style>
