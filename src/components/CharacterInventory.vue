@@ -832,7 +832,7 @@ const loadItemDataAvailability = async (itemId) => {
   
   // Circuit breaker: skip if too many recent failures
   if (isAvailabilityCircuitOpen()) {
-    console.log('Item availability circuit breaker active, skipping request')
+    if (import.meta.env.DEV) console.log('Item availability circuit breaker active, skipping request')
     itemDataAvailability.value = 'failed' // Show all buttons when circuit is open
     return
   }
@@ -1353,16 +1353,18 @@ const clearAllHighlights = () => {
   
   if (import.meta.env.DEV) console.log(`Attempting to clear ${persistentHighlights.value.bags.size} bag highlights...`)
   persistentHighlights.value.bags.forEach(bagSlot => {
-    console.log(`Clearing bag slot ${bagSlot}...`)
+    if (import.meta.env.DEV) console.log(`Clearing bag slot ${bagSlot}...`)
     const bagElement = findBagElementBySlot(bagSlot)
-    console.log(`Found bag element for slot ${bagSlot}:`, !!bagElement)
+    if (import.meta.env.DEV) console.log(`Found bag element for slot ${bagSlot}:`, !!bagElement)
     
     if (bagElement) {
-      console.log(`Before clearing - styles:`, {
-        border: bagElement.style.border,
-        background: bagElement.style.background,
-        transform: bagElement.style.transform
-      })
+      if (import.meta.env.DEV) {
+        console.log(`Before clearing - styles:`, {
+          border: bagElement.style.border,
+          background: bagElement.style.background,
+          transform: bagElement.style.transform
+        })
+      }
       
       bagElement.classList.remove('persistent-highlight', 'blinking-highlight')
       // Clear inline styles that were applied for bag highlighting
@@ -1373,15 +1375,17 @@ const clearAllHighlights = () => {
       bagElement.style.zIndex = ''
       bagElement.style.position = ''
       
-      console.log(`After clearing - styles:`, {
-        border: bagElement.style.border,
-        background: bagElement.style.background,
-        transform: bagElement.style.transform
-      })
+      if (import.meta.env.DEV) {
+        console.log(`After clearing - styles:`, {
+          border: bagElement.style.border,
+          background: bagElement.style.background,
+          transform: bagElement.style.transform
+        })
+      }
       
-      console.log(`Successfully cleared bag highlight for slot ${bagSlot}`)
+      if (import.meta.env.DEV) console.log(`Successfully cleared bag highlight for slot ${bagSlot}`)
     } else {
-      console.warn(`Could not find bag element for slot ${bagSlot} during clearing`)
+      if (import.meta.env.DEV) console.warn(`Could not find bag element for slot ${bagSlot} during clearing`)
     }
   })
   
@@ -1396,17 +1400,17 @@ const clearAllHighlights = () => {
     element.style.boxShadow = ''
     element.style.zIndex = ''
     element.style.position = ''
-    console.log('Cleared remaining highlight from element:', element)
+    if (import.meta.env.DEV) console.log('Cleared remaining highlight from element:', element)
   })
   
   // Nuclear option: Clear ALL bag slot inline styles
-  console.log('Nuclear cleanup: clearing ALL bag slot inline styles...')
+  if (import.meta.env.DEV) console.log('Nuclear cleanup: clearing ALL bag slot inline styles...')
   const allBagSlots = document.querySelectorAll('.bag-slot')
-  console.log(`Found ${allBagSlots.length} bag slots for cleanup`)
+  if (import.meta.env.DEV) console.log(`Found ${allBagSlots.length} bag slots for cleanup`)
   
   allBagSlots.forEach((bagSlot, index) => {
     const hadStyles = bagSlot.style.border || bagSlot.style.background || bagSlot.style.transform
-    if (hadStyles) {
+    if (hadStyles && import.meta.env.DEV) {
       console.log(`Clearing styles from bag slot ${index}:`, {
         before: {
           border: bagSlot.style.border,
@@ -1423,7 +1427,7 @@ const clearAllHighlights = () => {
     bagSlot.style.zIndex = ''
     bagSlot.style.position = ''
     
-    if (hadStyles) {
+    if (hadStyles && import.meta.env.DEV) {
       console.log(`Cleared inline styles from bag slot ${index}`)
     }
   })
@@ -1433,7 +1437,7 @@ const clearAllHighlights = () => {
   persistentHighlights.value.bags.clear()
   persistentHighlights.value.blinking.clear()
   
-  console.log('All highlights cleared')
+  if (import.meta.env.DEV) console.log('All highlights cleared')
 }
 
 // Helper function to find element by slot ID
@@ -1453,7 +1457,7 @@ const findElementBySlotId = (slotId) => {
     `.bag-slot[data-slot="${slotId}"]`
   ]
   
-  console.log('Finding element for slot:', {
+  if (import.meta.env.DEV) console.log('Finding element for slot:', {
     originalSlot: slotId,
     actualSlot: actualSlotToFind,
     selectors: selectors
@@ -1462,7 +1466,7 @@ const findElementBySlotId = (slotId) => {
   for (const selector of selectors) {
     const element = document.querySelector(selector)
     if (element) {
-      console.log('Found element with selector:', selector)
+      if (import.meta.env.DEV) console.log('Found element with selector:', selector)
       return element
     }
   }
@@ -1489,7 +1493,7 @@ const findBagElementBySlot = (bagSlot) => {
   for (const selector of selectors) {
     const element = document.querySelector(selector)
     if (element) {
-      console.log(`Found bag element with selector: ${selector}`)
+      if (import.meta.env.DEV) console.log(`Found bag element with selector: ${selector}`)
       return element
     }
   }
@@ -1592,7 +1596,7 @@ const openBagIfClosed = (bagSlot, callback) => {
     const uiSlot = getUISlotFromBagSlot(bagSlot)
     const slot = props.character?.inventory?.find(s => s.slot === uiSlot)
     
-    console.log('Opening bag:', {
+    if (import.meta.env.DEV) console.log('Opening bag:', {
       bagSlot: bagSlot,
       uiSlot: uiSlot,
       slot: slot,
@@ -1631,7 +1635,7 @@ const openBagIfClosed = (bagSlot, callback) => {
           }
           if (baseY > maxY) baseY = Math.max(50, maxY)
           
-          console.log('Calculated bag position (viewport relative):', {
+          if (import.meta.env.DEV) console.log('Calculated bag position (viewport relative):', {
             baseX,
             baseY,
             bagsSectionRight: bagsSectionRect.right,
@@ -1657,7 +1661,7 @@ const openBagIfClosed = (bagSlot, callback) => {
       }
       
       openBagWindows.value.push(bagWindow)
-      console.log('Bag opened successfully:', bagWindow)
+      if (import.meta.env.DEV) console.log('Bag opened successfully:', bagWindow)
     } else {
       console.warn('Cannot open bag - not a container or no item found:', { bagSlot, uiSlot, slot })
     }
@@ -1670,7 +1674,7 @@ const openBagIfClosed = (bagSlot, callback) => {
 const highlightInventorySlot = (slotid) => {
   const slotElement = findElementBySlotId(slotid)
   
-  console.log('Highlighting inventory slot:', {
+  if (import.meta.env.DEV) console.log('Highlighting inventory slot:', {
     slotid: slotid,
     found: !!slotElement
   })
@@ -1689,7 +1693,7 @@ const highlightBagContainer = (bagSlot) => {
   const uiSlot = getUISlotFromBagSlot(bagSlot)
   const bagElement = findBagElementBySlot(bagSlot) // Use the improved bag element finder
   
-  console.log('Highlighting bag container:', {
+  if (import.meta.env.DEV) console.log('Highlighting bag container:', {
     bagSlot: bagSlot,
     uiSlot: uiSlot,
     found: !!bagElement,
@@ -1714,7 +1718,7 @@ const highlightBagContainer = (bagSlot) => {
     
     // Verify styles were applied
     setTimeout(() => {
-      console.log('Verifying applied styles after 100ms:', {
+      if (import.meta.env.DEV) console.log('Verifying applied styles after 100ms:', {
         border: bagElement.style.border,
         background: bagElement.style.background,
         transform: bagElement.style.transform,
@@ -1742,14 +1746,14 @@ const highlightBagContainer = (bagSlot) => {
     setTimeout(applyGoldenStyles, 150)
     setTimeout(applyGoldenStyles, 300)
     
-    console.log(`Successfully added highlight to bag container slot ${bagSlot} (UI slot ${uiSlot})`)
-    console.log('Applied inline golden styles to bag element')
+    if (import.meta.env.DEV) console.log(`Successfully added highlight to bag container slot ${bagSlot} (UI slot ${uiSlot})`)
+    if (import.meta.env.DEV) console.log('Applied inline golden styles to bag element')
   } else {
     console.warn(`Could not find bag container for slot ${bagSlot} (UI slot ${uiSlot})`)
     
     // Debug: List all available bag slots
     const allBagSlots = document.querySelectorAll('.bag-slot[data-slot]')
-    console.log('Available bag slots:', Array.from(allBagSlots).map(el => ({
+    if (import.meta.env.DEV) console.log('Available bag slots:', Array.from(allBagSlots).map(el => ({
       dataSlot: el.getAttribute('data-slot'),
       className: el.className
     })))
@@ -1757,7 +1761,7 @@ const highlightBagContainer = (bagSlot) => {
 }
 
 const highlightBagItem = (bagSlot, contentSlot) => {
-  console.log('Highlighting bag item:', {
+  if (import.meta.env.DEV) console.log('Highlighting bag item:', {
     bagSlot: bagSlot,
     contentSlot: contentSlot,
     openBags: openBagWindows.value.map(w => w.slotId)
@@ -1778,7 +1782,7 @@ const highlightBagItem = (bagSlot, contentSlot) => {
       let slotElement = null
       for (const selector of selectors) {
         slotElement = document.querySelector(selector)
-        console.log(`Trying selector: ${selector}, found:`, !!slotElement)
+        if (import.meta.env.DEV) console.log(`Trying selector: ${selector}, found:`, !!slotElement)
         if (slotElement) break
       }
       
@@ -1790,7 +1794,7 @@ const highlightBagItem = (bagSlot, contentSlot) => {
         console.warn(`Could not find bag item ${contentSlot} in bag ${bagSlot} for highlighting`)
         // List all elements in the bag for debugging
         const bagElements = document.querySelectorAll(`.bag-window [data-slot]`)
-        console.log('Available bag elements:', Array.from(bagElements).map(el => el.getAttribute('data-slot')))
+        if (import.meta.env.DEV) console.log('Available bag elements:', Array.from(bagElements).map(el => el.getAttribute('data-slot')))
       }
     } else {
       console.warn(`Bag ${bagSlot} is not open, cannot highlight item ${contentSlot}`)
@@ -1812,7 +1816,7 @@ const addPersistentHighlight = (element, slotId, type) => {
   persistentHighlights.value.blinking.add(slotId)
   
   // Debug: Verify CSS classes are applied
-  console.log(`Applied highlighting to ${type} slot ${slotId}:`, {
+  if (import.meta.env.DEV) console.log(`Applied highlighting to ${type} slot ${slotId}:`, {
     element: element.tagName + (element.className ? '.' + element.className.split(' ').join('.') : ''),
     hasBlinking: element.classList.contains('blinking-highlight'),
     hasPersistent: element.classList.contains('persistent-highlight'),
@@ -1824,15 +1828,15 @@ const addPersistentHighlight = (element, slotId, type) => {
   setTimeout(() => {
     element.classList.remove('blinking-highlight')
     persistentHighlights.value.blinking.delete(slotId)
-    console.log(`Stopped blinking for ${type} slot ${slotId}, persistent border remains`)
-    console.log(`Post-blink CSS state:`, {
+    if (import.meta.env.DEV) console.log(`Stopped blinking for ${type} slot ${slotId}, persistent border remains`)
+    if (import.meta.env.DEV) console.log(`Post-blink CSS state:`, {
       hasBlinking: element.classList.contains('blinking-highlight'),
       hasPersistent: element.classList.contains('persistent-highlight'),
       computedBorder: window.getComputedStyle(element).border
     })
   }, 5000)
   
-  console.log(`Added persistent highlight to ${type} slot ${slotId}`)
+  if (import.meta.env.DEV) console.log(`Added persistent highlight to ${type} slot ${slotId}`)
 }
 
 const addHighlightEffect = (element) => {
@@ -1855,7 +1859,7 @@ const getLocationDescription = (result) => {
       const bagName = bagItem?.name || 'Unknown Bag'
       
       // Debug logging to help troubleshoot
-      console.log('Bag lookup:', {
+      if (import.meta.env.DEV) console.log('Bag lookup:', {
         contentSlot: slotid,
         bagSlot: bagSlot,
         uiSlot: uiSlot,
@@ -1875,7 +1879,7 @@ const getLocationDescription = (result) => {
 // Watch for character changes to clear highlights
 watch(() => props.character?.id, (newCharacterId, oldCharacterId) => {
   if (newCharacterId !== oldCharacterId && oldCharacterId !== undefined) {
-    console.log('Character changed, clearing persistent highlights')
+    if (import.meta.env.DEV) console.log('Character changed, clearing persistent highlights')
     clearAllHighlights()
   }
 })
