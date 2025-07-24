@@ -1330,8 +1330,8 @@ const clearSearch = () => {
 
 // Clear all persistent highlights
 const clearAllHighlights = () => {
-  console.log('=== CLEARING ALL HIGHLIGHTS ===')
-  console.log('Current highlights before clearing:', {
+  if (import.meta.env.DEV) console.log('=== CLEARING ALL HIGHLIGHTS ===')
+  if (import.meta.env.DEV) console.log('Current highlights before clearing:', {
     items: persistentHighlights.value.items.size,
     bags: persistentHighlights.value.bags.size,
     blinking: persistentHighlights.value.blinking.size,
@@ -1344,11 +1344,11 @@ const clearAllHighlights = () => {
     const element = findElementBySlotId(slotId)
     if (element) {
       element.classList.remove('persistent-highlight', 'blinking-highlight')
-      console.log(`Cleared item highlight for slot ${slotId}`)
+      if (import.meta.env.DEV) console.log(`Cleared item highlight for slot ${slotId}`)
     }
   })
   
-  console.log(`Attempting to clear ${persistentHighlights.value.bags.size} bag highlights...`)
+  if (import.meta.env.DEV) console.log(`Attempting to clear ${persistentHighlights.value.bags.size} bag highlights...`)
   persistentHighlights.value.bags.forEach(bagSlot => {
     console.log(`Clearing bag slot ${bagSlot}...`)
     const bagElement = findBagElementBySlot(bagSlot)

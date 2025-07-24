@@ -676,6 +676,12 @@ export default {
                 console.warn(`Character ${type} loading failed (background):`, result.reason)
               }
             })
+            
+            // Force Vue reactivity update by reassigning the character object
+            // This ensures the UI reflects the updated currency and stats
+            if (selectedCharacter.value?.id === fullCharacter.id) {
+              selectedCharacter.value = { ...fullCharacter }
+            }
           }).catch(error => {
             console.warn('Background loading failed:', error)
           })
