@@ -8,14 +8,10 @@ import { discoverBackendUrl, getCurrentBackendUrl } from '../utils/backendDiscov
 // Initialize with a temporary URL - will be updated by discovery
 let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'
 
-// In production, use fixed URL immediately
+// In production, use relative URLs to avoid CORS issues
 if (import.meta.env.PROD) {
-  const envBackendUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL
-  if (envBackendUrl && !envBackendUrl.includes('localhost') && !envBackendUrl.includes('127.0.0.1')) {
-    API_BASE_URL = envBackendUrl
-  } else {
-    API_BASE_URL = 'https://eqdatascraper-backend-production.up.railway.app'
-  }
+  // Use relative URLs in production - requests will be proxied by the frontend server
+  API_BASE_URL = ''
 } else {
   // In development, start discovery process but don't spam console
   discoverBackendUrl().then(url => {
@@ -29,7 +25,12 @@ if (import.meta.env.PROD) {
 
 // Export a getter function to always get the current URL
 export function getApiBaseUrl() {
-  // If we have a discovered URL, use it
+  // In production, always use relative URLs to avoid CORS
+  if (import.meta.env.PROD) {
+    return ''
+  }
+  
+  // In development, use discovered URL or fallback
   const discovered = getCurrentBackendUrl()
   if (discovered) {
     return discovered

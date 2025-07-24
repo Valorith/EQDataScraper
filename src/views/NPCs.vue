@@ -511,9 +511,10 @@
 import axios from 'axios'
 import LoadingModal from '../components/LoadingModal.vue'
 
-// API configuration
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+import { getApiBaseUrl } from '../config/api'
+
+// API configuration - use dynamic getter to support relative URLs in production
+const getApiUrl = () => getApiBaseUrl()
 
 export default {
   name: 'NPCs',
@@ -731,7 +732,7 @@ export default {
         if (this.maxLevel) params.max_level = this.maxLevel
         if (this.selectedZone) params.zone = this.selectedZone
         
-        const response = await axios.get(`${API_BASE_URL}/api/npcs/search`, { params })
+        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { params })
         
         this.searchResults = response.data.npcs || []
         this.totalCount = response.data.total_count || 0
@@ -777,7 +778,7 @@ export default {
         if (this.maxLevel) params.max_level = this.maxLevel
         if (this.selectedZone) params.zone = this.selectedZone
         
-        const response = await axios.get(`${API_BASE_URL}/api/npcs/search`, { params })
+        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { params })
         this.searchResults = response.data.npcs || []
         
       } catch (error) {
@@ -806,7 +807,7 @@ export default {
         this.loadingNPCDetails = true
         
         // Fetch detailed NPC information
-        const response = await axios.get(`${API_BASE_URL}/api/npcs/${npc.id}/details`)
+        const response = await axios.get(`${getApiUrl()}/api/npcs/${npc.id}/details`)
         
         // Combine basic NPC data with detailed information
         this.selectedNPCDetail = { ...npc, ...response.data }

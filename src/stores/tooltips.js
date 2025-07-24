@@ -2,9 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import { useTooltipPositioning } from '../composables/useTooltipPositioning'
-
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
-  (import.meta.env.PROD ? 'https://eqdatascraper-backend-production.up.railway.app' : '')
+import { getApiBaseUrl } from '../config/api'
 
 export const useTooltipStore = defineStore('tooltips', () => {
   // State
@@ -28,7 +26,7 @@ export const useTooltipStore = defineStore('tooltips', () => {
       console.log(`Preloading inventory items for character ${characterId}`)
       
       // Get character inventory to extract item IDs
-      const inventoryResponse = await axios.get(`${API_BASE_URL}/api/characters/${characterId}/inventory`)
+      const inventoryResponse = await axios.get(`${getApiBaseUrl()}/api/characters/${characterId}/inventory`)
       const inventory = inventoryResponse.data
       
       // Extract unique item IDs from inventory
@@ -58,7 +56,7 @@ export const useTooltipStore = defineStore('tooltips', () => {
       if (uniqueItemIds.length === 0) return
       
       // Bulk fetch all item data
-      const itemsResponse = await axios.post(`${API_BASE_URL}/api/items/bulk`, {
+      const itemsResponse = await axios.post(`${getApiBaseUrl()}/api/items/bulk`, {
         ids: uniqueItemIds
       })
       
@@ -90,7 +88,7 @@ export const useTooltipStore = defineStore('tooltips', () => {
     
     const loadPromise = (async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/items/${itemId}/tooltip`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/items/${itemId}/tooltip`)
         const itemData = response.data
         
         // Cache the item data
