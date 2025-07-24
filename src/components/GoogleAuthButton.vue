@@ -61,11 +61,12 @@ export default {
         try {
           // Import axios and API config here to avoid circular dependencies
           const axios = (await import('axios')).default
-          const { API_BASE_URL } = await import('@/config/api')
+          const { getOAuthApiBaseUrl } = await import('@/config/api')
+          const apiBaseUrl = getOAuthApiBaseUrl()
           
-          console.log(`🌐 Checking dev auth status at: ${API_BASE_URL}/api/auth/dev-status`)
+          console.log(`🌐 Checking dev auth status at: ${apiBaseUrl}/api/auth/dev-status`)
           
-          const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
+          const response = await axios.get(`${apiBaseUrl}/api/auth/dev-status`, {
             timeout: 3000
           })
           

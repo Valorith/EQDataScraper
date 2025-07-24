@@ -38,6 +38,21 @@ export function getApiBaseUrl() {
   return API_BASE_URL
 }
 
+// Special function for OAuth that always returns absolute URLs
+export function getOAuthApiBaseUrl() {
+  // OAuth always needs absolute URLs for redirects, even in production
+  if (import.meta.env.PROD) {
+    return 'https://eqdatascraper-backend-production.up.railway.app'
+  }
+  
+  // In development, use discovered URL or fallback
+  const discovered = getCurrentBackendUrl()
+  if (discovered) {
+    return discovered
+  }
+  return API_BASE_URL || 'http://localhost:5001'
+}
+
 // For backward compatibility, export the initial URL
 export { API_BASE_URL }
 

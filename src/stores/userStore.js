@@ -5,7 +5,7 @@
 
 import { defineStore } from 'pinia'
 import axios from 'axios'
-import { API_BASE_URL, buildApiUrl, API_ENDPOINTS } from '@/config/api'
+import { API_BASE_URL, buildApiUrl, API_ENDPOINTS, getOAuthApiBaseUrl } from '@/config/api'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -416,7 +416,7 @@ export const useUserStore = defineStore('user', {
       }
 
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
+        const response = await axios.post(`${getOAuthApiBaseUrl()}/api/auth/refresh`, {
           refresh_token: refreshToken
         }, {
           timeout: 10000 // 10 second timeout for development
@@ -495,7 +495,7 @@ export const useUserStore = defineStore('user', {
       try {
         if (this.accessToken) {
           // Call logout endpoint
-          await axios.post(`${API_BASE_URL}/api/auth/logout`, {
+          await axios.post(`${getOAuthApiBaseUrl()}/api/auth/logout`, {
             refresh_token: this.refreshToken
           }, {
             headers: {

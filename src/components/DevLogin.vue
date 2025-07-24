@@ -68,7 +68,7 @@ import { useUserStore } from '@/stores/userStore'
 import { useRouter } from 'vue-router'
 import { useDevMode } from '@/composables/useDevMode'
 import axios from 'axios'
-import { API_BASE_URL } from '@/config/api'
+import { getOAuthApiBaseUrl } from '@/config/api'
 
 export default {
   name: 'DevLogin',
@@ -161,7 +161,8 @@ export default {
     const performDevLogin = async (email, isAdmin = false) => {
       error.value = null
       console.log(`🔧 Dev Login: Attempting login for ${email} (admin: ${isAdmin})`)
-      console.log(`🔧 Dev Login: Using API URL: ${API_BASE_URL}/api/auth/dev-login`)
+      const apiBaseUrl = getOAuthApiBaseUrl()
+      console.log(`🔧 Dev Login: Using API URL: ${apiBaseUrl}/api/auth/dev-login`)
       
       // If this is a retry after an error and we're in dev mode, use offline login
       if (error.value && error.value.includes('Click again to use offline dev login')) {
@@ -170,7 +171,7 @@ export default {
       }
       
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/auth/dev-login`, {
+        const response = await axios.post(`${apiBaseUrl}/api/auth/dev-login`, {
           email,
           is_admin: isAdmin
         }, {

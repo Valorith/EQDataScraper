@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
-import { API_BASE_URL } from '../config/api'
+import { getOAuthApiBaseUrl } from '../config/api'
 import { threadManager } from '../utils/threadManager'
 
 // Shared state for dev mode across the app
@@ -133,7 +133,7 @@ export function useDevMode() {
     })
     
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/auth/dev-status`, {
+      const response = await axios.get(`${getOAuthApiBaseUrl()}/api/auth/dev-status`, {
         timeout: 5000 // Reduced timeout since we have fallback logic
       })
       
