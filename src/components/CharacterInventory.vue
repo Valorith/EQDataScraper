@@ -1077,6 +1077,21 @@ const handleBagRightClick = (event, slot) => {
     return // Not a container
   }
   
+  // Check if this bag has a gold border (is highlighted) and clear it if so
+  const bagElement = event.target.closest('.bag-slot')
+  const hasGoldBorder = persistentHighlights.value.bags.has(slot.slotid) || 
+                        (bagElement && bagElement.style.border && bagElement.style.border.includes('#FFD700'))
+  
+  if (hasGoldBorder) {
+    // Clear the gold border
+    persistentHighlights.value.bags.delete(slot.slotid)
+    if (bagElement) {
+      bagElement.style.border = ''
+      bagElement.classList.remove('persistent-highlight', 'blinking-highlight')
+    }
+    if (import.meta.env.DEV) console.log(`Cleared gold border from bag slot ${slot.slotid}`)
+  }
+  
   // Check if this bag is already open - if so, close it (toggle behavior)
   const existingWindowIndex = openBagWindows.value.findIndex(w => w.slotId === slot.slotid)
   if (existingWindowIndex !== -1) {
