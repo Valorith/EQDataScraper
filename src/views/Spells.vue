@@ -3063,9 +3063,9 @@ export default {
 
 .spell-details {
   display: flex;
-  gap: 20px;
+  gap: 16px; /* Slightly tighter gap between info boxes for better proportion */
   margin-bottom: 0;
-  margin-right: 140px; /* Add right margin to prevent overlap with class cards */
+  margin-right: 130px; /* Optimized spacing to prevent overlap while maintaining better proportions */
   flex: 1;
   position: relative;
   z-index: 5;
@@ -3555,7 +3555,7 @@ export default {
   }
   
   .spell-details {
-    margin-right: 120px; /* Slightly reduce margin on tablets */
+    margin-right: 110px; /* Proportionally reduced margin on tablets */
   }
   
   .spell-class-levels {
