@@ -2190,14 +2190,13 @@ def save_cache_to_database():
 #     logger.info("Skipping initial cache load for gunicorn worker")
 
 
-# Initialize the database manager for production (Gunicorn/Railway) deployment
-# This runs at module level so it works with WSGI servers like Gunicorn
+# Temporarily disable Database Manager initialization to fix auth
+# TODO: Re-enable once auth is working properly
 try:
-    logger.info("🔄 Starting Database Manager initialization...")
-    from utils.database_manager import initialize_database_manager
-    logger.info("✅ Successfully imported initialize_database_manager")
-    initialize_database_manager(delay_start=5.0)  # Start monitoring after 5 seconds
-    logger.info("✅ Database manager initialized with 30-second monitoring (module level)")
+    logger.info("⚠️ Database Manager initialization temporarily disabled for auth debugging")
+    # from utils.database_manager import initialize_database_manager
+    # initialize_database_manager(delay_start=5.0)
+    # logger.info("✅ Database manager initialized with 30-second monitoring (module level)")
 except Exception as e:
     logger.error(f"❌ Failed to initialize database manager: {e}")
     import traceback
