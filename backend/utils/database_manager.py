@@ -40,6 +40,53 @@ class DatabaseManager:
         self._inactive_due_to_failures = False
         self._logs = []  # Store detailed logs for debugging
         self._max_log_entries = 50  # Keep last 50 log entries
+        self._environment = self._detect_environment()
+        
+    def _detect_environment(self) -> str:
+        """Detect if we're running in development, production, or Railway."""
+        import os
+        
+        # Check for Railway environment
+        if os.environ.get('RAILWAY_ENVIRONMENT'):
+            return 'railway'
+        
+        # Check for production indicators
+        if (os.environ.get('NODE_ENV') == 'production' or 
+            os.environ.get('PYTHON_ENV') == 'production' or
+            os.environ.get('DATABASE_URL')):  # Railway uses DATABASE_URL
+            return 'production'
+        
+        # Check if we're in a development environment
+        if (os.environ.get('NODE_ENV') == 'development' or 
+            os.environ.get('ENABLE_DEV_AUTH') == 'true'):
+            return 'development'
+        
+        # Default to development
+        return 'development'
+        
+    def _should_run_monitoring(self) -> bool:
+        """Determine if monitoring should run based on environment."""
+        if self._environment == 'development':
+            # In development, only run if there's a configured content database
+            try:
+                from utils.persistent_config import get_persistent_config
+                config_manager = get_persistent_config()
+                db_config = config_manager.get_database_config()
+                has_content_db = bool(db_config and db_config.get('production_database_url'))
+                
+                if not has_content_db:
+                    self._add_log('info', 'Development environment: No content database configured, monitoring disabled')
+                    return False
+                    
+                self._add_log('info', 'Development environment: Content database configured, monitoring enabled')
+                return True
+            except:
+                self._add_log('warning', 'Development environment: Unable to check config, monitoring disabled')
+                return False
+        
+        # In production/Railway, always run monitoring
+        self._add_log('info', f'{self._environment.title()} environment: Monitoring enabled')
+        return True
         
     def _add_log(self, level: str, message: str, details: Optional[Dict[str, Any]] = None):
         """Add a log entry for debugging purposes."""
@@ -70,14 +117,30 @@ class DatabaseManager:
         """
         with self._timer_lock:
             if self._running:
-                logger.warning("Database monitoring is already running")
+                self._add_log('warning', 'Database monitoring is already running')
+                return
+            
+            # Check if monitoring should run in this environment
+            if not self._should_run_monitoring():
+                self._add_log('info', f'Database monitoring disabled in {self._environment} environment')
+                # Set a fake "running" state for UI purposes, but don't actually start timer
+                self._running = False
+                self._last_check_result = {
+                    'timestamp': datetime.now(),
+                    'connected': False,
+                    'config_loaded': False,
+                    'consecutive_failures': 0,
+                    'manager_active': False,
+                    'environment_disabled': True,
+                    'environment': self._environment
+                }
                 return
                 
             self._running = True
             self._start_time = datetime.now()
             self._next_check_time = self._start_time + timedelta(seconds=delay_start)
             
-            logger.info(f"Starting database monitoring in {delay_start} seconds (check interval: {self._check_interval}s)")
+            self._add_log('info', f'Starting database monitoring in {delay_start}s (environment: {self._environment}, interval: {self._check_interval}s)')
             
             # Start the timer with initial delay
             self._timer = threading.Timer(delay_start, self._run_monitoring_loop)

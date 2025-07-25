@@ -438,6 +438,54 @@
                 </div>
               </div>
               
+              <!-- Database Manager Logs Section -->
+              <div class="logs-section">
+                <div class="logs-header" @click="showManagerLogs = !showManagerLogs">
+                  <h4>
+                    <i class="fas fa-list-alt"></i>
+                    Debug Logs
+                    <i class="fas fa-chevron-down" :class="{ 'rotated': showManagerLogs }"></i>
+                  </h4>
+                  <span class="logs-count">({{ managerLogs?.length || 0 }} entries)</span>
+                </div>
+                
+                <div v-if="showManagerLogs" class="logs-content">
+                  <div class="logs-controls">
+                    <button @click="refreshManagerLogs" class="logs-refresh-btn" :disabled="loadingManagerLogs">
+                      <i class="fas fa-sync-alt" :class="{ 'fa-spin': loadingManagerLogs }"></i>
+                      {{ loadingManagerLogs ? 'Loading...' : 'Refresh' }}
+                    </button>
+                    <select v-model="logsLimit" @change="refreshManagerLogs" class="logs-limit-select">
+                      <option value="10">Last 10</option>
+                      <option value="25">Last 25</option>
+                      <option value="50">Last 50</option>
+                    </select>
+                  </div>
+                  
+                  <div v-if="managerLogs?.length" class="logs-list">
+                    <div v-for="(log, index) in managerLogs" :key="index" class="log-entry" :class="log.level.toLowerCase()">
+                      <div class="log-header">
+                        <span class="log-level" :class="log.level.toLowerCase()">{{ log.level }}</span>
+                        <span class="log-timestamp">{{ formatLogTimestamp(log.timestamp) }}</span>
+                      </div>
+                      <div class="log-message">{{ log.message }}</div>
+                      <div v-if="log.details && Object.keys(log.details).length" class="log-details">
+                        <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div v-else-if="!loadingManagerLogs" class="no-logs">
+                    No logs available
+                  </div>
+                  
+                  <div v-if="loadingManagerLogs" class="loading-logs">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading logs...
+                  </div>
+                </div>
+              </div>
+              
               <!-- Real-time status indicator -->
               <div class="realtime-indicator">
                 <i class="fas fa-circle" :class="{ 'pulse': databaseManagerStatus?.monitoring_active }"></i>
@@ -1121,6 +1169,10 @@ const refreshingConnection = ref(false)
 
 // Database Manager state
 const databaseManagerStatus = ref(null)
+const showManagerLogs = ref(false)
+const managerLogs = ref([])
+const loadingManagerLogs = ref(false)
+const logsLimit = ref(25)
 const loadingManagerStatus = ref(false)
 let databaseManagerInterval = null
 
@@ -2049,6 +2101,48 @@ const formatTimestamp = (timestamp) => {
   try {
     const date = new Date(timestamp)
     return date.toLocaleString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+  } catch {
+    return 'Invalid date'
+  }
+}
+
+// Database Manager Logs Functions
+const refreshManagerLogs = async () => {
+  loadingManagerLogs.value = true
+  try {
+    const response = await axios.get(`${getApiBaseUrl()}/api/database/manager/logs`, {
+      params: { limit: logsLimit.value },
+      timeout: 5000,
+      cancelToken: requestManager.getCancelToken('database-manager-logs')
+    })
+    
+    if (response.data && response.data.success) {
+      managerLogs.value = response.data.logs || []
+    } else {
+      console.warn('Database manager logs request failed:', response.data)
+      managerLogs.value = []
+    }
+  } catch (error) {
+    console.error('Error loading database manager logs:', error)
+    showToast('Error', 'Failed to load database manager logs', 'error')
+    managerLogs.value = []
+  } finally {
+    loadingManagerLogs.value = false
+  }
+}
+
+const formatLogTimestamp = (timestamp) => {
+  if (!timestamp) return ''
+  try {
+    const date = new Date(timestamp)
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -4857,6 +4951,202 @@ onUnmounted(() => {
     opacity: 0.7;
     transform: scale(1.1);
   }
+}
+
+/* Database Manager Logs Styles */
+.database-manager-card .logs-section {
+  margin: 15px 0;
+  border-top: 1px solid rgba(138, 43, 226, 0.2);
+  padding-top: 15px;
+}
+
+.database-manager-card .logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.database-manager-card .logs-header:hover {
+  color: var(--primary);
+}
+
+.database-manager-card .logs-header h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 0.9rem;
+  transition: color 0.3s ease;
+}
+
+.database-manager-card .logs-header h4 i.fa-chevron-down {
+  font-size: 0.8rem;
+  transition: transform 0.3s ease;
+}
+
+.database-manager-card .logs-header h4 i.fa-chevron-down.rotated {
+  transform: rotate(180deg);
+}
+
+.database-manager-card .logs-count {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.database-manager-card .logs-content {
+  margin-top: 10px;
+}
+
+.database-manager-card .logs-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.database-manager-card .logs-refresh-btn {
+  background: rgba(138, 43, 226, 0.2);
+  border: 1px solid rgba(138, 43, 226, 0.4);
+  color: var(--primary);
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.database-manager-card .logs-refresh-btn:hover:not(:disabled) {
+  background: rgba(138, 43, 226, 0.3);
+  border-color: rgba(138, 43, 226, 0.6);
+}
+
+.database-manager-card .logs-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.database-manager-card .logs-limit-select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(138, 43, 226, 0.4);
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.database-manager-card .logs-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid rgba(138, 43, 226, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.database-manager-card .log-entry {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(138, 43, 226, 0.1);
+  font-size: 0.8rem;
+}
+
+.database-manager-card .log-entry:last-child {
+  border-bottom: none;
+}
+
+.database-manager-card .log-entry.debug {
+  background: rgba(108, 117, 125, 0.1);
+}
+
+.database-manager-card .log-entry.info {
+  background: rgba(13, 202, 240, 0.1);
+}
+
+.database-manager-card .log-entry.warning {
+  background: rgba(255, 193, 7, 0.1);
+}
+
+.database-manager-card .log-entry.error {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.database-manager-card .log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.database-manager-card .log-level {
+  font-weight: 600;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.database-manager-card .log-level.debug {
+  background: rgba(108, 117, 125, 0.3);
+  color: #6c757d;
+}
+
+.database-manager-card .log-level.info {
+  background: rgba(13, 202, 240, 0.3);
+  color: #0dcaf0;
+}
+
+.database-manager-card .log-level.warning {
+  background: rgba(255, 193, 7, 0.3);
+  color: #ffc107;
+}
+
+.database-manager-card .log-level.error {
+  background: rgba(220, 53, 69, 0.3);
+  color: #dc3545;
+}
+
+.database-manager-card .log-timestamp {
+  font-size: 0.7rem;
+  color: #888;
+  font-family: monospace;
+}
+
+.database-manager-card .log-message {
+  color: #ddd;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.database-manager-card .log-details {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(138, 43, 226, 0.2);
+  border-radius: 4px;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+.database-manager-card .log-details pre {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #aaa;
+  font-family: 'Courier New', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.database-manager-card .no-logs,
+.database-manager-card .loading-logs {
+  text-align: center;
+  padding: 20px;
+  color: #888;
+  font-size: 0.8rem;
+}
+
+.database-manager-card .loading-logs i {
+  margin-right: 8px;
 }
 
 .diagnostics-result {
