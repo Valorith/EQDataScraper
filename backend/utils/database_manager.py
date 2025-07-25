@@ -627,6 +627,15 @@ def get_database_manager() -> DatabaseManager:
 def initialize_database_manager(delay_start: float = 5.0):
     """Initialize and start the database manager."""
     manager = get_database_manager()
+    
+    # Add initialization log
+    manager._add_log('info', 'Database Manager initialized', {
+        'environment': manager._environment,
+        'check_interval': manager._check_interval,
+        'max_retry_attempts': manager._max_retry_attempts,
+        'delay_start': delay_start
+    })
+    
     if not manager.is_running():
         manager.start_monitoring(delay_start)
         logger.info("✅ Database manager initialized and monitoring started")
@@ -640,6 +649,35 @@ def shutdown_database_manager():
     if manager.is_running():
         manager.stop_monitoring()
         logger.info("Database manager shutdown complete")
+
+
+def restart_database_manager(force: bool = False) -> bool:
+    """Restart database manager monitoring, optionally forcing restart even if active."""
+    manager = get_database_manager()
+    
+    manager._add_log('info', f'Restart requested', {
+        'force': force,
+        'currently_running': manager.is_running(),
+        'inactive_due_to_failures': manager._inactive_due_to_failures
+    })
+    
+    # Stop current monitoring if running
+    if manager.is_running():
+        if not force:
+            manager._add_log('warning', 'Manager already running, use force=True to restart')
+            return False
+        manager.stop_monitoring()
+        manager._add_log('info', 'Stopped existing monitoring for restart')
+    
+    # Reset failure state
+    manager._inactive_due_to_failures = False
+    manager._consecutive_failures = 0
+    manager._last_check_result = None
+    
+    # Start monitoring
+    manager.start_monitoring(1.0)  # Quick start for manual restart
+    manager._add_log('info', 'Database Manager restarted successfully')
+    return True
 
 
 def check_and_restart_inactive_manager():

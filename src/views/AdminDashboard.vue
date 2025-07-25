@@ -486,6 +486,18 @@
                 </div>
               </div>
               
+              <!-- Manager Controls -->
+              <div v-if="!databaseManagerStatus?.monitoring_active" class="manager-controls">
+                <button 
+                  @click="restartDatabaseManager" 
+                  class="restart-manager-btn"
+                  :disabled="restartingManager"
+                >
+                  <i class="fas" :class="restartingManager ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+                  {{ restartingManager ? 'Restarting...' : 'Restart Monitoring' }}
+                </button>
+              </div>
+              
               <!-- Real-time status indicator -->
               <div class="realtime-indicator">
                 <i class="fas fa-circle" :class="{ 'pulse': databaseManagerStatus?.monitoring_active }"></i>
@@ -1173,6 +1185,7 @@ const showManagerLogs = ref(false)
 const managerLogs = ref([])
 const loadingManagerLogs = ref(false)
 const logsLimit = ref(25)
+const restartingManager = ref(false)
 const loadingManagerStatus = ref(false)
 let databaseManagerInterval = null
 
@@ -2150,6 +2163,34 @@ const formatLogTimestamp = (timestamp) => {
     })
   } catch {
     return 'Invalid date'
+  }
+}
+
+// Database Manager Restart Function
+const restartDatabaseManager = async () => {
+  restartingManager.value = true
+  try {
+    const response = await axios.post(`${getApiBaseUrl()}/api/database/manager/restart`, {
+      force: true
+    }, {
+      timeout: 10000,
+      cancelToken: requestManager.getCancelToken('restart-database-manager')
+    })
+    
+    if (response.data && response.data.success) {
+      showToast('Success', 'Database Manager restarted successfully', 'success')
+      // Refresh logs and status
+      await refreshManagerLogs()
+      await loadDatabaseManagerStatus()
+    } else {
+      console.warn('Database manager restart failed:', response.data)
+      showToast('Error', response.data?.message || 'Failed to restart Database Manager', 'error')
+    }
+  } catch (error) {
+    console.error('Error restarting database manager:', error)
+    showToast('Error', 'Failed to restart Database Manager', 'error')
+  } finally {
+    restartingManager.value = false
   }
 }
 
@@ -5147,6 +5188,41 @@ onUnmounted(() => {
 
 .database-manager-card .loading-logs i {
   margin-right: 8px;
+}
+
+/* Database Manager Controls */
+.database-manager-card .manager-controls {
+  margin: 15px 0;
+  text-align: center;
+}
+
+.database-manager-card .restart-manager-btn {
+  background: linear-gradient(135deg, #059669, #10b981);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.database-manager-card .restart-manager-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #047857, #059669);
+  border-color: rgba(16, 185, 129, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.database-manager-card .restart-manager-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .diagnostics-result {

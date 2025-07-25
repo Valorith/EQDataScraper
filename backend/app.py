@@ -781,6 +781,33 @@ def get_database_manager_logs():
         app.logger.error(f"Error getting database manager logs: {e}")
         return jsonify({'error': 'Failed to get database manager logs', 'details': str(e)}), 500
 
+
+@app.route('/api/database/manager/restart', methods=['POST'])
+@exempt_when_limiting
+def restart_database_manager_endpoint():
+    """Restart database manager monitoring."""
+    try:
+        from utils.database_manager import restart_database_manager
+        
+        # Get force parameter from request body
+        force = False
+        if request.is_json and request.get_json():
+            force = request.get_json().get('force', False)
+        
+        # Restart the manager
+        success = restart_database_manager(force=force)
+        
+        return jsonify({
+            'success': success,
+            'message': 'Database manager restarted successfully' if success else 'Failed to restart database manager',
+            'server_timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Error restarting database manager: {e}")
+        return jsonify({'error': 'Failed to restart database manager', 'details': str(e)}), 500
+
+
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_connections():
     """Force cleanup of database connections and resources to prevent hanging."""
