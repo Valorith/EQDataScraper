@@ -728,13 +728,19 @@ def database_health_check():
 def get_database_manager_status():
     """Get database manager monitoring status - non-blocking and safe."""
     try:
+        # Debug: Log that we're trying to get status
+        app.logger.info("Database manager status endpoint called")
+        
         from utils.database_manager import get_database_manager
+        app.logger.info("Successfully imported get_database_manager")
         
         # Get manager instance without creating new connections
         manager = get_database_manager()
+        app.logger.info(f"Got manager instance: {type(manager)}")
         
         # This call is fast and non-blocking - just returns cached status
         status = manager.get_monitoring_status()
+        app.logger.info("Successfully got monitoring status")
         
         # Add basic server info
         status['server_timestamp'] = datetime.now().isoformat()
@@ -744,13 +750,15 @@ def get_database_manager_status():
         
     except Exception as e:
         # Ensure we never crash or block on this endpoint
-        logger.error(f"Error getting database manager status: {e}")
-        return jsonify({
+        app.logger.error(f"Error getting database manager status: {e}", exc_info=True)
+        error_response = {
             'success': False,
             'error': str(e),
+            'error_type': type(e).__name__,
             'monitoring_active': False,
             'server_timestamp': datetime.now().isoformat()
-        }), 200  # Return 200 to not break the UI
+        }
+        return jsonify(error_response), 200  # Return 200 to not break the UI
 
 
 @app.route('/api/database/manager/logs', methods=['GET'])
@@ -758,6 +766,7 @@ def get_database_manager_status():
 def get_database_manager_logs():
     """Get database manager logs for debugging purposes."""
     try:
+        app.logger.info("Database manager logs endpoint called")
         from utils.database_manager import get_database_manager
         
         # Get limit parameter from query string
@@ -816,6 +825,7 @@ def get_database_manager_logs():
 def restart_database_manager_endpoint():
     """Restart database manager monitoring."""
     try:
+        app.logger.info("Database manager restart endpoint called")
         from utils.database_manager import restart_database_manager, get_database_manager
         
         # Get current manager state for debugging

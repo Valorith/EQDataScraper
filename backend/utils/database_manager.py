@@ -13,7 +13,7 @@ import time
 import logging
 import threading
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
 from utils.content_db_manager import get_content_db_manager
