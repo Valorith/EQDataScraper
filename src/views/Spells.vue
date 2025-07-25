@@ -3065,6 +3065,7 @@ export default {
   display: flex;
   gap: 20px;
   margin-bottom: 0;
+  margin-right: 140px; /* Add right margin to prevent overlap with class cards */
   flex: 1;
   position: relative;
   z-index: 5;
@@ -3553,6 +3554,11 @@ export default {
     grid-template-columns: 1fr 1fr;
   }
   
+  .spell-details {
+    margin-right: 120px; /* Slightly reduce margin on tablets */
+  }
+}
+  
   .spell-class-levels {
     min-width: 350px;
     max-width: 500px;
@@ -3682,6 +3688,7 @@ export default {
   .spell-results.list .spell-details {
     flex-direction: column;
     gap: 8px;
+    margin-right: 0; /* Remove right margin on mobile */
   }
   
   .spell-results.list .spell-detail-row {
