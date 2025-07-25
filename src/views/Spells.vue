@@ -3066,6 +3066,8 @@ export default {
   gap: 20px;
   margin-bottom: 0;
   flex: 1;
+  position: relative;
+  z-index: 5;
 }
 
 .spell-detail-row {
@@ -3226,6 +3228,7 @@ export default {
   overflow: hidden;
   backdrop-filter: blur(10px);
   justify-content: center;
+  z-index: 1;
   /* Dynamic sizing will be controlled via inline styles */
 }
 
@@ -3266,7 +3269,7 @@ export default {
   box-shadow: 0 4px 16px rgba(255, 215, 0, 0.4), 
               0 0 0 1px rgba(255, 215, 0, 0.2) inset !important;
   transform: scale(1.05);
-  z-index: 10;
+  z-index: 2;
   position: relative;
 }
 
