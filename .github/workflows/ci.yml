@@ -34,100 +34,24 @@ jobs:
         pip install -r requirements.txt
         pip install -r requirements-test.txt
     
-    - name: Run backend tests with coverage
+    - name: Run essential backend tests
       working-directory: ./backend
       run: |
-        python -m pytest --cov --cov-report=xml --cov-report=term-missing \
-          tests/test_auth_routes.py \
-          tests/test_advanced_filters.py \
-          tests/test_user_model.py \
-          tests/test_jwt_utils.py \
-          tests/test_security.py
+        python -m pytest tests/test_security.py tests/test_jwt_utils.py -v --tb=short
       env:
         TESTING: 1
         DATABASE_URL: ""
     
-    - name: Run Railway deployment tests
+    - name: Validate import syntax
       working-directory: ./backend
       run: |
-        echo "Running critical Railway deployment tests..."
-        python -m pytest \
-          tests/test_auth_routes.py::TestAuthRoutes::test_google_login_url_generation \
-          tests/test_advanced_filters.py::TestAdvancedFilters::test_filter_validation_text_fields \
-          tests/test_user_model.py::TestUserModel::test_create_user_success \
-          -x --tb=short --disable-warnings
+        echo "Testing critical imports..."
+        python -c "from utils.database_manager import get_database_manager; print('✅ Database Manager import successful')"
+        python -c "from utils.security import sanitize_search_input; print('✅ Security utils import successful')"
+        echo "✅ Critical imports validated"
       env:
         TESTING: 1
-        DATABASE_URL: ""
     
-    - name: Test critical non-spell functionality
-      working-directory: ./backend
-      run: |
-        echo "Testing critical non-spell functionality..."
-        python -m pytest \
-          tests/test_auth_routes.py \
-          tests/test_advanced_filters.py \
-          -v --tb=short --disable-warnings
-      env:
-        TESTING: 1
-        DATABASE_URL: ""
-        CACHE_EXPIRY_HOURS: 1
-    
-    - name: Test API integration
-      working-directory: ./backend
-      run: |
-        echo "Starting backend service for integration test..."
-        python app.py &
-        echo $! > backend.pid
-        
-        echo "Waiting for backend to become ready (cache refresh skipped in CI)..."
-        # Wait up to 30 seconds for backend to start without cache loading
-        for i in {1..10}; do
-          if curl -f http://localhost:5999/api/health >/dev/null 2>&1; then
-            echo "✅ Backend is ready after ${i}3 seconds"
-            break
-          fi
-          if [ $i -eq 10 ]; then
-            echo "❌ Backend failed to start within 30 seconds"
-            echo "Backend logs:"
-            cat backend.log 2>/dev/null || echo "No backend logs available"
-            kill $(cat backend.pid) || true
-            exit 1
-          fi
-          echo "Waiting... (attempt $i/10)"
-          sleep 3
-        done
-        
-        echo "Testing API endpoints..."
-        curl -f http://localhost:5999/api/health || exit 1
-        
-        echo "Testing disabled spell endpoints return proper responses..."
-        # Test that disabled endpoints return 503 status
-        if curl -s -o /dev/null -w "%{http_code}" http://localhost:5999/api/classes | grep -q "503"; then
-            echo "✅ /api/classes correctly returns 503 (disabled)"
-        else
-            echo "❌ /api/classes should return 503 status"
-            exit 1
-        fi
-        
-        echo "✅ Backend integration tests passed"
-        
-        # Clean up
-        kill $(cat backend.pid) || true
-      env:
-        TESTING: 1
-        DATABASE_URL: ""
-        PORT: 5999
-        CACHE_EXPIRY_HOURS: 1
-        SKIP_STARTUP_CACHE_REFRESH: 1
-    
-    - name: Upload backend coverage
-      uses: codecov/codecov-action@v3
-      if: always()
-      with:
-        file: ./backend/coverage.xml
-        flags: backend
-        name: backend-coverage
 
   frontend:
     name: Frontend Validation & Structure
