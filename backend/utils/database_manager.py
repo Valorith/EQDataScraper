@@ -140,6 +140,28 @@ class DatabaseManager:
                 self._consecutive_failures += 1
                 logger.warning(f"Database connection failed (attempt {self._consecutive_failures}/{self._max_retry_attempts})")
                 
+                # Try to automatically reload saved configuration on first few failures
+                if self._consecutive_failures <= 3:
+                    logger.info(f"Attempting automatic config reload (failure {self._consecutive_failures}/3)")
+                    if self._attempt_config_reload():
+                        logger.info("Config reload successful, testing connection again")
+                        # Test connection again after reload
+                        connection_successful = self._test_database_connection()
+                        if connection_successful:
+                            self._consecutive_failures = 0
+                            logger.info("✅ Database connection restored after config reload")
+                            self._last_check_result = {
+                                'timestamp': check_time,
+                                'connected': True,
+                                'config_loaded': True,
+                                'consecutive_failures': self._consecutive_failures,
+                                'manager_active': True,
+                                'config_auto_reloaded': True
+                            }
+                            return
+                    else:
+                        logger.warning("Automatic config reload failed")
+                
                 # Check if we should go inactive
                 if self._consecutive_failures >= self._max_retry_attempts:
                     self._inactive_due_to_failures = True
@@ -293,6 +315,59 @@ class DatabaseManager:
             logger.error(f"Error in fallback connection test: {e}")
             return False
             
+    def _attempt_config_reload(self) -> bool:
+        """Attempt to reload and apply saved database configuration automatically."""
+        try:
+            from utils.persistent_config import get_persistent_config
+            from utils.content_db_manager import get_content_db_manager
+            
+            logger.info("🔄 Attempting automatic database configuration reload...")
+            
+            # Get the persistent config manager
+            persistent_config = get_persistent_config()
+            
+            # Force reload from persistent storage (clear cache)
+            persistent_config._config = None
+            
+            # Try to get stored configuration
+            db_config = persistent_config.get_database_config()
+            
+            if not db_config:
+                logger.warning("No stored database configuration found for reload")
+                return False
+                
+            # Check if we have a database URL
+            db_url = db_config.get('production_database_url')
+            if not db_url:
+                logger.warning("No database URL found in stored configuration")
+                return False
+                
+            logger.info(f"Found stored configuration with URL for host: {db_config.get('database_host', 'unknown')}")
+            
+            # Force the content database manager to reload as well
+            content_manager = get_content_db_manager()
+            content_manager._config = None  # Clear cached config
+            content_manager._connection_healthy = False  # Force reconnection
+            
+            # Save the configuration to ensure it's applied
+            try:
+                persistent_config.save_database_config(
+                    database_url=db_url,
+                    database_type=db_config.get('database_type', 'mysql'),
+                    database_ssl=db_config.get('database_ssl', True),
+                    database_read_only=db_config.get('database_read_only', True)
+                )
+                logger.info("✅ Database configuration reloaded and saved successfully")
+                return True
+                
+            except Exception as save_error:
+                logger.error(f"Failed to save reloaded configuration: {save_error}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error during automatic config reload: {e}")
+            return False
+            
     def get_monitoring_status(self) -> Dict[str, Any]:
         """Get current monitoring status for the Database Diagnostics modal."""
         with self._timer_lock:
@@ -331,6 +406,24 @@ class DatabaseManager:
     def is_running(self) -> bool:
         """Check if monitoring is currently running."""
         return self._running
+        
+    def restart_monitoring(self, delay_start: float = 5.0) -> bool:
+        """Restart monitoring after it has gone inactive due to failures."""
+        with self._timer_lock:
+            if self._running:
+                logger.warning("Database monitoring is already running")
+                return False
+                
+            # Reset failure state
+            self._inactive_due_to_failures = False
+            self._consecutive_failures = 0
+            self._last_check_result = None
+            
+            logger.info("🔄 Restarting database monitoring after successful config reload")
+            
+            # Start monitoring again
+            self.start_monitoring(delay_start)
+            return True
 
 
 # Global instance
@@ -361,3 +454,25 @@ def shutdown_database_manager():
     if manager.is_running():
         manager.stop_monitoring()
         logger.info("Database manager shutdown complete")
+
+
+def check_and_restart_inactive_manager():
+    """Check if manager is inactive due to failures and attempt restart with config reload."""
+    manager = get_database_manager()
+    
+    # Check if manager is inactive due to failures
+    if manager._inactive_due_to_failures and not manager.is_running():
+        logger.info("🔄 Detected inactive database manager, attempting automatic restart...")
+        
+        # Try to reload configuration and restart
+        if manager._attempt_config_reload():
+            logger.info("Config reload successful, restarting monitoring...")
+            if manager.restart_monitoring():
+                logger.info("✅ Database manager successfully restarted after config reload")
+                return True
+            else:
+                logger.warning("Failed to restart database manager after config reload")
+        else:
+            logger.warning("Config reload failed, cannot restart database manager")
+            
+    return False
