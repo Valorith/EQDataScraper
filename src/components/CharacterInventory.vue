@@ -509,15 +509,7 @@
       </div>
     </div>
     
-    <!-- Item Modal Loading Modal -->
-    <LoadingModal 
-      :visible="loadingItemModal"
-      text="Loading item details..."
-      :randomClassIcon="true"
-      :fullScreen="true"
-      :timeoutMs="10000"
-      @timeout="onItemModalTimeout"
-    />
+    <!-- Item Modal Loading Modal removed since items open in new tabs -->
 
     <!-- Item Details Modal -->
     <!-- Item modal removed - items now open in new tabs -->
@@ -700,45 +692,7 @@ import { ref, nextTick, onUnmounted, computed, watch } from 'vue'
 import LoadingModal from './LoadingModal.vue'
 import { getApiBaseUrl } from '../config/api'
 
-// Circuit breaker for item availability endpoint
-const availabilityCircuitBreaker = ref({
-  failures: 0,
-  lastFailure: null,
-  isOpen: false
-})
-
-const isAvailabilityCircuitOpen = () => {
-  if (availabilityCircuitBreaker.value.failures < 3) {
-    return false
-  }
-  
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
-  if (availabilityCircuitBreaker.value.lastFailure && availabilityCircuitBreaker.value.lastFailure > fiveMinutesAgo) {
-    return true
-  } else {
-    // Reset after 5 minutes
-    availabilityCircuitBreaker.value.failures = 0
-    availabilityCircuitBreaker.value.lastFailure = null
-    availabilityCircuitBreaker.value.isOpen = false
-  }
-  return false
-}
-
-const recordAvailabilityFailure = () => {
-  availabilityCircuitBreaker.value.failures++
-  availabilityCircuitBreaker.value.lastFailure = Date.now()
-  
-  if (availabilityCircuitBreaker.value.failures >= 3) {
-    availabilityCircuitBreaker.value.isOpen = true
-    console.warn('Item availability circuit breaker opened after 3 failures')
-  }
-}
-
-const recordAvailabilitySuccess = () => {
-  availabilityCircuitBreaker.value.failures = 0
-  availabilityCircuitBreaker.value.lastFailure = null
-  availabilityCircuitBreaker.value.isOpen = false
-}
+// Circuit breaker functions removed since items now open in new tabs
 
 // Debounce utility function with cancel capability
 const debounce = (func, delay) => {
@@ -839,102 +793,13 @@ const closeRecipeModal = () => {
 // onItemModalTimeout function moved to line 1324 to avoid duplication
 
 
-const loadDropSources = async () => {
-  if (!selectedItemDetail.value?.item_id) return
-  
-  // Set flags immediately to hide button and show loading
-  dropSourcesRequested.value = true
-  loadingDropSources.value = true
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    dropSources.value = data.zones || []
-  } catch (error) {
-    console.error('Error loading drop sources:', error)
-    dropSources.value = []
-  } finally {
-    loadingDropSources.value = false
-  }
-}
+// loadDropSources function removed since items now open in new tabs
 
-const loadMerchantSources = async () => {
-  if (!selectedItemDetail.value?.item_id) return
-  
-  // Set flags immediately to hide button and show loading
-  merchantSourcesRequested.value = true
-  loadingMerchantSources.value = true
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    merchantSources.value = data.zones || []
-  } catch (error) {
-    console.error('Error loading merchant sources:', error)
-    merchantSources.value = []
-  } finally {
-    loadingMerchantSources.value = false
-  }
-}
+// loadMerchantSources function removed since items now open in new tabs
 
-// Recipe loading functions
-const loadTradeskillRecipes = async () => {
-  if (!selectedItemDetail.value?.item_id) return
-  
-  // Set flags immediately to hide button and show loading
-  tradeskillRecipesRequested.value = true
-  loadingTradeskillRecipes.value = true
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/tradeskill-recipes`)
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    tradeskillRecipes.value = data.skills || []
-  } catch (error) {
-    console.error('Error loading tradeskill recipes:', error)
-    tradeskillRecipes.value = []
-  } finally {
-    loadingTradeskillRecipes.value = false
-  }
-}
+// Recipe loading functions removed since items now open in new tabs
 
-const loadCreatedByRecipes = async () => {
-  if (!selectedItemDetail.value?.item_id) return
-  
-  // Set flags immediately to hide button and show loading
-  createdByRecipesRequested.value = true
-  loadingCreatedByRecipes.value = true
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/created-by-recipes`)
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    createdByRecipes.value = data.recipes || []
-  } catch (error) {
-    console.error('Error loading created by recipes:', error)
-    createdByRecipes.value = []
-  } finally {
-    loadingCreatedByRecipes.value = false
-  }
-}
+// loadCreatedByRecipes function removed since items now open in new tabs
 
 const loadRecipeDetails = async (recipeId) => {
   if (!recipeId) return
@@ -958,149 +823,7 @@ const loadRecipeDetails = async (recipeId) => {
 }
 
 // Utility functions for item display
-const getItemTypeDisplay = (itemtype) => {
-  const typeMap = {
-    0: '1H Slashing',
-    1: '2H Slashing',
-    2: '1H Piercing',
-    3: '1H Blunt',
-    4: '2H Blunt',
-    5: 'Archery',
-    7: 'Throwing',
-    8: 'Shield',
-    10: 'Armor',
-    11: 'Tradeskill Item',
-    12: 'Lockpicking',
-    14: 'Food',
-    15: 'Drink',
-    16: 'Light Source',
-    17: 'Common Inventory Item',
-    18: 'Bind Wound',
-    19: 'Thrown Casting Item',
-    20: 'Spells / Song Sheets',
-    21: 'Potions',
-    22: 'Fletched Arrows',
-    23: 'Wind Instrument',
-    24: 'Stringed Instrument',
-    25: 'Brass Instrument',
-    26: 'Percussion Instrument',
-    27: 'Ammo',
-    29: 'Jewelry',
-    31: 'Readable Note/Scroll',
-    32: 'Readable Book',
-    33: 'Key',
-    34: 'Odd Item',
-    35: '2H Piercing',
-    36: 'Fishing Pole',
-    37: 'Fishing Bait',
-    38: 'Alcoholic Beverage',
-    39: 'More Keys',
-    40: 'Compass',
-    42: 'Poison',
-    45: 'Hand to Hand',
-    52: 'Charm',
-    53: 'Dye',
-    54: 'Augment',
-    55: 'Augment Solvent',
-    56: 'Augment Distiller',
-    58: 'Fellowship Banner Material',
-    60: 'Cultural Armor Manual',
-    63: 'New Currency',
-  }
-  return typeMap[itemtype] || `Type ${itemtype}`
-}
-
-const getSlotDisplay = (slots) => {
-  if (!slots) return null
-  const slotMap = {
-    1: 'Charm', 2: 'Ear', 4: 'Head', 8: 'Face',
-    16: 'Ear', 32: 'Neck', 64: 'Shoulders', 128: 'Arms',
-    256: 'Back', 512: 'Wrist', 1024: 'Wrist', 2048: 'Range',
-    4096: 'Hands', 8192: 'Primary', 16384: 'Secondary',
-    32768: 'Fingers', 65536: 'Chest', 131072: 'Legs',
-    262144: 'Feet', 524288: 'Waist', 1048576: 'Power Source',
-    2097152: 'Ammo'
-  }
-  
-  const slotNames = []
-  for (let [bit, name] of Object.entries(slotMap)) {
-    if (slots & parseInt(bit)) {
-      slotNames.push(name)
-    }
-  }
-  
-  // Remove duplicates using Set
-  const uniqueSlots = [...new Set(slotNames)]
-  
-  return uniqueSlots.length > 0 ? uniqueSlots.join(', ') : null
-}
-
-const getClassDisplay = (classes) => {
-  if (!classes || classes === 0) return 'None'
-  
-  // Check for all classes - 65535 is the bitmask for all 16 classes
-  if (classes === 65535) return 'ALL'
-  
-  const classMap = {
-    1: 'WAR', 2: 'CLR', 4: 'PAL', 8: 'RNG',
-    16: 'SHD', 32: 'DRU', 64: 'MNK', 128: 'BRD',
-    256: 'ROG', 512: 'SHM', 1024: 'NEC', 2048: 'WIZ',
-    4096: 'MAG', 8192: 'ENC', 16384: 'BST', 32768: 'BER'
-  }
-  
-  const classNames = []
-  for (let [bit, name] of Object.entries(classMap)) {
-    if (classes & parseInt(bit)) {
-      classNames.push(name)
-    }
-  }
-  
-  return classNames.length > 0 ? classNames.join(', ') : 'None'
-}
-
-const getRaceDisplay = (races) => {
-  if (!races || races === 0) return 'None'
-  
-  // Check for all races
-  if (races === 65535) return 'ALL'
-  
-  const raceMap = {
-    1: 'HUM', 2: 'BAR', 4: 'ERU', 8: 'ELF',
-    16: 'HIE', 32: 'DEF', 64: 'HEF', 128: 'DWF',
-    256: 'TRL', 512: 'OGR', 1024: 'HFL', 2048: 'GNM',
-    4096: 'IKS', 8192: 'VAH', 16384: 'FRG', 32768: 'DRK'
-  }
-  
-  const raceNames = []
-  for (let [bit, name] of Object.entries(raceMap)) {
-    if (races & parseInt(bit)) {
-      raceNames.push(name)
-    }
-  }
-  
-  return raceNames.length > 0 ? raceNames.join(', ') : 'None'
-}
-
-const hasAnyStats = (item) => {
-  return item && (item.str || item.sta || item.agi || item.dex || item.wis || item.int || item.cha)
-}
-
-const hasResistValues = (item) => {
-  if (!item) return false
-  return (item.resistances?.fire || item.fr) ||
-         (item.resistances?.cold || item.cr) ||
-         (item.resistances?.magic || item.mr) ||
-         (item.resistances?.disease || item.dr) ||
-         (item.resistances?.poison || item.pr)
-}
-
-const hasEffects = (item) => {
-  if (!item || !item.effects) return false
-  return (item.effects.click && item.effects.click !== -1) ||
-         (item.effects.proc && item.effects.proc !== -1) ||
-         (item.effects.worn && item.effects.worn !== -1) ||
-         (item.effects.focus && item.effects.focus !== -1)
-}
+// Item modal utility functions removed since items now open in new tabs
 
 const formatMerchantPrice = (merchant) => {
   if (!merchant || !merchant.price) return '0pp'
@@ -1151,57 +874,10 @@ const handleEquipmentClick = (event) => {
   openItemInNewTab(item)
 }
 
-const onItemModalTimeout = () => {
-  if (import.meta.env.DEV) console.warn('Item modal loading timed out')
-  loadingItemModal.value = false
-  selectedItemDetail.value = null
-}
+// onItemModalTimeout function removed since items now open in new tabs
 
 
-// Item data availability function
-const loadItemDataAvailability = async (itemId) => {
-  if (!itemId) return
-  
-  // Circuit breaker: skip if too many recent failures
-  if (isAvailabilityCircuitOpen()) {
-    // Item availability circuit breaker active, skipping request
-    itemDataAvailability.value = 'failed' // Show all buttons when circuit is open
-    return
-  }
-  
-  // Prevent multiple simultaneous requests for the same item
-  if (loadingAvailability.value) return
-  
-  loadingAvailability.value = true
-  
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${itemId}/availability`)
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    const data = await response.json()
-    itemDataAvailability.value = data
-    
-    // Record success to reset circuit breaker
-    recordAvailabilitySuccess()
-    
-  } catch (error) {
-    // Record failure for circuit breaker
-    recordAvailabilityFailure()
-    
-    if (import.meta.env.DEV) console.error('Error loading item data availability:', {
-      itemId,
-      error: error.message,
-      status: error.response?.status
-    })
-    // Fallback: Set to 'failed' state so we can show all buttons
-    itemDataAvailability.value = 'failed'
-  } finally {
-    loadingAvailability.value = false
-  }
-}
+// loadItemDataAvailability function removed since items now open in new tabs
 
 
 const getWeaponRatio = (damage, delay) => {
