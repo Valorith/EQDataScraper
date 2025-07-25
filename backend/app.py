@@ -2193,11 +2193,15 @@ def save_cache_to_database():
 # Initialize the database manager for production (Gunicorn/Railway) deployment
 # This runs at module level so it works with WSGI servers like Gunicorn
 try:
+    logger.info("🔄 Starting Database Manager initialization...")
     from utils.database_manager import initialize_database_manager
+    logger.info("✅ Successfully imported initialize_database_manager")
     initialize_database_manager(delay_start=5.0)  # Start monitoring after 5 seconds
     logger.info("✅ Database manager initialized with 30-second monitoring (module level)")
 except Exception as e:
-    logger.error(f"Failed to initialize database manager: {e}")
+    logger.error(f"❌ Failed to initialize database manager: {e}")
+    import traceback
+    logger.error(f"Full traceback: {traceback.format_exc()}")
 
 
 
