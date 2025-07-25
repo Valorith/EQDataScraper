@@ -205,14 +205,71 @@ class DatabaseManager:
             logger.error(f"Failed to load configuration from environment: {e}")
             
     def _test_database_connection(self) -> bool:
-        """Test actual database connection with sanitized configuration."""
+        """Test actual database connection using the same logic as Admin Dashboard."""
         try:
-            # Get the content database manager to test actual connection
+            # Import the same function that Admin Dashboard uses for connection testing
+            # This ensures consistency between the two systems
+            import sys
+            if 'app' in sys.modules:
+                from app import get_eqemu_db_connection
+            else:
+                # Fallback if app module not available
+                logger.warning("App module not available, using fallback connection test")
+                return self._fallback_connection_test()
+            
+            # Use the exact same connection test that Admin Dashboard uses
+            test_conn, db_type, error = get_eqemu_db_connection()
+            
+            if test_conn:
+                try:
+                    # Perform the same test query as Admin Dashboard
+                    cursor = test_conn.cursor()
+                    cursor.execute("SELECT 1")
+                    result = cursor.fetchone()
+                    cursor.close()
+                    
+                    # Verify we actually got a result
+                    if result is None:
+                        logger.warning("Database connection test returned no result")
+                        return False
+                    
+                    logger.debug("Database connection test successful")
+                    return True
+                    
+                except Exception as query_error:
+                    logger.warning(f"Database query test failed: {query_error}")
+                    return False
+                finally:
+                    # Always close the connection
+                    try:
+                        test_conn.close()
+                    except:
+                        pass
+            else:
+                logger.warning(f"Database connection failed: {error}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error testing database connection: {e}")
+            return False
+            
+    def _fallback_connection_test(self) -> bool:
+        """Fallback connection test when app module is not available."""
+        try:
             from utils.content_db_manager import get_content_db_manager
             db_manager = get_content_db_manager()
             
-            # Try to get an actual connection directly - this will test everything
-            # including config loading, sanitization, and actual database connectivity
+            # First, check if configuration is actually available
+            try:
+                config, db_type = db_manager._load_database_config()
+                if not config or not db_type:
+                    logger.warning("Database configuration not available for connection test")
+                    return False
+            except Exception as config_error:
+                logger.warning(f"Failed to load database configuration: {config_error}")
+                return False
+            
+            # Try to get an actual connection directly
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
@@ -220,8 +277,12 @@ class DatabaseManager:
                     result = cursor.fetchone()
                     cursor.close()
                     
-                    # If we got here, connection is working
-                    logger.debug("Database connection test successful")
+                    # Verify we actually got a result
+                    if result is None:
+                        logger.warning("Database connection test returned no result")
+                        return False
+                    
+                    logger.debug("Database connection test successful (fallback)")
                     return True
                     
             except Exception as conn_error:
@@ -229,7 +290,7 @@ class DatabaseManager:
                 return False
                 
         except Exception as e:
-            logger.error(f"Error testing database connection: {e}")
+            logger.error(f"Error in fallback connection test: {e}")
             return False
             
     def get_monitoring_status(self) -> Dict[str, Any]:
