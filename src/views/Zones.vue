@@ -133,7 +133,7 @@
                     v-for="npc in uniqueZoneNpcs" 
                     :key="npc.id"
                     :class="['npc-card-compact', 'clickable-npc-card', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
-                    @click="openNpcInfo(npc)"
+                    @click.prevent="handleNpcCardClick(npc)"
                     :title="`Click to open ${npc.full_name} details in NPCs page (new tab)`"
                   >
                     <div class="npc-basic-info">
@@ -1234,12 +1234,19 @@ export default {
       }, 1000) // Size reduction after 1 second
     }
 
+    const handleNpcCardClick = (npc) => {
+      console.log('NPC card clicked via handleNpcCardClick!', npc.full_name, npc.id)
+      openNpcInfo(npc)
+    }
+
     const openNpcInfo = async (npc) => {
+      console.log('NPC card clicked!', npc.full_name, npc.id)
       try {
         // Open NPC details page in new tab with auto-open modal parameter
         // The NPCs page expects 'npc' parameter with the NPC ID
         const npcUrl = `${window.location.origin}/npcs?npc=${npc.id}`
         
+        console.log('Opening URL:', npcUrl)
         // Open in new tab
         window.open(npcUrl, '_blank', 'noopener,noreferrer')
       } catch (error) {
@@ -1962,6 +1969,7 @@ export default {
       clearSelection,
       handleNpcClick,
       plotNpcOnMap,
+      handleNpcCardClick,
       openNpcInfo,
       handleItemIconError,
       openItemInfo,
@@ -2496,6 +2504,9 @@ export default {
 .npc-card-compact.clickable-npc-card {
   cursor: pointer;
   transition: all 0.2s ease;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .npc-card-compact.clickable-npc-card:hover {
