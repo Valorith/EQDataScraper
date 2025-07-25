@@ -134,7 +134,7 @@
                     :key="npc.id"
                     :class="['npc-card-compact', 'clickable-npc-card', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
                     @click="openNpcInfo(npc)"
-                    :title="`Open ${npc.full_name} details in NPCs page (new tab)`"
+                    :title="`Click to open ${npc.full_name} details in NPCs page (new tab)`"
                   >
                     <div class="npc-basic-info">
                       <div class="npc-name-compact">
@@ -153,20 +153,13 @@
                     
                     <div class="npc-actions">
                       <button 
-                        @click="plotNpcOnMap(npc)"
+                        @click.stop="plotNpcOnMap(npc)"
                         class="npc-action-btn map-pin-btn"
                         title="Show on map"
                         style="display: none;"
                         disabled
                       >
                         📍
-                      </button>
-                      <button 
-                        @click.stop="openNpcInfo(npc)"
-                        class="npc-action-btn info-btn"
-                        title="View details"
-                      >
-                        ℹ️
                       </button>
                     </div>
                   </div>
