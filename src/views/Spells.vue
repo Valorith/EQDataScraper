@@ -3557,7 +3557,6 @@ export default {
   .spell-details {
     margin-right: 120px; /* Slightly reduce margin on tablets */
   }
-}
   
   .spell-class-levels {
     min-width: 350px;
@@ -3569,34 +3568,34 @@ export default {
     margin: 20px 0 15px 0;
     gap: 15px;
   }
-  
-  .level-separator-content {
-    padding: 10px 20px;
-    min-width: 180px;
-    flex-direction: column;
-    gap: 12px;
-  }
-  
-  .level-separator-text {
-    font-size: 1rem;
-  }
-  
-  .level-separator-count {
-    font-size: 0.8rem;
-  }
-  
-  .level-separator-to-top {
-    padding: 6px 10px;
-    font-size: 0.8rem;
-  }
-  
-  .to-top-text {
-    display: none;
-  }
-  
-  .level-separator-to-top i {
-    font-size: 0.85rem;
-  }
+}
+
+.level-separator-content {
+  padding: 10px 20px;
+  min-width: 180px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.level-separator-text {
+  font-size: 1rem;
+}
+
+.level-separator-count {
+  font-size: 0.8rem;
+}
+
+.level-separator-to-top {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.to-top-text {
+  display: none;
+}
+
+.level-separator-to-top i {
+  font-size: 0.85rem;
 }
 
 @media (max-width: 768px) {
