@@ -674,10 +674,22 @@ def restart_database_manager(force: bool = False) -> bool:
     manager._consecutive_failures = 0
     manager._last_check_result = None
     
+    # Check if monitoring should run in this environment before attempting start
+    if not manager._should_run_monitoring():
+        manager._add_log('warning', f'Cannot restart: monitoring disabled in {manager._environment} environment')
+        return False
+    
     # Start monitoring
     manager.start_monitoring(1.0)  # Quick start for manual restart
-    manager._add_log('info', 'Database Manager restarted successfully')
-    return True
+    
+    # Verify that monitoring actually started
+    success = manager.is_running()
+    if success:
+        manager._add_log('info', 'Database Manager restarted successfully')
+    else:
+        manager._add_log('error', 'Database Manager restart failed - monitoring did not start')
+    
+    return success
 
 
 def check_and_restart_inactive_manager():
