@@ -38,6 +38,28 @@ class DatabaseManager:
         self._consecutive_failures = 0
         self._max_retry_attempts = 10
         self._inactive_due_to_failures = False
+        self._logs = []  # Store detailed logs for debugging
+        self._max_log_entries = 50  # Keep last 50 log entries
+        
+    def _add_log(self, level: str, message: str, details: Optional[Dict[str, Any]] = None):
+        """Add a log entry for debugging purposes."""
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'level': level.upper(),
+            'message': message,
+            'details': details or {}
+        }
+        
+        # Thread-safe log addition
+        with self._timer_lock:
+            self._logs.append(log_entry)
+            # Keep only the last N entries
+            if len(self._logs) > self._max_log_entries:
+                self._logs = self._logs[-self._max_log_entries:]
+        
+        # Also log to standard logger
+        log_func = getattr(logger, level.lower(), logger.info)
+        log_func(f"DatabaseManager: {message}")
         
     def start_monitoring(self, delay_start: float = 5.0):
         """
@@ -100,9 +122,17 @@ class DatabaseManager:
         """Perform a database health check with actual connection testing and retry logic."""
         check_time = datetime.now()
         
+        self._add_log('debug', f'Starting health check #{self._check_count + 1}', {
+            'consecutive_failures': self._consecutive_failures,
+            'max_attempts': self._max_retry_attempts,
+            'inactive': self._inactive_due_to_failures
+        })
+        
         # Check if we've exceeded max retry attempts
         if self._inactive_due_to_failures:
-            logger.debug("Database manager inactive due to consecutive failures")
+            self._add_log('warning', 'Database manager inactive due to consecutive failures', {
+                'reason': f'Exceeded {self._max_retry_attempts} consecutive failures'
+            })
             self._last_check_result = {
                 'timestamp': check_time,
                 'connected': False,
@@ -121,12 +151,13 @@ class DatabaseManager:
             config_available = status.get('config_loaded', False)
             
             # Test actual database connection with sanitized config
+            self._add_log('info', 'Testing database connection...', {'attempt': self._consecutive_failures + 1})
             connection_successful = self._test_database_connection()
             
             if connection_successful:
                 # Reset failure count on successful connection
                 self._consecutive_failures = 0
-                logger.debug("Database connection test successful")
+                self._add_log('info', '✅ Database connection test successful')
                 
                 self._last_check_result = {
                     'timestamp': check_time,
@@ -138,18 +169,24 @@ class DatabaseManager:
             else:
                 # Connection failed - increment failure count
                 self._consecutive_failures += 1
-                logger.warning(f"Database connection failed (attempt {self._consecutive_failures}/{self._max_retry_attempts})")
+                self._add_log('warning', f'❌ Database connection failed', {
+                    'attempt': self._consecutive_failures,
+                    'max_attempts': self._max_retry_attempts
+                })
                 
                 # Try to automatically reload saved configuration on first few failures
                 if self._consecutive_failures <= 3:
-                    logger.info(f"Attempting automatic config reload (failure {self._consecutive_failures}/3)")
+                    self._add_log('info', f'🔄 Attempting automatic config reload', {
+                        'failure_count': self._consecutive_failures,
+                        'reload_attempts_remaining': 4 - self._consecutive_failures
+                    })
                     if self._attempt_config_reload():
-                        logger.info("Config reload successful, testing connection again")
+                        self._add_log('info', '✅ Config reload successful, retesting connection...')
                         # Test connection again after reload
                         connection_successful = self._test_database_connection()
                         if connection_successful:
                             self._consecutive_failures = 0
-                            logger.info("✅ Database connection restored after config reload")
+                            self._add_log('info', '🎉 Database connection restored after config reload!')
                             self._last_check_result = {
                                 'timestamp': check_time,
                                 'connected': True,
@@ -159,8 +196,12 @@ class DatabaseManager:
                                 'config_auto_reloaded': True
                             }
                             return
+                        else:
+                            self._add_log('warning', '❌ Connection still failed after config reload')
                     else:
-                        logger.warning("Automatic config reload failed")
+                        self._add_log('error', '❌ Automatic config reload failed')
+                else:
+                    self._add_log('warning', f'⚠️ Skipping auto-reload (failure {self._consecutive_failures} > 3)')
                 
                 # Check if we should go inactive
                 if self._consecutive_failures >= self._max_retry_attempts:
@@ -318,15 +359,26 @@ class DatabaseManager:
     def _attempt_config_reload(self) -> bool:
         """Attempt to reload and apply saved database configuration using same logic as admin UI."""
         try:
-            logger.info("🔄 Attempting automatic database configuration reload using admin UI logic...")
+            self._add_log('info', '🔄 Starting automatic config reload (admin UI logic)...')
             
             # Step 1: Call the same API endpoint that "Load Saved" uses
+            self._add_log('debug', 'Step 1: Getting stored configuration via API...')
             stored_config = self._get_stored_config_via_api()
             if not stored_config:
-                logger.warning("No stored configuration found via API")
+                self._add_log('error', 'No stored configuration found via API')
                 return False
                 
+            self._add_log('debug', 'Stored config retrieved successfully', {
+                'has_host': bool(stored_config.get('host')),
+                'has_database': bool(stored_config.get('database_name')),
+                'has_username': bool(stored_config.get('username')),
+                'has_password': bool(stored_config.get('password')),
+                'database_type': stored_config.get('database_type'),
+                'use_ssl': stored_config.get('database_ssl')
+            })
+                
             # Step 2: Process config the same way the frontend does (with trimming)
+            self._add_log('debug', 'Step 2: Processing config with frontend logic...')
             config_data = {
                 'db_type': (stored_config.get('database_type', 'mysql') or 'mysql').strip(),
                 'host': (stored_config.get('host', '') or '').strip(),
@@ -337,13 +389,23 @@ class DatabaseManager:
                 'use_ssl': stored_config.get('database_ssl', True)
             }
             
-            logger.info(f"Processed config: host={config_data['host']}, db={config_data['database']}, user={config_data['username']}")
+            self._add_log('info', 'Config processed successfully', {
+                'host': config_data['host'],
+                'database': config_data['database'],
+                'username': config_data['username'],
+                'port': config_data['port'],
+                'db_type': config_data['db_type'],
+                'use_ssl': config_data['use_ssl']
+            })
             
             # Step 3: Save configuration using same logic as "Save Configuration" button
+            self._add_log('debug', 'Step 3: Saving config via API logic...')
             return self._save_config_via_api(config_data)
                 
         except Exception as e:
-            logger.error(f"Error during automatic config reload: {e}")
+            self._add_log('error', f'Exception during automatic config reload: {str(e)}', {
+                'exception_type': type(e).__name__
+            })
             return False
             
     def _get_stored_config_via_api(self):
@@ -449,6 +511,14 @@ class DatabaseManager:
             }
             
             return status
+            
+    def get_logs(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get recent database manager logs for debugging."""
+        with self._timer_lock:
+            logs = self._logs.copy()
+            if limit:
+                logs = logs[-limit:]
+            return logs
             
     def force_check(self) -> Dict[str, Any]:
         """Force an immediate health check and return the result."""

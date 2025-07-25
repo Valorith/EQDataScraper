@@ -752,6 +752,35 @@ def get_database_manager_status():
             'server_timestamp': datetime.now().isoformat()
         }), 200  # Return 200 to not break the UI
 
+
+@app.route('/api/database/manager/logs', methods=['GET'])
+@exempt_when_limiting
+def get_database_manager_logs():
+    """Get database manager logs for debugging purposes."""
+    try:
+        from utils.database_manager import get_database_manager
+        
+        # Get limit parameter from query string
+        limit = request.args.get('limit', type=int, default=25)
+        
+        # Get manager instance
+        manager = get_database_manager()
+        
+        # Get logs (this is fast and thread-safe)
+        logs = manager.get_logs(limit=limit)
+        
+        return jsonify({
+            'success': True,
+            'logs': logs,
+            'total_entries': len(logs),
+            'limit': limit,
+            'server_timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Error getting database manager logs: {e}")
+        return jsonify({'error': 'Failed to get database manager logs', 'details': str(e)}), 500
+
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_connections():
     """Force cleanup of database connections and resources to prevent hanging."""
