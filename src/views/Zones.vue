@@ -134,7 +134,7 @@
                     :key="npc.id"
                     :class="['npc-card-compact', 'clickable-npc-card', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
                     @click.prevent="handleNpcCardClick(npc)"
-                    :title="`Click to open ${npc.full_name} details in NPCs page (new tab)`"
+                    :title="`🔥 CLICK ME: ${npc.full_name} (NEW VERSION)`"
                   >
                     <div class="npc-basic-info">
                       <div class="npc-name-compact">
@@ -149,18 +149,6 @@
                         </span>
                         <span v-else class="npc-respawn-compact">Instant</span>
                       </div>
-                    </div>
-                    
-                    <div class="npc-actions">
-                      <button 
-                        @click.stop="plotNpcOnMap(npc)"
-                        class="npc-action-btn map-pin-btn"
-                        title="Show on map"
-                        style="display: none;"
-                        disabled
-                      >
-                        📍
-                      </button>
                     </div>
                   </div>
                 </div>
