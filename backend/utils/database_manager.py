@@ -114,6 +114,12 @@ class DatabaseManager:
             return
         
         try:
+            # First check if we can load config to determine config_loaded status
+            from utils.content_db_manager import get_content_db_manager
+            db_manager = get_content_db_manager()
+            status = db_manager.get_connection_status()
+            config_available = status.get('config_loaded', False)
+            
             # Test actual database connection with sanitized config
             connection_successful = self._test_database_connection()
             
@@ -125,7 +131,7 @@ class DatabaseManager:
                 self._last_check_result = {
                     'timestamp': check_time,
                     'connected': True,
-                    'config_loaded': True,
+                    'config_loaded': True,  # If connection works, config must be loaded
                     'consecutive_failures': self._consecutive_failures,
                     'manager_active': True
                 }
@@ -145,7 +151,7 @@ class DatabaseManager:
                 self._last_check_result = {
                     'timestamp': check_time,
                     'connected': False,
-                    'config_loaded': True,  # Config can be loaded but connection fails
+                    'config_loaded': config_available,  # Use actual config status from content_db_manager
                     'consecutive_failures': self._consecutive_failures,
                     'manager_active': not self._inactive_due_to_failures,
                     'retry_attempts_remaining': max(0, self._max_retry_attempts - self._consecutive_failures)
@@ -205,15 +211,8 @@ class DatabaseManager:
             from utils.content_db_manager import get_content_db_manager
             db_manager = get_content_db_manager()
             
-            # Use the connection status from content_db_manager which loads and sanitizes config
-            status = db_manager.get_connection_status()
-            
-            # Check if config is loaded and connection can be established
-            if not status.get('config_loaded', False):
-                logger.debug("Database configuration not loaded")
-                return False
-            
-            # Try to get an actual connection with timeout
+            # Try to get an actual connection directly - this will test everything
+            # including config loading, sanitization, and actual database connectivity
             try:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
