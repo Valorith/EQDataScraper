@@ -1,4 +1,4 @@
-name: Fast Deploy Validation
+name: CI/CD Pipeline
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
     branches: [ master ]
 
 jobs:
-  quick-validation:
-    name: Quick Import Validation
+  backend:
+    name: Backend Tests & Integration
     runs-on: ubuntu-latest
     
     steps:
@@ -19,13 +19,42 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Test syntax only (no dependencies)
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install backend dependencies
       working-directory: ./backend
       run: |
-        echo "🚀 Quick syntax validation for Database Manager fix..."
-        python -m py_compile utils/database_manager.py
-        python -c "from typing import List, Dict, Any, Optional; print('✅ Typing imports work')"
-        echo "✅ Critical syntax validated - deploying to Railway with full dependencies..."
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-test.txt ]; then
+          pip install -r requirements-test.txt
+        fi
+    
+    - name: Run focused backend tests
+      working-directory: ./backend
+      run: |
+        # Only run tests that don't require database connections
+        python -m pytest tests/test_security.py tests/test_jwt_utils.py -v --tb=short --maxfail=3
+      env:
+        TESTING: 1
+        DATABASE_URL: ""
+    
+    - name: Validate critical imports
+      working-directory: ./backend
+      run: |
+        echo "Testing critical imports..."
+        python -c "from utils.database_manager import get_database_manager; print('✅ Database Manager import successful')"
+        python -c "from utils.security import sanitize_search_input; print('✅ Security utils import successful')"
+        python -c "from models.user import User; print('✅ User model import successful')"
+        echo "✅ All critical imports validated"
+      env:
+        TESTING: 1
     
 
   frontend:
