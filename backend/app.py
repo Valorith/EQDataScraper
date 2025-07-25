@@ -766,16 +766,45 @@ def get_database_manager_logs():
         # Get manager instance
         manager = get_database_manager()
         
+        # Debug: Log current manager state
+        app.logger.info(f"Database Manager logs request - Manager state: running={manager.is_running()}, "
+                       f"inactive={manager._inactive_due_to_failures}, environment={manager._environment}, "
+                       f"logs_count={len(manager._logs)}")
+        
         # Get logs (this is fast and thread-safe)
         logs = manager.get_logs(limit=limit)
         
-        return jsonify({
+        # If no logs exist, force some debug entries to help identify the issue
+        if not logs:
+            app.logger.warning("No logs found in Database Manager - forcing debug entries")
+            manager._add_log('debug', 'Logs endpoint called - no existing logs found')
+            manager._add_log('info', f'Manager state: running={manager.is_running()}, environment={manager._environment}')
+            manager._add_log('debug', f'Manager details: start_time={manager._start_time}, check_count={manager._check_count}')
+            
+            # Get logs again after adding debug entries
+            logs = manager.get_logs(limit=limit)
+        
+        # Enhanced response with debugging information
+        response_data = {
             'success': True,
             'logs': logs,
             'total_entries': len(logs),
             'limit': limit,
+            'manager_debug': {
+                'is_running': manager.is_running(),
+                'inactive_due_to_failures': manager._inactive_due_to_failures,
+                'environment': manager._environment,
+                'start_time': manager._start_time.isoformat() if manager._start_time else None,
+                'check_count': manager._check_count,
+                'consecutive_failures': manager._consecutive_failures,
+                'logs_buffer_size': len(manager._logs)
+            },
             'server_timestamp': datetime.now().isoformat()
-        }), 200
+        }
+        
+        app.logger.info(f"Returning {len(logs)} log entries to client")
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         app.logger.error(f"Error getting database manager logs: {e}")
@@ -787,24 +816,64 @@ def get_database_manager_logs():
 def restart_database_manager_endpoint():
     """Restart database manager monitoring."""
     try:
-        from utils.database_manager import restart_database_manager
+        from utils.database_manager import restart_database_manager, get_database_manager
+        
+        # Get current manager state for debugging
+        manager = get_database_manager()
+        current_state = {
+            'running': manager.is_running(),
+            'inactive_due_to_failures': manager._inactive_due_to_failures,
+            'environment': manager._environment,
+            'logs_count': len(manager._logs)
+        }
+        
+        app.logger.info(f"Restart request - current state: {current_state}")
         
         # Get force parameter from request body
         force = False
         if request.is_json and request.get_json():
             force = request.get_json().get('force', False)
         
+        # Add log entry to manager before restart attempt
+        manager._add_log('info', f'Restart requested via API endpoint', {
+            'force': force,
+            'current_running': manager.is_running(),
+            'current_inactive': manager._inactive_due_to_failures
+        })
+        
         # Restart the manager
         success = restart_database_manager(force=force)
+        
+        # Get new state after restart attempt
+        new_state = {
+            'running': manager.is_running(),
+            'inactive_due_to_failures': manager._inactive_due_to_failures,
+            'logs_count': len(manager._logs)
+        }
+        
+        # Add result log entry to manager
+        manager._add_log('info' if success else 'error', 
+                        f'Restart {"successful" if success else "failed"}', {
+            'success': success,
+            'new_running': manager.is_running(),
+            'new_inactive': manager._inactive_due_to_failures
+        })
+        
+        app.logger.info(f"Restart result - success: {success}, new state: {new_state}")
         
         return jsonify({
             'success': success,
             'message': 'Database manager restarted successfully' if success else 'Failed to restart database manager',
+            'debug_info': {
+                'before_state': current_state,
+                'after_state': new_state,
+                'force': force
+            },
             'server_timestamp': datetime.now().isoformat()
         }), 200
         
     except Exception as e:
-        app.logger.error(f"Error restarting database manager: {e}")
+        app.logger.error(f"Error restarting database manager: {e}", exc_info=True)
         return jsonify({'error': 'Failed to restart database manager', 'details': str(e)}), 500
 
 
