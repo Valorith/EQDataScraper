@@ -134,7 +134,7 @@
                     :key="npc.id"
                     :class="['npc-card-compact', 'clickable-npc-card', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
                     @click.prevent="handleNpcCardClick(npc)"
-                    :title="`🔥 CLICK ME: ${npc.full_name} (NEW VERSION)`"
+                    :title="`Click to view ${npc.full_name} details (opens in new tab)`"
                   >
                     <div class="npc-basic-info">
                       <div class="npc-name-compact">
@@ -1223,18 +1223,15 @@ export default {
     }
 
     const handleNpcCardClick = (npc) => {
-      console.log('NPC card clicked via handleNpcCardClick!', npc.full_name, npc.id)
       openNpcInfo(npc)
     }
 
     const openNpcInfo = async (npc) => {
-      console.log('NPC card clicked!', npc.full_name, npc.id)
       try {
         // Open NPC details page in new tab with auto-open modal parameter
         // The NPCs page expects 'npc' parameter with the NPC ID
         const npcUrl = `${window.location.origin}/npcs?npc=${npc.id}`
         
-        console.log('Opening URL:', npcUrl)
         // Open in new tab
         window.open(npcUrl, '_blank', 'noopener,noreferrer')
       } catch (error) {
