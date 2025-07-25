@@ -35,6 +35,9 @@ class DatabaseManager:
         self._next_check_time = None
         self._last_check_result = None
         self._check_count = 0
+        self._consecutive_failures = 0
+        self._max_retry_attempts = 10
+        self._inactive_due_to_failures = False
         
     def start_monitoring(self, delay_start: float = 5.0):
         """
@@ -94,47 +97,79 @@ class DatabaseManager:
                     time.sleep(self._check_interval)
                     
     def _perform_health_check(self):
-        """Perform a database health check and attempt reconnection if needed."""
+        """Perform a database health check with actual connection testing and retry logic."""
         check_time = datetime.now()
-        content_db = get_content_db_manager()
         
-        try:
-            # Get current connection status
-            status = content_db.get_connection_status()
-            
-            # If not connected, check if configured
-            if not status['connected']:
-                logger.info("Database not connected, checking configuration...")
-                
-                # Check if configuration exists
-                if not status['config_loaded']:
-                    logger.info("No database configuration loaded, attempting to load from environment...")
-                    self._load_config_from_env()
-                    
-                # Attempt reconnection
-                logger.info("Attempting database reconnection...")
-                # The content_db_manager will handle the actual reconnection logic
-                # when get_connection() is called next time
-                
-            else:
-                logger.debug("Database connection healthy")
-                
-            self._last_check_result = {
-                'timestamp': check_time,
-                'connected': status['connected'],
-                'config_loaded': status['config_loaded'],
-                'retry_delay': status.get('retry_delay', 0),
-                'database_type': status.get('database_type'),
-                'pool_active': status.get('pool_active', False)
-            }
-            
-        except Exception as e:
-            logger.error(f"Database health check failed: {e}")
+        # Check if we've exceeded max retry attempts
+        if self._inactive_due_to_failures:
+            logger.debug("Database manager inactive due to consecutive failures")
             self._last_check_result = {
                 'timestamp': check_time,
                 'connected': False,
                 'config_loaded': False,
-                'error': str(e)
+                'consecutive_failures': self._consecutive_failures,
+                'inactive_reason': f'Exceeded {self._max_retry_attempts} consecutive failures',
+                'manager_active': False
+            }
+            return
+        
+        try:
+            # Test actual database connection with sanitized config
+            connection_successful = self._test_database_connection()
+            
+            if connection_successful:
+                # Reset failure count on successful connection
+                self._consecutive_failures = 0
+                logger.debug("Database connection test successful")
+                
+                self._last_check_result = {
+                    'timestamp': check_time,
+                    'connected': True,
+                    'config_loaded': True,
+                    'consecutive_failures': self._consecutive_failures,
+                    'manager_active': True
+                }
+            else:
+                # Connection failed - increment failure count
+                self._consecutive_failures += 1
+                logger.warning(f"Database connection failed (attempt {self._consecutive_failures}/{self._max_retry_attempts})")
+                
+                # Check if we should go inactive
+                if self._consecutive_failures >= self._max_retry_attempts:
+                    self._inactive_due_to_failures = True
+                    logger.error(f"Database manager going inactive after {self._max_retry_attempts} consecutive failures")
+                    
+                    # Stop the monitoring timer
+                    self.stop_monitoring()
+                
+                self._last_check_result = {
+                    'timestamp': check_time,
+                    'connected': False,
+                    'config_loaded': True,  # Config can be loaded but connection fails
+                    'consecutive_failures': self._consecutive_failures,
+                    'manager_active': not self._inactive_due_to_failures,
+                    'retry_attempts_remaining': max(0, self._max_retry_attempts - self._consecutive_failures)
+                }
+            
+        except Exception as e:
+            # Exception during health check
+            self._consecutive_failures += 1
+            logger.error(f"Database health check exception (attempt {self._consecutive_failures}/{self._max_retry_attempts}): {e}")
+            
+            # Check if we should go inactive
+            if self._consecutive_failures >= self._max_retry_attempts:
+                self._inactive_due_to_failures = True
+                logger.error(f"Database manager going inactive after {self._max_retry_attempts} consecutive failures")
+                self.stop_monitoring()
+            
+            self._last_check_result = {
+                'timestamp': check_time,
+                'connected': False,
+                'config_loaded': False,
+                'consecutive_failures': self._consecutive_failures,
+                'error': str(e),
+                'manager_active': not self._inactive_due_to_failures,
+                'retry_attempts_remaining': max(0, self._max_retry_attempts - self._consecutive_failures)
             }
             
     def _load_config_from_env(self):
@@ -162,6 +197,41 @@ class DatabaseManager:
                 
         except Exception as e:
             logger.error(f"Failed to load configuration from environment: {e}")
+            
+    def _test_database_connection(self) -> bool:
+        """Test actual database connection with sanitized configuration."""
+        try:
+            # Get the content database manager to test actual connection
+            from utils.content_db_manager import get_content_db_manager
+            db_manager = get_content_db_manager()
+            
+            # Use the connection status from content_db_manager which loads and sanitizes config
+            status = db_manager.get_connection_status()
+            
+            # Check if config is loaded and connection can be established
+            if not status.get('config_loaded', False):
+                logger.debug("Database configuration not loaded")
+                return False
+            
+            # Try to get an actual connection with timeout
+            try:
+                with db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT 1")
+                    result = cursor.fetchone()
+                    cursor.close()
+                    
+                    # If we got here, connection is working
+                    logger.debug("Database connection test successful")
+                    return True
+                    
+            except Exception as conn_error:
+                logger.warning(f"Database connection test failed: {conn_error}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error testing database connection: {e}")
+            return False
             
     def get_monitoring_status(self) -> Dict[str, Any]:
         """Get current monitoring status for the Database Diagnostics modal."""
