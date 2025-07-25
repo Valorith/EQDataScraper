@@ -76,3 +76,4 @@ backend/backend_output.log
 # Sample/test directories
 backend/samples/
 backend/server.log
+*.log

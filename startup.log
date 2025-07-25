@@ -1,30 +1,69 @@
 /Users/rgagnier/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
   warnings.warn(
+✓ Loaded environment variables from .env
 
 [96m[1m============================================================[0m
 [96m[1m  Starting EQDataScraper Application[0m
 [96m[1m============================================================[0m
 
+[93m⚠ 🔧 MODE: DEVELOPMENT (dev auth bypass enabled)[0m
+[93m⚠ ⚠️  Development tools and auth bypass are active[0m
+
+[96m🔧 Checking for existing services...[0m
+  [94mℹ No existing services found[0m
+
 [94mℹ Checking dependencies...[0m
-[92m✅ Python dependencies: OK[0m
+[92m✅ Core Python dependencies: OK[0m
+[92m✅ OAuth dependencies: OK[0m
 [92m✅ Node.js: v22.17.0[0m
 [92m✅ npm command: npm (WSL: False)[0m
-[92m✅ Node modules: OK[0m
-[94mℹ Starting backend server...[0m
-[92m✅ Backend server started on http://localhost:5008[0m
-[94mℹ Starting frontend development server...[0m
-[94mℹ Trying command: npm run dev[0m
-[92m✅ Frontend server started on port 3000 (or next available)[0m
-[94mℹ Saved PIDs: {'backend': 40564, 'frontend': 40571}[0m
-[92m✅ 
-🎉 Application started successfully![0m
-[94mℹ Frontend: http://localhost:3000[0m
-[94mℹ Backend API: http://localhost:5008[0m
-[94mℹ 
-Press Ctrl+C to stop all services[0m
+  [92m✅ Node modules installed[0m
+  [92m✅ OAuth system: READY[0m
+    [92m✅ Database: configured[0m
+    [92m✅ OAuth redirect URI: synchronized[0m
+
+[96m[1m─── Port Management ───[0m
+  [96m🔧 Enforcing port management policy...[0m
+    [96m🔧 Backend port management:[0m
+      [92m✅ Backend port 5001 is available[0m
+    [96m🔧 Frontend port management (enforcing port 3000):[0m
+      [92m✅ Frontend port 3000 is available[0m
+    [94mℹ Configuration is already correct[0m
+  [92m✅ Port allocation complete:[0m
+    [94mℹ Backend: 5001[0m
+    [94mℹ Frontend: 3000[0m
+  [96m🔧 Starting backend server...[0m
+    [97m  • Loaded backend OAuth configuration[0m
+    [97m  • Dev auth passed to backend: true[0m
+    [92m✅ Backend ready on port 5001[0m
+  [96m🔧 Starting frontend development server...[0m
+    [97m  • Trying: npm run dev -- --port 3000[0m
+    [92m✅ Frontend ready on port 3000[0m
+[94mℹ Saved PIDs: {'backend': 7606, 'frontend': 7613}[0m
+
+
+[96m[1m─── Application Ready ───[0m
+  [92m✅ Frontend: http://localhost:3000[0m
+  [92m✅ Backend API: http://localhost:5001[0m
+
+[94mℹ Press Ctrl+C to stop all services[0m
+[94mℹ Press Ctrl+T to restart all services[0m
+
+[94mℹ Verifying service health...[0m
+[92m✅ ✓ Backend API is responding[0m
+[92m✅ ✓ Frontend server is accepting connections[0m
+[94mℹ Verifying service health...[0m
+[92m✅ ✓ Backend API is responding[0m
+[92m✅ ✓ Frontend server is accepting connections[0m
+[94mℹ Verifying service health...[0m
+[92m✅ ✓ Backend API is responding[0m
+[92m✅ ✓ Frontend server is accepting connections[0m
+[94mℹ Verifying service health...[0m
+[92m✅ ✓ Backend API is responding[0m
+[92m✅ ✓ Frontend server is accepting connections[0m
 [94mℹ Verifying service health...[0m
 [92m✅ ✓ Backend API is responding[0m
 [92m✅ ✓ Frontend server is accepting connections[0m
 [91m❌ Services stopped unexpectedly: backend[0m
-[94mℹ Saved PIDs: {'frontend': 40571}[0m
+[94mℹ Saved PIDs: {'frontend': 7613}[0m
 [91m❌ Services stopped unexpectedly: frontend[0m
