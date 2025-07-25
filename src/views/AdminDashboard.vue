@@ -369,6 +369,81 @@
                 {{ checkingBackend ? 'Checking...' : 'Check Backend' }}
               </button>
             </div>
+            
+            <!-- Database Manager Status Card -->
+            <div class="test-card database-manager-card">
+              <div class="test-header">
+                <i class="fas fa-heartbeat"></i>
+                <h3>Database Manager</h3>
+              </div>
+              <p>Monitor automatic database reconnection system with 30-second health checks.</p>
+              
+              <!-- Manager Status -->
+              <div v-if="databaseManagerStatus" class="manager-status">
+                <div class="status-item">
+                  <span class="status-label">Status:</span>
+                  <span class="status-value" :class="databaseManagerStatus.monitoring_active ? 'success' : 'error'">
+                    {{ databaseManagerStatus.monitoring_active ? 'Monitoring Active' : 'Inactive' }}
+                  </span>
+                </div>
+                
+                <div v-if="databaseManagerStatus.monitoring_active" class="status-item">
+                  <span class="status-label">Next Check:</span>
+                  <span class="status-value">{{ databaseManagerStatus.time_to_next_check }}s</span>
+                </div>
+                
+                <div class="status-item">
+                  <span class="status-label">Total Checks:</span>
+                  <span class="status-value">{{ databaseManagerStatus.total_checks || 0 }}</span>
+                </div>
+                
+                <!-- Progress Bar for Timer -->
+                <div v-if="databaseManagerStatus.monitoring_active" class="timer-progress">
+                  <div class="progress-label">
+                    <span>Health Check Timer</span>
+                    <span>{{ databaseManagerStatus.time_to_next_check }}s remaining</span>
+                  </div>
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ 
+                      width: getTimerProgress(databaseManagerStatus.time_to_next_check, databaseManagerStatus.check_interval) + '%' 
+                    }"></div>
+                  </div>
+                </div>
+                
+                <!-- Last Check Result -->
+                <div v-if="databaseManagerStatus.last_check" class="last-check-result">
+                  <h4>Last Check Result:</h4>
+                  <div class="check-details">
+                    <div class="check-item">
+                      <span class="check-label">Connected:</span>
+                      <span class="check-value" :class="databaseManagerStatus.last_check.connected ? 'success' : 'error'">
+                        {{ databaseManagerStatus.last_check.connected ? 'Yes' : 'No' }}
+                      </span>
+                    </div>
+                    <div class="check-item">
+                      <span class="check-label">Config Loaded:</span>
+                      <span class="check-value" :class="databaseManagerStatus.last_check.config_loaded ? 'success' : 'warning'">
+                        {{ databaseManagerStatus.last_check.config_loaded ? 'Yes' : 'No' }}
+                      </span>
+                    </div>
+                    <div v-if="databaseManagerStatus.last_check.timestamp" class="check-item">
+                      <span class="check-label">Checked:</span>
+                      <span class="check-value small">{{ formatTimestamp(databaseManagerStatus.last_check.timestamp) }}</span>
+                    </div>
+                    <div v-if="databaseManagerStatus.last_check.error" class="check-item">
+                      <span class="check-label">Error:</span>
+                      <span class="check-value error small">{{ databaseManagerStatus.last_check.error }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Real-time status indicator -->
+              <div class="realtime-indicator">
+                <i class="fas fa-circle" :class="{ 'pulse': databaseManagerStatus?.monitoring_active }"></i>
+                <span>{{ databaseManagerStatus?.monitoring_active ? 'Live monitoring active' : 'Monitoring inactive' }}</span>
+              </div>
+            </div>
           </div>
           
           <!-- Diagnostics Results -->
@@ -1043,6 +1118,11 @@ const resolvingMismatch = ref({})
 const checkingBackend = ref(false)
 const runningDiagnostics = ref(false)
 const refreshingConnection = ref(false)
+
+// Database Manager state
+const databaseManagerStatus = ref(null)
+const loadingManagerStatus = ref(false)
+let databaseManagerInterval = null
 
 // Toast notifications
 const toasts = ref([])
@@ -1893,6 +1973,92 @@ const runDiagnostics = async () => {
   }
 }
 
+// Database Manager Functions
+const loadDatabaseManagerStatus = async (isBackground = false) => {
+  // Skip if already loading (unless it's a background update)
+  if (loadingManagerStatus.value && !isBackground) return
+  
+  if (!isBackground) {
+    loadingManagerStatus.value = true
+  }
+  
+  try {
+    const response = await axios.get(`${getApiBaseUrl()}/api/database/manager/status`, {
+      timeout: 3000, // Shorter timeout for real-time updates
+      cancelToken: requestManager.getCancelToken('database-manager-status')
+    })
+    
+    if (response.data && response.data.success) {
+      databaseManagerStatus.value = response.data
+    } else {
+      console.warn('Database manager status request failed:', response.data)
+      if (!isBackground) { // Only show error state if it's not a background update
+        databaseManagerStatus.value = {
+          success: false,
+          monitoring_active: false,
+          error: response.data?.error || 'Unknown error'
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading database manager status:', error)
+    if (!isBackground) { // Only show error state if it's not a background update
+      databaseManagerStatus.value = {
+        success: false,
+        monitoring_active: false,
+        error: error.message || 'Network error'
+      }
+    }
+  } finally {
+    if (!isBackground) {
+      loadingManagerStatus.value = false
+    }
+  }
+}
+
+const startDatabaseManagerPolling = () => {
+  // Clear any existing interval
+  if (databaseManagerInterval) {
+    clearInterval(databaseManagerInterval)
+  }
+  
+  // Load initial status
+  loadDatabaseManagerStatus()
+  
+  // Set up polling every 2 seconds for real-time updates
+  databaseManagerInterval = setInterval(() => {
+    loadDatabaseManagerStatus(true) // Background update
+  }, 2000)
+}
+
+const stopDatabaseManagerPolling = () => {
+  if (databaseManagerInterval) {
+    clearInterval(databaseManagerInterval)
+    databaseManagerInterval = null
+  }
+}
+
+const getTimerProgress = (timeRemaining, checkInterval) => {
+  if (!timeRemaining || !checkInterval) return 0
+  const elapsed = checkInterval - timeRemaining
+  return Math.max(0, Math.min(100, (elapsed / checkInterval) * 100))
+}
+
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return 'Never'
+  try {
+    const date = new Date(timestamp)
+    return date.toLocaleString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+  } catch {
+    return 'Invalid date'
+  }
+}
+
 const saveDatabaseConfig = async () => {
   if (!databaseTestResult.value?.success) {
     showToast('Test Required', 'Please test the connection first before saving', 'warning')
@@ -2177,10 +2343,16 @@ const openDiagnosticsModal = () => {
   copiedDiagnostics.value = false
   mismatchResolutions.value = {}
   resolvingMismatch.value = {}
+  
+  // Start real-time polling for database manager status
+  startDatabaseManagerPolling()
 }
 
 const closeDiagnosticsModal = () => {
   showDiagnosticsModal.value = false
+  
+  // Stop real-time polling when closing modal
+  stopDatabaseManagerPolling()
 }
 
 const copyDiagnostics = async () => {
@@ -2610,6 +2782,9 @@ onUnmounted(() => {
   if (activityRefreshInterval) {
     clearInterval(activityRefreshInterval)
   }
+  
+  // Stop database manager polling
+  stopDatabaseManagerPolling()
   
   // Cancel any pending requests
   requestManager.cancelRequest('admin-stats')
@@ -4535,6 +4710,153 @@ onUnmounted(() => {
 .test-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Database Manager Card Styles */
+.database-manager-card .manager-status {
+  margin: 15px 0;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(138, 43, 226, 0.2);
+}
+
+.database-manager-card .status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.database-manager-card .status-label {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.database-manager-card .status-value {
+  font-weight: 600;
+}
+
+.database-manager-card .status-value.success {
+  color: #10b981;
+}
+
+.database-manager-card .status-value.error {
+  color: #ef4444;
+}
+
+.database-manager-card .status-value.warning {
+  color: #f59e0b;
+}
+
+.database-manager-card .timer-progress {
+  margin: 15px 0;
+}
+
+.database-manager-card .progress-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+.database-manager-card .progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.database-manager-card .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #22c55e);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.database-manager-card .last-check-result {
+  margin-top: 15px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(138, 43, 226, 0.15);
+}
+
+.database-manager-card .last-check-result h4 {
+  margin: 0 0 10px 0;
+  color: var(--primary);
+  font-size: 0.95rem;
+}
+
+.database-manager-card .check-details {
+  display: grid;
+  gap: 6px;
+}
+
+.database-manager-card .check-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.database-manager-card .check-label {
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.database-manager-card .check-value {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.database-manager-card .check-value.small {
+  font-size: 0.8rem;
+}
+
+.database-manager-card .check-value.success {
+  color: #10b981;
+}
+
+.database-manager-card .check-value.error {
+  color: #ef4444;
+}
+
+.database-manager-card .check-value.warning {
+  color: #f59e0b;
+}
+
+.database-manager-card .realtime-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+  padding: 8px 12px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #10b981;
+}
+
+.database-manager-card .realtime-indicator i {
+  font-size: 0.7rem;
+}
+
+.database-manager-card .realtime-indicator i.pulse {
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 
 .diagnostics-result {

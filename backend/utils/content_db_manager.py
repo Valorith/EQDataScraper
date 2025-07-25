@@ -259,8 +259,10 @@ class ContentDatabaseManager:
             try:
                 config, db_type = self._load_database_config()
                 connected = config is not None and db_type is not None
+                config_loaded = config is not None  # Use the actual loaded config, not cached self._config
             except:
                 connected = False
+                config_loaded = False
             
             status = {
                 'connected': connected,
@@ -268,7 +270,7 @@ class ContentDatabaseManager:
                 'retry_delay': max(0, self._connect_retry_delay - (time.time() - self._last_connect_attempt)),
                 'last_attempt': self._last_connect_attempt,
                 'database_type': self._db_type,
-                'config_loaded': self._config is not None,
+                'config_loaded': config_loaded,  # Use the real config status
                 'validation_result': self._last_validation_result
             }
             

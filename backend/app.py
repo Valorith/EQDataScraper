@@ -723,6 +723,35 @@ def database_health_check():
     
     return jsonify(health_status), 200 if overall_healthy else 503
 
+@app.route('/api/database/manager/status', methods=['GET'])
+@exempt_when_limiting
+def get_database_manager_status():
+    """Get database manager monitoring status - non-blocking and safe."""
+    try:
+        from utils.database_manager import get_database_manager
+        
+        # Get manager instance without creating new connections
+        manager = get_database_manager()
+        
+        # This call is fast and non-blocking - just returns cached status
+        status = manager.get_monitoring_status()
+        
+        # Add basic server info
+        status['server_timestamp'] = datetime.now().isoformat()
+        status['success'] = True
+        
+        return jsonify(status), 200
+        
+    except Exception as e:
+        # Ensure we never crash or block on this endpoint
+        logger.error(f"Error getting database manager status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'monitoring_active': False,
+            'server_timestamp': datetime.now().isoformat()
+        }), 200  # Return 200 to not break the UI
+
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_connections():
     """Force cleanup of database connections and resources to prevent hanging."""
@@ -3955,6 +3984,14 @@ def cleanup_resources():
     except Exception as e:
         logger.error(f"Error closing connection pool: {e}")
     
+    # Shutdown database manager
+    try:
+        from utils.database_manager import shutdown_database_manager
+        shutdown_database_manager()
+        logger.info("Database manager shutdown")
+    except Exception as e:
+        logger.error(f"Error shutting down database manager: {e}")
+    
     # Close content database connections
     try:
         from utils.content_db_manager import get_content_db_manager
@@ -4580,6 +4617,14 @@ if __name__ == '__main__':
         except Exception as e:
             logger.error(f"Error checking database configuration: {e}")
             logger.info("⚠️ Database initialization skipped due to configuration error")
+
+    # Initialize the database manager with automatic reconnection monitoring
+    try:
+        from utils.database_manager import initialize_database_manager
+        initialize_database_manager(delay_start=5.0)  # Start monitoring after 5 seconds
+        logger.info("✅ Database manager initialized with 30-second monitoring")
+    except Exception as e:
+        logger.error(f"Failed to initialize database manager: {e}")
     
     # Spell system disabled - skipping spell data preloading
     logger.info("🚫 Spell system disabled - skipping startup spell data preload")
