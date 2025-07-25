@@ -3065,8 +3065,8 @@ export default {
   display: flex;
   gap: 16px; /* Slightly tighter gap between info boxes for better proportion */
   margin-bottom: 0;
-  margin-right: 130px; /* Optimized spacing to prevent overlap while maintaining better proportions */
-  flex: 1;
+  flex: 0 1 auto; /* Change from flex: 1 to prevent expansion into class card area */
+  max-width: calc(100% - 150px); /* Explicit max-width to prevent overlap */
   position: relative;
   z-index: 5;
 }
@@ -3555,7 +3555,7 @@ export default {
   }
   
   .spell-details {
-    margin-right: 110px; /* Proportionally reduced margin on tablets */
+    max-width: calc(100% - 130px); /* Adjust max-width for tablets */
   }
   
   .spell-class-levels {
@@ -3687,7 +3687,7 @@ export default {
   .spell-results.list .spell-details {
     flex-direction: column;
     gap: 8px;
-    margin-right: 0; /* Remove right margin on mobile */
+    max-width: none; /* Remove width constraint on mobile */
   }
   
   .spell-results.list .spell-detail-row {
