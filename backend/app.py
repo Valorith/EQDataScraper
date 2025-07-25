@@ -2055,6 +2055,16 @@ def save_cache_to_database():
 #     logger.info("Skipping initial cache load for gunicorn worker")
 
 
+# Initialize the database manager for production (Gunicorn/Railway) deployment
+# This runs at module level so it works with WSGI servers like Gunicorn
+try:
+    from utils.database_manager import initialize_database_manager
+    initialize_database_manager(delay_start=5.0)  # Start monitoring after 5 seconds
+    logger.info("✅ Database manager initialized with 30-second monitoring (module level)")
+except Exception as e:
+    logger.error(f"Failed to initialize database manager: {e}")
+
+
 
 def is_cache_expired(class_name):
     """DISABLED - spell system disabled"""
@@ -4618,13 +4628,6 @@ if __name__ == '__main__':
             logger.error(f"Error checking database configuration: {e}")
             logger.info("⚠️ Database initialization skipped due to configuration error")
 
-    # Initialize the database manager with automatic reconnection monitoring
-    try:
-        from utils.database_manager import initialize_database_manager
-        initialize_database_manager(delay_start=5.0)  # Start monitoring after 5 seconds
-        logger.info("✅ Database manager initialized with 30-second monitoring")
-    except Exception as e:
-        logger.error(f"Failed to initialize database manager: {e}")
     
     # Spell system disabled - skipping spell data preloading
     logger.info("🚫 Spell system disabled - skipping startup spell data preload")
