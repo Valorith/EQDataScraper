@@ -316,56 +316,109 @@ class DatabaseManager:
             return False
             
     def _attempt_config_reload(self) -> bool:
-        """Attempt to reload and apply saved database configuration automatically."""
+        """Attempt to reload and apply saved database configuration using same logic as admin UI."""
         try:
-            from utils.persistent_config import get_persistent_config
-            from utils.content_db_manager import get_content_db_manager
+            logger.info("🔄 Attempting automatic database configuration reload using admin UI logic...")
             
-            logger.info("🔄 Attempting automatic database configuration reload...")
-            
-            # Get the persistent config manager
-            persistent_config = get_persistent_config()
-            
-            # Force reload from persistent storage (clear cache)
-            persistent_config._config = None
-            
-            # Try to get stored configuration
-            db_config = persistent_config.get_database_config()
-            
-            if not db_config:
-                logger.warning("No stored database configuration found for reload")
+            # Step 1: Call the same API endpoint that "Load Saved" uses
+            stored_config = self._get_stored_config_via_api()
+            if not stored_config:
+                logger.warning("No stored configuration found via API")
                 return False
                 
-            # Check if we have a database URL
-            db_url = db_config.get('production_database_url')
-            if not db_url:
-                logger.warning("No database URL found in stored configuration")
-                return False
-                
-            logger.info(f"Found stored configuration with URL for host: {db_config.get('database_host', 'unknown')}")
+            # Step 2: Process config the same way the frontend does (with trimming)
+            config_data = {
+                'db_type': (stored_config.get('database_type', 'mysql') or 'mysql').strip(),
+                'host': (stored_config.get('host', '') or '').strip(),
+                'port': stored_config.get('port', 3306),
+                'database': (stored_config.get('database_name', '') or '').strip(),
+                'username': (stored_config.get('username', '') or '').strip(),
+                'password': (stored_config.get('password', '') or '').strip(),
+                'use_ssl': stored_config.get('database_ssl', True)
+            }
             
-            # Force the content database manager to reload as well
-            content_manager = get_content_db_manager()
-            content_manager._config = None  # Clear cached config
-            content_manager._connection_healthy = False  # Force reconnection
+            logger.info(f"Processed config: host={config_data['host']}, db={config_data['database']}, user={config_data['username']}")
             
-            # Save the configuration to ensure it's applied
-            try:
-                persistent_config.save_database_config(
-                    database_url=db_url,
-                    database_type=db_config.get('database_type', 'mysql'),
-                    database_ssl=db_config.get('database_ssl', True),
-                    database_read_only=db_config.get('database_read_only', True)
-                )
-                logger.info("✅ Database configuration reloaded and saved successfully")
-                return True
-                
-            except Exception as save_error:
-                logger.error(f"Failed to save reloaded configuration: {save_error}")
-                return False
+            # Step 3: Save configuration using same logic as "Save Configuration" button
+            return self._save_config_via_api(config_data)
                 
         except Exception as e:
             logger.error(f"Error during automatic config reload: {e}")
+            return False
+            
+    def _get_stored_config_via_api(self):
+        """Get stored configuration using the same API endpoint as 'Load Saved' button."""
+        try:
+            # Import here to avoid circular imports
+            import sys
+            if 'routes.admin' not in sys.modules:
+                from routes.admin import get_stored_database_config
+            
+            # Simulate the API call that frontend makes
+            from utils.persistent_config import get_persistent_config
+            from urllib.parse import urlparse
+            
+            persistent_config = get_persistent_config()
+            db_config = persistent_config.get_database_config()
+            
+            if not db_config:
+                return None
+                
+            db_url = db_config.get('production_database_url')
+            if not db_url:
+                return None
+                
+            # Parse URL same way as the admin endpoint does
+            parsed = urlparse(db_url)
+            
+            return {
+                'database_type': db_config.get('database_type', 'mysql'),
+                'host': parsed.hostname,
+                'port': int(parsed.port) if parsed.port else 3306,
+                'database_name': parsed.path[1:] if parsed.path else '',
+                'username': parsed.username,
+                'password': parsed.password,
+                'database_ssl': db_config.get('database_ssl', True)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting stored config via API logic: {e}")
+            return None
+            
+    def _save_config_via_api(self, config_data) -> bool:
+        """Save configuration using the same logic as 'Save Configuration' button."""
+        try:
+            # Import here to avoid circular imports  
+            from utils.persistent_config import get_persistent_config
+            from utils.content_db_manager import get_content_db_manager
+            
+            # Build database URL same way the admin API does
+            if config_data['use_ssl']:
+                protocol = 'mysql' if config_data['db_type'] == 'mysql' else config_data['db_type']
+                db_url = f"{protocol}://{config_data['username']}:{config_data['password']}@{config_data['host']}:{config_data['port']}/{config_data['database']}?sslmode=require"
+            else:
+                protocol = 'mysql' if config_data['db_type'] == 'mysql' else config_data['db_type']
+                db_url = f"{protocol}://{config_data['username']}:{config_data['password']}@{config_data['host']}:{config_data['port']}/{config_data['database']}"
+            
+            # Save using persistent config same as admin API
+            persistent_config = get_persistent_config()
+            persistent_config.save_database_config(
+                database_url=db_url,
+                database_type=config_data['db_type'],
+                database_ssl=config_data['use_ssl'],
+                database_read_only=True  # Always read-only like admin saves
+            )
+            
+            # Clear content manager cache to force reload
+            content_manager = get_content_db_manager()
+            content_manager._config = None
+            content_manager._connection_healthy = False
+            
+            logger.info("✅ Database configuration saved using admin UI logic")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving config via API logic: {e}")
             return False
             
     def get_monitoring_status(self) -> Dict[str, Any]:
