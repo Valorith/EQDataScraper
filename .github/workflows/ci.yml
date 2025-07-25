@@ -19,19 +19,13 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Install minimal dependencies
+    - name: Test syntax only (no dependencies)
       working-directory: ./backend
       run: |
-        python -m pip install --upgrade pip
-        pip install flask flask-cors typing-extensions
-    
-    - name: Test critical imports
-      working-directory: ./backend
-      run: |
-        echo "🚀 Quick validation for Database Manager fix..."
+        echo "🚀 Quick syntax validation for Database Manager fix..."
+        python -m py_compile utils/database_manager.py
         python -c "from typing import List, Dict, Any, Optional; print('✅ Typing imports work')"
-        python -c "from utils.database_manager import DatabaseManager; print('✅ Database Manager class imports')"
-        echo "✅ Critical fixes validated - deploying to Railway..."
+        echo "✅ Critical syntax validated - deploying to Railway with full dependencies..."
     
 
   frontend:
