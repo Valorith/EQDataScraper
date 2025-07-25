@@ -3066,7 +3066,7 @@ export default {
   gap: 16px; /* Slightly tighter gap between info boxes for better proportion */
   margin-bottom: 0;
   flex: 0 1 auto; /* Change from flex: 1 to prevent expansion into class card area */
-  max-width: calc(100% - 150px); /* Explicit max-width to prevent overlap */
+  max-width: calc(100% - 160px); /* Explicit max-width to prevent overlap with extra breathing room */
   position: relative;
   z-index: 5;
 }
@@ -3555,7 +3555,7 @@ export default {
   }
   
   .spell-details {
-    max-width: calc(100% - 130px); /* Adjust max-width for tablets */
+    max-width: calc(100% - 140px); /* Adjust max-width for tablets with extra spacing */
   }
   
   .spell-class-levels {
