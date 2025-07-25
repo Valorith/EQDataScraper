@@ -114,8 +114,8 @@ router.beforeEach(async (to, from, next) => {
     console.log('Navigating to:', to.path, to.name)
   }
   
-  // Allow access to main page and auth callback without login - all database routes require authentication
-  const publicRoutes = ['MainPage', 'AuthCallback', 'AuthCallbackDebug']
+  // Allow access to main page, zones, NPCs, items, spells, and auth callback without login - other database routes require authentication  
+  const publicRoutes = ['MainPage', 'Zones', 'NPCs', 'Items', 'Spells', 'AuthCallback', 'AuthCallbackDebug']
   
   // Check if the route is public
   if (publicRoutes.includes(to.name)) {

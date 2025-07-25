@@ -908,7 +908,9 @@ export default {
         
         console.log('Searching with params:', params.toString())
         
-        const response = await axios.get(`${getApiBaseUrl()}/api/spells/search?${params.toString()}`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/search?${params.toString()}`, {
+          timeout: 30000 // 30 second timeout for complex spell searches
+        })
         
         // Check if API returned HTML instead of JSON (proxy routing issue)
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -916,6 +918,7 @@ export default {
         }
         
         // Backend handles all filtering now - no frontend filtering needed
+        // Handle API response format - data is at the root level
         this.searchResults = response.data.spells || []
         this.totalCount = response.data.total_count || 0
         
@@ -932,7 +935,29 @@ export default {
         
       } catch (error) {
         console.error('Search error:', error)
-        this.showToast('Search Failed', error.response?.data?.error || error.message, 'error')
+        
+        // Enhanced error handling for different error types
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+          console.error('Timeout details:', {
+            timeout: error.timeout || 'unknown',
+            code: error.code,
+            message: error.message
+          })
+          this.showToast('Search Timeout', 'The search is taking longer than expected. The database may be under heavy load. Please try again.', 'warning')
+        } else if (error.response) {
+          // Server responded with error status
+          console.error('Server error:', error.response.status, error.response.data)
+          this.showToast('Server Error', error.response?.data?.error || `Server returned error: ${error.response.status}`, 'error')
+        } else if (error.request) {
+          // Request made but no response
+          console.error('Network error:', error.request)
+          this.showToast('Network Error', 'Unable to connect to server. Please check your connection.', 'error')
+        } else {
+          // Something else
+          console.error('Unexpected error:', error.message)
+          this.showToast('Search Failed', error.message || 'An unexpected error occurred while searching spells', 'error')
+        }
+        
         this.searchResults = []
         this.totalCount = 0
         
@@ -1096,7 +1121,9 @@ export default {
         this.loadingSpellDetails = true
         
         // Fetch detailed spell information first
-        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spell.spell_id}/details`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spell.spell_id}/details`, {
+          timeout: 15000 // 15 second timeout for spell details
+        })
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1146,7 +1173,9 @@ export default {
         
         // Fetch spell details directly by ID
         console.log('Fetching spell details from API...')
-        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spellId}/details`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${spellId}/details`, {
+          timeout: 15000 // 15 second timeout for spell details
+        })
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1185,7 +1214,9 @@ export default {
         this.loadingSpellItems = true
         this.spellItemsRequested = true
         
-        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${this.selectedSpellDetail.spell_id}/items`)
+        const response = await axios.get(`${getApiBaseUrl()}/api/spells/${this.selectedSpellDetail.spell_id}/items`, {
+          timeout: 15000 // 15 second timeout for spell items
+        })
         
         // Check if API returned HTML instead of JSON
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -1229,11 +1260,11 @@ export default {
       // Prefer new_icon over icon, fallback to icon if new_icon is 0 or missing
       const iconId = (spell.new_icon && spell.new_icon !== 0) ? spell.new_icon : spell.icon
       if (iconId && iconId !== 0) {
-        // Use the numbered icon files from /icons/items/
-        return `/icons/items/${iconId}.png`
+        // Use the numbered icon files from /icons/items/ - try .gif first (EQ standard)
+        return `/icons/items/${iconId}.gif`
       }
       // Fallback for spells without icons (icon 0 = blank scroll)
-      return '/icons/items/0.png'
+      return '/icons/items/0.gif'
     },
 
     // Helper method to check if spell has a valid icon
@@ -1248,8 +1279,12 @@ export default {
       if (currentSrc.includes('.gif')) {
         event.target.src = currentSrc.replace('.gif', '.png')
       } else {
-        // Final fallback to icon 0
-        event.target.src = '/icons/items/0.png'
+        // Final fallback to icon 0 (try .gif first, then .png)
+        if (currentSrc.includes('0.png')) {
+          event.target.src = '/icons/items/0.gif'
+        } else {
+          event.target.src = '/icons/items/0.png'
+        }
       }
     },
 

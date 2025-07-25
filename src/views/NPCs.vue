@@ -355,9 +355,18 @@
               <h3>This NPC spawns in</h3>
             </div>
             <div class="zone-list">
-              <div v-for="zone in uniqueSpawnZones" :key="zone" class="zone-item">
+              <div 
+                v-for="zone in uniqueSpawnZones" 
+                :key="zone" 
+                class="zone-item clickable-zone-item"
+                @click.stop="navigateToZone(zone)"
+                :title="`Open ${zone} in Zones page (new tab)`"
+              >
                 <i class="fas fa-globe zone-icon"></i>
-                <span class="zone-name">{{ zone }}</span>
+                <span class="zone-name">
+                  {{ zone }}
+                </span>
+                <i class="fas fa-external-link-alt zone-link-icon"></i>
               </div>
             </div>
           </div>
@@ -378,7 +387,7 @@
                 <div class="npc-spell-icon-container">
                   <img 
                     v-if="spell.icon && spell.icon !== 0" 
-                    :src="`/icons/items/${spell.icon}.png`" 
+                    :src="`/icons/items/${spell.icon}.gif`" 
                     :alt="spell.spell_name"
                     @error="handleIconError"
                     class="npc-spell-icon"
@@ -400,7 +409,7 @@
                 <div class="merchant-item-info">
                   <img 
                     v-if="item.icon" 
-                    :src="`/icons/items/${item.icon}.png`" 
+                    :src="`/icons/items/${item.icon}.gif`" 
                     :alt="item.item_name"
                     @error="handleIconError"
                     class="merchant-item-icon"
@@ -465,7 +474,7 @@
                     <div class="loot-item-icon-container">
                       <img 
                         v-if="item.icon" 
-                        :src="`/icons/items/${item.icon}.png`" 
+                        :src="`/icons/items/${item.icon}.gif`" 
                         :alt="item.item_name"
                         @error="handleIconError"
                         class="loot-item-icon"
@@ -536,7 +545,7 @@ export default {
       
       // Pagination
       currentPage: 1,
-      limit: 20,
+      limit: 10, // Reduced from 20 to improve load times for complex NPC queries
       paginating: false,
       
       // Filters
@@ -694,7 +703,9 @@ export default {
       })
       
       // Convert set to sorted array
-      return Array.from(uniqueZones).sort()
+      const zones = Array.from(uniqueZones).sort()
+      console.log('uniqueSpawnZones computed:', zones)
+      return zones
     },
 
     allLootDropsExpanded() {
@@ -732,7 +743,10 @@ export default {
         if (this.maxLevel) params.max_level = this.maxLevel
         if (this.selectedZone) params.zone = this.selectedZone
         
-        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { params })
+        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { 
+          params,
+          timeout: 30000 // 30 second timeout for complex NPC searches
+        })
         
         this.searchResults = response.data.npcs || []
         this.totalCount = response.data.total_count || 0
@@ -740,7 +754,17 @@ export default {
         
       } catch (error) {
         console.error('Error searching NPCs:', error)
-        this.showToast('Search Error', 'Failed to search NPCs. Please try again.', 'error')
+        let errorMessage = 'Failed to search NPCs. Please try again.'
+        
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          errorMessage = 'Search request timed out. The query may be too complex. Try narrowing your search criteria.'
+        } else if (error.response?.status >= 500) {
+          errorMessage = 'Server error occurred while searching NPCs. Please try again in a moment.'
+        } else if (!error.response) {
+          errorMessage = 'Network error occurred. Please check your connection and try again.'
+        }
+        
+        this.showToast('Search Error', errorMessage, 'error')
         this.searchResults = []
         this.totalCount = 0
         this.searchPerformed = true
@@ -778,12 +802,25 @@ export default {
         if (this.maxLevel) params.max_level = this.maxLevel
         if (this.selectedZone) params.zone = this.selectedZone
         
-        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { params })
+        const response = await axios.get(`${getApiUrl()}/api/npcs/search`, { 
+          params,
+          timeout: 25000 // 25 second timeout for pagination
+        })
         this.searchResults = response.data.npcs || []
         
       } catch (error) {
         console.error('Error loading page:', error)
-        this.showToast('Loading Error', 'Failed to load page. Please try again.', 'error')
+        let errorMessage = 'Failed to load page. Please try again.'
+        
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          errorMessage = 'Page load request timed out. Please try again.'
+        } else if (error.response?.status >= 500) {
+          errorMessage = 'Server error occurred while loading page. Please try again in a moment.'
+        } else if (!error.response) {
+          errorMessage = 'Network error occurred. Please check your connection and try again.'
+        }
+        
+        this.showToast('Loading Error', errorMessage, 'error')
       } finally {
         this.paginating = false
       }
@@ -807,7 +844,9 @@ export default {
         this.loadingNPCDetails = true
         
         // Fetch detailed NPC information
-        const response = await axios.get(`${getApiUrl()}/api/npcs/${npc.id}/details`)
+        const response = await axios.get(`${getApiUrl()}/api/npcs/${npc.id}/details`, {
+          timeout: 30000 // 30 second timeout for NPC details (increased from 15s)
+        })
         
         // Combine basic NPC data with detailed information
         this.selectedNPCDetail = { ...npc, ...response.data }
@@ -817,9 +856,19 @@ export default {
         
       } catch (error) {
         console.error('Error fetching NPC details:', error)
+        let errorMessage = 'Failed to load NPC details.'
+        
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          errorMessage = 'NPC details request timed out. Please try again.'
+        } else if (error.response?.status >= 500) {
+          errorMessage = 'Server error occurred while loading NPC details. Please try again in a moment.'
+        } else if (!error.response) {
+          errorMessage = 'Network error occurred. Please check your connection and try again.'
+        }
+        
         this.selectedNPCDetail = { ...npc }
         this.loadingNPCDetails = false
-        this.showToast('Loading Error', 'Failed to load NPC details.', 'error')
+        this.showToast('Loading Error', errorMessage, 'error')
       }
     },
 
@@ -924,21 +973,19 @@ export default {
     },
 
     openItemModal(itemId) {
-      // Navigate to the Items page with the item modal opened
-      // We'll pass the item ID as a query parameter (matching what Items.vue expects: 'item')
-      this.$router.push({
-        name: 'Items',
-        query: { item: itemId }
-      })
+      if (!itemId) return
+      
+      // Open Items page in new tab with the item modal opened
+      const itemUrl = `${window.location.origin}/items?item=${itemId}`
+      window.open(itemUrl, '_blank', 'noopener,noreferrer')
     },
 
     openSpellModal(spellId, spellName) {
-      // Navigate to the Spells page with the spell modal opened
-      // We'll pass the spell ID as a query parameter for the spell modal to open
-      this.$router.push({
-        name: 'Spells',
-        query: { spell: spellId }
-      })
+      if (!spellId) return
+      
+      // Open Spells page in new tab with the spell modal opened
+      const spellUrl = `${window.location.origin}/spells?spell=${spellId}`
+      window.open(spellUrl, '_blank', 'noopener,noreferrer')
     },
 
     // Toast notification methods
@@ -967,6 +1014,14 @@ export default {
         case 'info': return 'fa-info-circle'
         default: return 'fa-info-circle'
       }
+    },
+
+    navigateToZone(zoneName) {
+      if (!zoneName) return
+      
+      // Open zones page in new tab so users don't lose their NPC search results
+      const zoneUrl = `${window.location.origin}/zones?zone=${encodeURIComponent(zoneName)}`
+      window.open(zoneUrl, '_blank', 'noopener,noreferrer')
     }
   },
 
@@ -1942,6 +1997,17 @@ export default {
   flex: 0 0 auto;
 }
 
+.zone-item.clickable-zone-item {
+  cursor: pointer;
+}
+
+.zone-item.clickable-zone-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+}
+
 .zone-item:hover {
   transform: translateY(-1px);
   border-color: rgba(102, 126, 234, 0.4);
@@ -1958,6 +2024,27 @@ export default {
   color: #f8fafc;
   font-weight: 600;
   font-size: 1rem;
+}
+
+.zone-link-icon {
+  font-size: 10px;
+  color: #9ca3af;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.zone-item.clickable-zone-item:hover .zone-link-icon {
+  opacity: 1;
+  color: #ffffff;
+}
+
+.zone-item.clickable-zone-item:hover .zone-name {
+  color: #ffffff;
+}
+
+.zone-item.clickable-zone-item:hover .zone-icon {
+  color: #ffffff;
 }
 
 .loot-tables {

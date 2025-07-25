@@ -132,12 +132,15 @@
                   <div 
                     v-for="npc in uniqueZoneNpcs" 
                     :key="npc.id"
-                    :class="['npc-card-compact', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
+                    :class="['npc-card-compact', 'clickable-npc-card', { 'npc-selected': selectedNpcForMap && selectedNpcForMap.id === npc.id }]"
+                    @click="openNpcInfo(npc)"
+                    :title="`Open ${npc.full_name} details in NPCs page (new tab)`"
                   >
                     <div class="npc-basic-info">
                       <div class="npc-name-compact">
                         {{ npc.full_name }}
                         <span v-if="npc.spawn_count > 1" class="spawn-count-badge">({{ npc.spawn_count }})</span>
+                        <i class="fas fa-external-link-alt npc-link-icon"></i>
                       </div>
                       <div class="npc-meta">
                         <span class="npc-level-compact">Lv {{ npc.level }}</span>
@@ -159,7 +162,7 @@
                         📍
                       </button>
                       <button 
-                        @click="openNpcInfo(npc)"
+                        @click.stop="openNpcInfo(npc)"
                         class="npc-action-btn info-btn"
                         title="View details"
                       >
@@ -425,7 +428,7 @@
 
 <script>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import LoadingModal from '../components/LoadingModal.vue'
 import ZoneMap from '../components/ZoneMap.vue'
 import { useBackendUrl } from '../composables/useBackendUrl'
@@ -440,6 +443,7 @@ export default {
   setup() {
     const { backendUrl } = useBackendUrl()
     const router = useRouter()
+    const route = useRoute()
     
     // Reactive state
     const loading = ref(false)
@@ -1238,22 +1242,15 @@ export default {
     }
 
     const openNpcInfo = async (npc) => {
-      // Show confirmation dialog
-      const confirmed = window.confirm(
-        `Navigate to detailed information for ${npc.full_name}?\n\nThis will open the NPC details page in a new tab with the modal automatically opened.`
-      )
-      
-      if (confirmed) {
-        try {
-          // Open NPC details page in new tab with auto-open modal parameter
-          // The NPCs page expects 'npc' parameter with the NPC ID
-          const npcUrl = `/npcs?npc=${npc.id}`
-          
-          // Open in new tab
-          window.open(npcUrl, '_blank')
-        } catch (error) {
-          console.error('Error opening NPC details:', error)
-        }
+      try {
+        // Open NPC details page in new tab with auto-open modal parameter
+        // The NPCs page expects 'npc' parameter with the NPC ID
+        const npcUrl = `${window.location.origin}/npcs?npc=${npc.id}`
+        
+        // Open in new tab
+        window.open(npcUrl, '_blank', 'noopener,noreferrer')
+      } catch (error) {
+        console.error('Error opening NPC details:', error)
       }
     }
     
@@ -1895,6 +1892,59 @@ export default {
       return typeMap[itemtype] || `Type ${itemtype}`
     }
     
+    // Handle zone query parameter on mount
+    onMounted(async () => {
+      const zoneParam = route.query.zone
+      if (zoneParam) {
+        console.log('Zone parameter detected:', zoneParam)
+        
+        // Small delay to ensure component is fully initialized
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Set search query to trigger filtering
+        isSettingSearchQuery.value = true
+        searchQuery.value = zoneParam
+        isSettingSearchQuery.value = false
+        
+        // Trigger search to populate results
+        handleSearch()
+        
+        console.log('Filtered zones after search:', filteredZones.value.map(z => z.longName))
+        
+        // Enhanced zone matching to handle variations like "The Greater Faydark" vs "Greater Faydark"
+        // Search in availableZones (full list) rather than filteredZones (partial matches only)
+        const exactMatch = availableZones.value.find(zone => {
+          const zoneLong = zone.longName.toLowerCase()
+          const zoneShort = zone.shortName.toLowerCase()
+          const param = zoneParam.toLowerCase()
+          
+          // Exact matches
+          if (zoneLong === param || zoneShort === param) {
+            return true
+          }
+          
+          // Handle "The" prefix variations
+          const paramWithoutThe = param.replace(/^the\s+/, '')
+          const zoneWithoutThe = zoneLong.replace(/^the\s+/, '')
+          
+          if (zoneWithoutThe === paramWithoutThe || zoneLong === paramWithoutThe || zoneShort === paramWithoutThe) {
+            return true
+          }
+          
+          return false
+        })
+        
+        console.log('Exact match found:', exactMatch)
+        
+        if (exactMatch) {
+          console.log('Auto-selecting zone:', exactMatch.longName)
+          await selectZone(exactMatch)
+        } else {
+          console.warn(`Could not find zone matching "${zoneParam}" in available zones`)
+        }
+      }
+    })
+    
     return {
       loading,
       mapLoading,
@@ -2445,6 +2495,39 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.npc-card-compact.clickable-npc-card {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.npc-card-compact.clickable-npc-card:hover {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+}
+
+.npc-card-compact.clickable-npc-card:hover .npc-name-compact {
+  color: #60a5fa;
+}
+
+.npc-link-icon {
+  font-size: 8px;
+  color: #9ca3af;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.npc-card-compact.clickable-npc-card:hover .npc-link-icon {
+  opacity: 1;
+  color: #60a5fa;
 }
 
 .spawn-count-badge {

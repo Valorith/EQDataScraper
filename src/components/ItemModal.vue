@@ -6,7 +6,7 @@
           <div class="item-icon-modal-container">
             <img 
               v-if="selectedItemDetail.icon" 
-              :src="`/icons/items/${selectedItemDetail.icon}.png`" 
+              :src="`/icons/items/${selectedItemDetail.icon}.gif`" 
               :alt="`${selectedItemDetail.name || selectedItemDetail.Name || 'Unknown Item'} icon`"
               class="item-icon-modal"
               @error="handleIconError"

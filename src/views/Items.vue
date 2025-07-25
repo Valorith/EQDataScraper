@@ -1272,6 +1272,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getApiBaseUrl } from '../config/api'
 import LoadingModal from '../components/LoadingModal.vue'
 import { toastService } from '../services/toastService'
+import axios from 'axios'
 
 // State
 const searchQuery = ref('')
@@ -1549,8 +1550,14 @@ const performSearch = async (page = 1) => {
     }
     
     const data = await response.json()
-    items.value = data.items || []
-    totalCount.value = data.total_count || 0
+    // Handle both array response (current API) and object response (future API)
+    if (Array.isArray(data)) {
+      items.value = data
+      totalCount.value = data.length
+    } else {
+      items.value = data.items || []
+      totalCount.value = data.total_count || 0
+    }
     databaseAvailable.value = true
     
     // Ensure loading modal shows for minimum 1 second
@@ -1831,19 +1838,27 @@ const loadDropSources = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/drop-sources`)
+    const response = await axios.get(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/drop-sources`, {
+      timeout: 25000 // 25 second timeout for drop sources
+    })
     
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    dropSources.value = data.zones || []
+    dropSources.value = response.data.zones || []
     
   } catch (error) {
     console.error('Error loading drop sources:', error)
-    toastService.error('Error loading drop sources: ' + error.message)
+    let errorMessage = 'Error loading drop sources: '
+    
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      errorMessage += 'Request timed out. The item may have many drop sources. Please try again.'
+    } else if (error.response?.status >= 500) {
+      errorMessage += 'Server error occurred. Please try again in a moment.'
+    } else if (!error.response) {
+      errorMessage += 'Network error occurred. Please check your connection and try again.'
+    } else {
+      errorMessage += error.message
+    }
+    
+    toastService.error(errorMessage)
     dropSources.value = []
     dropSourcesRequested.value = false // Reset to allow retry
   } finally {
@@ -1878,19 +1893,27 @@ const loadMerchantSources = async () => {
   const startTime = Date.now()
   
   try {
-    const response = await fetch(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`)
+    const response = await axios.get(`${getApiBaseUrl()}/api/items/${selectedItemDetail.value.item_id}/merchant-sources`, {
+      timeout: 20000 // 20 second timeout for merchant sources
+    })
     
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    merchantSources.value = data.zones || []
+    merchantSources.value = response.data.zones || []
     
   } catch (error) {
     console.error('Error loading merchant sources:', error)
-    toastService.error('Error loading merchant sources: ' + error.message)
+    let errorMessage = 'Error loading merchant sources: '
+    
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      errorMessage += 'Request timed out. The item may have many merchant sources. Please try again.'
+    } else if (error.response?.status >= 500) {
+      errorMessage += 'Server error occurred. Please try again in a moment.'
+    } else if (!error.response) {
+      errorMessage += 'Network error occurred. Please check your connection and try again.'
+    } else {
+      errorMessage += error.message
+    }
+    
+    toastService.error(errorMessage)
     merchantSources.value = []
     merchantSourcesRequested.value = false // Reset to allow retry
   } finally {
