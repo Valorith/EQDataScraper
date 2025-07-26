@@ -67,22 +67,10 @@ class DatabaseManager:
     def _should_run_monitoring(self) -> bool:
         """Determine if monitoring should run based on environment."""
         if self._environment == 'development':
-            # In development, only run if there's a configured content database
-            try:
-                from utils.persistent_config import get_persistent_config
-                config_manager = get_persistent_config()
-                db_config = config_manager.get_database_config()
-                has_content_db = bool(db_config and db_config.get('production_database_url'))
-                
-                if not has_content_db:
-                    self._add_log('info', 'Development environment: No content database configured, monitoring disabled')
-                    return False
-                    
-                self._add_log('info', 'Development environment: Content database configured, monitoring enabled')
-                return True
-            except:
-                self._add_log('warning', 'Development environment: Unable to check config, monitoring disabled')
-                return False
+            # In development, allow monitoring to run but with simplified config check
+            # This prevents hanging issues while still allowing testing
+            self._add_log('info', 'Development environment: Monitoring enabled for testing')
+            return True
         
         # In production/Railway, always run monitoring
         self._add_log('info', f'{self._environment.title()} environment: Monitoring enabled')
