@@ -218,9 +218,34 @@ class DatabaseManager:
                     'max_attempts': self._max_retry_attempts
                 })
                 
-                # Skip automatic config reload to prevent hanging issues
-                # TODO: Re-enable once config loading performance issues are resolved
-                self._add_log('info', f'⚠️ Skipping auto-reload to prevent hanging (failure {self._consecutive_failures})')
+                # Try to automatically reload saved configuration on first few failures with timeout protection
+                if self._consecutive_failures <= 3:
+                    self._add_log('info', f'🔄 Attempting safe automatic config reload', {
+                        'failure_count': self._consecutive_failures,
+                        'reload_attempts_remaining': 4 - self._consecutive_failures
+                    })
+                    if self._attempt_config_reload():
+                        self._add_log('info', '✅ Config reload successful, retesting connection...')
+                        # Test connection again after reload
+                        connection_successful = self._test_database_connection()
+                        if connection_successful:
+                            self._consecutive_failures = 0
+                            self._add_log('info', '🎉 Database connection restored after config reload!')
+                            self._last_check_result = {
+                                'timestamp': check_time,
+                                'connected': True,
+                                'config_loaded': True,
+                                'consecutive_failures': self._consecutive_failures,
+                                'manager_active': True,
+                                'config_auto_reloaded': True
+                            }
+                            return
+                        else:
+                            self._add_log('warning', '❌ Connection still failed after config reload')
+                    else:
+                        self._add_log('error', '❌ Safe automatic config reload failed or timed out')
+                else:
+                    self._add_log('warning', f'⚠️ Skipping auto-reload (failure {self._consecutive_failures} > 3)')
                 
                 # Check if we should go inactive
                 if self._consecutive_failures >= self._max_retry_attempts:
@@ -287,21 +312,60 @@ class DatabaseManager:
             logger.error(f"Failed to load configuration from environment: {e}")
             
     def _test_database_connection(self) -> bool:
-        """Test database connection - currently stubbed to prevent hanging."""
+        """Test database connection using thread-safe approach with timeout protection."""
         try:
-            # TODO: Re-enable actual connection testing once persistent_config performance is fixed
-            # For now, simulate a connection check to demonstrate monitoring functionality
-            self._add_log('info', '🔄 Simulating database connection test (config loading disabled)')
+            self._add_log('info', '🔄 Testing database connection with timeout protection...')
             
-            import time
-            time.sleep(0.1)  # Simulate brief connection attempt
-            
-            # Return False to demonstrate failure handling, but don't hang
-            self._add_log('warning', '⚠️ Connection test skipped - config loading causes timeouts')
-            return False
+            # Import the same function that Admin Dashboard uses for connection testing
+            import sys
+            if 'app' in sys.modules:
+                from app import get_eqemu_db_connection
+                
+                # Use a separate thread with timeout for connection testing
+                import threading
+                result = {'success': False, 'error': None}
+                
+                def test_connection():
+                    try:
+                        test_conn, db_type, error = get_eqemu_db_connection()
+                        if test_conn:
+                            cursor = test_conn.cursor()
+                            cursor.execute("SELECT 1")
+                            cursor_result = cursor.fetchone()
+                            cursor.close()
+                            test_conn.close()
+                            result['success'] = bool(cursor_result)
+                        else:
+                            result['error'] = error
+                    except Exception as e:
+                        result['error'] = str(e)
+                
+                # Run connection test in separate thread with timeout
+                test_thread = threading.Thread(target=test_connection, daemon=True)
+                test_thread.start()
+                test_thread.join(timeout=10.0)  # 10-second timeout for connection test
+                
+                if test_thread.is_alive():
+                    self._add_log('warning', '⚠️ Connection test timed out after 10 seconds')
+                    return False
+                
+                if result['error']:
+                    self._add_log('warning', f'❌ Connection test failed: {result["error"]}')
+                    return False
+                    
+                if result['success']:
+                    self._add_log('info', '✅ Database connection test successful!')
+                    return True
+                else:
+                    self._add_log('warning', '❌ Connection test returned no result')
+                    return False
+            else:
+                # Fallback when app module not available
+                self._add_log('warning', '⚠️ App module not available, using fallback connection test')
+                return self._fallback_connection_test()
                 
         except Exception as e:
-            logger.error(f"Error in stubbed connection test: {e}")
+            self._add_log('error', f'Error in connection test: {str(e)}')
             return False
             
     def _fallback_connection_test(self) -> bool:
@@ -397,31 +461,53 @@ class DatabaseManager:
             return False
             
     def _get_stored_config_via_api(self):
-        """Get stored configuration using the same API endpoint as 'Load Saved' button."""
+        """Get stored configuration with timeout protection to prevent hanging."""
         try:
-            # Import here to avoid circular imports
-            import sys
-            if 'routes.admin' not in sys.modules:
-                from routes.admin import get_stored_database_config
+            self._add_log('info', 'Attempting safe config load with timeout protection...')
             
-            # Simulate the API call that frontend makes
+            # Import here to avoid circular imports
             from utils.persistent_config import get_persistent_config
             from urllib.parse import urlparse
+            import signal
+            import threading
             
-            persistent_config = get_persistent_config()
-            db_config = persistent_config.get_database_config()
+            result = {'config': None, 'error': None}
             
+            def load_config():
+                """Load config in a separate thread to enable timeout."""
+                try:
+                    persistent_config = get_persistent_config()
+                    result['config'] = persistent_config.get_database_config()
+                except Exception as e:
+                    result['error'] = str(e)
+            
+            # Run config loading in a separate thread with timeout
+            config_thread = threading.Thread(target=load_config, daemon=True)
+            config_thread.start()
+            config_thread.join(timeout=5.0)  # 5-second timeout
+            
+            if config_thread.is_alive():
+                self._add_log('warning', 'Config loading timed out after 5 seconds')
+                return None
+                
+            if result['error']:
+                self._add_log('error', f'Config loading failed: {result["error"]}')
+                return None
+                
+            db_config = result['config']
             if not db_config:
+                self._add_log('warning', 'No database configuration found')
                 return None
                 
             db_url = db_config.get('production_database_url')
             if not db_url:
+                self._add_log('warning', 'No database URL found in configuration')
                 return None
                 
             # Parse URL same way as the admin endpoint does
             parsed = urlparse(db_url)
             
-            return {
+            config_result = {
                 'database_type': db_config.get('database_type', 'mysql'),
                 'host': parsed.hostname,
                 'port': int(parsed.port) if parsed.port else 3306,
@@ -431,8 +517,11 @@ class DatabaseManager:
                 'database_ssl': db_config.get('database_ssl', True)
             }
             
+            self._add_log('info', 'Config loaded successfully with timeout protection')
+            return config_result
+            
         except Exception as e:
-            logger.error(f"Error getting stored config via API logic: {e}")
+            self._add_log('error', f'Error in safe config load: {str(e)}')
             return None
             
     def _save_config_via_api(self, config_data) -> bool:
