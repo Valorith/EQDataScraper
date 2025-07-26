@@ -145,24 +145,53 @@ class DatabaseManager:
             
     def _run_monitoring_loop(self):
         """Main monitoring loop that runs every 30 seconds."""
-        while self._running:
-            try:
-                self._perform_health_check()
-                self._check_count += 1
+        try:
+            self._add_log('debug', f'🔄 Monitoring loop started (check #{self._check_count + 1})', {
+                'running': self._running,
+                'consecutive_failures': self._consecutive_failures,
+                'inactive': self._inactive_due_to_failures
+            })
+            
+            if not self._running:
+                self._add_log('warning', 'Monitoring loop called but manager not running, exiting')
+                return
+            
+            # Increment check count BEFORE performing health check for proper UI sync
+            self._check_count += 1
+            
+            # Perform the actual health check
+            self._perform_health_check()
+            
+            # Schedule next check if still running
+            if self._running and not self._inactive_due_to_failures:
+                self._next_check_time = datetime.now() + timedelta(seconds=self._check_interval)
+                self._timer = threading.Timer(self._check_interval, self._run_monitoring_loop)
+                self._timer.daemon = True
+                self._timer.start()
                 
-                # Schedule next check
-                if self._running:
+                self._add_log('debug', f'⏰ Next health check scheduled in {self._check_interval}s', {
+                    'next_check_time': self._next_check_time.isoformat()
+                })
+            else:
+                self._add_log('info', '⏹️ Monitoring loop stopped (manager inactive or not running)')
+                
+        except Exception as e:
+            self._add_log('error', f'❌ Critical error in monitoring loop: {str(e)}', {
+                'exception_type': type(e).__name__,
+                'check_count': self._check_count
+            })
+            logger.error(f"Critical error in database monitoring loop: {e}")
+            
+            # Try to continue monitoring even after error
+            if self._running and not self._inactive_due_to_failures:
+                try:
                     self._next_check_time = datetime.now() + timedelta(seconds=self._check_interval)
                     self._timer = threading.Timer(self._check_interval, self._run_monitoring_loop)
                     self._timer.daemon = True
                     self._timer.start()
-                    break  # Exit this loop iteration
-                    
-            except Exception as e:
-                logger.error(f"Error in database monitoring loop: {e}")
-                # Continue running even if there's an error
-                if self._running:
-                    time.sleep(self._check_interval)
+                    self._add_log('info', '🔄 Monitoring loop restarted after error')
+                except Exception as restart_error:
+                    self._add_log('error', f'❌ Failed to restart monitoring after error: {str(restart_error)}')
                     
     def _perform_health_check(self):
         """Perform a database health check with actual connection testing and retry logic."""
