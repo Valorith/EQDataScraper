@@ -145,22 +145,34 @@ class DatabaseManager:
             
     def _run_monitoring_loop(self):
         """Main monitoring loop that runs every 30 seconds."""
+        self._add_log('debug', f'🚀 MONITORING LOOP ENTRY - Check #{self._check_count + 1}', {
+            'running': self._running,
+            'consecutive_failures': self._consecutive_failures,
+            'inactive': self._inactive_due_to_failures,
+            'thread_id': threading.current_thread().ident
+        })
+        
         try:
-            self._add_log('debug', f'🔄 Monitoring loop started (check #{self._check_count + 1})', {
-                'running': self._running,
-                'consecutive_failures': self._consecutive_failures,
-                'inactive': self._inactive_due_to_failures
-            })
-            
             if not self._running:
-                self._add_log('warning', 'Monitoring loop called but manager not running, exiting')
+                self._add_log('warning', '⚠️ Loop called but manager not running, exiting')
                 return
             
             # Increment check count BEFORE performing health check for proper UI sync
             self._check_count += 1
+            self._add_log('debug', f'📊 Check count incremented to {self._check_count}')
+            
+            # Add explicit log before calling health check
+            self._add_log('info', f'🔄 CALLING _perform_health_check() now...', {
+                'check_number': self._check_count,
+                'about_to_call': True
+            })
             
             # Perform the actual health check
             self._perform_health_check()
+            
+            self._add_log('info', f'✅ _perform_health_check() completed successfully', {
+                'check_number': self._check_count
+            })
             
             # Schedule next check if still running
             if self._running and not self._inactive_due_to_failures:
@@ -176,9 +188,10 @@ class DatabaseManager:
                 self._add_log('info', '⏹️ Monitoring loop stopped (manager inactive or not running)')
                 
         except Exception as e:
-            self._add_log('error', f'❌ Critical error in monitoring loop: {str(e)}', {
+            self._add_log('error', f'❌ CRITICAL ERROR in monitoring loop: {str(e)}', {
                 'exception_type': type(e).__name__,
-                'check_count': self._check_count
+                'check_count': self._check_count,
+                'traceback': str(e)
             })
             logger.error(f"Critical error in database monitoring loop: {e}")
             
