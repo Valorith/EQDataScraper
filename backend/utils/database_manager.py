@@ -66,14 +66,9 @@ class DatabaseManager:
         
     def _should_run_monitoring(self) -> bool:
         """Determine if monitoring should run based on environment."""
-        if self._environment == 'development':
-            # In development, allow monitoring to run but with simplified config check
-            # This prevents hanging issues while still allowing testing
-            self._add_log('info', 'Development environment: Monitoring enabled for testing')
-            return True
-        
-        # In production/Railway, always run monitoring
-        self._add_log('info', f'{self._environment.title()} environment: Monitoring enabled')
+        # Always allow monitoring to start - config validation happens during health checks
+        # This prevents hanging during initialization while still providing monitoring
+        self._add_log('info', f'{self._environment.title()} environment: Monitoring enabled (config checked during health checks)')
         return True
         
     def _add_log(self, level: str, message: str, details: Optional[Dict[str, Any]] = None):
@@ -225,34 +220,9 @@ class DatabaseManager:
                     'max_attempts': self._max_retry_attempts
                 })
                 
-                # Try to automatically reload saved configuration on first few failures
-                if self._consecutive_failures <= 3:
-                    self._add_log('info', f'🔄 Attempting automatic config reload', {
-                        'failure_count': self._consecutive_failures,
-                        'reload_attempts_remaining': 4 - self._consecutive_failures
-                    })
-                    if self._attempt_config_reload():
-                        self._add_log('info', '✅ Config reload successful, retesting connection...')
-                        # Test connection again after reload
-                        connection_successful = self._test_database_connection()
-                        if connection_successful:
-                            self._consecutive_failures = 0
-                            self._add_log('info', '🎉 Database connection restored after config reload!')
-                            self._last_check_result = {
-                                'timestamp': check_time,
-                                'connected': True,
-                                'config_loaded': True,
-                                'consecutive_failures': self._consecutive_failures,
-                                'manager_active': True,
-                                'config_auto_reloaded': True
-                            }
-                            return
-                        else:
-                            self._add_log('warning', '❌ Connection still failed after config reload')
-                    else:
-                        self._add_log('error', '❌ Automatic config reload failed')
-                else:
-                    self._add_log('warning', f'⚠️ Skipping auto-reload (failure {self._consecutive_failures} > 3)')
+                # Skip automatic config reload to prevent hanging issues
+                # TODO: Re-enable once config loading performance issues are resolved
+                self._add_log('info', f'⚠️ Skipping auto-reload to prevent hanging (failure {self._consecutive_failures})')
                 
                 # Check if we should go inactive
                 if self._consecutive_failures >= self._max_retry_attempts:
