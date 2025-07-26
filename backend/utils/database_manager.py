@@ -717,45 +717,35 @@ def shutdown_database_manager():
 
 
 def restart_database_manager(force: bool = False) -> bool:
-    """Restart database manager monitoring - minimal version to prevent hanging."""
+    """Restart database manager monitoring using proper start_monitoring method."""
     try:
         manager = get_database_manager()
         
-        manager._add_log('info', f'Minimal restart requested', {
+        manager._add_log('info', f'🔄 Full restart requested', {
             'force': force,
             'currently_running': manager.is_running()
         })
         
         # Force stop any existing monitoring
-        manager._running = False
-        if manager._timer:
-            try:
-                manager._timer.cancel()
-            except:
-                pass
-            manager._timer = None
+        manager.stop_monitoring()
         
         # Reset failure state
         manager._inactive_due_to_failures = False
         manager._consecutive_failures = 0
         manager._last_check_result = None
+        manager._check_count = 0  # Reset check count for clean restart
         
-        # Start monitoring with minimal configuration
-        manager._running = True
-        manager._start_time = datetime.now()
-        manager._next_check_time = manager._start_time + timedelta(seconds=30)
+        manager._add_log('info', '🧹 State reset complete, starting monitoring...')
         
-        # Start timer for health checks (but don't trigger immediate check)
-        import threading
-        manager._timer = threading.Timer(30.0, manager._run_monitoring_loop)
-        manager._timer.daemon = True
-        manager._timer.start()
+        # Use the proper start_monitoring method with a short delay
+        manager.start_monitoring(delay_start=5.0)
         
-        manager._add_log('info', 'Database Manager restarted with minimal configuration')
+        manager._add_log('info', '✅ Database Manager restarted using proper start_monitoring')
         return True
         
     except Exception as e:
-        logger.error(f"Error in minimal restart: {e}")
+        logger.error(f"Error in restart: {e}")
+        manager._add_log('error', f'❌ Restart failed: {str(e)}')
         return False
 
 
