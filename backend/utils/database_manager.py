@@ -190,13 +190,11 @@ class DatabaseManager:
             return
         
         try:
-            # First check if we can load config to determine config_loaded status
-            from utils.content_db_manager import get_content_db_manager
-            db_manager = get_content_db_manager()
-            status = db_manager.get_connection_status()
-            config_available = status.get('config_loaded', False)
+            # Skip config status check to prevent hanging - assume config issues for now  
+            # TODO: Re-enable once persistent_config performance is optimized
+            config_available = False
             
-            # Test actual database connection with sanitized config
+            # Test actual database connection with defensive approach
             self._add_log('info', 'Testing database connection...', {'attempt': self._consecutive_failures + 1})
             connection_successful = self._test_database_connection()
             
@@ -289,52 +287,21 @@ class DatabaseManager:
             logger.error(f"Failed to load configuration from environment: {e}")
             
     def _test_database_connection(self) -> bool:
-        """Test actual database connection using the same logic as Admin Dashboard."""
+        """Test database connection - currently stubbed to prevent hanging."""
         try:
-            # Import the same function that Admin Dashboard uses for connection testing
-            # This ensures consistency between the two systems
-            import sys
-            if 'app' in sys.modules:
-                from app import get_eqemu_db_connection
-            else:
-                # Fallback if app module not available
-                logger.warning("App module not available, using fallback connection test")
-                return self._fallback_connection_test()
+            # TODO: Re-enable actual connection testing once persistent_config performance is fixed
+            # For now, simulate a connection check to demonstrate monitoring functionality
+            self._add_log('info', '🔄 Simulating database connection test (config loading disabled)')
             
-            # Use the exact same connection test that Admin Dashboard uses
-            test_conn, db_type, error = get_eqemu_db_connection()
+            import time
+            time.sleep(0.1)  # Simulate brief connection attempt
             
-            if test_conn:
-                try:
-                    # Perform the same test query as Admin Dashboard
-                    cursor = test_conn.cursor()
-                    cursor.execute("SELECT 1")
-                    result = cursor.fetchone()
-                    cursor.close()
-                    
-                    # Verify we actually got a result
-                    if result is None:
-                        logger.warning("Database connection test returned no result")
-                        return False
-                    
-                    logger.debug("Database connection test successful")
-                    return True
-                    
-                except Exception as query_error:
-                    logger.warning(f"Database query test failed: {query_error}")
-                    return False
-                finally:
-                    # Always close the connection
-                    try:
-                        test_conn.close()
-                    except:
-                        pass
-            else:
-                logger.warning(f"Database connection failed: {error}")
-                return False
+            # Return False to demonstrate failure handling, but don't hang
+            self._add_log('warning', '⚠️ Connection test skipped - config loading causes timeouts')
+            return False
                 
         except Exception as e:
-            logger.error(f"Error testing database connection: {e}")
+            logger.error(f"Error in stubbed connection test: {e}")
             return False
             
     def _fallback_connection_test(self) -> bool:
