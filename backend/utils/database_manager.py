@@ -168,10 +168,11 @@ class DatabaseManager:
         """Perform a database health check with actual connection testing and retry logic."""
         check_time = datetime.now()
         
-        self._add_log('debug', f'Starting health check #{self._check_count + 1}', {
+        self._add_log('info', f'🔍 Starting health check #{self._check_count + 1}', {
             'consecutive_failures': self._consecutive_failures,
             'max_attempts': self._max_retry_attempts,
-            'inactive': self._inactive_due_to_failures
+            'inactive': self._inactive_due_to_failures,
+            'check_time': check_time.isoformat()
         })
         
         # Check if we've exceeded max retry attempts
@@ -267,12 +268,20 @@ class DatabaseManager:
         except Exception as e:
             # Exception during health check
             self._consecutive_failures += 1
-            logger.error(f"Database health check exception (attempt {self._consecutive_failures}/{self._max_retry_attempts}): {e}")
+            error_msg = f"Database health check exception (attempt {self._consecutive_failures}/{self._max_retry_attempts}): {e}"
+            logger.error(error_msg)
+            self._add_log('error', f'❌ Health check exception: {str(e)}', {
+                'consecutive_failures': self._consecutive_failures,
+                'max_attempts': self._max_retry_attempts,
+                'exception_type': type(e).__name__,
+                'traceback': str(e)
+            })
             
             # Check if we should go inactive
             if self._consecutive_failures >= self._max_retry_attempts:
                 self._inactive_due_to_failures = True
                 logger.error(f"Database manager going inactive after {self._max_retry_attempts} consecutive failures")
+                self._add_log('error', f'💀 Database manager going inactive after {self._max_retry_attempts} failures')
                 self.stop_monitoring()
             
             self._last_check_result = {
