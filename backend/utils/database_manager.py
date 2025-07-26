@@ -577,44 +577,46 @@ def shutdown_database_manager():
 
 
 def restart_database_manager(force: bool = False) -> bool:
-    """Restart database manager monitoring, optionally forcing restart even if active."""
-    manager = get_database_manager()
-    
-    manager._add_log('info', f'Restart requested', {
-        'force': force,
-        'currently_running': manager.is_running(),
-        'inactive_due_to_failures': manager._inactive_due_to_failures
-    })
-    
-    # Stop current monitoring if running
-    if manager.is_running():
-        if not force:
-            manager._add_log('warning', 'Manager already running, use force=True to restart')
-            return False
-        manager.stop_monitoring()
-        manager._add_log('info', 'Stopped existing monitoring for restart')
-    
-    # Reset failure state
-    manager._inactive_due_to_failures = False
-    manager._consecutive_failures = 0
-    manager._last_check_result = None
-    
-    # Check if monitoring should run in this environment before attempting start
-    if not manager._should_run_monitoring():
-        manager._add_log('warning', f'Cannot restart: monitoring disabled in {manager._environment} environment')
+    """Restart database manager monitoring - minimal version to prevent hanging."""
+    try:
+        manager = get_database_manager()
+        
+        manager._add_log('info', f'Minimal restart requested', {
+            'force': force,
+            'currently_running': manager.is_running()
+        })
+        
+        # Force stop any existing monitoring
+        manager._running = False
+        if manager._timer:
+            try:
+                manager._timer.cancel()
+            except:
+                pass
+            manager._timer = None
+        
+        # Reset failure state
+        manager._inactive_due_to_failures = False
+        manager._consecutive_failures = 0
+        manager._last_check_result = None
+        
+        # Start monitoring with minimal configuration
+        manager._running = True
+        manager._start_time = datetime.now()
+        manager._next_check_time = manager._start_time + timedelta(seconds=30)
+        
+        # Start timer for health checks (but don't trigger immediate check)
+        import threading
+        manager._timer = threading.Timer(30.0, manager._run_monitoring_loop)
+        manager._timer.daemon = True
+        manager._timer.start()
+        
+        manager._add_log('info', 'Database Manager restarted with minimal configuration')
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in minimal restart: {e}")
         return False
-    
-    # Start monitoring
-    manager.start_monitoring(1.0)  # Quick start for manual restart
-    
-    # Verify that monitoring actually started
-    success = manager.is_running()
-    if success:
-        manager._add_log('info', 'Database Manager restarted successfully')
-    else:
-        manager._add_log('error', 'Database Manager restart failed - monitoring did not start')
-    
-    return success
 
 
 def check_and_restart_inactive_manager():
