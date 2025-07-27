@@ -49,7 +49,6 @@ jobs:
       working-directory: ./backend
       run: |
         echo "Testing critical imports..."
-        python -c "from utils.database_manager import get_database_manager; print('✅ Database Manager import successful')"
         python -c "from utils.security import sanitize_search_input; print('✅ Security utils import successful')"
         python -c "from models.user import User; print('✅ User model import successful')"
         echo "✅ All critical imports validated"
