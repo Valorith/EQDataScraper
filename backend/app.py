@@ -723,169 +723,7 @@ def database_health_check():
     
     return jsonify(health_status), 200 if overall_healthy else 503
 
-@app.route('/api/database/manager/status', methods=['GET'])
-@exempt_when_limiting
-def get_database_manager_status():
-    """Get database manager monitoring status - non-blocking and safe."""
-    try:
-        # Debug: Log that we're trying to get status
-        app.logger.info("Database manager status endpoint called")
-        
-        from utils.database_manager import get_database_manager
-        app.logger.info("Successfully imported get_database_manager")
-        
-        # Get manager instance without creating new connections
-        manager = get_database_manager()
-        app.logger.info(f"Got manager instance: {type(manager)}")
-        
-        # This call is fast and non-blocking - just returns cached status
-        status = manager.get_monitoring_status()
-        app.logger.info("Successfully got monitoring status")
-        
-        # Add basic server info
-        status['server_timestamp'] = datetime.now().isoformat()
-        status['success'] = True
-        
-        return jsonify(status), 200
-        
-    except Exception as e:
-        # Ensure we never crash or block on this endpoint
-        app.logger.error(f"Error getting database manager status: {e}", exc_info=True)
-        error_response = {
-            'success': False,
-            'error': str(e),
-            'error_type': type(e).__name__,
-            'monitoring_active': False,
-            'server_timestamp': datetime.now().isoformat()
-        }
-        return jsonify(error_response), 200  # Return 200 to not break the UI
-
-
-@app.route('/api/database/manager/logs', methods=['GET'])
-@exempt_when_limiting
-def get_database_manager_logs():
-    """Get database manager logs for debugging purposes."""
-    try:
-        app.logger.info("Database manager logs endpoint called")
-        from utils.database_manager import get_database_manager
-        
-        # Get limit parameter from query string
-        limit = request.args.get('limit', type=int, default=25)
-        
-        # Get manager instance
-        manager = get_database_manager()
-        
-        # Debug: Log current manager state
-        app.logger.info(f"Database Manager logs request - Manager state: running={manager.is_running()}, "
-                       f"inactive={manager._inactive_due_to_failures}, environment={manager._environment}, "
-                       f"logs_count={len(manager._logs)}")
-        
-        # Get logs (this is fast and thread-safe)
-        logs = manager.get_logs(limit=limit)
-        
-        # If no logs exist, force some debug entries to help identify the issue
-        if not logs:
-            app.logger.warning("No logs found in Database Manager - forcing debug entries")
-            manager._add_log('debug', 'Logs endpoint called - no existing logs found')
-            manager._add_log('info', f'Manager state: running={manager.is_running()}, environment={manager._environment}')
-            manager._add_log('debug', f'Manager details: start_time={manager._start_time}, check_count={manager._check_count}')
-            
-            # Get logs again after adding debug entries
-            logs = manager.get_logs(limit=limit)
-        
-        # Enhanced response with debugging information
-        response_data = {
-            'success': True,
-            'logs': logs,
-            'total_entries': len(logs),
-            'limit': limit,
-            'manager_debug': {
-                'is_running': manager.is_running(),
-                'inactive_due_to_failures': manager._inactive_due_to_failures,
-                'environment': manager._environment,
-                'start_time': manager._start_time.isoformat() if manager._start_time else None,
-                'check_count': manager._check_count,
-                'consecutive_failures': manager._consecutive_failures,
-                'logs_buffer_size': len(manager._logs)
-            },
-            'server_timestamp': datetime.now().isoformat()
-        }
-        
-        app.logger.info(f"Returning {len(logs)} log entries to client")
-        
-        return jsonify(response_data), 200
-        
-    except Exception as e:
-        app.logger.error(f"Error getting database manager logs: {e}")
-        return jsonify({'error': 'Failed to get database manager logs', 'details': str(e)}), 500
-
-
-@app.route('/api/database/manager/restart', methods=['POST'])
-@exempt_when_limiting
-def restart_database_manager_endpoint():
-    """Restart database manager monitoring."""
-    try:
-        app.logger.info("Database manager restart endpoint called")
-        from utils.database_manager import restart_database_manager, get_database_manager
-        
-        # Get current manager state for debugging
-        manager = get_database_manager()
-        current_state = {
-            'running': manager.is_running(),
-            'inactive_due_to_failures': manager._inactive_due_to_failures,
-            'environment': manager._environment,
-            'logs_count': len(manager._logs)
-        }
-        
-        app.logger.info(f"Restart request - current state: {current_state}")
-        
-        # Get force parameter from request body
-        force = False
-        if request.is_json and request.get_json():
-            force = request.get_json().get('force', False)
-        
-        # Add log entry to manager before restart attempt
-        manager._add_log('info', f'Restart requested via API endpoint', {
-            'force': force,
-            'current_running': manager.is_running(),
-            'current_inactive': manager._inactive_due_to_failures
-        })
-        
-        # Restart the manager
-        success = restart_database_manager(force=force)
-        
-        # Get new state after restart attempt
-        new_state = {
-            'running': manager.is_running(),
-            'inactive_due_to_failures': manager._inactive_due_to_failures,
-            'logs_count': len(manager._logs)
-        }
-        
-        # Add result log entry to manager
-        manager._add_log('info' if success else 'error', 
-                        f'Restart {"successful" if success else "failed"}', {
-            'success': success,
-            'new_running': manager.is_running(),
-            'new_inactive': manager._inactive_due_to_failures
-        })
-        
-        app.logger.info(f"Restart result - success: {success}, new state: {new_state}")
-        
-        return jsonify({
-            'success': success,
-            'message': 'Database manager restarted successfully' if success else 'Failed to restart database manager',
-            'debug_info': {
-                'before_state': current_state,
-                'after_state': new_state,
-                'force': force
-            },
-            'server_timestamp': datetime.now().isoformat()
-        }), 200
-        
-    except Exception as e:
-        app.logger.error(f"Error restarting database manager: {e}", exc_info=True)
-        return jsonify({'error': 'Failed to restart database manager', 'details': str(e)}), 500
-
+# Database manager endpoints removed - system was unstable
 
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_connections():
@@ -2190,19 +2028,7 @@ def save_cache_to_database():
 #     logger.info("Skipping initial cache load for gunicorn worker")
 
 
-# Temporarily disable Database Manager initialization to fix auth
-# TODO: Re-enable once auth is working properly
-try:
-    logger.info("⚠️ Database Manager initialization temporarily disabled for auth debugging")
-    # from utils.database_manager import initialize_database_manager
-    # initialize_database_manager(delay_start=5.0)
-    # logger.info("✅ Database manager initialized with 30-second monitoring (module level)")
-except Exception as e:
-    logger.error(f"❌ Failed to initialize database manager: {e}")
-    import traceback
-    logger.error(f"Full traceback: {traceback.format_exc()}")
-
-
+# Database Manager removed - system was unstable and caused hanging issues
 
 def is_cache_expired(class_name):
     """DISABLED - spell system disabled"""
@@ -4132,13 +3958,7 @@ def cleanup_resources():
     except Exception as e:
         logger.error(f"Error closing connection pool: {e}")
     
-    # Shutdown database manager
-    try:
-        from utils.database_manager import shutdown_database_manager
-        shutdown_database_manager()
-        logger.info("Database manager shutdown")
-    except Exception as e:
-        logger.error(f"Error shutting down database manager: {e}")
+    # Database manager removed
     
     # Close content database connections
     try:
