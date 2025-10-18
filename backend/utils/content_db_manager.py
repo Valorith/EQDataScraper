@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from contextlib import contextmanager
 
 from utils.database_connectors import get_database_connector
-from utils.db_connection_pool import DatabaseConnectionPool
+from utils.db_connection_pool import DatabaseConnectionPool, OriginalDatabaseConnectionPool
 from utils.persistent_config import get_persistent_config
 from utils.db_config_validator import validate_database_config
 
@@ -122,14 +122,25 @@ class ContentDatabaseManager:
             'password': self._sanitize_config_value(parsed.password or ''),
             'use_ssl': config.get('database_ssl', True)
         }
-        
+
         # Remove empty values (but keep ssl setting even if False)
         db_config = {k: v for k, v in db_config.items() if v or k == 'use_ssl'}
-        
+
+        # Apply database-specific timeout defaults to keep connections responsive
+        if db_type == 'mysql':
+            db_config.setdefault('connect_timeout', 10)
+            db_config.setdefault('read_timeout', 60)
+            db_config.setdefault('write_timeout', 30)
+            db_config.setdefault('autocommit', True)
+        elif db_type == 'postgresql':
+            db_config.setdefault('connect_timeout', 5)
+        elif db_type == 'mssql':
+            db_config.setdefault('timeout', 5)
+
         logger.info(f"Loaded database config: host={db_config.get('host')}, "
                    f"port={db_config.get('port')}, db={db_config.get('database')}, "
                    f"user={db_config.get('username')}, ssl={db_config.get('use_ssl')}")
-        
+
         return db_config, db_type
         
     def _create_connection_pool(self) -> bool:
@@ -148,11 +159,22 @@ class ContentDatabaseManager:
                 from utils.database_connectors import get_database_connector
                 return get_database_connector(self._db_type, self._config)
             
-            self._pool = DatabaseConnectionPool(
-                create_connection_func=create_connection,
-                max_connections=3,  # Reduced from 5 to prevent hanging
-                timeout=2           # Reduced from 5 to prevent hanging
-            )
+            try:
+                self._pool = OriginalDatabaseConnectionPool(
+                    create_connection_func=create_connection,
+                    max_connections=3,  # Reduced from 5 to prevent hanging
+                    timeout=2           # Reduced from 5 to prevent hanging
+                )
+            except Exception as pool_error:
+                logger.warning(
+                    "Falling back to simplified database connection pool due to error: %s",
+                    pool_error,
+                )
+                self._pool = DatabaseConnectionPool(
+                    create_connection_func=create_connection,
+                    max_connections=3,
+                    timeout=2,
+                )
             
             # Test the connection
             with self._pool.get_connection() as conn:
@@ -183,100 +205,100 @@ class ContentDatabaseManager:
             # If connection is healthy, return immediately
             if self._connection_healthy and self._pool:
                 return True
-                
+
             # NON-BLOCKING: Check if we should retry, but don't block
             current_time = time.time()
             if current_time - self._last_connect_attempt < self._connect_retry_delay:
                 # Instead of blocking, just return False immediately
                 # This prevents hanging the Flask thread
                 return False
-                
+
             self._last_connect_attempt = current_time
-            
+
             logger.info("Attempting to establish database connection...")
-            
-            # Since we're using direct connections now (no pooling), 
-            # just check if we can load the config
+
             try:
-                config, db_type = self._load_database_config()
-                if config and db_type:
-                    logger.info("Database configuration loaded successfully")
-                    self._connection_healthy = True
+                if self._create_connection_pool():
+                    logger.info("Database connection pool available")
                     return True
-                else:
-                    logger.warning("No database configuration available")
-                    return False
-            except Exception as e:
-                logger.error(f"Error loading database config: {e}")
+
+                logger.warning("Failed to establish database connection pool")
+                self._connect_retry_delay = min(self._connect_retry_delay * 2, self._max_retry_delay)
                 return False
-                
+            except Exception as e:
+                logger.error(f"Error establishing database connection: {e}")
+                self._connect_retry_delay = min(self._connect_retry_delay * 2, self._max_retry_delay)
+                return False
+
     @contextmanager
     def get_connection(self):
-        """Get a database connection with automatic retry (POOLING DISABLED)."""
+        """Get a database connection with automatic retry."""
         max_retries = 3
         retry_count = 0
-        
+        last_error = None
+
         while retry_count < max_retries:
+            if not self._ensure_connection():
+                retry_count += 1
+                time.sleep(min(1 * retry_count, self._max_retry_delay))
+                continue
+
             try:
-                # Load config directly each time (no pooling)
-                config, db_type = self._load_database_config()
-                if not config or not db_type:
-                    raise Exception("Database configuration not available")
-                
-                # Create direct connection without pooling but with tracking
-                conn = get_database_connector(db_type, config, track_queries=True)
-                logger.info("Created direct database connection (no pooling, with tracking)")
-                
-                try:
+                with self._pool.get_connection() as conn:
                     yield conn
                     return
-                finally:
-                    # Always close the connection when done
-                    try:
-                        conn.close()
-                        logger.debug("Closed direct database connection")
-                    except:
-                        pass
-                    
             except Exception as e:
+                last_error = e
                 retry_count += 1
                 logger.error(f"Connection error (attempt {retry_count}/{max_retries}): {e}")
-                
-                # Mark connection as unhealthy
+
                 with self._lock:
                     self._connection_healthy = False
-                    
-                if retry_count >= max_retries:
-                    raise
-                    
-                # Wait before retry
-                time.sleep(1 * retry_count)
+                    if self._pool:
+                        try:
+                            self._pool.close_all()
+                        except Exception as close_error:
+                            logger.warning(f"Error closing connection pool after failure: {close_error}")
+                        finally:
+                            self._pool = None
+
+                if retry_count < max_retries:
+                    time.sleep(min(1 * retry_count, self._max_retry_delay))
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("Unable to acquire database connection")
                 
     def get_connection_status(self) -> Dict[str, Any]:
         """Get current connection status."""
         with self._lock:
-            # Test direct connection to get accurate status
-            try:
-                config, db_type = self._load_database_config()
-                connected = config is not None and db_type is not None
-                config_loaded = config is not None  # Use the actual loaded config, not cached self._config
-            except:
-                connected = False
-                config_loaded = False
-            
+            pool_stats = None
+            if self._pool and hasattr(self._pool, 'get_pool_stats'):
+                try:
+                    pool_stats = self._pool.get_pool_stats()
+                except Exception as e:
+                    logger.warning(f"Unable to read pool statistics: {e}")
+
+            if self._config is None or self._db_type is None:
+                try:
+                    self._config, self._db_type = self._load_database_config()
+                except Exception as e:
+                    logger.error(f"Failed to refresh database configuration for status check: {e}")
+
+            connected = self._connection_healthy and self._pool is not None
+            config_loaded = self._config is not None
+
             status = {
                 'connected': connected,
-                'pool_active': False,  # We're using direct connections, not pooling
+                'pool_active': self._pool is not None,
                 'retry_delay': max(0, self._connect_retry_delay - (time.time() - self._last_connect_attempt)),
                 'last_attempt': self._last_connect_attempt,
                 'database_type': self._db_type,
-                'config_loaded': config_loaded,  # Use the real config status
-                'validation_result': self._last_validation_result
+                'config_loaded': config_loaded,
+                'validation_result': self._last_validation_result,
+                'pool_stats': pool_stats
             }
-            
-            # No pool statistics since we're using direct connections
-            status['pool_stats'] = None
-                
+
             return status
             
     def close(self):
@@ -290,6 +312,11 @@ class ContentDatabaseManager:
                 finally:
                     self._pool = None
                     self._connection_healthy = False
+
+    def get_database_type(self) -> Optional[str]:
+        """Return the configured database type if known."""
+        with self._lock:
+            return self._db_type
 
 
 # Global instance

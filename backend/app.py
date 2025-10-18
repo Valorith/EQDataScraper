@@ -1883,16 +1883,19 @@ def get_items_with_spell(spell_id):
         cursor = conn.cursor()
         
         try:
-            # Check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'items'")
-            if not cursor.fetchone():
-                app.logger.warning("Items table not available in this database")
-                return jsonify({'items': [], 'message': 'Item data not available in this database'})
-            
-            cursor.execute("SHOW TABLES LIKE 'discovered_items'")
-            if not cursor.fetchone():
-                app.logger.warning("Discovered_items table not available in this database")
-                return jsonify({'items': [], 'message': 'Discovered items data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'items'):
+                    return jsonify({'items': [], 'message': 'Item data not available in this database'})
+
+                if not ensure_mysql_table(cursor, 'discovered_items'):
+                    return jsonify({'items': [], 'message': 'Discovered items data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading spell items: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Query for discovered items that have this spell in any spell effect field
             # Only include items that exist in both items and discovered_items tables
@@ -2316,73 +2319,65 @@ def initialize_database_connection(max_retries=3, initial_delay=2):
     logger.error(f"❌ Failed to establish database connection after {max_retries} attempts")
     return False
 
+class _ManagedPooledConnection:
+    """Proxy object that returns pooled connections to the manager when closed."""
+
+    def __init__(self, context_manager):
+        self._context_manager = context_manager
+        self._connection = context_manager.__enter__()
+        self._closed = False
+
+    def __getattr__(self, item):
+        return getattr(self._connection, item)
+
+    def __enter__(self):
+        return self._connection
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+    def close(self):
+        if not self._closed:
+            try:
+                self._context_manager.__exit__(None, None, None)
+            finally:
+                self._closed = True
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 # Helper function for EQEmu database connection
 def get_eqemu_db_connection():
     """Get connection to the configured EQEmu database with automatic reconnection.
-    
+
     WARNING: This function returns a raw connection for backward compatibility.
     Callers MUST close the connection when done to avoid connection leaks!
-    
+
     Consider refactoring to use context managers instead.
     """
     from utils.content_db_manager import get_content_db_manager
-    from utils.database_connectors import get_database_connector
-    
+
     try:
-        # Get the content database manager
         manager = get_content_db_manager()
-        
-        # Get connection status for logging
         status = manager.get_connection_status()
-        app.logger.debug(f"Content DB status: connected={status['connected']}, "
-                        f"pool_active={status['pool_active']}, "
-                        f"db_type={status['database_type']}")
-        
-        # For backward compatibility, create a direct connection
-        # This avoids the pooling complexity but ensures connections are closed
-        config = db_config_manager.get_config()
-        database_url = config.get('production_database_url', '')
-        
-        if not database_url:
-            return None, None, "Database not configured"
-            
-        # Parse database URL
-        from urllib.parse import urlparse
-        parsed = urlparse(database_url)
-        db_type = config.get('database_type', 'mysql')
-        
-        db_config = {
-            'host': parsed.hostname,
-            'port': int(parsed.port) if parsed.port else 3306,
-            'database': parsed.path[1:] if parsed.path else '',
-            'username': parsed.username,
-            'password': parsed.password,
-            'use_ssl': config.get('database_ssl', True)
-        }
-        
-        # Add connection timeout settings to prevent hanging
-        if db_type == 'mysql':
-            db_config.update({
-                'connect_timeout': 10,   # 10 second connection timeout
-                'read_timeout': 60,      # 60 second read timeout for spell searches
-                'write_timeout': 30,     # 30 second write timeout
-                'autocommit': True       # Enable autocommit to avoid transaction hangs
-            })
-        elif db_type == 'postgresql':
-            db_config.update({
-                'connect_timeout': 5    # 5 second connection timeout (reduced from 10)
-            })
-        elif db_type == 'mssql':
-            db_config.update({
-                'timeout': 5            # 5 second timeout for MSSQL
-            })
-        
-        # Create direct connection with timeout
-        conn = get_database_connector(db_type, db_config)
-        return conn, db_type, None
-        
+        app.logger.debug(
+            "Content DB status: connected=%s, pool_active=%s, db_type=%s",
+            status.get('connected'),
+            status.get('pool_active'),
+            status.get('database_type'),
+        )
+
+        connection_context = manager.get_connection()
+        pooled_connection = _ManagedPooledConnection(connection_context)
+        db_type = manager.get_database_type() or status.get('database_type') or 'mysql'
+        return pooled_connection, db_type, None
+
     except Exception as e:
-        app.logger.error(f"Failed to get database connection: {e}")
+        app.logger.error(f"Failed to get database connection: {e}", exc_info=True)
         return None, None, str(e)
 
 # Context manager for safe database connections
@@ -2407,6 +2402,41 @@ def safe_db_connection():
                 app.logger.debug("Database connection closed successfully")
             except Exception as e:
                 app.logger.warning(f"Error closing database connection: {e}")
+
+
+class MetadataCheckError(RuntimeError):
+    """Represents a failure while checking MySQL table metadata."""
+
+    def __init__(self, table_name: str, original: Exception):
+        super().__init__(f"MySQL metadata query for '{table_name}' failed: {original}")
+        self.table_name = table_name
+        self.original = original
+
+
+def ensure_mysql_table(cursor, table_name: str) -> bool:
+    """Check for a MySQL table, raising MetadataCheckError on failure."""
+    try:
+        cursor.execute("SHOW TABLES LIKE %s", (table_name,))
+        exists = cursor.fetchone() is not None
+        if not exists:
+            app.logger.warning(f"Required MySQL table '{table_name}' not found")
+        return exists
+    except Exception as exc:
+        raise MetadataCheckError(table_name, exc)
+
+
+def metadata_error_response(error: MetadataCheckError):
+    """Return a standardized response for metadata check failures."""
+    return (
+        jsonify(
+            {
+                'error': 'Database metadata check failed',
+                'table': error.table_name,
+                'details': str(error.original),
+            }
+        ),
+        503,
+    )
 
 # Helper function for safe numeric conversions
 def _safe_float(value):
@@ -2729,11 +2759,16 @@ def get_item_drop_sources(item_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'lootdrop_entries'")
-            if not cursor.fetchone():
-                app.logger.warning("Loot tables not available in this database")
-                return jsonify({'zones': [], 'message': 'Drop source data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'lootdrop_entries'):
+                    return jsonify({'zones': [], 'message': 'Drop source data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading drop sources: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Pre-check removed - availability endpoint now uses same filtering logic
             # Optimized query using explicit JOINs and proper indexing
@@ -2883,11 +2918,16 @@ def get_item_merchant_sources(item_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'merchantlist'")
-            if not cursor.fetchone():
-                app.logger.warning("Merchant tables not available in this database")
-                return jsonify({'zones': [], 'message': 'Merchant data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'merchantlist'):
+                    return jsonify({'zones': [], 'message': 'Merchant data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading merchant sources: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Check if item is sold anywhere (optimized pre-check)
             cursor.execute("""
@@ -3016,11 +3056,16 @@ def get_item_ground_spawns(item_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'ground_spawns'")
-            if not cursor.fetchone():
-                app.logger.warning("Ground spawns table not available in this database")
-                return jsonify({'zones': [], 'message': 'Ground spawn data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'ground_spawns'):
+                    return jsonify({'zones': [], 'message': 'Ground spawn data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading ground spawns: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Check if item has ground spawns (optimized pre-check) 
             cursor.execute("""
@@ -3121,11 +3166,16 @@ def get_item_forage_sources(item_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'forage'")
-            if not cursor.fetchone():
-                app.logger.warning("Forage table not available in this database")
-                return jsonify({'zones': [], 'message': 'Forage data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'forage'):
+                    return jsonify({'zones': [], 'message': 'Forage data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading forage sources: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Check if item can be foraged (optimized pre-check)
             cursor.execute("""
@@ -3216,16 +3266,19 @@ def get_item_tradeskill_recipes(item_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
-            if not cursor.fetchone():
-                app.logger.warning("Tradeskill recipe tables not available in this database")
-                return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
-            
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
-            if not cursor.fetchone():
-                app.logger.warning("Tradeskill recipe entries table not available in this database")
-                return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
+            try:
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe'):
+                    return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
+
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe_entries'):
+                    return jsonify({'skills': [], 'message': 'Tradeskill recipe data not available in this database'})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading tradeskill recipes: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Check if item is used in any recipes (optimized pre-check)
             cursor.execute("""
@@ -3408,21 +3461,22 @@ def get_recipe_details(recipe_id):
         cursor = conn.cursor()
         
         try:
-            # First check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
-            if not cursor.fetchone():
-                app.logger.warning("Tradeskill_recipe table not available in this database")
-                return jsonify({'error': 'Recipe data not available in this database'}), 503
-            
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")  
-            if not cursor.fetchone():
-                app.logger.warning("Tradeskill_recipe_entries table not available in this database")
-                return jsonify({'error': 'Recipe entries data not available in this database'}), 503
-            
-            cursor.execute("SHOW TABLES LIKE 'items'")
-            if not cursor.fetchone():
-                app.logger.warning("Items table not available in this database")
-                return jsonify({'error': 'Items data not available in this database'}), 503
+            try:
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe'):
+                    return jsonify({'error': 'Recipe data not available in this database'}), 503
+
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe_entries'):
+                    return jsonify({'error': 'Recipe entries data not available in this database'}), 503
+
+                if not ensure_mysql_table(cursor, 'items'):
+                    return jsonify({'error': 'Items data not available in this database'}), 503
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading recipe details: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Validate recipe_id
             try:
@@ -3615,14 +3669,19 @@ def get_item_created_by_recipes(item_id):
         cursor = conn.cursor()
         
         try:
-            # Check if required tables exist
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
-            if not cursor.fetchone():
-                return jsonify({'recipes': []})
-            
-            cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
-            if not cursor.fetchone():
-                return jsonify({'recipes': []})
+            try:
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe'):
+                    return jsonify({'recipes': []})
+
+                if not ensure_mysql_table(cursor, 'tradeskill_recipe_entries'):
+                    return jsonify({'recipes': []})
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "MySQL metadata check failed while loading recipes that create an item: %s",
+                    metadata_error,
+                    exc_info=True,
+                )
+                return metadata_error_response(metadata_error)
             
             # Validate item_id
             try:
@@ -3772,43 +3831,47 @@ def get_item_data_availability(item_id):
             
             # Check tradeskill recipes (where item is used as component) - Use simple existence check
             try:
-                cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
-                if cursor.fetchone():
-                    cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
-                    if cursor.fetchone():
-                        # Simple existence check - just see if any record exists
-                        cursor.execute("""
-                            SELECT 1 FROM tradeskill_recipe_entries 
-                            WHERE item_id = %s AND componentcount > 0 LIMIT 1
-                        """, (item_id,))
-                        result = cursor.fetchone()
-                        availability['tradeskill_recipes'] = 1 if result else 0
-                        app.logger.info(f"Tradeskill recipes for item {item_id}: {'found' if result else 'none'}")
+                if ensure_mysql_table(cursor, 'tradeskill_recipe') and ensure_mysql_table(cursor, 'tradeskill_recipe_entries'):
+                    cursor.execute("""
+                        SELECT 1 FROM tradeskill_recipe_entries
+                        WHERE item_id = %s AND componentcount > 0 LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['tradeskill_recipes'] = 1 if result else 0
+                    app.logger.info(f"Tradeskill recipes for item {item_id}: {'found' if result else 'none'}")
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "Tradeskill recipes metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.error(f"Tradeskill recipes check failed: {e}")
             
             # Check created by recipes (where item is created as result) - Use simple existence check
             try:
-                cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe'")
-                if cursor.fetchone():
-                    cursor.execute("SHOW TABLES LIKE 'tradeskill_recipe_entries'")
-                    if cursor.fetchone():
-                        # Simple existence check - just see if any record exists
-                        cursor.execute("""
-                            SELECT 1 FROM tradeskill_recipe_entries 
-                            WHERE item_id = %s AND successcount > 0 LIMIT 1
-                        """, (item_id,))
-                        result = cursor.fetchone()
-                        availability['created_by_recipes'] = 1 if result else 0
-                        app.logger.info(f"Created by recipes for item {item_id}: {'found' if result else 'none'}")
+                if ensure_mysql_table(cursor, 'tradeskill_recipe') and ensure_mysql_table(cursor, 'tradeskill_recipe_entries'):
+                    cursor.execute("""
+                        SELECT 1 FROM tradeskill_recipe_entries
+                        WHERE item_id = %s AND successcount > 0 LIMIT 1
+                    """, (item_id,))
+                    result = cursor.fetchone()
+                    availability['created_by_recipes'] = 1 if result else 0
+                    app.logger.info(f"Created by recipes for item {item_id}: {'found' if result else 'none'}")
+            except MetadataCheckError as metadata_error:
+                app.logger.error(
+                    "Created-by recipes metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.error(f"Created by recipes check failed: {e}")
             
             # Check drop sources - Use the same complex query as the actual drop sources endpoint
             try:
-                cursor.execute("SHOW TABLES LIKE 'lootdrop_entries'")
-                if cursor.fetchone():
-                    # Use the same filtering logic as the drop sources endpoint to avoid false positives
+                if ensure_mysql_table(cursor, 'lootdrop_entries'):
                     cursor.execute("""
                         SELECT 1 FROM npc_types nt
                         INNER JOIN spawnentry se ON nt.id = se.npcID
@@ -3827,45 +3890,70 @@ def get_item_data_availability(item_id):
                     result = cursor.fetchone()
                     availability['drop_sources'] = 1 if result else 0
                     app.logger.debug(f"Drop sources availability for item {item_id}: {'found' if result else 'none'}")
+            except MetadataCheckError as metadata_error:
+                app.logger.debug(
+                    "Drop sources metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.debug(f"Drop sources check failed: {e}")
             
             # Check merchant sources - Use existence check
             try:
-                cursor.execute("SHOW TABLES LIKE 'merchantlist'")
-                if cursor.fetchone():
+                if ensure_mysql_table(cursor, 'merchantlist'):
                     cursor.execute("""
-                        SELECT 1 FROM merchantlist 
+                        SELECT 1 FROM merchantlist
                         WHERE item = %s LIMIT 1
                     """, (item_id,))
                     result = cursor.fetchone()
                     availability['merchant_sources'] = 1 if result else 0
+            except MetadataCheckError as metadata_error:
+                app.logger.debug(
+                    "Merchant sources metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.debug(f"Merchant sources check failed: {e}")
             
             # Check ground spawns - Use existence check
             try:
-                cursor.execute("SHOW TABLES LIKE 'ground_spawns'")
-                if cursor.fetchone():
+                if ensure_mysql_table(cursor, 'ground_spawns'):
                     cursor.execute("""
-                        SELECT 1 FROM ground_spawns 
+                        SELECT 1 FROM ground_spawns
                         WHERE item = %s LIMIT 1
                     """, (item_id,))
                     result = cursor.fetchone()
                     availability['ground_spawns'] = 1 if result else 0
+            except MetadataCheckError as metadata_error:
+                app.logger.debug(
+                    "Ground spawn metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.debug(f"Ground spawns check failed: {e}")
             
             # Check forage sources - Use existence check
             try:
-                cursor.execute("SHOW TABLES LIKE 'forage'")
-                if cursor.fetchone():
+                if ensure_mysql_table(cursor, 'forage'):
                     cursor.execute("""
-                        SELECT 1 FROM forage 
+                        SELECT 1 FROM forage
                         WHERE itemid = %s LIMIT 1
                     """, (item_id,))
                     result = cursor.fetchone()
                     availability['forage_sources'] = 1 if result else 0
+            except MetadataCheckError as metadata_error:
+                app.logger.debug(
+                    "Forage metadata check failed for item %s: %s",
+                    item_id,
+                    metadata_error,
+                    exc_info=True,
+                )
             except Exception as e:
                 app.logger.debug(f"Forage sources check failed: {e}")
             

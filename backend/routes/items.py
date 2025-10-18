@@ -13,7 +13,8 @@ import logging
 import sys
 import os
 import time
-from collections import defaultdict
+from collections import deque, defaultdict
+import threading
 
 # Add the parent directory to Python path to import from app.py
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,9 +30,10 @@ logger = logging.getLogger(__name__)
 item_bp = Blueprint('items', __name__, url_prefix='/api')
 
 # Simple rate limiting for tooltip requests
-request_times = defaultdict(list)
+request_times = defaultdict(deque)
 MAX_REQUESTS_PER_MINUTE = 30
 RATE_LIMIT_WINDOW = 60
+_rate_limiter_lock = threading.Lock()
 
 # EQEmu item type mapping (following Char Browser pattern)
 ITEM_TYPES = {
@@ -137,33 +139,29 @@ def check_rate_limit():
     """Simple rate limiting by IP address"""
     client_ip = request.remote_addr or 'unknown'
     now = time.time()
-    
-    # Clean old requests (older than rate limit window)
-    request_times[client_ip] = [req_time for req_time in request_times[client_ip] 
-                               if now - req_time < RATE_LIMIT_WINDOW]
-    
-    # Check if rate limit exceeded
-    if len(request_times[client_ip]) >= MAX_REQUESTS_PER_MINUTE:
-        return True
-    
-    # Add current request time
-    request_times[client_ip].append(now)
+
+    with _rate_limiter_lock:
+        request_queue = request_times.get(client_ip)
+        if request_queue is None:
+            request_queue = deque()
+            request_times[client_ip] = request_queue
+
+        cutoff = now - RATE_LIMIT_WINDOW
+        while request_queue and request_queue[0] <= cutoff:
+            request_queue.popleft()
+
+        if len(request_queue) >= MAX_REQUESTS_PER_MINUTE:
+            return True
+
+        request_queue.append(now)
+
     return False
 
 @item_bp.route('/items/<int:item_id>/tooltip', methods=['GET'])
 def get_item_tooltip(item_id):
     """Get comprehensive item data for tooltips following Char Browser format."""
     
-    # TEMPORARY: Disable tooltip API completely to prevent backend crashes
-    # TODO: Re-enable once database connection pooling issues are resolved
-    logger.info(f"Tooltip API temporarily disabled for item {item_id} to prevent crashes")
-    return jsonify({
-        'error': 'Tooltip API temporarily disabled to prevent server crashes',
-        'message': 'Showing basic inventory data only',
-        'item_id': item_id
-    }), 503
-    
-    # Rate limiting check (disabled during maintenance)
+    # Rate limiting to guard against abuse while fetching tooltips
     if check_rate_limit():
         logger.warning(f"Rate limit exceeded for IP {request.remote_addr} on item {item_id}")
         return jsonify({'error': 'Rate limit exceeded - too many requests'}), 429
